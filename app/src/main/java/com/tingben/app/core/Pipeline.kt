@@ -159,44 +159,69 @@ object ModelStore {
 // ─────────────────────────── 分块（Alexandria + Antioch） ───────────────────────────
 
 object ChapterSplitter {
+    /** txt 兜底用的标题正则：除「第X章」，补上中文小说常见的序章类与 Chapter N。 */
     private val headRe = Regex(
-        """^\s*(第[一二三四五六七八九十百千零〇0-9]+[章节回卷篇].{0,40}|[0-9]{1,3}[、.．]\s*.{1,40})\s*$""",
+        """^\s*(第[一二三四五六七八九十百千零〇0-9]+[章节回卷篇].{0,40}|""" +
+        """[0-9]{1,3}[、.．]\s*.{1,40}|""" +
+        """(?:楔子|序章|序言|引子|尾声|后记|番外|楔|序|跋)(?:.{0,30})|""" +
+        """(?:Chapter|CHAPTER|PART|Part)\s*[0-9一二三四五六七八九十]{1,4}(?:.{0,30}))\s*$""",
         RegexOption.MULTILINE
     )
 
+    /** 一段文字按 ≤500 字切成朗读块，绝不改动一个字符。 */
+    private fun cut(text: String, s: Int, e: Int, chIndex: Int,
+                    out: MutableList<Chunk>, startIdx: Int): Int {
+        var idx = startIdx
+        var buf = StringBuilder()
+        var bufStart = s
+        var i = s
+        while (i < e) {
+            val ch0 = text[i]
+            buf.append(ch0); i++
+            val len = buf.length
+            val boundary = ch0 == '\n' || ch0 == '。' || ch0 == '！' || ch0 == '？' ||
+                    ch0 == '!' || ch0 == '?' || ch0 == '；' || ch0 == ';'
+            if (len >= 500 || (len >= 350 && boundary)) {
+                if (buf.isNotEmpty()) out.add(Chunk(idx++, chIndex, buf.toString(), bufStart, i))
+                bufStart = i
+                buf = StringBuilder()
+            }
+        }
+        if (buf.isNotEmpty()) out.add(Chunk(idx++, chIndex, buf.toString(), bufStart, e))
+        return idx
+    }
+
     fun split(text: String): Pair<List<Chapter>, List<Chunk>> {
+        val chapters = mutableListOf<Chapter>()
+        val chunks = mutableListOf<Chunk>()
+        var idx = 0
+
+        // R10 · epub 由 Importer 打了显式边界：一个 spine 文件 = 一章。
+        // 走这条路就不再靠正则猜标题，「楔子 / Chapter 1 / 一、」都能正确成章，且顺序由 OPF 保证。
+        if (text.contains(Importer.CHAPTER_SEP)) {
+            val segs = text.split(Importer.CHAPTER_SEP)
+                .map { it.trim() }.filter { it.isNotBlank() }
+            var cursor = 0
+            segs.forEachIndexed { ci, seg ->
+                val title = seg.lineSequence().firstOrNull()?.trim()?.take(40)
+                    ?.ifBlank { "第 ${ci + 1} 节" } ?: "第 ${ci + 1} 节"
+                val start = text.indexOf(seg, cursor).let { if (it < 0) cursor else it }
+                val end = start + seg.length
+                chapters.add(Chapter(ci, title, start, end))
+                idx = cut(text, start, end, ci, chunks, idx)
+                cursor = end
+            }
+            return chapters to chunks
+        }
+
         val marks = mutableListOf<Pair<Int, String>>()
         headRe.findAll(text).forEach { marks.add(it.range.first to it.value.trim()) }
         if (marks.isEmpty()) marks.add(0 to "整本")
-
-        val chapters = mutableListOf<Chapter>()
         for (i in marks.indices) {
             val s = marks[i].first
             val e = if (i + 1 < marks.size) marks[i + 1].first else text.length
             chapters.add(Chapter(i, marks[i].second, s, e))
-        }
-
-        val chunks = mutableListOf<Chunk>()
-        var idx = 0
-        for (ch in chapters) {
-            var buf = StringBuilder()
-            var bufStart = ch.start
-            var i = ch.start
-            while (i < ch.end) {
-                val ch0 = text[i]
-                buf.append(ch0); i++
-                val len = buf.length
-                val boundary = ch0 == '\n' || ch0 == '。' || ch0 == '！' || ch0 == '？' ||
-                        ch0 == '!' || ch0 == '?' || ch0 == '；' || ch0 == ';'
-                if (len >= 500 || (len >= 350 && boundary)) {
-                    if (buf.isNotEmpty()) {
-                        chunks.add(Chunk(idx++, ch.index, buf.toString(), bufStart, i))
-                    }
-                    bufStart = i
-                    buf = StringBuilder()
-                }
-            }
-            if (buf.isNotEmpty()) chunks.add(Chunk(idx++, ch.index, buf.toString(), bufStart, ch.end))
+            idx = cut(text, s, e, i, chunks, idx)
         }
         return chapters to chunks
     }

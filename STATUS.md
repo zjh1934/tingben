@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.0.0+15 (115)** · 17,554,312 字节 · 已发布 |
+| 版本 | 1.0.0+15 (115) → **1.0.0+16 待发**（导入按钮 / epub 结构化分章） |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 15 (41739963381) 全绿（原生重编 + APK 闸门 + Release + raw 同步） |
+| CI | run 16 编译中（纯 Kotlin，走原生缓存） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -286,3 +286,60 @@ txt/md 走 UTF-8，乱码比例高时自动换 GBK。主动导入也改走同一
 - 17,554,312 字节 / CRC 全过 / `versionName=1.0.0+15` / 签名不变，**直接覆盖安装**
 - 7 个 arm64 .so、无 .gguf、无 INTERNET
 - `nm -D` 复核 **10 个 JNI 符号**（新增 `nativeCancelReset`）；dex 内含 `Importer` 与 epub 解析逻辑
+
+## R10 · 用户实测：导入按钮点不动 / epub 解析不了 / 按章拆分有没有
+
+三问都成立，而且第二个是**架构错**，不是解析细节没调好。
+
+### ① 导入按钮点不动
+
+`pickBook.launch(arrayOf("text/plain", "*/*"))` 混传具体 + 通配 mime，在小米/MIUI 的
+DocumentsUI 上会静默返回（表现就是点了没反应），且回调里 `uri == null` 直接吞掉，用户看不到任何反馈。
+
+已改：
+- 只传 `arrayOf("*/*")`
+- 抽 `importBook(uri)` 局部函数，主选择器与**兜底选择器**共用；`OpenDocument` contract 抛异常时
+  用显式 `ACTION_OPEN_DOCUMENT` Intent（`StartActivityForResult`）再开一次
+- 点击、取消、失败、导入失败**全写事件日志**并给 Toast，不再静默
+- 导入失败提示里带真实原因（之前一律「换个文件试试」，epub 失败看不出是乱码还是缺 OPF）
+
+### ② epub：之前是「拼成一坨再猜标题」，难怪解析不了
+
+四个硬伤：
+
+1. **章节靠正则猜「第X章」** —— 中文 epub 大量用「楔子 / 序 / Chapter 1 / 一、初遇」，
+   正则全漏 → 整本只剩 1 章 → **按章制作等于不存在**。
+2. **硬解 UTF-8** —— 老中文 epub 的 XHTML 常是 GB2312/GBK，直接满屏乱码。
+3. **`<head>` 整段删掉** —— 标题常在 `<title>` 里，被一起丢了。
+4. **为探测 zip 头二次 `openInputStream`** —— ACTION_SEND 的一次性 URI 第二次开常常失败，
+   无扩展名 epub 被误判成纯文本 → 乱码。
+
+已重写 `Importer`：
+
+- **只读一次流**，读成 bytes 后按 `PK` 头判 zip；`ZipInputStream(ByteArrayInputStream)` 稳定读全部 entry
+- **按 XML 声明 / meta charset 解码**，UTF-8 / GB18030 / Big5 自适应
+- **一个 spine item = 一章**（顺序由 OPF 保证，绝不乱序）；标题优先 `toc.ncx` → `nav.xhtml`
+  → `<h1~h3>` → `<title>` → 文件名 → 「第 N 节」
+- 输出用私有区字符 `\uE000` 打**显式章节边界**；`ChapterSplitter` 见到就按它切，
+  不再依赖任何正则；txt 仍走原正则（并扩展了楔子/序/Chapter N 等常见标题）
+- `<title>` 内容不再混进正文被朗读；spine 里的 `nav.xhtml/toc.ncx` 跳过，不生成「目录」章
+
+### ③ 按章拆分：现在真的有了
+
+制作页原来写死 `chapters.size in 2..40` 才显示勾选列表，长书根本没法选单章。
+改成默认列出 20 章 + 「显示全部 N 章」，几百章也不刷屏；列表项带序号和标题。
+导入 Toast 会显示 `epub · N 章`，一眼能确认拆对了没。
+
+### 本地验证（不是空想）
+
+`samples/解析测试.epub` 故意混排 UTF-8 + GBK、标题用「楔子 / Chapter 2 / 尾声」、
+其中一章没有 `<h>` 只能靠 toc。等价算法跑通：
+**spine 顺序正确、3 章、乱码 0、书名未混进正文、GBK 章中文正常、toc 标题全部命中**。
+
+⚠️ 仍是基础版：不处理 DRM、脚注、图片、CSS、加密字体；复杂嵌套 OPF 可能个别章缺失。
+
+### 待用户复验
+
+1. 书架右上「＋ 导入一本书」点了是否弹出系统文件选择器（不弹会有 Toast 说明原因）
+2. 选 epub → Toast 显示「epub · N 章」→ 进制作页看章节列表标题是否正确、能不能只勾 1 章
+3. 从别的文件 App 对同一 epub 点「打开方式 → 听本」也能加进书架

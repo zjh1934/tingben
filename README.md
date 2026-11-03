@@ -80,6 +80,7 @@ scripts/                    build_native.sh / check_structure.py / publish_apk.p
 ## 如实说
 
 - **CI 全绿、APK 闸门全过**（无 INTERNET、无 .gguf、7 个 arm64 .so、CRC 全检、17MB）；但**真机出声还没人验过**——沙盒没有 NDK/kotlinc/真机，「编译通过」不等于「能用」。
-- 导入支持 txt / md / epub（epub 为基础版：按 OPF spine 顺序取正文、去标签，不处理 DRM / 脚注 / 图片）。PDF、OCR 明确不做。
+- 导入支持 txt / md / epub；**epub 按 OPF spine 结构化分章**，标题取 toc.ncx / nav.xhtml，UTF-8 / GB18030 / Big5 自适应，制作页可按章勾选。基础版不处理 DRM / 脚注 / 图片。PDF、OCR 明确不做。
+- `samples/解析测试.epub` 是故意混排 GBK + UTF-8、含「楔子 / Chapter 2 / 尾声」的回归样本，用来验证解析与分章。
 - `samples/试音短篇.txt`（545 字 / 2 块）建议先跑，验证出声；`samples/旧巷钟声.txt`（4430 字 / 6 章 / 15 块）验证按章与整本。
 - voicedesign 是**单音色**：一个声音演所有情绪，不支持按角色切声线。

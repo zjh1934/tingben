@@ -114,8 +114,13 @@ private fun App(incoming: String? = null) {
     // 之前没接管：用户按一次返回进程就退了，重开又回到书架，正在跑的制作就"找不到"了。
     BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }
 
-    val pickBook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    // R10 · 导入逻辑抽成局部函数，让主选择器与兜底选择器共用。
+    fun importBook(uri: Uri?) {
+        if (uri == null) {
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_PICKER_CANCEL", "系统文件选择器没返回文件")
+            Toast.makeText(ctx, "没选到文件", Toast.LENGTH_SHORT).show()
+            return
+        }
         try {
             ctx.contentResolver.takePersistableUriPermission(
                 uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -127,13 +132,44 @@ private fun App(incoming: String? = null) {
                 if (r == null) {
                     EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL",
                         result.exceptionOrNull()?.message ?: "")
-                    Toast.makeText(ctx, "这本书没读进来，换个文件试试", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, "这本书没读进来：${result.exceptionOrNull()?.message ?: "换个文件试试"}",
+                        Toast.LENGTH_LONG).show()
                 } else {
                     BookStore.add(ctx, r.title, r.text)
                     refresh++
-                    Toast.makeText(ctx, "已加入书架：${r.title}（${r.kind}）",
-                        Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, "已加入书架：${r.title}（${r.kind}）", Toast.LENGTH_SHORT).show()
                 }
+            }
+        }
+    }
+
+    val pickBook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        importBook(uri)
+    }
+
+    // 兜底：某些厂商（小米/MIUI 等）的 DocumentsUI 对 OpenDocument contract 会直接静默返回，
+    // 表现就是「导入按钮点不动」。改用显式 ACTION_OPEN_DOCUMENT Intent 再开一次。
+    val fallbackPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()) { res ->
+        importBook(res.data?.data)
+    }
+
+    fun openBookPicker() {
+        EventLog.log(EventLog.Kind.MODEL, "BOOK_PICKER_LAUNCH", "点击导入一本书")
+        try {
+            // 只传 "*/*"：之前混传 text/plain + */* 在部分文件管理器上会静默失败
+            pickBook.launch(arrayOf("*/*"))
+        } catch (t: Throwable) {
+            EventLog.log(EventLog.Kind.CRASH, "BOOK_PICKER_FAIL", t.message ?: "")
+            try {
+                fallbackPicker.launch(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+                    type = "*/*"
+                    addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                })
+            } catch (t2: Throwable) {
+                Toast.makeText(ctx, "系统文件选择器打不开：${t2.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -189,7 +225,7 @@ private fun App(incoming: String? = null) {
             Text("听本", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Primary)
             Spacer(Modifier.weight(1f))
             if (screen == Screen.LIBRARY) {
-                TextButton(onClick = { pickBook.launch(arrayOf("text/plain", "*/*")) }) { Text("＋ 导入一本书") }
+                TextButton(onClick = { openBookPicker() }) { Text("＋ 导入一本书") }
             }
         }
         Box(Modifier.weight(1f)) {
@@ -197,7 +233,7 @@ private fun App(incoming: String? = null) {
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
                     onOpen = { bookId = it; screen = Screen.PRODUCE },
                     onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
-                    onImportBook = { pickBook.launch(arrayOf("text/plain", "*/*")) },
+                    onImportBook = { openBookPicker() },
                     onChanged = { refresh++ },
                     producing = st.running, progressText = if (st.total > 0) "${st.done}/${st.total} 块" else "",
                     onProgress = { screen = Screen.PROGRESS })
@@ -453,9 +489,14 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             }
             Text(if (selected.isEmpty()) "整本（不勾就是全部）" else "已选 ${selected.size} 章",
                 fontSize = 12.sp, color = Sub)
-            if (chapters.size in 2..40) {
+            // R10 · epub 常有几十上百章，之前写死 2..40 导致长书根本没法选单章。
+            // 改成默认只列 20 章 + 「显示全部」，几百章也不刷屏。
+            var showAllChapters by remember(book) { mutableStateOf(false) }
+            val visibleChapters = if (chapters.size > 20 && !showAllChapters)
+                chapters.take(20) else chapters
+            if (chapters.size >= 2) {
                 Spacer(Modifier.height(8.dp))
-                chapters.forEach { ch ->
+                visibleChapters.forEach { ch ->
                     Row(Modifier.fillMaxWidth().clickable {
                         selected = if (ch.index in selected) selected - ch.index else selected + ch.index
                     }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -463,9 +504,17 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                             selected = if (it) selected + ch.index else selected - ch.index
                         })
                         Spacer(Modifier.width(6.dp))
-                        Text(ch.title.take(28), fontSize = 12.5.sp, maxLines = 1)
+                        Text("${ch.index + 1}. ${ch.title.take(28)}", fontSize = 12.5.sp, maxLines = 1)
                     }
                 }
+                if (chapters.size > 20) {
+                    TextButton(onClick = { showAllChapters = !showAllChapters }) {
+                        Text(if (showAllChapters) "收起" else "显示全部 ${chapters.size} 章")
+                    }
+                }
+            } else {
+                Text("这本书只识别出 1 章，按章制作不可用；可改用整本或换 txt。",
+                    fontSize = 11.sp, color = Sub)
             }
         }
 
