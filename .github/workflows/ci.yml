@@ -1,0 +1,184 @@
+name: 听本 · 构建 APK
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "*.md", "logs/**", "build-report/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+concurrency:
+  group: tingben-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 结构自检
+        run: python3 scripts/check_structure.py
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK 35
+        run: |
+          set +e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SM" ]; then
+            yes | "$SM" --licenses > /dev/null 2>&1
+            "$SM" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools" 2>&1 | tail -20
+          fi
+          ls "$ANDROID_HOME/platforms" | tail -5
+          test -d "$ANDROID_HOME/platforms/android-35"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+          cache-read-only: false
+
+      # 缓存键必须覆盖 JNI 源码 + CMake + 构建脚本 + 上游头文件；
+      # 只缓存 .so 会在跳过编译后报 ggml.h not found。
+      - name: 原生引擎缓存
+        id: ncache
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/jniLibs/arm64-v8a
+            app/src/main/cpp/upstream_include
+          key: tingben-native-v1-${{ hashFiles('scripts/build_native.sh', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/cpp/tingben_native.cpp', 'app/src/main/cpp/llama.h', 'app/src/main/cpp/qwen.h') }}
+
+      - name: 检查缓存完整性
+        id: chk
+        run: |
+          D=app/src/main/jniLibs/arm64-v8a
+          if [ -f "$D/.verified" ] && [ -f "$D/libllama.so" ] && [ -f "$D/libqwen.so" ] && [ -f app/src/main/cpp/upstream_include/ggml.h ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 交叉编译两个推理引擎
+        if: steps.chk.outputs.ok != 'true'
+        continue-on-error: true
+        run: |
+          set +e
+          chmod +x scripts/build_native.sh
+          ./scripts/build_native.sh 2>&1 | tee /tmp/native.log
+          echo "exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          mkdir -p build-report
+          {
+            echo "# 原生引擎 run ${{ github.run_number }}"
+            echo "提交 ${{ github.sha }}"
+            echo
+            echo '## 关键行'
+            echo '```'
+            grep -n -E 'error:|ERROR|::error|没编出|找不到|commit:|\.so:|缺' /tmp/native.log | tail -60
+            echo '```'
+            echo
+            echo '## 结尾 100 行'
+            echo '```'
+            tail -100 /tmp/native.log
+            echo '```'
+          } > "build-report/native-${{ github.run_number }}.md"
+
+      # 没通过符号差集自检就清空 jniLibs，APK 明确降级，绝不发真机 dlopen 会崩的包
+      - name: 引擎守门
+        run: |
+          D=app/src/main/jniLibs/arm64-v8a
+          if [ ! -f "$D/.verified" ] || [ ! -f "$D/libllama.so" ] || [ ! -f "$D/libqwen.so" ] || [ ! -f app/src/main/cpp/upstream_include/ggml.h ]; then
+            echo "::warning::引擎未通过编译/符号自检，APK 降级为纯 Kotlin 包"
+            rm -rf app/src/main/jniLibs
+          else
+            echo "引擎齐备，启用 native build"
+            ls -lh "$D"
+          fi
+
+      - name: assembleDebug
+        id: gradle
+        continue-on-error: true
+        run: |
+          set +e
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+          echo "exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: 编译失败 → 日志回写
+        if: steps.gradle.outputs.exit != '0'
+        run: |
+          set +e
+          mkdir -p logs
+          {
+            echo "# 构建失败 run ${{ github.run_number }}"
+            echo '## 报错行'
+            echo '```'
+            grep -n -E '^e: |error:|Unresolved reference|None of the following|Type mismatch|FAILURE:|What went wrong' /tmp/gradle.log | head -100
+            echo '```'
+            echo '## 前 150 行'
+            echo '```'; head -150 /tmp/gradle.log; echo '```'
+            echo '## 后 200 行'
+            echo '```'; tail -200 /tmp/gradle.log; echo '```'
+          } > "logs/build-${{ github.run_number }}.md"
+          git config user.name "tingben-builder"
+          git config user.email "tingben-builder@users.noreply.github.com"
+          git add -f logs build-report 2>/dev/null
+          git diff --cached --quiet || (git commit -m "ci: 失败日志 run ${{ github.run_number }} [skip ci]" && git push origin HEAD:main)
+          exit 1
+
+      - name: APK 闸门
+        run: |
+          set +e
+          APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)"
+          if [ -z "$APK" ]; then echo "::error::没找到 APK"; exit 1; fi
+          SIZE=$(stat -c%s "$APK")
+          echo "APK: $APK ($SIZE 字节)"
+          if [ "$SIZE" -gt 104857600 ]; then echo "::error::APK 超过 100MB"; exit 1; fi
+          if unzip -l "$APK" | grep -qi '\.gguf'; then echo "::error::APK 里混进了模型权重"; exit 1; fi
+          if [ "$(unzip -l "$APK" | grep -c 'lib/arm64-v8a/')" -eq 0 ]; then
+            echo "::warning::APK 没有原生库（纯 Kotlin 降级包）"
+          else
+            echo "原生库:"; unzip -l "$APK" | grep 'lib/arm64-v8a/' | tail -12
+          fi
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          [ -x "$BT/aapt" ] || BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -name '3*' | sort | tail -1)"
+          echo "--- 权限 ---"
+          "$BT/aapt" dump permissions "$APK" 2>/dev/null | head -20
+          if "$BT/aapt" dump permissions "$APK" 2>/dev/null | grep -q 'android.permission.INTERNET'; then
+            echo "::error::APK 含 INTERNET 权限"; exit 1
+          fi
+          "$BT/aapt" dump badging "$APK" 2>/dev/null | head -8
+          mkdir -p build-report
+          {
+            echo "# 听本构建报告 run ${{ github.run_number }}"
+            echo "提交 ${{ github.sha }} · 版本 1.0.0+${{ github.run_number }}"
+            echo
+            echo "APK: $SIZE 字节 ($(echo "scale=1; $SIZE/1048576" | bc) MB)"
+            echo "无 INTERNET / 无 .gguf / 仅 arm64-v8a / <100MB"
+          } > "build-report/build-${{ github.run_number }}.md"
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tingben-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: 上传构建报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tingben-report
+          path: |
+            build-report/
+            logs/
+          if-no-files-found: ignore
