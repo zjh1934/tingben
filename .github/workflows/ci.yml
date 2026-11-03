@@ -173,6 +173,20 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      - name: 发布 Release（固定最新版直链）
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: 听本 1.0.0+${{ github.run_number }}
+          body: |
+            本地离线把小说变成能听的音频。
+            模型后导入、无 INTERNET 权限、仅 arm64-v8a、APK < 100MB。
+            源码提交 ${{ github.sha }}。
+          files: app/build/outputs/apk/debug/*.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 上传构建报告
         if: always()
         uses: actions/upload-artifact@v4
