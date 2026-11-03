@@ -30,6 +30,10 @@ import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
 import com.tingben.app.diag.EventLog
 import com.tingben.app.engine.NativeEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 private enum class Screen { LIBRARY, PRODUCE, PROGRESS, AUDIO, SETTINGS, MODELS }
@@ -50,9 +54,15 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun App() {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var screen by remember { mutableStateOf(Screen.LIBRARY) }
     var bookId by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
+    var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }
+    var importing by remember { mutableStateOf<String?>(null) }
+    val importBytesFlow = remember { MutableStateFlow(0L) }
+    val importBytes by importBytesFlow.collectAsState()
+    var importError by remember { mutableStateOf<String?>(null) }
 
     val pickBook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -61,20 +71,55 @@ private fun App() {
                     uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Throwable) { }
             val name = queryName(ctx, uri).removeSuffix(".txt").ifBlank { "未命名" }
-            val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            if (text.isNullOrBlank()) Toast.makeText(ctx, "这个文件里没有文字", Toast.LENGTH_SHORT).show()
-            else { BookStore.add(ctx, name, text); refresh++ }
+            try {
+                val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                if (text.isNullOrBlank()) Toast.makeText(ctx, "这个文件里没有文字", Toast.LENGTH_SHORT).show()
+                else { BookStore.add(ctx, name, text); refresh++ }
+            } catch (t: Throwable) {
+                EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL", t.message ?: "")
+                Toast.makeText(ctx, "这本书没读进来，换个文件试试", Toast.LENGTH_SHORT).show()
+            }
         }
     }
+    // 关键：2.5GB 的复制绝不能在主线程做，否则系统会按 ANR 杀掉进程。
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "model.gguf"
-            val stream = ctx.contentResolver.openInputStream(uri)
-            if (stream != null) {
-                ModelStore.import(ctx, name, stream)
-                stream.close()
-                Toast.makeText(ctx, "已导入，可以回书架了", Toast.LENGTH_SHORT).show()
-                refresh++
+        if (uri == null) return@rememberLauncherForActivityResult
+        try {
+            ctx.contentResolver.takePersistableUriPermission(
+                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Throwable) { }
+        val name = queryName(ctx, uri).ifBlank {
+            uri.lastPathSegment?.substringAfterLast('/') ?: "model.gguf"
+        }
+        importing = name
+        importBytesFlow.value = 0L
+        importError = null
+        EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT_BEGIN", name)
+        scope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                ctx.contentResolver.openInputStream(uri)?.use { s ->
+                    ModelStore.import(ctx, name, s) { n -> importBytesFlow.value = n }
+                } ?: throw IllegalStateException("打不开这个文件")
+            }
+            withContext(Dispatchers.Main) {
+                importing = null
+                val err = result.exceptionOrNull()
+                if (err != null) {
+                    importError = err.message ?: "导入失败"
+                    Toast.makeText(ctx, "没导入成功：${importError}", Toast.LENGTH_LONG).show()
+                } else {
+                    refresh++
+                    val left = ModelStore.missing(ctx)
+                    if (left.isEmpty()) {
+                        // 三个齐了就别让用户自己找「下一步」，直接回到主路
+                        screen = Screen.LIBRARY
+                        Toast.makeText(ctx, "模型都齐了，导入一本书就能开始", Toast.LENGTH_LONG).show()
+                    } else {
+                        val leftText = left.joinToString("、")
+                        Toast.makeText(ctx, "已导入，还差 ${left.size} 个：$leftText",
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
     }
@@ -95,17 +140,23 @@ private fun App() {
             when (screen) {
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
                     onOpen = { bookId = it; screen = Screen.PRODUCE },
-                    onModels = { screen = Screen.MODELS })
+                    onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
+                    onImportBook = { pickBook.launch(arrayOf("text/plain", "*/*")) })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
                     onDone = { screen = Screen.AUDIO })
                 Screen.PROGRESS -> ProgressScreen(onBack = { screen = Screen.PRODUCE })
                 Screen.AUDIO -> AudioScreen(ctx, refresh)
-                Screen.SETTINGS -> SettingsScreen(ctx, refresh, onModels = { screen = Screen.MODELS })
+                Screen.SETTINGS -> SettingsScreen(ctx, refresh,
+                    onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
+                    onLibrary = { screen = Screen.LIBRARY })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
+                    importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },
-                    onBack = { screen = Screen.SETTINGS })
+                    onBack = { screen = modelsFrom },
+                    onLibrary = { screen = Screen.LIBRARY },
+                    onChanged = { refresh++ })
             }
         }
         // 底栏 3 个 Tab：制作/进度挂在书架底下，不另开平铺 Tab
@@ -148,7 +199,8 @@ private fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.(
 
 // ── ① 书架 ──────────────────────────────────────────────────
 @Composable
-private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit, onModels: () -> Unit) {
+private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
+                           onModels: () -> Unit, onImportBook: () -> Unit) {
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -165,12 +217,22 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit, on
                 Spacer(Modifier.height(8.dp))
                 FilledTonalButton(onClick = onModels, Modifier.fillMaxWidth()) { Text("去准备") }
             }
+        } else if (books.isEmpty()) {
+            CardBox(Modifier.padding(bottom = 12.dp)) {
+                Text("模型都齐了 ✓", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Good)
+                Spacer(Modifier.height(4.dp))
+                Text("下一步：导入一本 txt 小说。", fontSize = 12.sp, color = Sub)
+            }
         }
         if (books.isEmpty()) {
             CardBox {
                 Text("书架还是空的", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(Modifier.height(4.dp))
-                Text("点右上角「＋ 导入一本书」，选一个 txt 文件就行。", fontSize = 12.sp, color = Sub)
+                Text("选一个 txt 文件就行，也可以粘贴文字。", fontSize = 12.sp, color = Sub)
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("导入一本书", fontSize = 15.sp)
+                }
             }
         } else {
             books.forEach { b ->
@@ -362,7 +424,7 @@ private fun AudioScreen(c: Context, refresh: Int) {
 
 // ── ⑤ 设置 ──────────────────────────────────────────────────
 @Composable
-private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit) {
+private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLibrary: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val missing = remember(refresh) { ModelStore.missing(c) }
     var advanced by remember { mutableStateOf(false) }
@@ -377,6 +439,10 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit) {
                 fontSize = 12.5.sp, color = if (missing.isEmpty()) Good else Sub)
             Spacer(Modifier.height(9.dp))
             FilledTonalButton(onClick = onModels, Modifier.fillMaxWidth()) { Text("导入 / 查看模型") }
+            if (missing.isEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = onLibrary, Modifier.fillMaxWidth().height(46.dp)) { Text("去书架制作") }
+            }
         }
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Text("关于", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -399,6 +465,10 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit) {
                             .append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "").append('\n')
                         append("引擎 ").append(if (NativeEngine.isAvailable()) NativeEngine.version() else "未装载").append('\n')
                         append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
+                        val crash = EventLog.lastCrash()
+                        if (crash.isNotBlank()) {
+                            append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
+                        }
                         append("最近事件（不含正文）：\n")
                         append(EventLog.read().lines().takeLast(30).joinToString("\n"))
                     }
@@ -410,22 +480,58 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit) {
     }
 }
 
-// ── ⑤b 模型页（只有缺文件时才来） ─────────────────────────────
+// ── ⑤b 模型页 ────────────────────────────────────────────────
 @Composable
-private fun ModelScreen(c: Context, refresh: Int, onPick: () -> Unit, onBack: () -> Unit) {
+private fun ModelScreen(c: Context, refresh: Int,
+                        importing: String?, importBytes: Long, importError: String?,
+                        onPick: () -> Unit, onBack: () -> Unit, onLibrary: () -> Unit,
+                        onChanged: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val files = remember(refresh) { ModelStore.files(c) }
     val missing = remember(refresh) { ModelStore.missing(c) }
+    val allReady = missing.isEmpty()
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("← 设置") }
-        Text("准备模型", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        TextButton(onClick = onBack) { Text("← 返回") }
+        Text(if (allReady) "准备好了" else "准备模型", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("三个文件下好后在浏览器/文件管理器里选中，回这里导入一次就行。", fontSize = 12.5.sp, color = Sub)
+        Text(
+            if (allReady) "三个模型都在手机里了，接下来导入一本书。"
+            else "还差 ${missing.size} 个文件。下好后在文件管理器里选中，回这里导入。",
+            fontSize = 12.5.sp, color = Sub)
         Spacer(Modifier.height(14.dp))
-        CardBox(Modifier.padding(bottom = 11.dp)) {
-            Text(if (missing.isEmpty()) "都齐了，可以回书架制作" else "还差 ${missing.size} 个文件",
-                fontWeight = FontWeight.Bold, color = if (missing.isEmpty()) Good else Primary)
+
+        // 导入中：明确告诉用户「别关」，而不是一片静默像死机
+        if (importing != null) {
+            CardBox(Modifier.padding(bottom = 11.dp)) {
+                Text("正在复制，别关掉 App", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Primary)
+                Spacer(Modifier.height(5.dp))
+                Text("已复制 %.2f GB".format(importBytes / 1024f / 1024f / 1024f),
+                    fontSize = 12.sp, color = Sub)
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(5.dp))
+                Spacer(Modifier.height(5.dp))
+                Text("文件很大，可能要一两分钟。", fontSize = 11.5.sp, color = Sub)
+            }
         }
+        if (importError != null) {
+            CardBox(Modifier.padding(bottom = 11.dp)) {
+                Text("上一个文件没导入成功", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(importError, fontSize = 12.sp, color = Sub)
+                Spacer(Modifier.height(5.dp))
+                Text("文件可能没下完整，重新下载再导入一次；也可以先重启 App。", fontSize = 11.5.sp, color = Sub)
+            }
+        }
+
+        // 下一步永远是一个显眼的主按钮，不让用户自己找路
+        if (allReady) {
+            Button(onClick = onLibrary, Modifier.fillMaxWidth().height(52.dp)) {
+                Text("回书架，导入一本书", fontSize = 16.sp)
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+
         val slots = listOf(
             "语言模型" to ModelStore.LLM,
             "声音主文件" to ModelStore.TALKER,
@@ -443,7 +549,7 @@ private fun ModelScreen(c: Context, refresh: Int, onPick: () -> Unit, onBack: ()
                     Spacer(Modifier.height(4.dp))
                     Text("%.2f GB".format(f.length() / 1024f / 1024f / 1024f), fontSize = 11.sp, color = Sub)
                     Spacer(Modifier.height(4.dp))
-                    TextButton(onClick = { ModelStore.delete(c, f) }) { Text("删除重试", color = Sub) }
+                    TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) { Text("删除重试", color = Sub) }
                 } else {
                     Spacer(Modifier.height(5.dp))
                     TextButton(onClick = {
@@ -459,13 +565,15 @@ private fun ModelScreen(c: Context, refresh: Int, onPick: () -> Unit, onBack: ()
             }
         }
         Spacer(Modifier.height(6.dp))
-        Button(onClick = onPick, Modifier.fillMaxWidth().height(50.dp)) { Text("导入模型文件") }
+        Button(onClick = onPick, enabled = importing == null,
+            modifier = Modifier.fillMaxWidth().height(50.dp)) {
+            Text(if (allReady) "重新导入某个文件" else "导入模型文件")
+        }
         Spacer(Modifier.height(8.dp))
         Text("App 自己不联网下载。复制地址到浏览器或用电脑下好，再点上面导入。", fontSize = 11.5.sp, color = Sub)
         if (files.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            Text("已导入的文件（给开发排查用）", fontSize = 11.sp, color = Sub)
-            files.forEach { Text("· " + it.name, fontSize = 10.5.sp, color = Sub) }
+            Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
         }
     }
 }

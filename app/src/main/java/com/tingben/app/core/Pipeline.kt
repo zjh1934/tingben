@@ -81,19 +81,60 @@ object ModelStore {
         dir(c).listFiles()?.filter { it.isFile && it.name.endsWith(".gguf") }?.sortedBy { it.name } ?: emptyList()
     } catch (_: Throwable) { emptyList() }
 
-    /** 把 SAF 选中的文件复制进私有目录；同名覆盖。 */
-    fun import(c: Context, name: String, bytes: java.io.InputStream): File {
+    /**
+     * 把 SAF 选中的文件复制进私有目录；同名覆盖。
+     * 必须流式、必须在后台线程调用、必须写 .part 再原子改名：
+     * 2.5GB 一次性读进内存会 OOM，主线程同步复制会 ANR 被系统杀掉。
+     */
+    fun import(c: Context, name: String, source: java.io.InputStream,
+               onProgress: (Long) -> Unit = {}): File {
         val safe = name.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .let { if (it.endsWith(".gguf", true)) it else "$it.gguf" }
         val tmp = File(dir(c), "$safe.part")
         val out = File(dir(c), safe)
-        tmp.outputStream().use { o -> bytes.copyTo(o) }
-        if (out.exists()) out.delete()
-        tmp.renameTo(out)
-        EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT", "$safe ${out.length()}")
-        return out
+        try {
+            tmp.outputStream().buffered(64 * 1024).use { o ->
+                val buf = ByteArray(64 * 1024)
+                var total = 0L
+                var lastReport = 0L
+                while (true) {
+                    val n = source.read(buf)
+                    if (n < 0) break
+                    o.write(buf, 0, n)
+                    total += n
+                    if (total - lastReport >= 8L * 1024 * 1024) {
+                        lastReport = total
+                        onProgress(total)
+                    }
+                }
+                o.flush()
+                onProgress(total)
+            }
+            if (tmp.length() == 0L) throw IllegalStateException("选到的文件是空的")
+            if (out.exists() && !out.delete()) throw IllegalStateException("旧文件删不掉")
+            if (!tmp.renameTo(out)) throw IllegalStateException("文件没能保存")
+            EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT", "$safe ${out.length()}")
+            return out
+        } catch (t: Throwable) {
+            tmp.delete()   // 半截文件绝不留下来被当成就绪
+            val reason = t.message ?: ""
+            EventLog.log(EventLog.Kind.CRASH, "MODEL_IMPORT_FAIL",
+                "$safe ${t.javaClass.simpleName}: $reason")
+            throw t
+        }
     }
 
     fun delete(c: Context, f: File) { f.delete(); EventLog.log(EventLog.Kind.MODEL, "MODEL_DELETE", f.name) }
+
+    /** 上次导入被系统中断留下的半截文件，清掉，绝不被当成就绪。 */
+    fun cleanup(c: Context) {
+        try {
+            dir(c).listFiles()?.filter { it.isFile && it.name.endsWith(".part") }?.forEach {
+                EventLog.log(EventLog.Kind.MODEL, "PART_DISCARD", "${it.name} ${it.length()}")
+                it.delete()
+            }
+        } catch (_: Throwable) { }
+    }
 
     private fun pick(c: Context, exact: String, vararg hints: String): File? {
         val all = files(c)
