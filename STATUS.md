@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0+7 (107) → 修复版待 run 8 发布 |
+| 版本 | **1.0.0+8 (108)** · 17,503,968 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 7 (41694800538) 全绿；run 8 修真机导入闪退中 |
+| CI | run 8 (41698752044) 全绿；APK 闸门 / Release / raw 直链同步全过 |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -39,4 +39,11 @@
 - 导入 2.5GB 模型时闪退：主线程同步复制导致 ANR 被杀 → 已改后台 IO + 进度 + 异常兜底
 - 导入完不知道下一步：模型页缺跳转按钮 → 齐了自动回书架 + 三处主按钮
 - 诊断日志现在会带「最近一次崩溃」完整堆栈
-- **仍待用户复验**：装新版 → 删掉旧模型重新导入一次 → 看是否还闪退、是否自动回书架
+- **仍待用户复验**：装新版（旧模型文件会保留，不用重导）→ 书架导入一本书 → 点开始制作 → 看是否出声
+
+### 发布记录（R3）
+
+- `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
+- 17,503,968 字节 / CRC 全过 / 签名 `CN=MoTing Debug` 不变，**直接覆盖安装**
+- APK 内 `versionName=1.0.0+8` 已从 binary Manifest 读出确认
+- 7 个 arm64 .so、无 .gguf、无 INTERNET
