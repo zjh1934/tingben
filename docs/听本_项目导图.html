@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>听本 · 项目导图</title>
+<style>
+:root{--ink:#1B1A20;--sub:#605C6B;--line:#D8D3E2;--bg:#F4F2F8;--card:#fff;
+--p:#5B4B8A;--p2:#EDE7FA;--ok:#1E6B4A;--okbg:#E4F4EA;--warn:#8A5A00;--warnbg:#FFF3DC;
+--blue:#2E5D8A;--bluebg:#E6F0FA;--red:#A32A20;--redbg:#FDEAE7;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "Noto Sans SC","WenQuanYi Micro Hei","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 16px 70px}
+header{background:linear-gradient(120deg,#2B2440,#4A3C72);color:#fff;border-radius:18px;padding:26px 28px;box-shadow:0 8px 26px rgba(40,28,80,.18)}
+header h1{margin:0 0 6px;font-size:27px;letter-spacing:1px}
+header .sub{color:#D5CCEA;font-size:13.5px;margin:0}
+header .goal{margin-top:16px;background:rgba(255,255,255,.11);border-left:4px solid #B9A6F0;border-radius:8px;padding:12px 14px;font-size:13.5px}
+header .goal b{color:#fff}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 4px}
+.meta span{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--sub)}
+h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--p)}
+.note{font-size:12.5px;color:var(--sub);margin:-4px 0 12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:18px;box-shadow:0 2px 8px rgba(40,28,80,.05)}
+
+/* 主路 */
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+.step{flex:1;min-width:128px;position:relative;padding:0 9px}
+.step .box{background:var(--p2);border:1px solid #D3C7EE;border-radius:11px;padding:12px 10px;height:100%}
+.step .n{font-size:10.5px;color:var(--p);font-weight:800;letter-spacing:.5px}
+.step .t{font-size:13.5px;font-weight:700;margin:3px 0 4px}
+.step .d{font-size:11px;color:var(--sub);line-height:1.5}
+.step:not(:last-child):after{content:"→";position:absolute;right:-7px;top:38%;font-size:17px;color:var(--p);z-index:2}
+.step.hero .box{background:var(--p);border-color:var(--p);color:#fff}
+.step.hero .n,.step.hero .d{color:#E5DCFA}
+
+/* 四层 */
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:13px}
+.layer{border:1px solid var(--line);border-radius:13px;overflow:hidden;background:#FCFAFF}
+.layer .h{padding:11px 13px;background:#F0ECF9;border-bottom:1px solid var(--line)}
+.layer .h .who{font-size:13.5px;font-weight:800;color:var(--p)}
+.layer .h .lic{font-size:10.5px;color:var(--sub)}
+.layer .b{padding:12px 13px;font-size:12px}
+.layer .b .row{display:flex;gap:7px;margin:5px 0;align-items:flex-start}
+.layer .b .row i{font-style:normal;color:var(--ok);font-weight:800}
+.layer .arrow{text-align:center;color:var(--p);font-size:16px;margin:2px 0}
+.layer .out{background:var(--okbg);border-radius:8px;padding:8px 10px;font-size:11.5px;color:#17533A;margin-top:8px}
+.mergepath{text-align:center;background:var(--p);color:#fff;border-radius:11px;padding:11px;margin-top:14px;font-weight:700;font-size:13.5px}
+
+/* 两列 */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:860px){.two{grid-template-columns:1fr}}
+.tree{font:12px/1.85 ui-monospace,Menlo,Consolas,monospace;white-space:pre;overflow:auto;background:#FBF9FE;border:1px solid var(--line);border-radius:10px;padding:13px}
+.tree b{color:var(--p)}
+.ui{display:flex;flex-direction:column;gap:8px}
+.page{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:#FCFAFF}
+.page .idx{width:24px;height:24px;flex:none;border-radius:7px;background:var(--p);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800}
+.page .pt{font-size:13px;font-weight:700}
+.page .pd{font-size:11.5px;color:var(--sub)}
+.page .tag{margin-left:auto;font-size:10px;border-radius:999px;padding:2px 8px;background:var(--okbg);color:var(--ok);white-space:nowrap}
+
+/* 闸门 */
+.gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.gate{border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:9px;padding:10px 12px;background:#fff;font-size:12px}
+.gate b{display:block;font-size:12.5px;margin-bottom:2px}
+.gate span{color:var(--sub);font-size:11.5px}
+.redline{background:var(--redbg);border:1px solid #F3C4BE;border-left:4px solid var(--red);border-radius:10px;padding:12px 14px;margin-top:16px;font-size:12.5px;color:#7A221B}
+.warn{background:var(--warnbg);border:1px solid #EED9A8;border-left:4px solid var(--warn);border-radius:10px;padding:12px 14px;margin-top:12px;font-size:12.5px;color:#6B4708}
+footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>听本 · 项目导图</h1>
+  <p class="sub">从零重做 ｜ 四层移植 ｜ 唯一主路 ｜ 交付一个能跑通、像样的软件</p>
+  <div class="goal"><b>一句话产品：</b>把一本小说变成能听的音频。用户只需要「导入一本书 → 点一次开始 → 听」。
+  <b>交付标准：</b>代码同步到新 GitHub 仓库 + CI 打出可直接覆盖安装的 APK + 真机能出声。</div>
+</header>
+
+<div class="meta">
+  <span>新目录 /data/workspace/听本</span><span>源码仓 zjh1934/tingben-android</span>
+  <span>APK 仓 zjh1934/tingben-apk</span><span>包名 com.tingben.app</span>
+  <span>APK ≤ 100MB</span><span>无 INTERNET</span><span>仅 arm64-v8a</span>
+</div>
+
+<h2>① 唯一主路（先冻结，再写代码）</h2>
+<div class="panel">
+<div class="flow">
+  <div class="step"><div class="box"><div class="n">01</div><div class="t">打开</div><div class="d">首屏永远是「我的书」，不是缺模型提示</div></div></div>
+  <div class="step"><div class="box"><div class="n">02</div><div class="t">导入</div><div class="d">系统文件选择器选 .txt，SAF 持久 URI</div></div></div>
+  <div class="step"><div class="box"><div class="n">03</div><div class="t">拆章</div><div class="d">按章节/500 字切块，记字符偏移</div></div></div>
+  <div class="step hero"><div class="box"><div class="n">04 · 唯一主按钮</div><div class="t">开始制作</div><div class="d">点一次，后面全部自动跑完</div></div></div>
+  <div class="step"><div class="box"><div class="n">05</div><div class="t">看着它做</div><div class="d">第几章 / 已完成几块 / 失败几块（人话）</div></div></div>
+  <div class="step"><div class="box"><div class="n">06</div><div class="t">听</div><div class="d">「我的音频」里点开就播</div></div></div>
+</div>
+<div class="redline"><b>三条红线：</b>① 正文一个字不改（字符级 gate）② 用户第一次听到声音前看不见任何 .gguf 文件名 / SHA / token 数 / 调试页 ③ 一屏一个主操作，做完前不摆结果区。</div>
+</div>
+
+<h2>② 四层移植 · 扒谁、抄什么、加工成什么</h2>
+<p class="note">不是整包微调：四个项目分处 PC Python / Rust CLI / Android 聊天 App / Android 阅读器，没有一个能直接装。按层扒核心，再串成一条链。</p>
+<div class="layers">
+
+<div class="layer">
+  <div class="h"><div class="who">OfflineLLM</div><div class="lic">Apache-2.0 · Android 底座</div></div>
+  <div class="b">
+    <div class="row"><i>✓</i><span>无 INTERNET 权限的 Manifest</span></div>
+    <div class="row"><i>✓</i><span>仅 arm64-v8a + largeHeap</span></div>
+    <div class="row"><i>✓</i><span>SAF 导入任意 GGUF</span></div>
+    <div class="row"><i>✓</i><span>llama.cpp JNI 生命周期 / 版本目录</span></div>
+    <div class="row"><i>✓</i><span>thinking 标签剥离</span></div>
+    <div class="arrow">↓ 加工</div>
+    <div class="out">工程骨架：Gradle / Manifest / JNI 胶水 / 模型导入</div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="h"><div class="who">Alexandria</div><div class="lic">MIT · PC Python · 标注契约</div></div>
+  <div class="b">
+    <div class="row"><i>✓</i><span>speaker / text / instruct 三段 JSON</span></div>
+    <div class="row"><i>✓</i><span>500 字同角色合并分块</span></div>
+    <div class="row"><i>✓</i><span>角色表 + 最近 3 条跨块上下文</span></div>
+    <div class="row"><i>✓</i><span>JSON 修复四级降级</span></div>
+    <div class="row"><i>✓</i><span>复核 pass（我们关掉，它会改字）</span></div>
+    <div class="arrow">↓ 加工</div>
+    <div class="out">中文 prompt + 字符级逐字 gate（Alexandria 没有，我们加）</div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="h"><div class="who">Antioch</div><div class="lic">MIT · Rust CLI · 引擎组合</div></div>
+  <div class="b">
+    <div class="row"><i>✓</i><span>llama.cpp + qwentts.cpp 同栈</span></div>
+    <div class="row"><i>✓</i><span>逐块 WAV，写完立即落盘</span></div>
+    <div class="row"><i>✓</i><span>重跑跳过已完成块（断点）</span></div>
+    <div class="row"><i>✓</i><span>WAV 拼接 / 章节样本数</span></div>
+    <div class="row"><i>✓</i><span>两 ggml 共享符号的踩坑记录</span></div>
+    <div class="arrow">↓ 加工</div>
+    <div class="out">合成队列 + checkpoint.json + WAV 合并器</div>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="h"><div class="who">ReaderVoice-Mobile</div><div class="lic">Android · 产品不变量</div></div>
+  <div class="b">
+    <div class="row"><i>✓</i><span>原文永不修改，只建 source map</span></div>
+    <div class="row"><i>✓</i><span>UNKNOWN 合法，禁止强造角色名</span></div>
+    <div class="row"><i>✓</i><span>播放窗口优先于未来生成</span></div>
+    <div class="row"><i>✓</i><span>进程被杀只丢当前批</span></div>
+    <div class="row"><i>✓</i><span>「能跑」≠「通过」，最终 PCM Gate</span></div>
+    <div class="arrow">↓ 加工</div>
+    <div class="out">状态机 + 不变量测试 + 5 页信息架构</div>
+  </div>
+</div>
+
+</div>
+<div class="mergepath">四层汇入 → 自己只剩：Kotlin 编排 + CI + 中文 prompt + 逐字 gate + 5 页 UI</div>
+
+<h2>③ 数据流水线 · 串起来之后长这样</h2>
+<div class="panel">
+<div class="tree"><b>txt</b> ──SAF持久URI──▶ <b>ChapterSplitter</b>（章节 / 500字 / [start,end) 偏移）
+   │
+   ├─ <b>标注阶段</b>（只加载 LLM，llama.cpp JNI）
+   │    prompt_zh.txt + 角色表 + 最近3条 ──▶ Qwen3-4B ──▶ JSON[]
+   │    ├─ JSON 修复四级
+   │    └─ <b>逐字 gate</b>：concat(text) == 本块原文 ?
+   │         ├─ 是 ─▶ 写入 annotations.jsonl
+   │         └─ 否 ─▶ 重试1次 ─▶ 仍否 ─▶ <b>降级直读</b>（原文照读，不静音）
+   │
+   ├─ <b>llmFree → ttsLoad</b>（两个模型串行，绝不同时常驻）
+   │
+   ├─ <b>合成阶段</b>（qwentts.cpp JNI，24kHz 单声道 PCM）
+   │    每块 ─▶ chunk_NNNN.wav（原子落盘）──▶ checkpoint.json
+   │
+   ├─ <b>合并</b>：按序号拼 PCM + 重写 WAV 头 + chapters.json
+   │
+   └─ <b>播放 / 导出</b> ──▶ 我的音频
+</div>
+<div class="warn"><b>旧项目真机事故带走的一条：</b>两个上游各产一套 libggml*.so，同名互相覆盖 → <code>dlopen failed: ggml_top_k_mask</code>。新工程只保留 llama.cpp 那一套 ggml，libqwen.so 共用；CI 做 UND 符号差集自检，不给「编译成功」盖章就发包的假绿留门。</div>
+</div>
+
+<h2>④ 界面 · 首版上限 5 页</h2>
+<div class="two">
+<div class="panel">
+<div class="ui">
+  <div class="page"><span class="idx">1</span><div><div class="pt">书架</div><div class="pd">书列表 + 右上「＋」，一句话价值说明</div></div><span class="tag">主对象</span></div>
+  <div class="page"><span class="idx">2</span><div><div class="pt">制作</div><div class="pd">选章 + 一个「开始制作」+ 人话进度</div></div><span class="tag">唯一主操作</span></div>
+  <div class="page"><span class="idx">3</span><div><div class="pt">进度</div><div class="pd">第几章 / 已完成几块 / 失败几块</div></div><span class="tag">L0 日志</span></div>
+  <div class="page"><span class="idx">4</span><div><div class="pt">我的音频</div><div class="pd">点开就播、保存到手机</div></div><span class="tag">成品</span></div>
+  <div class="page"><span class="idx">5</span><div><div class="pt">设置</div><div class="pd">默认 3 项：模型、思考、关于</div></div><span class="tag">折叠</span></div>
+</div>
+<div class="redline" style="margin-top:12px"><b>收进「高级」且默认不可见：</b>试跑按钮、诊断日志、调试页、检查准备状态、任务包 ①②③、合成块清单、模型文件名与 SHA、native token 事件流。旧项目就是把这些摊在 12 个页面上，所以不像给人用的。</div>
+</div>
+
+<div class="panel">
+<div class="tree"><b>听本/</b>
+├── <b>app/src/main/</b>
+│   ├── AndroidManifest.xml        无 INTERNET / largeHeap
+│   ├── java/com/tingben/app/
+│   │   ├── TingbenApp.kt
+│   │   ├── MainActivity.kt         5 页导航
+│   │   ├── engine/
+│   │   │   ├── NativeEngine.kt    JNI 声明
+│   │   │   └── EngineRuntime.kt   串行加载/释放
+│   │   ├── pipeline/
+│   │   │   ├── ChapterSplitter.kt 分块 + 偏移
+│   │   │   ├── Annotator.kt       prompt/JSON修复/逐字gate
+│   │   │   ├── Synthesizer.kt     逐块 WAV + 断点
+│   │   │   ├── WavMerger.kt       拼接
+│   │   │   └── Producer.kt        一键编排（唯一入口）
+│   │   ├── data/  BookStore / ModelStore / Checkpoint
+│   │   └── ui/    Library / Produce / Progress / Audio / Settings
+│   ├── cpp/  CMakeLists · tingben_native.cpp · llama.h · qwen.h
+│   └── res/
+├── <b>contracts/</b>  model-manifest.json · prompt_zh.txt · pipeline_spec.md
+├── <b>reference/精选/</b>  15 个扒下来的核心文件（含 LICENSE）
+├── <b>scripts/</b>  build_native.sh · check_structure.py
+└── <b>.github/workflows/</b>  ci.yml（编译→自检→签名→发布 APK）
+</div>
+</div>
+</div>
+
+<h2>⑤ 交付闸门 · 没过就不算做完</h2>
+<div class="gates">
+<div class="gate"><b>G1 · 代码同步</b><span>新仓库 main 分支有全部源码，旧仓库一行不动</span></div>
+<div class="gate"><b>G2 · CI 干净通过</b><span>原生交叉编译 + Kotlin 编译 + 自检全绿</span></div>
+<div class="gate"><b>G3 · APK 合规</b><span>无 INTERNET / 无 .gguf / 仅 arm64 / &lt;100MB / 固定签名</span></div>
+<div class="gate"><b>G4 · 公开直链</b><span>浏览器直接下，覆盖安装不卸载</span></div>
+<div class="gate"><b>G5 · 逐字保真</b><span>100 段模型输出拼接 == 原文（单测）</span></div>
+<div class="gate"><b>G6 · 真机出声</b><span>导入书 → 点一次 → 能听（只有你能验）</span></div>
+</div>
+<div class="warn"><b>如实说：</b>G5 我能用单测证明，G6 只有你在真机上点过才算。沙盒没有 kotlinc/gradle/ndk，编译只能走 GitHub Actions；「编译通过」永远不等于「真机能用」。</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成</footer>
+</div>
+</body>
+</html>
