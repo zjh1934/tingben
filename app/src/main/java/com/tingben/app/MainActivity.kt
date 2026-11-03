@@ -141,7 +141,8 @@ private fun App() {
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
                     onOpen = { bookId = it; screen = Screen.PRODUCE },
                     onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
-                    onImportBook = { pickBook.launch(arrayOf("text/plain", "*/*")) })
+                    onImportBook = { pickBook.launch(arrayOf("text/plain", "*/*")) },
+                    onChanged = { refresh++ })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
@@ -159,8 +160,8 @@ private fun App() {
                     onChanged = { refresh++ })
             }
         }
-        // 底栏 3 个 Tab：制作/进度挂在书架底下，不另开平铺 Tab
-        Row(Modifier.fillMaxWidth().background(Card).padding(vertical = 6.dp)) {
+        // 底栏 3 个 Tab：避开系统三键导航栏，别和返回键叠在一起
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().background(Card).padding(vertical = 6.dp)) {
             TabButton("书架", screen == Screen.LIBRARY || screen == Screen.PRODUCE || screen == Screen.PROGRESS,
                 Modifier.weight(1f)) { screen = Screen.LIBRARY }
             TabButton("我的音频", screen == Screen.AUDIO, Modifier.weight(1f)) { screen = Screen.AUDIO; refresh++ }
@@ -200,9 +201,14 @@ private fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.(
 // ── ① 书架 ──────────────────────────────────────────────────
 @Composable
 private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
-                           onModels: () -> Unit, onImportBook: () -> Unit) {
+                           onModels: () -> Unit, onImportBook: () -> Unit,
+                           onChanged: () -> Unit) {
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
+    val clipboard = LocalClipboardManager.current
+    var pasteOpen by remember { mutableStateOf(false) }
+    var pasteTitle by remember { mutableStateOf("") }
+    var pasteText by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("把小说变成能听的音频", fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
@@ -221,7 +227,54 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             CardBox(Modifier.padding(bottom = 12.dp)) {
                 Text("模型都齐了 ✓", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Good)
                 Spacer(Modifier.height(4.dp))
-                Text("下一步：导入一本 txt 小说。", fontSize = 12.sp, color = Sub)
+                Text("下一步：导入一本 txt 小说，或直接粘贴一段文字。", fontSize = 12.sp, color = Sub)
+            }
+        }
+
+        // 没有现成文件时，粘贴是第二条路：默认收起，不占首屏主按钮
+        TextButton(onClick = { pasteOpen = !pasteOpen }) {
+            Text(if (pasteOpen) "收起粘贴框" else "没有文件？粘贴一段文字",
+                fontSize = 12.5.sp, color = Primary)
+        }
+        if (pasteOpen) {
+            CardBox(Modifier.padding(bottom = 12.dp)) {
+                OutlinedTextField(
+                    value = pasteTitle,
+                    onValueChange = { pasteTitle = it },
+                    label = { Text("书名（可以不填）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = pasteText,
+                    onValueChange = { pasteText = it },
+                    label = { Text("把小说文字粘在这里") },
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp)
+                )
+                Spacer(Modifier.height(9.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalButton(onClick = {
+                        val got = clipboard.getText()?.text ?: ""
+                        if (got.isNotBlank()) pasteText = got
+                        else Toast.makeText(c, "剪贴板里没有文字", Toast.LENGTH_SHORT).show()
+                    }) { Text("粘贴") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (pasteText.isBlank()) {
+                                Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
+                            } else {
+                                BookStore.add(c, pasteTitle.trim().ifBlank { "粘贴的文字" }, pasteText)
+                                pasteText = ""; pasteTitle = ""; pasteOpen = false
+                                onChanged()
+                                Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("用这段文字建一本书") }
+                }
             }
         }
         if (books.isEmpty()) {

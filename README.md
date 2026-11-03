@@ -17,7 +17,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ## 用起来就四步
 
 1. 装包，第一次进设置页 →「导入 / 查看模型」→ 导入三个 GGUF（约 5GB，App 自己不联网）
-2. 书架右上「＋ 导入一本书」→ 选一个 txt
+2. 书架右上「＋ 导入一本书」→ 选一个 txt（仓库 `samples/` 里有两本现成的测试用书），或点「没有文件？粘贴一段文字」直接粘
 3. 点书卡的「制作有声书」→（可选勾几章）→ 点**一次**「开始制作」
 4. 进度页看着它做完 →「我的音频」里点「试听」或「保存到手机」
 
@@ -69,5 +69,6 @@ scripts/                    build_native.sh / check_structure.py / publish_apk.p
 ## 如实说
 
 - **CI 全绿、APK 闸门全过**（无 INTERNET、无 .gguf、7 个 arm64 .so、CRC 全检、17MB）；但**真机出声还没人验过**——沙盒没有 NDK/kotlinc/真机，「编译通过」不等于「能用」。
-- 首版导入只支持 txt；PDF、OCR、epub 明确不做/二期。
+- 首版导入只支持 txt 与粘贴文字；PDF、OCR、epub 明确不做/二期。
+- `samples/试音短篇.txt`（545 字 / 2 块）建议先跑，验证出声；`samples/旧巷钟声.txt`（4430 字 / 6 章 / 15 块）验证按章与整本。
 - voicedesign 是**单音色**：一个声音演所有情绪，不支持按角色切声线。
