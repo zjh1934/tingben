@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0+14 (114) → **1.0.0+15 待发**（停止 / 外部打开 / epub） |
+| 版本 | **1.0.0+15 (115)** · 17,554,312 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 15 编译中（改了 C++，原生重编） |
+| CI | run 15 (41739963381) 全绿（原生重编 + APK 闸门 + Release + raw 同步） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -279,3 +279,10 @@ txt/md 走 UTF-8，乱码比例高时自动换 GBK。主动导入也改走同一
 1. 点「开始制作」→ 立刻点「停止」→ **几秒内**应变成「已停止」，不再又跑起来
 2. 从文件管理器/微信对一本 txt 点「打开方式」→ 能看到「听本」→ 选了自动回书架
 3. 对 epub 做同样操作 → 能加进书架且章节不乱
+
+### 发布记录（R9）
+
+- `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
+- 17,554,312 字节 / CRC 全过 / `versionName=1.0.0+15` / 签名不变，**直接覆盖安装**
+- 7 个 arm64 .so、无 .gguf、无 INTERNET
+- `nm -D` 复核 **10 个 JNI 符号**（新增 `nativeCancelReset`）；dex 内含 `Importer` 与 epub 解析逻辑
