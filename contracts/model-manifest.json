@@ -1,0 +1,58 @@
+{
+  "project": "听本",
+  "note": "唯一从旧项目带过来的外部资产。代码/界面/文档/CI 一律不带。",
+  "verified_by": "文件名与尺寸来自 LFS 指针与用户真机诊断日志；voicedesign 直链未在沙盒实测（网关挡 hf-mirror 与 HF 主域）。",
+  "runtime_policy": "两个模型串行加载、不同时常驻；标注阶段只加载 LLM，合成阶段只加载 TTS，交接先释放。",
+  "models": [
+    {
+      "slot": "llm",
+      "role": "语言模型 / 标注",
+      "file": "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
+      "size_bytes": 2497280544,
+      "sha256": "004f7b8f59ccd5fa42258c52aa2087b89524cced84e955b9c8b115035ca073b2",
+      "repo": "bartowski/mlabonne_Qwen3-4B-abliterated-GGUF",
+      "thinking": "可开关（/think 与 /no_think），首版默认关",
+      "links": [
+        "https://hf-mirror.com/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
+        "https://hf-mirror.com/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/tree/main"
+      ],
+      "status": "用户已下载并导入；真机诊断确认已加载"
+    },
+    {
+      "slot": "tts_talker",
+      "role": "TTS 主文件 / 单音色",
+      "file": "qwen-talker-1.7b-voicedesign-Q8_0.gguf",
+      "size_bytes": 2042833824,
+      "repo": "Serveurperso/Qwen3-TTS-GGUF",
+      "links": [
+        "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf",
+        "https://hf-mirror.com/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
+      ],
+      "status": "用户已下载并导入；真机日志确认 TTS_SYNTH_END code=0（能出声）",
+      "caveat": "voicedesign 物理上只有一个音色，不能按角色换声；换 customvoice 需另下约 2GB 主文件"
+    },
+    {
+      "slot": "tts_tokenizer",
+      "role": "TTS 配套解码器",
+      "file": "qwen-tokenizer-12hz-Q8_0.gguf",
+      "size_bytes": 291150624,
+      "sha256": "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94",
+      "repo": "Serveurperso/Qwen3-TTS-GGUF",
+      "links": [
+        "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf",
+        "https://hf-mirror.com/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
+      ],
+      "status": "用户已下载并导入"
+    }
+  ],
+  "excluded": [
+    {
+      "file": "huihui-qwen3-4b-thinking-2507-abliterated-q4_k_m.gguf",
+      "reason": "已弃用：纯思考权重、关不掉，与首版可靠优先冲突"
+    },
+    {
+      "file": "qwen-talker-1.7b-customvoice-Q8_0.gguf",
+      "reason": "二期多角色换声时才换；文件名按规则推定，未核实"
+    }
+  ]
+}
