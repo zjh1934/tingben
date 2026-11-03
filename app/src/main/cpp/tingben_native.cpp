@@ -39,6 +39,9 @@ struct LlmHandle {
 
 static std::atomic<bool> g_cancel{false};
 
+/** R9 · 让 llama_decode（含 60 秒级 prefill）内部也能被停止打断。 */
+static bool llmAbortCb(void *) { return g_cancel.load(); }
+
 static void throwJava(JNIEnv * env, const char * msg) {
     jclass cls = env->FindClass("java/lang/IllegalStateException");
     if (cls) env->ThrowNew(cls, msg);
@@ -128,6 +131,12 @@ Java_com_tingben_app_engine_NativeEngine_nativeCancel(JNIEnv *, jobject) {
     g_cancel.store(true);
 }
 
+/** 只在整次制作开始时调一次；停止后标志保持 true，直到下次开始。 */
+JNIEXPORT void JNICALL
+Java_com_tingben_app_engine_NativeEngine_nativeCancelReset(JNIEnv *, jobject) {
+    g_cancel.store(false);
+}
+
 // ── LLM ─────────────────────────────────────────────────────
 JNIEXPORT jlong JNICALL
 Java_com_tingben_app_engine_NativeEngine_llmLoad(
@@ -162,6 +171,10 @@ Java_com_tingben_app_engine_NativeEngine_llmLoad(
         return 0;
     }
 
+    // R9 · abort callback：prefill 是单次 llama_decode，光靠 decode 循环里的
+    // g_cancel 检查要等它整个算完（真机实测 63 秒）才停得下来。
+    llama_set_abort_callback(ctx, llmAbortCb, nullptr);
+
     auto * h = new LlmHandle();
     h->model = model;
     h->ctx   = ctx;
@@ -181,7 +194,9 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     auto * h = (LlmHandle *)(intptr_t)handle;
     if (!h || !h->ctx) { throwJava(env, "LLM 未加载"); return nullptr; }
     std::lock_guard<std::mutex> lock(h->mu);
-    g_cancel.store(false);
+    // R9 · 不在这里复位！之前每次进入 generate 都 g_cancel.store(false)，
+    // 于是「停止 → 返回空串 → gate 重试 → 新 generate 把停止标志清零 → 又跑起来」
+    // 形成死循环，用户狂点 10 次停止都没用。复位只在整次制作开始时做一次。
     note(env, "NATIVE_ENTER", "llmGenerate");
 
     // R8 · 同一个 ctx 会被连续调用多次（逐块标注、gate 失败重试）。
@@ -248,6 +263,10 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
         note(env, "NATIVE_PREFILL_BEGIN", buf);
         llama_batch batch = llama_batch_get_one(toks.data(), (int32_t)toks.size());
         if (llama_decode(h->ctx, batch) != 0) {
+            if (g_cancel.load()) {
+                note(env, "NATIVE_PREFILL_ABORT", "用户停止，prefill 已中止");
+                return env->NewStringUTF("");
+            }
             note(env, "NATIVE_PREFILL_FAIL", buf);
             throwJava(env, "prefill 失败（上下文溢出或内存不足），请把切块调小");
             return nullptr;

@@ -458,6 +458,7 @@ object Producer {
 
     fun reset() { if (!busy) _state.value = Progress() }
     fun isBusy() = busy
+    fun isStopping() = cancelRequested
 
     /** 停止：不杀进程、不删已做好的块， native 解码下一 token 会自己退，块边界收尾。 */
     fun stop() {
@@ -483,6 +484,8 @@ object Producer {
         if (busy) return
         busy = true
         cancelRequested = false
+        // 上一次点过「停止」的话，native 的 g_cancel 还是 true；整次制作开始才复位。
+        try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         scope.launch {
             try {
                 run(c, book, onlyChapters, directRead)
@@ -579,11 +582,21 @@ object Producer {
                         val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
                                     else minOf(1024, chunk.text.length * 2 + 160)
                         for (attempt in 0..1) {
+                            // R9 · 停止可能发生在 prefill 里，generate 返回后必须立刻查；
+                            // 否则空结果会被当成「标注失败」再重试一次，停止就永远不生效。
+                            if (cancelRequested) {
+                                _state.value = halted(i, chunks.size, gateFails)
+                                return
+                            }
                             val raw = try {
                                 NativeEngine.llmGenerate(llmHandle, prompt, budget, temp)
                             } catch (t: Throwable) {
                                 EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
                                 break
+                            }
+                            if (cancelRequested) {
+                                _state.value = halted(i, chunks.size, gateFails)
+                                return
                             }
                             if (thinkOn) {
                                 val th = Annotator.extractThinking(raw)

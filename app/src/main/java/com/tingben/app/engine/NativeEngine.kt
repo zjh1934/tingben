@@ -33,6 +33,7 @@ object NativeEngine {
 
     external fun nativeVersion(): String
     external fun nativeCancel()
+    external fun nativeCancelReset()
 
     external fun llmLoad(modelPath: String, nCtx: Int, nThreads: Int): Long
     external fun llmGenerate(handle: Long, prompt: String, maxTokens: Int, temperature: Float): String

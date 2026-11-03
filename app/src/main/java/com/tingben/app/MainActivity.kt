@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,12 +50,24 @@ private val Good = Color(0xFF1E6B4A)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { App() }
+        // 外部「打开方式 / 分享」：把 Uri 或纯文字抽出来交给 Compose 处理一次。
+        // 只在 onCreate 读，避免重组时反复导入同一本书。
+        val incoming = when (intent?.action) {
+            android.content.Intent.ACTION_VIEW, android.content.Intent.ACTION_EDIT -> intent?.data?.toString()
+            android.content.Intent.ACTION_SEND -> {
+                (intent?.getParcelableExtra<android.os.Parcelable>(android.content.Intent.EXTRA_STREAM)
+                        as? android.net.Uri)?.toString()
+                    ?: intent?.getStringExtra(android.content.Intent.EXTRA_TEXT)
+                        ?.take(20000)?.let { "text:$it" }
+            }
+            else -> null
+        }
+        setContent { App(incoming = incoming) }
     }
 }
 
 @Composable
-private fun App() {
+private fun App(incoming: String? = null) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var screen by remember { mutableStateOf(Screen.LIBRARY) }
@@ -68,24 +81,59 @@ private fun App() {
     var importError by remember { mutableStateOf<String?>(null) }
     val st by Producer.state.collectAsState()
 
+    // ── 外部打开方式 / 分享：只处理一次，旋转屏幕也不会重复加书 ──
+    var pendingIncoming by rememberSaveable(incoming) { mutableStateOf(incoming) }
+    LaunchedEffect(pendingIncoming) {
+        val raw = pendingIncoming ?: return@LaunchedEffect
+        pendingIncoming = null
+        try {
+            if (raw.startsWith("text:")) {
+                val text = raw.removePrefix("text:")
+                if (text.isBlank()) return@LaunchedEffect
+                BookStore.add(ctx, "分享的文字", text)
+            } else {
+                val uri = android.net.Uri.parse(raw)
+                val result = withContext(Dispatchers.IO) { Importer.read(ctx, uri) }
+                BookStore.add(ctx, result.title, result.text)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(ctx, "已加入书架：${result.title}（${result.kind}）",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+            refresh++
+            screen = Screen.LIBRARY
+        } catch (t: Throwable) {
+            EventLog.log(EventLog.Kind.CRASH, "EXTERNAL_IMPORT_FAIL", t.message ?: "")
+            withContext(Dispatchers.Main) {
+                Toast.makeText(ctx, "没读进来：${t.message ?: "换个文件试试"}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     // 系统返回键/手势统一回书架，而不是直接退出 App。
     // 之前没接管：用户按一次返回进程就退了，重开又回到书架，正在跑的制作就"找不到"了。
     BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }
 
     val pickBook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            try {
-                ctx.contentResolver.takePersistableUriPermission(
-                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (_: Throwable) { }
-            val name = queryName(ctx, uri).removeSuffix(".txt").ifBlank { "未命名" }
-            try {
-                val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                if (text.isNullOrBlank()) Toast.makeText(ctx, "这个文件里没有文字", Toast.LENGTH_SHORT).show()
-                else { BookStore.add(ctx, name, text); refresh++ }
-            } catch (t: Throwable) {
-                EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL", t.message ?: "")
-                Toast.makeText(ctx, "这本书没读进来，换个文件试试", Toast.LENGTH_SHORT).show()
+        if (uri == null) return@rememberLauncherForActivityResult
+        try {
+            ctx.contentResolver.takePersistableUriPermission(
+                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Throwable) { }
+        scope.launch(Dispatchers.IO) {
+            val result = runCatching { Importer.read(ctx, uri) }
+            withContext(Dispatchers.Main) {
+                val r = result.getOrNull()
+                if (r == null) {
+                    EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL",
+                        result.exceptionOrNull()?.message ?: "")
+                    Toast.makeText(ctx, "这本书没读进来，换个文件试试", Toast.LENGTH_SHORT).show()
+                } else {
+                    BookStore.add(ctx, r.title, r.text)
+                    refresh++
+                    Toast.makeText(ctx, "已加入书架：${r.title}（${r.kind}）",
+                        Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -280,7 +328,8 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             CardBox(Modifier.padding(bottom = 12.dp)) {
                 Text("模型都齐了 ✓", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Good)
                 Spacer(Modifier.height(4.dp))
-                Text("下一步：导入一本 txt 小说，或直接粘贴一段文字。", fontSize = 12.sp, color = Sub)
+                Text("下一步：导入 txt / md / epub，或在别的 App 里用「打开方式」选听本，也可以直接粘贴文字。",
+                    fontSize = 12.sp, color = Sub)
             }
         }
 
@@ -334,7 +383,8 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             CardBox {
                 Text("书架还是空的", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(Modifier.height(4.dp))
-                Text("选一个 txt 文件就行，也可以粘贴文字。", fontSize = 12.sp, color = Sub)
+                Text("支持 txt / md / epub；别的 App 里点「打开方式 → 听本」也能直接加进来。",
+                    fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
                     Text("导入一本书", fontSize = 15.sp)
@@ -550,12 +600,17 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             }
         }
         Spacer(Modifier.height(18.dp))
+        // 点一次就锁住按钮：真机上用户狂点 10 次「停止」反而说明它没生效，
+        // 现在按钮立刻变「正在停止…」，等 native 退出再解锁。
+        var stopping by remember { mutableStateOf(false) }
+        LaunchedEffect(st.running) { if (!st.running) stopping = false }
         if (st.running) {
             Button(
-                onClick = { Producer.stop() },
+                onClick = { stopping = true; Producer.stop() },
+                enabled = !stopping,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8A4A4A)),
                 modifier = Modifier.fillMaxWidth().height(46.dp)
-            ) { Text("停止") }
+            ) { Text(if (stopping) "正在停止…" else "停止") }
             Spacer(Modifier.height(7.dp))
             Text("已做好的块会留着，不会白跑。点停止后回来点「继续制作」接着跑。",
                 fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 6.dp))

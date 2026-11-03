@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.0.0+14 (114)** · 17,553,352 字节 · 已发布 |
+| 版本 | 1.0.0+14 (114) → **1.0.0+15 待发**（停止 / 外部打开 / epub） |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 14 (41736658776) 全绿（原生重编 + APK 闸门 + Release + raw 同步） |
+| CI | run 15 编译中（改了 C++，原生重编） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -236,3 +236,46 @@
 - `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
 - 17,553,352 字节 / CRC 全过 / `versionName=1.0.0+14` / 签名不变，**直接覆盖安装**
 - 7 个 arm64 .so、无 .gguf、无 INTERNET
+
+## R9 · 用户插话：点停止一点用都没有 / 外部打开方式 / epub
+
+### ① 停止彻底失效（主 bug，日志钉死）
+
+```
+07:22:17 NATIVE_PREFILL_BEGIN tokens=684
+07:22:50 PRODUCE_STOP  （用户开始狂点，共 10 次）
+07:23:53 NATIVE_PREFILL_DONE   ← 63 秒里完全不响应
+07:23:53 NATIVE_GENERATE_DONE outChars=0
+07:23:53 GATE_RETRY 块 0 第 0 次   ← 竟然又重新开始
+07:23:53 NATIVE_PREFILL_BEGIN ...
+```
+
+四处叠加：
+
+1. **prefill 是单次 `llama_decode`，63 秒内不检查取消**。→ 注册 `llama_set_abort_callback(ctx, llmAbortCb)`，让 ggml 内部中断；返回非 0 时若 `g_cancel` 为真走 `NATIVE_PREFILL_ABORT`，不再误报「上下文溢出」。
+2. **每次 `llmGenerate` 开头 `g_cancel.store(false)`** —— 停止后 gate 重试又调一次 generate，把停止标志清零，于是死循环。用户点 10 次都没用。→ 复位改到 `Producer.start()` 开头，新增 `nativeCancelReset()`。
+3. **取消检查只在块边界，gate 重试在块内部绕过它**。→ 每个 attempt 前后都查，拿到空结果立刻 `halted()` 退出整次制作。
+4. **UI 能连点 10 次**。→ 按钮点一次即变「正在停止…」并禁用。
+
+### ② 外部「打开方式 / 分享」
+
+之前只有 App 内 SAF 主动选文件。现在 manifest 加 `ACTION_VIEW / EDIT / SEND`，mime 覆盖
+`text/plain`、`text/markdown`、`text/*`、`application/epub+zip`、`application/octet-stream`，
+scheme `content` + `file`。在微信、文件管理器、浏览器里点「打开方式 → 听本」直接加进书架；
+`SEND` 也接纯文字分享。用 `rememberSaveable` 保证旋转屏幕不重复加书。
+
+### ③ epub 解析：之前确实没做，这轮补了基础版
+
+`Importer.kt` 纯标准库实现：`ZipInputStream` 读全部 entry → `container.xml` 找 OPF →
+manifest 的 id→href + spine 的 idref **按顺序**拼（避免章节乱序）→ 去 script/style/标签、
+解 HTML 实体、标题行保留（ChapterSplitter 靠「第X章」认章）→ 纯文本。
+txt/md 走 UTF-8，乱码比例高时自动换 GBK。主动导入也改走同一个 Importer，选 epub 不再乱码。
+
+⚠️ 基础版：不处理加密 DRM、不读内嵌目录跳转、复杂嵌套 OPF 可能乱序；CSS/脚注/图片一律忽略。
+复杂 epub 若章节乱，先用 txt。
+
+### 待用户复验
+
+1. 点「开始制作」→ 立刻点「停止」→ **几秒内**应变成「已停止」，不再又跑起来
+2. 从文件管理器/微信对一本 txt 点「打开方式」→ 能看到「听本」→ 选了自动回书架
+3. 对 epub 做同样操作 → 能加进书架且章节不乱
