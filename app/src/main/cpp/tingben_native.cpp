@@ -184,6 +184,14 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     g_cancel.store(false);
     note(env, "NATIVE_ENTER", "llmGenerate");
 
+    // R8 · 同一个 ctx 会被连续调用多次（逐块标注、gate 失败重试）。
+    // 不清 KV 的话第二次 prefill 的位置会接着上一次累加，直接把 4096 窗口撑爆：
+    // 真机日志 04:49:01 第二次 generate 的 tokens=592 立刻 NATIVE_PREFILL_FAIL。
+    // 每次生成都是独立补全，必须从头开始，不需要跨调用保留上下文（跨块上下文由
+    // Kotlin 侧把角色表/最近 3 条拼进 prompt 来带）。
+    llama_memory_t mem = llama_get_memory(h->ctx);
+    if (mem) llama_memory_clear(mem, true);
+
     const char * prompt = env->GetStringUTFChars(jPrompt, nullptr);
     const int plen = (int)strlen(prompt);
     const llama_vocab * vocab = llama_model_get_vocab(h->model);

@@ -29,6 +29,7 @@ object Prefs {
         append(if (thinking(c)) "思考：开" else "思考：关")
         append(" · 上下文 ").append(nCtx(c))
         append(" · 线程 ").append(threads(c))
-        append(" · 温度 ").append(temperature(c))
+        // 思考模式禁用贪心，实际恒 0.6，别显示用户设的 0.0 让他以为生效了
+        append(" · 温度 ").append(if (thinking(c)) 0.6f else temperature(c))
     }
 }

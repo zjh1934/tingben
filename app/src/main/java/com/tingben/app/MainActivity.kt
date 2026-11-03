@@ -704,8 +704,10 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
             }
             if (thinkOn) {
                 Spacer(Modifier.height(6.dp))
-                Text("打开后每块要多吐几百字推理，整本会明显变慢；长块可能超预算走降级直读。",
-                    fontSize = 11.sp, color = Sub)
+                Text("这台手机给不起模型要的思考长度：开了之后推理会吃掉大半预算，JSON 常被截断，"
+                        + "整本大概率不分角色、全部降级直读，还慢几倍。建议只在「试一小块看推理」时开，"
+                        + "正式做书请关掉。",
+                    fontSize = 11.sp, color = Color(0xFF8A4A4A))
             }
         }
 

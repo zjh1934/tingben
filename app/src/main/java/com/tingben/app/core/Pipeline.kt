@@ -274,7 +274,9 @@ object Annotator {
     fun gate(anns: List<Ann>, original: String): Boolean =
         anns.joinToString("") { it.text } == original
 
-    fun fallback(chunk: Chunk) = listOf(Ann(chunk.text, "旁白", "平稳、清晰地叙述，句间自然停顿"))
+    // 降级也必须切短句：真机日志里块 1 降级成整块 500 字一次喂 TTS，
+    // 合成阶段从 04:49 卡到 05:24（35 分钟）。长文本单次合成在手机上是灾难。
+    fun fallback(chunk: Chunk) = directSegments(chunk.text)
 
     /** 直接朗读用的短句切分：只按边界断，不删一个字，避免 TTS 一次吃 500 字。 */
     fun directSegments(text: String): List<Ann> {
@@ -589,6 +591,13 @@ object Producer {
                             }
                             val parsed = Annotator.parse(raw)
                             if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
+                            // 思考档常见：预算全花在推理上，JSON 被拦腰截断。
+                            // 重试同样的 prompt 只会再来一次几分钟的空转，直接降级。
+                            if (thinkOn && raw.contains("<think") && !raw.contains("")) {
+                                EventLog.log(EventLog.Kind.PIPELINE, "THINK_TRUNCATED",
+                                    "块 $i 思考没写完就被预算截断，跳过重试")
+                                break
+                            }
                             EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY", "块 $i 第 $attempt 次")
                         }
                         if (result == null) {
