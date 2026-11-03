@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.0.0+10 (110)** · 17,536,726 字节 · 已发布 |
+| 版本 | **1.0.0+11 (111)** · 17,536,704 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 10 (41704533205) 全绿（原生引擎重编 + APK 闸门 + Release + raw 同步） |
+| CI | run 11 (41708471965) 全绿（原生引擎重编 + APK 闸门 + Release + raw 同步） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -102,3 +102,51 @@
 1. 点开始制作 → 按系统返回 → 底栏上方是否出现常驻任务条、能否点回进度页
 2. 进度页是否每秒显示「正在把这一段读进模型」而不是纹丝不动
 3. 设置页三项：思考开关、模型参数、试合成一句
+
+## R6 · 真机第三轮：TTS 试音报「库没加载」+ 4B 慢到不可用
+
+### ① TTS_PROBE_FAIL（确定性 bug，已修）
+
+`No implementation found for ... ttsLoad ... is the library loaded, e.g. System.loadLibrary?`
+
+`nm -D` 查过 APK 里的 `libtingben_native.so`，**9 个 JNI 符号全在**，包括 `ttsLoad`。
+所以不是符号缺失，是 **`System.loadLibrary` 压根没执行**：`ensure()` 只在
+「复制诊断信息」和「开始制作」里被调到；用户装完 +10 直接进设置页点「试合成一句」，
+进程从头到尾没加载过库。诊断日志头部显示引擎可用，是因为他**事后**才点复制诊断信息。
+
+修：`TingbenApp.onCreate()` 启动即 `isAvailable()` 预热并记 `ENGINE_PRELOAD`；
+音频调试按钮内也补一道 `isAvailable()` 检查。`TTS_PROBE_FAIL` 从 CRASH 改记 ENGINE（它不是崩溃）。
+
+### ② 速度：真机实测 9.6 秒/token
+
+`03:27:48 token=0` → `03:32:56 token=32`，32 个 token 用了 308 秒。
+4B Q4_K_M 在 8Gen3 CPU 上不该这么慢。另注意 prefill 分两批：
+第一批 512 token **70 秒**，第二批 195 token **115 秒** —— 更少 token 反而更慢，
+说明每次 `llama_decode` 有巨大固定开销，分批是反优化。
+
+改：`n_batch = n_ctx`、`n_ubatch = 512`、`n_threads_batch = n_threads`，
+**一次提交完整 prompt**，由 llama.cpp 内部分片；删掉手工分批循环。
+设置页线程补 8 核选项。
+
+⚠️ 不宣称已解决：若一次 prefill 后 decode 仍是秒级/token，那就是这台机器的
+内存带宽/热降频物理上限，调参救不了，得靠下面的路径绕开。
+
+### ③ 新增「直接朗读（跳过标注）」
+
+真机 4B 逐块标注 500 字要几十分钟到小时级，用户至今**一声都没听到**。
+制作页加一个次要入口：不加载 4B、不标注，原文按句号切成 ≤110 字短段，
+全旁白直接交给 TTS → 拼接 → 试听。几分钟内能出声，先把
+「TTS 加载 → 合成 → WAV 合并 → 试听」整条链验证掉，再回头打磨标注质量。
+`direct_XXXX.wav` 与完整制作的 `chunk_XXXX.wav` 分开存，缓存不串味。
+
+### 待用户复验
+
+1. 重启 App → 设置页「试合成一句」应出 `probe.wav` 并能试听
+2. 制作页点「只想先听声音？直接朗读」→ 我的音频里能听到人声
+3. 再点「开始制作」→ 进度页看 prefill 是否比 70s+115s 短、decode 是否不再是 9.6s/token
+
+### 发布记录（R6）
+
+- `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
+- 17,536,704 字节 / CRC 全过 / `versionName=1.0.0+11` / 签名不变，**直接覆盖安装**
+- 7 个 arm64 .so、无 .gguf、无 INTERNET；`nm -D` 复核 9 个 JNI 符号齐全（含 `ttsLoad`）
