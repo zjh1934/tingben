@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0+8 (108) → **1.0.0+9 待发**（粘贴文字 + 底栏避让） |
+| 版本 | **1.0.0+9 (109)** · 17,503,971 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 8 (41698752044) 全绿；APK 闸门 / Release / raw 直链同步全过 |
+| CI | run 9 (41700895820) 全绿；APK 闸门 / Release / raw 直链同步全过 |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -56,3 +56,10 @@
 - **修一个自己埋的假承诺**：书架空态写着「也可以粘贴文字」，但代码里根本没有输入框。现已补上可折叠粘贴区（书名 + 正文 + 粘贴按钮 + 建书），默认收起不占首屏主按钮
 - 底部 3 个 Tab 加 `navigationBarsPadding()`：截图里系统三键导航键和 Tab 文字叠在一起
 - 建议先用短篇验证出声，再勾 1~2 章跑全本，别一上来整本 15 块
+
+### 发布记录（R4）
+
+- `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
+- 17,503,971 字节 / CRC 全过 / `versionName=1.0.0+9` / 签名 `CN=MoTing Debug` 不变，**直接覆盖安装**
+- 7 个 arm64 .so、无 .gguf、无 INTERNET
+- `samples/` 两本测试书已进仓库；短篇建议先跑（2 块），全本 15 块别一上来整本
