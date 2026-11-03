@@ -326,15 +326,18 @@ object ThinkingStore {
  * work 目录按「模式 + 选中章节」分桶，换选章/换思考档不会串味。
  */
 object AnnCache {
-    fun read(work: File, i: Int): List<Ann>? = try {
-        val f = File(work, "ann_%04d.json".format(i))
-        if (!f.exists()) return null
-        val arr = JSONArray(f.readText())
-        (0 until arr.length()).map { k ->
-            val o = arr.getJSONObject(k)
-            Ann(o.getString("text"), o.optString("speaker", "旁白"), o.optString("instruct", ""))
-        }.takeIf { it.isNotEmpty() }
-    } catch (_: Throwable) { null }
+    fun read(work: File, i: Int): List<Ann>? {
+        return try {
+            val f = File(work, "ann_%04d.json".format(i))
+            if (!f.exists()) null else {
+                val arr = JSONArray(f.readText())
+                (0 until arr.length()).map { k ->
+                    val o = arr.getJSONObject(k)
+                    Ann(o.getString("text"), o.optString("speaker", "旁白"), o.optString("instruct", ""))
+                }.takeIf { it.isNotEmpty() }
+            }
+        } catch (_: Throwable) { null }
+    }
 
     fun write(work: File, i: Int, list: List<Ann>) {
         try {
