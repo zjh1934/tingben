@@ -250,7 +250,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 onProgress()
             },
             enabled = !st.running,
-            Modifier.fillMaxWidth().height(52.dp)
+            modifier = Modifier.fillMaxWidth().height(52.dp)
         ) { Text(if (st.running) "正在制作…" else "开始制作", fontSize = 16.sp) }
 
         if (st.message.isNotBlank()) {

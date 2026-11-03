@@ -228,19 +228,26 @@ object Annotator {
 // ─────────────────────────── WAV 合并（Antioch merger） ───────────────────────────
 
 object WavMerger {
-    private fun pcmOf(f: File): ByteArray? = try {
-        val b = f.readBytes()
-        if (b.size < 44) return null
-        var i = 12
-        while (i + 8 <= b.size) {
-            val id = String(b, i, 4, Charsets.US_ASCII)
-            val sz = (b[i + 4].toInt() and 0xff) or ((b[i + 5].toInt() and 0xff) shl 8) or
-                    ((b[i + 6].toInt() and 0xff) shl 16) or ((b[i + 7].toInt() and 0xff) shl 24)
-            if (id == "data") return b.copyOfRange(i + 8, minOf(i + 8 + sz, b.size))
-            i += 8 + sz + (if (sz % 2 == 1) 1 else 0)
-        }
-        null
-    } catch (_: Throwable) { null }
+    private fun pcmOf(f: File): ByteArray? {
+        return try {
+            val b = f.readBytes()
+            if (b.size < 44) null else {
+                var i = 12
+                var found: ByteArray? = null
+                while (i + 8 <= b.size) {
+                    val id = String(b, i, 4, Charsets.US_ASCII)
+                    val sz = (b[i + 4].toInt() and 0xff) or ((b[i + 5].toInt() and 0xff) shl 8) or
+                            ((b[i + 6].toInt() and 0xff) shl 16) or ((b[i + 7].toInt() and 0xff) shl 24)
+                    if (id == "data") {
+                        found = b.copyOfRange(i + 8, minOf(i + 8 + sz, b.size))
+                        break
+                    }
+                    i += 8 + sz + (if (sz % 2 == 1) 1 else 0)
+                }
+                found
+            }
+        } catch (_: Throwable) { null }
+    }
 
     private fun header(dataLen: Int): ByteArray {
         val rate = 24000; val ch = 1; val bits = 16
@@ -259,17 +266,20 @@ object WavMerger {
         return h
     }
 
-    fun merge(parts: List<File>, out: File): Boolean = try {
-        val chunks = parts.mapNotNull { pcmOf(it) }
-        if (chunks.isEmpty()) return false
-        val total = chunks.sumOf { it.size }
-        out.outputStream().use { os ->
-            os.write(header(total))
-            chunks.forEach { os.write(it) }
-        }
-        EventLog.log(EventLog.Kind.PIPELINE, "MERGE_DONE", "${parts.size} 块 / $total 字节")
-        true
-    } catch (_: Throwable) { false }
+    fun merge(parts: List<File>, out: File): Boolean {
+        return try {
+            val chunks = parts.mapNotNull { pcmOf(it) }
+            if (chunks.isEmpty()) false else {
+                val total = chunks.sumOf { it.size }
+                out.outputStream().use { os ->
+                    os.write(header(total))
+                    chunks.forEach { os.write(it) }
+                }
+                EventLog.log(EventLog.Kind.PIPELINE, "MERGE_DONE", "${parts.size} 块 / $total 字节")
+                true
+            }
+        } catch (_: Throwable) { false }
+    }
 }
 
 // ─────────────────────────── 一键编排（唯一入口） ───────────────────────────
