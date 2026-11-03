@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0+13 (113) → **1.0.0+14 待发**（KV cache / 降级切短句） |
+| 版本 | **1.0.0+14 (114)** · 17,553,352 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 14 编译中（改了 C++，原生引擎重编） |
+| CI | run 14 (41736658776) 全绿（原生重编 + APK 闸门 + Release + raw 同步） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -230,3 +230,9 @@
 
 1. 「我的音频」里点试听，确认 5.8MB 那本能听（这是首要的）
 2. 关思考再点「开始制作」，看是否不再出现 `NATIVE_PREFILL_FAIL`、块能真正标出角色
+
+### 发布记录（R8）
+
+- `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
+- 17,553,352 字节 / CRC 全过 / `versionName=1.0.0+14` / 签名不变，**直接覆盖安装**
+- 7 个 arm64 .so、无 .gguf、无 INTERNET
