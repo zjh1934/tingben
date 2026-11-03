@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0+15 (115) → **1.0.0+16 待发**（导入按钮 / epub 结构化分章） |
+| 版本 | **1.0.0+16 (116)** · 17,570,704 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 16 编译中（纯 Kotlin，走原生缓存） |
+| CI | run 16 (41742242042) 全绿（原生缓存命中 + APK 闸门 + Release + raw 同步） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -343,3 +343,11 @@ DocumentsUI 上会静默返回（表现就是点了没反应），且回调里 `
 1. 书架右上「＋ 导入一本书」点了是否弹出系统文件选择器（不弹会有 Toast 说明原因）
 2. 选 epub → Toast 显示「epub · N 章」→ 进制作页看章节列表标题是否正确、能不能只勾 1 章
 3. 从别的文件 App 对同一 epub 点「打开方式 → 听本」也能加进书架
+
+### 发布记录（R10）
+
+- `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
+- 17,570,704 字节 / CRC 全过 / `versionName=1.0.0+16` / 签名不变，**直接覆盖安装**
+- 7 个 arm64 .so、无 .gguf、无 INTERNET
+- dex 抽查命中 `BOOK_PICKER_LAUNCH` / `CHAPTER_SEP` / `GB18030` / `toc.ncx`，确认新逻辑进包
+- 回归样本 `samples/解析测试.epub` 已入仓库（1.9KB，混排 GBK+UTF-8，3 章）
