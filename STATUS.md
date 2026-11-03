@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.0.0+11 (111)** · 17,536,704 字节 · 已发布 |
+| 版本 | 1.0.0+11 (111) → **1.0.0+12 待发**（停止 / 断点续传） |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 11 (41708471965) 全绿（原生引擎重编 + APK 闸门 + Release + raw 同步） |
+| CI | run 12 编译中（纯 Kotlin，走原生缓存，约 1~2 分钟） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -150,3 +150,22 @@
 - `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
 - 17,536,704 字节 / CRC 全过 / `versionName=1.0.0+11` / 签名不变，**直接覆盖安装**
 - 7 个 arm64 .so、无 .gguf、无 INTERNET；`nm -D` 复核 9 个 JNI 符号齐全（含 `ttsLoad`）
+
+## R7 · 用户插话：一跑起来就不停了
+
+真缺口，不是取舍：之前只有 `nativeCancel()` 一个 C++ 原子位，**UI 没有停止按钮**，
+合成阶段虽有「wav 存在就跳过」但**标注结果从不落盘**，重开 App 点制作等于全本重跑 4B。
+
+### 已改
+
+- **停止**：进度页红色「停止」按钮 → `Producer.stop()` 置标志 + `nativeCancel()`；
+  decode 循环下一 token 自退，块边界写「已停止」并释放模型。**不删已做好的块**。
+- **断点续传（真正的部分）**：`AnnCache` 把每块标注 JSON 落盘；重跑时直接读盘跳过 4B，
+  同时照样喂回角色表 / 最近 3 条上下文，保证后续块连贯。合成阶段已有 WAV 也跳过。
+- **分桶隔离**：work 目录按「模式（fast/think/direct）+ 选中章节」分桶，
+  换选章、切思考档不会串味；「从头重做」按钮只清当前桶。
+- **入口**：制作页有缓存时主按钮变「继续制作」；进度页停止后给「继续制作」一键续跑；
+  跨 App 重启也能续（从磁盘读，不依赖内存状态）。
+- 制作中断异常兜底写 `PRODUCE_EXCEPTION`，不再静默卡在 running。
+
+⚠️ 一次 prefill 是单次 `llama_decode`，期间不响应停止，最多等这一批算完才退出。

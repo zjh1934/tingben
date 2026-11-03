@@ -59,6 +59,7 @@ private fun App() {
     val scope = rememberCoroutineScope()
     var screen by remember { mutableStateOf(Screen.LIBRARY) }
     var bookId by remember { mutableStateOf<String?>(null) }
+    var lastSelection by remember { mutableStateOf<Set<Int>?>(null) }
     var refresh by remember { mutableStateOf(0) }
     var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }
     var importing by remember { mutableStateOf<String?>(null) }
@@ -155,8 +156,14 @@ private fun App() {
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
-                    onDone = { screen = Screen.AUDIO })
-                Screen.PROGRESS -> ProgressScreen(ctx, onBack = { screen = Screen.LIBRARY })
+                    onDone = { screen = Screen.AUDIO },
+                    onStarted = { lastSelection = it })
+                Screen.PROGRESS -> ProgressScreen(ctx,
+                    onBack = { screen = Screen.LIBRARY },
+                    onResume = {
+                        val b = bookId?.let { BookStore.list(ctx).find { x -> x.id == it } }
+                        if (b != null) Producer.start(ctx, b, lastSelection)
+                    })
                 Screen.AUDIO -> AudioScreen(ctx, refresh)
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
@@ -354,11 +361,18 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
 // ── ② 制作：一屏一个主按钮 ────────────────────────────────────
 @Composable
 private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> Unit,
-                          onProgress: () -> Unit, onDone: () -> Unit) {
+                          onProgress: () -> Unit, onDone: () -> Unit,
+                          onStarted: (Set<Int>?) -> Unit) {
     val book = remember(id, refresh) { id?.let { BookStore.list(c).find { b -> b.id == it } } }
     val st by Producer.state.collectAsState()
     val chapters = remember(book) { book?.let { ChapterSplitter.split(BookStore.read(c, it)).first } ?: emptyList() }
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
+    var cacheTick by remember { mutableStateOf(0) }
+    val thinkOn = remember(refresh) { Prefs.thinking(c) }
+    val hasCached = remember(book, refresh, selected, cacheTick, thinkOn) {
+        book?.let { Producer.hasProgress(c, it.id, false, thinkOn,
+            if (selected.isEmpty()) null else selected) } ?: false
+    }
     if (book == null) {
         Column(Modifier.padding(16.dp)) { Text("这本书不在了"); TextButton(onClick = onBack) { Text("返回书架") } }
         return
@@ -407,16 +421,30 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 
         Button(
             onClick = {
-                Producer.start(c, book, if (selected.isEmpty()) null else selected)
+                val sel = if (selected.isEmpty()) null else selected
+                onStarted(sel)
+                Producer.start(c, book, sel)
                 onProgress()
             },
             enabled = !st.running,
             modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) { Text(if (st.running) "正在制作…" else "开始制作", fontSize = 16.sp) }
+        ) { Text(if (st.running) "正在制作…" else if (hasCached) "继续制作" else "开始制作", fontSize = 16.sp) }
+
+        if (hasCached && !st.running) {
+            TextButton(onClick = {
+                Producer.clearProgress(c, book.id, false, thinkOn,
+                    if (selected.isEmpty()) null else selected)
+                cacheTick++
+            }, Modifier.fillMaxWidth()) { Text("从头重做（清掉已做的块）", fontSize = 12.sp) }
+            Text("上次没跑完，直接点「继续制作」会从停下的地方接着跑，不重算已做好的块。",
+                fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 6.dp))
+        }
 
         TextButton(
             onClick = {
-                Producer.start(c, book, if (selected.isEmpty()) null else selected, directRead = true)
+                val sel = if (selected.isEmpty()) null else selected
+                onStarted(sel)
+                Producer.start(c, book, sel, directRead = true)
                 onProgress()
             },
             enabled = !st.running,
@@ -436,7 +464,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 
 // ── ③ 进度：只给人话，但必须让人看得出「它还活着」 ──────────────
 @Composable
-private fun ProgressScreen(c: Context, onBack: () -> Unit) {
+private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit) {
     val st by Producer.state.collectAsState()
     val pct = if (st.total > 0) st.done.toFloat() / st.total else 0f
     var tick by remember { mutableStateOf(0) }
@@ -521,8 +549,23 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit) {
                 }
             }
         }
-        if (!st.running) {
-            Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(18.dp))
+        if (st.running) {
+            Button(
+                onClick = { Producer.stop() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8A4A4A)),
+                modifier = Modifier.fillMaxWidth().height(46.dp)
+            ) { Text("停止") }
+            Spacer(Modifier.height(7.dp))
+            Text("已做好的块会留着，不会白跑。点停止后回来点「继续制作」接着跑。",
+                fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 6.dp))
+        } else {
+            if (st.stage == "已停止") {
+                Button(onClick = onResume, Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("继续制作（从停下的地方接着跑）")
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             TextButton(onClick = onBack, Modifier.fillMaxWidth()) { Text("回书架，随时能再进来看") }
         }
     }

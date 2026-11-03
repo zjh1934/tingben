@@ -321,6 +321,60 @@ object ThinkingStore {
     }
 }
 
+/**
+ * 标注结果按块落盘。4B 在手机上一块要几分钟，不缓存就永远别想「接着跑」。
+ * work 目录按「模式 + 选中章节」分桶，换选章/换思考档不会串味。
+ */
+object AnnCache {
+    fun read(work: File, i: Int): List<Ann>? = try {
+        val f = File(work, "ann_%04d.json".format(i))
+        if (!f.exists()) return null
+        val arr = JSONArray(f.readText())
+        (0 until arr.length()).map { k ->
+            val o = arr.getJSONObject(k)
+            Ann(o.getString("text"), o.optString("speaker", "旁白"), o.optString("instruct", ""))
+        }.takeIf { it.isNotEmpty() }
+    } catch (_: Throwable) { null }
+
+    fun write(work: File, i: Int, list: List<Ann>) {
+        try {
+            val arr = JSONArray()
+            list.forEach { a ->
+                arr.put(JSONObject().put("text", a.text)
+                    .put("speaker", a.speaker).put("instruct", a.instruct))
+            }
+            File(work, "ann_%04d.json".format(i)).writeText(arr.toString())
+        } catch (_: Throwable) { }
+    }
+
+    fun count(work: File): Int = try {
+        work.listFiles()?.count { it.isFile && it.name.startsWith("ann_") && it.name.endsWith(".json") } ?: 0
+    } catch (_: Throwable) { 0 }
+
+    fun clear(work: File) {
+        try { work.listFiles()?.forEach { it.delete() } } catch (_: Throwable) { }
+    }
+
+    /** 这本书、这个模式下有没有没跑完的东西可续。 */
+    fun hasProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?): Boolean {
+        val w = File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}")
+        val ann = count(w)
+        val wav = try {
+            w.listFiles()?.count { it.isFile &&
+                (it.name.startsWith("chunk_") || it.name.startsWith("direct_")) &&
+                it.name.endsWith(".wav") && it.length() > 44 } ?: 0
+        } catch (_: Throwable) { 0 }
+        return ann > 0 || wav > 0
+    }
+
+    fun bucket(direct: Boolean, think: Boolean, only: Set<Int>?) =
+        (if (direct) "direct" else if (think) "think" else "fast") + "/" +
+                (only?.sorted()?.joinToString("_") ?: "all")
+
+    fun dirFor(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) =
+        File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}").apply { mkdirs() }
+}
+
 // ─────────────────────────── WAV 合并（Antioch merger） ───────────────────────────
 
 object WavMerger {
@@ -395,14 +449,44 @@ object Producer {
     private val _state = MutableStateFlow(Progress())
     val state: StateFlow<Progress> = _state
     @Volatile private var busy = false
+    @Volatile private var cancelRequested = false
 
     fun reset() { if (!busy) _state.value = Progress() }
+    fun isBusy() = busy
+
+    /** 停止：不杀进程、不删已做好的块， native 解码下一 token 会自己退，块边界收尾。 */
+    fun stop() {
+        if (!busy) return
+        cancelRequested = true
+        try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
+        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_STOP", "用户点了停止")
+    }
+
+    private fun halted(done: Int, total: Int, failed: Int): Progress = Progress(
+        false, "已停止", done, total, failed,
+        "已停在 $done/$total 块，已做好的都留着。点「继续制作」从这接着跑。")
+
+    fun hasProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) =
+        AnnCache.hasProgress(c, bookId, direct, think, only)
+
+    fun clearProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) {
+        AnnCache.clear(AnnCache.dirFor(c, bookId, direct, think, only))
+        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_RESET", "清空这本书的进度，从头重做")
+    }
 
     fun start(c: Context, book: Book, onlyChapters: Set<Int>? = null, directRead: Boolean = false) {
         if (busy) return
         busy = true
+        cancelRequested = false
         scope.launch {
-            try { run(c, book, onlyChapters, directRead) } finally { busy = false }
+            try {
+                run(c, book, onlyChapters, directRead)
+            } catch (t: Throwable) {
+                if (t !is kotlinx.coroutines.CancellationException) {
+                    EventLog.log(EventLog.Kind.CRASH, "PRODUCE_EXCEPTION", t.message ?: "")
+                    _state.value = Progress(false, "出错了", 0, 0, 0, "制作中断：" + (t.message ?: ""))
+                }
+            } finally { busy = false }
         }
     }
 
@@ -434,9 +518,9 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, "这本书没有可制作的文字")
             return
         }
-        val work = File(c.filesDir, "work/${book.id}").apply { mkdirs() }
         val (sys, usr) = Annotator.templates(c)
         val thinkOn = Prefs.thinking(c)
+        val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
         val nCtx = Prefs.nCtx(c)
         val threads = Prefs.threads(c)
         val temp = if (thinkOn) 0.6f else Prefs.temperature(c)
@@ -471,46 +555,62 @@ object Producer {
             val roster = LinkedHashSet<String>()
             val recent = mutableListOf<Ann>()
             val collected = mutableListOf<Ann>()
+            var resumed = 0
             try {
                 for ((i, chunk) in chunks.withIndex()) {
-                    val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn)
-                    // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
-                    // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
-                    val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
-                                else minOf(1024, chunk.text.length * 2 + 160)
-                    var result: List<Ann>? = null
-                    for (attempt in 0..1) {
-                        val raw = try {
-                            NativeEngine.llmGenerate(llmHandle, prompt, budget, temp)
-                        } catch (t: Throwable) {
-                            EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
-                            break
-                        }
-                        if (thinkOn) {
-                            val th = Annotator.extractThinking(raw)
-                            if (th.isNotBlank()) ThinkingStore.write(c, i, th)
-                        }
-                        val parsed = Annotator.parse(raw)
-                        if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
-                        EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY", "块 $i 第 $attempt 次")
+                    if (cancelRequested) {
+                        _state.value = halted(i, chunks.size, gateFails)
+                        return
                     }
-                    if (result == null) {
-                        result = Annotator.fallback(chunk)
-                        gateFails++
-                        EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
+                    // 断点续传：这一块之前标过就直接读盘，不重跑 4B；
+                    // 同时照样喂进 roster / recent，保证后面块的上下文是连贯的。
+                    var result = AnnCache.read(work, i)
+                    if (result != null) {
+                        resumed++
+                    } else {
+                        val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn)
+                        // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
+                        // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
+                        val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
+                                    else minOf(1024, chunk.text.length * 2 + 160)
+                        for (attempt in 0..1) {
+                            val raw = try {
+                                NativeEngine.llmGenerate(llmHandle, prompt, budget, temp)
+                            } catch (t: Throwable) {
+                                EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
+                                break
+                            }
+                            if (thinkOn) {
+                                val th = Annotator.extractThinking(raw)
+                                if (th.isNotBlank()) ThinkingStore.write(c, i, th)
+                            }
+                            val parsed = Annotator.parse(raw)
+                            if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
+                            EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY", "块 $i 第 $attempt 次")
+                        }
+                        if (result == null) {
+                            result = Annotator.fallback(chunk)
+                            gateFails++
+                            EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
+                        }
+                        AnnCache.write(work, i, result)
                     }
-                    result.forEach { a ->
+                    val safe = result!!
+                    safe.forEach { a ->
                         collected.add(a)
                         if (a.speaker.isNotBlank() && a.speaker != "旁白") roster.add(a.speaker)
                     }
-                    recent.addAll(result)
+                    recent.addAll(safe)
                     while (recent.size > 3) recent.removeAt(0)
                     emit("正在理解文字", i + 1, chunks.size, gateFails,
-                        "已标注 ${i + 1}/${chunks.size} 块" + if (gateFails > 0) " · $gateFails 块改走直读" else "")
+                        "已标注 ${i + 1}/${chunks.size} 块" +
+                            (if (resumed > 0) " · $resumed 块直接续上" else "") +
+                            if (gateFails > 0) " · $gateFails 块改走直读" else "")
                 }
             } finally {
                 try { NativeEngine.llmFree(llmHandle) } catch (_: Throwable) { }
             }
+            if (cancelRequested) { _state.value = halted(chunks.size, chunks.size, gateFails); return }
             annotated = collected
         }
 
@@ -531,6 +631,10 @@ object Producer {
         var synthFails = 0
         try {
             for ((i, a) in annotated.withIndex()) {
+                if (cancelRequested) {
+                    _state.value = halted(i, annotated.size, gateFails + synthFails)
+                    return
+                }
                 val wav = File(work, String.format(if (direct) "direct_%04d.wav" else "chunk_%04d.wav", i))
                 if (wav.exists() && wav.length() > 44) {
                     wavs.add(wav)
@@ -550,6 +654,10 @@ object Producer {
             }
         } finally {
             try { NativeEngine.ttsFree(ttsHandle) } catch (_: Throwable) { }
+        }
+        if (cancelRequested) {
+            _state.value = halted(annotated.size, annotated.size, gateFails + synthFails)
+            return
         }
 
         // ── 合并 ──
