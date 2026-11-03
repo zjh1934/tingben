@@ -414,6 +414,17 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             modifier = Modifier.fillMaxWidth().height(52.dp)
         ) { Text(if (st.running) "正在制作…" else "开始制作", fontSize = 16.sp) }
 
+        TextButton(
+            onClick = {
+                Producer.start(c, book, if (selected.isEmpty()) null else selected, directRead = true)
+                onProgress()
+            },
+            enabled = !st.running,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("只想先听声音？直接朗读（跳过标注）", fontSize = 12.5.sp) }
+        Text("直接朗读不分角色、不加语气，但几分钟就能出声；适合先确认整条链路能跑。",
+            fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 6.dp))
+
         if (st.message.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             Text(st.message, fontSize = 12.5.sp, color = if (st.output != null) Good else Sub)
@@ -663,9 +674,9 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
                 listOf(4096, 6144, 8192).indexOf(nCtx).coerceAtLeast(0)) { i ->
                 Prefs.setNCtx(c, listOf(4096, 6144, 8192)[i]); cfg++
             }
-            SettingOption("运算线程", listOf("2", "4", "6"),
-                listOf(2, 4, 6).indexOf(threads).coerceAtLeast(0)) { i ->
-                Prefs.setThreads(c, listOf(2, 4, 6)[i]); cfg++
+            SettingOption("运算线程", listOf("2", "4", "6", "8"),
+                listOf(2, 4, 6, 8).indexOf(threads).coerceAtLeast(0)) { i ->
+                Prefs.setThreads(c, listOf(2, 4, 6, 8)[i]); cfg++
             }
             SettingOption("随机度（思考关时有效）", listOf("0 稳", "0.3", "0.6"),
                 listOf(0f, 0.3f, 0.6f).indexOf(temp).coerceAtLeast(0)) { i ->
@@ -685,6 +696,8 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
                     probing = true; probeResult = "正在合成…"
                     probeScope.launch(Dispatchers.IO) {
                         val res = runCatching {
+                            if (!NativeEngine.isAvailable()) throw IllegalStateException(
+                                NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
                             val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
                             val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
                             val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
@@ -705,7 +718,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
                                 "出声了 ✓ ${File(path).length()} 字节，点右边试听"
                             else "失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
                             res.exceptionOrNull()?.let {
-                                EventLog.log(EventLog.Kind.CRASH, "TTS_PROBE_FAIL", it.message ?: "")
+                                EventLog.log(EventLog.Kind.ENGINE, "TTS_PROBE_FAIL", it.message ?: "")
                             }
                         }
                     }

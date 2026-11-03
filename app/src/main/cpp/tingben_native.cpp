@@ -148,7 +148,13 @@ Java_com_tingben_app_engine_NativeEngine_llmLoad(
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx     = nCtx > 0 ? (uint32_t)nCtx : 8192;
     cp.n_threads = nThreads > 0 ? (uint32_t)nThreads : 4;
-    cp.n_batch   = 512;
+    cp.n_threads_batch = cp.n_threads;
+    // n_batch 放满整个上下文，让一次 llama_decode 就能提交完整 prompt；
+    // n_ubatch 仍是 512，llama.cpp 内部自动分片，compute buffer 不会爆。
+    // R34 手工分两批 prefill 实测：第一批 512 token 70 秒、第二批 195 token
+    // 反而 115 秒 —— 固定开销按次付，分得越碎越慢。
+    cp.n_batch   = cp.n_ctx;
+    cp.n_ubatch  = 512;
     auto * ctx = llama_init_from_model(model, cp);
     if (!ctx) {
         llama_model_free(model);
@@ -182,7 +188,7 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     const int plen = (int)strlen(prompt);
     const llama_vocab * vocab = llama_model_get_vocab(h->model);
     const uint32_t nCtx   = llama_n_ctx(h->ctx);
-    const uint32_t nBatch = 512;   // 与 llmLoad 里 cp.n_batch 一致，避免依赖新 API
+    const uint32_t nBatch = llama_n_batch(h->ctx);   // 已是 n_ctx，一次可提交完整 prompt
 
     // 先探测需要多少 token（llama_tokenize 返回负值表示容量不足，取绝对值）
     int nMax = llama_tokenize(vocab, prompt, plen, nullptr, 0, false, true);
@@ -225,24 +231,20 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
         llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(42));
     }
 
-    // R34 · 分批 prefill：原来一次性把 1000+ token 喂给 llama_decode，
-    // 而 n_batch=512，超大 compute buffer 是 native 崩溃/OOM 的首要嫌疑。
-    size_t off = 0;
-    int batchNo = 0;
-    while (off < toks.size()) {
-        size_t take = std::min<size_t>(nBatch > 0 ? nBatch : 512u, toks.size() - off);
-        llama_batch batch = llama_batch_get_one(toks.data() + off, (int32_t)take);
+    // R6 · 一次 prefill。llama_batch_get_one 的 pos 为 NULL，位置由
+    // llama_decode 自动追踪；n_ubatch=512 让它在内部安全分片。
+    // 真机实测手工分两批反而更慢（70s + 115s），固定开销按次付。
+    {
         char buf[96];
-        snprintf(buf, sizeof(buf), "batch=%d off=%zu take=%zu", batchNo, off, take);
+        snprintf(buf, sizeof(buf), "tokens=%zu nBatch=%u", toks.size(), nBatch);
         note(env, "NATIVE_PREFILL_BEGIN", buf);
+        llama_batch batch = llama_batch_get_one(toks.data(), (int32_t)toks.size());
         if (llama_decode(h->ctx, batch) != 0) {
             note(env, "NATIVE_PREFILL_FAIL", buf);
             throwJava(env, "prefill 失败（上下文溢出或内存不足），请把切块调小");
             return nullptr;
         }
         note(env, "NATIVE_PREFILL_DONE", buf);
-        off += take;
-        ++batchNo;
     }
     note(env, "NATIVE_DECODE_BEGIN", "开始逐 token 生成");
 

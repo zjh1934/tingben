@@ -275,6 +275,23 @@ object Annotator {
         anns.joinToString("") { it.text } == original
 
     fun fallback(chunk: Chunk) = listOf(Ann(chunk.text, "旁白", "平稳、清晰地叙述，句间自然停顿"))
+
+    /** 直接朗读用的短句切分：只按边界断，不删一个字，避免 TTS 一次吃 500 字。 */
+    fun directSegments(text: String): List<Ann> {
+        val out = mutableListOf<Ann>()
+        val buf = StringBuilder()
+        for (ch0 in text) {
+            buf.append(ch0)
+            val boundary = ch0 == '。' || ch0 == '！' || ch0 == '？' || ch0 == '；' ||
+                    ch0 == '\n' || ch0 == '!' || ch0 == '?'
+            if (buf.length >= 110 || (buf.length >= 60 && boundary)) {
+                if (buf.isNotBlank()) out.add(Ann(buf.toString(), "旁白", "平稳、清晰地叙述，句间自然停顿"))
+                buf.setLength(0)
+            }
+        }
+        if (buf.isNotBlank()) out.add(Ann(buf.toString(), "旁白", "平稳、清晰地叙述，句间自然停顿"))
+        return out
+    }
 }
 
 /** 思考外显的内容本地落盘，只留最近 20 块，不进主界面、不联网。 */
@@ -381,11 +398,11 @@ object Producer {
 
     fun reset() { if (!busy) _state.value = Progress() }
 
-    fun start(c: Context, book: Book, onlyChapters: Set<Int>? = null) {
+    fun start(c: Context, book: Book, onlyChapters: Set<Int>? = null, directRead: Boolean = false) {
         if (busy) return
         busy = true
         scope.launch {
-            try { run(c, book, onlyChapters) } finally { busy = false }
+            try { run(c, book, onlyChapters, directRead) } finally { busy = false }
         }
     }
 
@@ -393,15 +410,19 @@ object Producer {
         _state.value = Progress(true, stage, done, total, failed, msg, out)
     }
 
-    private fun run(c: Context, book: Book, only: Set<Int>?) {
+    private fun run(c: Context, book: Book, only: Set<Int>?, direct: Boolean) {
         if (!NativeEngine.isAvailable()) {
             _state.value = Progress(false, "没开始", 0, 0, 0, NativeEngine.shortReason())
             return
         }
         val llm = ModelStore.llm(c); val tk = ModelStore.talker(c); val tok = ModelStore.tokenizer(c)
-        if (llm == null || tk == null || tok == null) {
+        val miss = mutableListOf<String>()
+        if (tk == null) miss.add("声音主文件")
+        if (tok == null) miss.add("声音配套文件")
+        if (!direct && llm == null) miss.add("语言模型")
+        if (miss.isNotEmpty()) {
             _state.value = Progress(false, "没开始", 0, 0, 0,
-                "还差模型文件：" + ModelStore.missing(c).joinToString("、") + "。去设置页导入。")
+                "还差：" + miss.joinToString("、") + "。去设置页导入。")
             return
         }
 
@@ -424,68 +445,79 @@ object Producer {
         if (thinkOn) ThinkingStore.clear(c)
         EventLog.resetEngine()
 
-        // ── 标注阶段：只加载 LLM ──
-        emit("正在理解文字", 0, chunks.size, 0, "语言模型正在逐块标注谁说的、怎么读…")
-        val llmHandle = try {
-            NativeEngine.llmLoad(llm.absolutePath, nCtx, threads)
-        } catch (t: Throwable) {
-            _state.value = Progress(false, "没开始", 0, 0, 0, "语言模型加载失败：" + (t.message ?: ""))
-            return
-        }
-        if (llmHandle == 0L) {
-            _state.value = Progress(false, "没开始", 0, 0, 0, "语言模型打不开，请确认文件完整")
-            return
-        }
-
-        val roster = LinkedHashSet<String>()
-        val recent = mutableListOf<Ann>()
-        val annotated = mutableListOf<Ann>()
+        val annotated: List<Ann>
         var gateFails = 0
-        try {
-            for ((i, chunk) in chunks.withIndex()) {
-                val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn)
-                // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
-                // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
-                val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
-                            else minOf(1024, chunk.text.length * 2 + 160)
-                var result: List<Ann>? = null
-                for (attempt in 0..1) {
-                    val raw = try {
-                        NativeEngine.llmGenerate(llmHandle, prompt, budget, temp)
-                    } catch (t: Throwable) {
-                        EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
-                        break
-                    }
-                    if (thinkOn) {
-                        val th = Annotator.extractThinking(raw)
-                        if (th.isNotBlank()) ThinkingStore.write(c, i, th)
-                    }
-                    val parsed = Annotator.parse(raw)
-                    if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
-                    EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY", "块 $i 第 $attempt 次")
-                }
-                if (result == null) {
-                    result = Annotator.fallback(chunk)
-                    gateFails++
-                    EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
-                }
-                result.forEach { a ->
-                    annotated.add(a)
-                    if (a.speaker.isNotBlank() && a.speaker != "旁白") roster.add(a.speaker)
-                }
-                recent.addAll(result)
-                while (recent.size > 3) recent.removeAt(0)
-                emit("正在理解文字", i + 1, chunks.size, gateFails,
-                    "已标注 ${i + 1}/${chunks.size} 块" + if (gateFails > 0) " · $gateFails 块改走直读" else "")
+        if (direct) {
+            // 快速出声路径：不加载 4B、不标注，原文整块当旁白直接交给 TTS。
+            // 真机 4B 逐 token 约 10 秒，整本不可等；先让用户几分钟内听到声音。
+            annotated = chunks.flatMap { Annotator.directSegments(it.text) }
+            EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
+                "${chunks.size} 块跳过标注，切成 ${annotated.size} 段直接朗读")
+            emit("正在生成声音", 0, annotated.size, 0, "直接朗读原文，不跑语言模型…")
+        } else {
+            // ── 标注阶段：只加载 LLM ──
+            emit("正在理解文字", 0, chunks.size, 0, "语言模型正在逐块标注谁说的、怎么读…")
+            val llmHandle = try {
+                NativeEngine.llmLoad(llm!!.absolutePath, nCtx, threads)
+            } catch (t: Throwable) {
+                _state.value = Progress(false, "没开始", 0, 0, 0, "语言模型加载失败：" + (t.message ?: ""))
+                return
             }
-        } finally {
-            try { NativeEngine.llmFree(llmHandle) } catch (_: Throwable) { }
+            if (llmHandle == 0L) {
+                _state.value = Progress(false, "没开始", 0, 0, 0, "语言模型打不开，请确认文件完整")
+                return
+            }
+
+            val roster = LinkedHashSet<String>()
+            val recent = mutableListOf<Ann>()
+            val collected = mutableListOf<Ann>()
+            try {
+                for ((i, chunk) in chunks.withIndex()) {
+                    val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn)
+                    // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
+                    // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
+                    val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
+                                else minOf(1024, chunk.text.length * 2 + 160)
+                    var result: List<Ann>? = null
+                    for (attempt in 0..1) {
+                        val raw = try {
+                            NativeEngine.llmGenerate(llmHandle, prompt, budget, temp)
+                        } catch (t: Throwable) {
+                            EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
+                            break
+                        }
+                        if (thinkOn) {
+                            val th = Annotator.extractThinking(raw)
+                            if (th.isNotBlank()) ThinkingStore.write(c, i, th)
+                        }
+                        val parsed = Annotator.parse(raw)
+                        if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
+                        EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY", "块 $i 第 $attempt 次")
+                    }
+                    if (result == null) {
+                        result = Annotator.fallback(chunk)
+                        gateFails++
+                        EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
+                    }
+                    result.forEach { a ->
+                        collected.add(a)
+                        if (a.speaker.isNotBlank() && a.speaker != "旁白") roster.add(a.speaker)
+                    }
+                    recent.addAll(result)
+                    while (recent.size > 3) recent.removeAt(0)
+                    emit("正在理解文字", i + 1, chunks.size, gateFails,
+                        "已标注 ${i + 1}/${chunks.size} 块" + if (gateFails > 0) " · $gateFails 块改走直读" else "")
+                }
+            } finally {
+                try { NativeEngine.llmFree(llmHandle) } catch (_: Throwable) { }
+            }
+            annotated = collected
         }
 
         // ── 合成阶段：先释放再加载 TTS，绝不同时常驻 ──
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
         val ttsHandle = try {
-            NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
+            NativeEngine.ttsLoad(tk!!.absolutePath, tok!!.absolutePath, null)
         } catch (t: Throwable) {
             _state.value = Progress(false, "没开始", 0, 0, 0, "音频模型加载失败：" + (t.message ?: ""))
             return
@@ -499,7 +531,7 @@ object Producer {
         var synthFails = 0
         try {
             for ((i, a) in annotated.withIndex()) {
-                val wav = File(work, String.format("chunk_%04d.wav", i))
+                val wav = File(work, String.format(if (direct) "direct_%04d.wav" else "chunk_%04d.wav", i))
                 if (wav.exists() && wav.length() > 44) {
                     wavs.add(wav)
                 } else {
