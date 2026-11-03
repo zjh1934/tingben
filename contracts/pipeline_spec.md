@@ -4,7 +4,7 @@
 > 这是**加工后的产物**，不是原文摘录。Kotlin 实现逐条对齐这里的编号。
 
 ## A. 分块（Alexandria `split_into_chunks` / Antioch `chunker.rs`）
-- A1 先按 `\n\n` 分段，段内按句末标点断句；章节标题单独成条（`@@CHAPTER:` 概念，但不改原文，只记偏移）。
+- A1 章节标题用正则识别成章；章内按字符累加，在句末标点/换行处切块。**⚠️ 首版实现是字符累加，不是严格先分段落再断句**：优先在 500 字或 350 字后的句子边界切开，不改原文、只记 `[start,end)`。
 - A2 单块上限 **500 字**，在段落/句子边界切，不切半个词。
 - A3 每块记 `[start,end)` 字符偏移；偏移必须能在原文精确回取。
 
@@ -18,13 +18,13 @@
 ## C. 合成（Antioch `tts/cpp.rs`）
 - C1 两个模型**串行**：标注阶段只加载 LLM，合成阶段先 `llmFree` 再 `ttsLoad`，不同时常驻。
 - C2 每块一次 `ttsSynthesize`，产出 24kHz 单声道 PCM；**逐块写 `chunk_NNNN.wav`**，写完立即落盘。
-- C3 块间按 `instruct` 里的停顿提示插入静音（默认 250ms，句末 400ms）。
-- C4 **断点**：`checkpoint.json` 记已完成块索引；重跑时跳过已有 WAV（抄 Antioch `.antioch_/` 语义）。
+- C3 块间按 `instruct` 里的停顿提示插入静音（默认 250ms，句末 400ms）。**⚠️ 首版未实现**：TTS 自身按标点自然停顿，合并器直接拼 PCM。
+- C4 **断点**：抄 Antioch 语义。**⚠️ 首版简化为**：同名 `chunk_NNNN.wav` 已存在且 >44 字节就跳过，不写独立 `checkpoint.json`。
 
 ## D. 合并与导出（Antioch `merger.rs`）
 - D1 按块序号读 WAV，跳过 44 字节头，拼接 PCM，重写一个 WAV 头（24kHz / mono / 16-bit）。
 - D2 首版**只出 WAV**；M4A/章节 M4B 是二期（MediaCodec 能力需真机查询）。
-- D3 章节信息另写 `chapters.json`（起止样本数），不伪造内嵌轨。
+- D3 章节信息另写 `chapters.json`。**⚠️ 首版只写章节序号与标题**，未计算起止样本数，不伪造内嵌轨。
 
 ## E. 不变量（ReaderVoice `AGENTS.md`）
 - E1 原文永不修改，只建 source map。
@@ -46,3 +46,31 @@
 
 ## 许可证
 Alexandria MIT、Antioch MIT、OfflineLLM Apache-2.0：移植改编需保留版权声明，见 `reference/精选/*/LICENSE*`。
+
+---
+
+## 实现差距（首版 1.0.0+6，如实登记）
+
+| 规格 | 状态 | 说明 |
+|---|---|---|
+| A1 分段 | 简化 | 字符累加 + 句子边界切；未先按 `\n\n` 分段 |
+| A2 500 字上限 | ✅ | 已实现 |
+| A3 字符偏移 | ✅ | 已实现 |
+| B1~B4 prompt / 上下文 / JSON 修复 / 逐字 gate | ✅ | 已实现，gate 不过重试 1 次后降级直读 |
+| B5 复核关掉 | ✅ | 已实现 |
+| C1 串行加载 | ✅ | 标注完 `llmFree` 才 `ttsLoad` |
+| C2 逐块 WAV 落盘 | ✅ | 已实现 |
+| C3 块间静音 | ❌ | 首版未实现，靠 TTS 自身停顿 |
+| C4 checkpoint | 简化 | 按同名 WAV 跳过，无独立 checkpoint 文件 |
+| D1 WAV 拼接 | ✅ | 解析 data chunk、重写 44 字节头 |
+| D2 只出 WAV | ✅ | 已实现 |
+| D3 章节起止样本数 | ❌ | 只写序号与标题 |
+| E1 原文不可改 | ✅ | 字符级 gate |
+| E2 UNKNOWN 合法 | ✅ | prompt 明写拿不准写「旁白」 |
+| E3 播放优先 | 简化 | 首版先做完再听 |
+| E4 PCM Gate | 部分 | 只校验 `>44` 字节，未做 finite / 非全零检测 |
+| E5 断点只丢当前批 | 部分 | 已落盘 WAV 会跳过 |
+| F1 无 INTERNET / arm64 / largeHeap | ✅ | 已实现 |
+| F2 锁旧项目验证过的版本组合 | ✅ | 已实现 |
+| F3 单一 ggml + 符号差集自检 | ✅ | 已实现 |
+| G1~G4 界面纪律 | ✅ | 5 页、无技术词、一屏一主操作、日志折叠 |
