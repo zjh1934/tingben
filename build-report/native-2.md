@@ -1,0 +1,119 @@
+# 原生引擎 run 2
+提交 9981690418201ff97cc7fc90079b7dfab89b491b
+
+## 关键行
+```
+5:llama.cpp commit: 6b9c0cf
+51:-- ggml commit:  6b9c0cf
+140:libllama.so: 39757480 字节
+150:qwentts.cpp commit: 5916bf7
+197:-- ggml commit:  cc5df49
+247:libqwen.so: 3677920 字节（共用上面的 ggml，不拷自己的）
+249:::warning::找不到 llvm-readelf，跳过 DT_NEEDED 检查（差集自检照做）
+251:libllama.so 需要 ggml 符号 268 个，缺 0
+253:libqwen.so 需要 ggml 符号 116 个，缺 0
+```
+
+## 结尾 100 行
+```
+-- Looking for pthread_create in pthreads
+-- Looking for pthread_create in pthreads - not found
+-- Looking for pthread_create in pthread
+-- Looking for pthread_create in pthread - not found
+-- Check if compiler accepts -pthread
+-- Check if compiler accepts -pthread - yes
+-- Found Threads: TRUE
+-- The ASM compiler identification is Clang with GNU-like command-line
+-- Found assembler: /usr/local/lib/android/sdk/ndk/30.0.16248370/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
+-- Setting GGML_NATIVE_DEFAULT to OFF
+-- Warning: ccache not found - consider installing it for faster compilation or disable this warning with GGML_CCACHE=OFF
+-- CMAKE_SYSTEM_PROCESSOR: aarch64
+-- GGML_SYSTEM_ARCH: ARM
+-- Including CPU backend
+-- ARM detected
+-- Performing Test GGML_COMPILER_SUPPORTS_FP16_FORMAT_I3E
+-- Performing Test GGML_COMPILER_SUPPORTS_FP16_FORMAT_I3E - Failed
+-- Checking for ARM features using flags:
+-- Performing Test HAVE_DOTPROD
+-- Performing Test HAVE_DOTPROD - Failed
+-- Performing Test HAVE_SVE
+-- Performing Test HAVE_SVE - Failed
+-- Performing Test HAVE_MATMUL_INT8
+-- Performing Test HAVE_MATMUL_INT8 - Failed
+-- Performing Test HAVE_FMA
+-- Performing Test HAVE_FMA - Success
+-- Performing Test HAVE_FP16_VECTOR_ARITHMETIC
+-- Performing Test HAVE_FP16_VECTOR_ARITHMETIC - Failed
+-- Performing Test HAVE_SME
+-- Performing Test HAVE_SME - Failed
+-- Adding CPU backend variant ggml-cpu:  
+-- ggml version: 0.27.0
+-- ggml commit:  cc5df49
+-- Configuring done (1.1s)
+-- Generating done (0.0s)
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    LLAMA_OPENSSL
+
+
+-- Build files have been written to: /tmp/tingben-native-build/qwentts-build
+[  2%] Checking git version
+[  5%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml.c.o
+[  5%] Built target version
+[  8%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml.cpp.o
+[ 11%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml-alloc.c.o
+[ 14%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-backend.cpp.o
+[ 17%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-backend-meta.cpp.o
+[ 20%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-opt.cpp.o
+[ 22%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/ggml-threading.cpp.o
+[ 25%] Building C object ggml/src/CMakeFiles/ggml-base.dir/ggml-quants.c.o
+[ 28%] Building CXX object ggml/src/CMakeFiles/ggml-base.dir/gguf.cpp.o
+[ 31%] Linking CXX shared library ../../libggml-base.so
+[ 31%] Built target ggml-base
+[ 34%] Building C object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.c.o
+[ 37%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ggml-cpu.cpp.o
+[ 40%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/repack.cpp.o
+[ 42%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/hbm.cpp.o
+[ 45%] Building C object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/quants.c.o
+[ 48%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/traits.cpp.o
+[ 51%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/amx.cpp.o
+[ 54%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/amx/mmq.cpp.o
+[ 57%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/tiled/tiled.cpp.o
+[ 60%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/tiled/tiled-kernel.cpp.o
+[ 62%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/binary-ops.cpp.o
+[ 65%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/unary-ops.cpp.o
+[ 68%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/vec.cpp.o
+[ 71%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/ops.cpp.o
+[ 74%] Building C object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/arm/quants.c.o
+[ 77%] Building CXX object ggml/src/CMakeFiles/ggml-cpu.dir/ggml-cpu/arch/arm/repack.cpp.o
+[ 80%] Linking CXX shared library ../../libggml-cpu.so
+[ 80%] Built target ggml-cpu
+[ 82%] Building CXX object ggml/src/CMakeFiles/ggml.dir/ggml-backend-dl.cpp.o
+[ 85%] Building CXX object ggml/src/CMakeFiles/ggml.dir/ggml-backend-reg.cpp.o
+[ 88%] Linking CXX shared library ../../libggml.so
+[ 88%] Built target ggml
+[ 91%] Building CXX object CMakeFiles/qwen.dir/src/qwen.cpp.o
+[ 94%] Building CXX object CMakeFiles/qwen.dir/src/pipeline-tts.cpp.o
+[ 97%] Building CXX object CMakeFiles/qwen.dir/src/pipeline-codec.cpp.o
+[100%] Linking CXX shared library libqwen.so
+[100%] Built target qwen
+libqwen.so: 3677920 字节（共用上面的 ggml，不拷自己的）
+===== [3/3] 符号自检（真机 dlopen 等价）=====
+::warning::找不到 llvm-readelf，跳过 DT_NEEDED 检查（差集自检照做）
+ggml 提供符号数: 3411
+libllama.so 需要 ggml 符号 268 个，缺 0
+0 个
+libqwen.so 需要 ggml 符号 116 个，缺 0
+0 个
+===== 完成：两个引擎 + 唯一一份 ggml，符号自检通过 =====
+total 58632
+drwxr-xr-x 2 runner runner     4096 Nov  3 18:12 .
+drwxr-xr-x 3 runner runner     4096 Nov  3 18:08 ..
+-rw-r--r-- 1 runner runner        0 Nov  3 18:12 .verified
+-rwxr-xr-x 1 runner runner  7122440 Nov  3 18:11 libggml-base.so
+-rwxr-xr-x 1 runner runner  4334560 Nov  3 18:11 libggml-cpu.so
+-rwxr-xr-x 1 runner runner  5129736 Nov  3 18:11 libggml.so
+-rwxr-xr-x 1 runner runner 39757480 Nov  3 18:11 libllama.so
+-rwxr-xr-x 1 runner runner  3677920 Nov  3 18:12 libqwen.so
+```
