@@ -15,6 +15,16 @@ object EventLog {
 
     @Volatile private var file: File? = null
     @Volatile private var crashFile: File? = null
+    @Volatile private var lastEngineAction: String = ""
+    @Volatile private var lastEngineDetail: String = ""
+    @Volatile private var lastEngineAt: Long = 0L
+
+    /** 给进度页做心跳：native 每 32 token 写一条，UI 每秒读一次，不用反复读文件。 */
+    fun lastEngine(): Pair<String, String> = lastEngineAction to lastEngineDetail
+    fun lastEngineAgeMs(): Long = System.currentTimeMillis() - lastEngineAt
+    fun resetEngine() {
+        lastEngineAction = ""; lastEngineDetail = ""; lastEngineAt = System.currentTimeMillis()
+    }
 
     fun init(c: Context) {
         file = File(c.filesDir, "events.log")
@@ -58,6 +68,11 @@ object EventLog {
     fun clearCrash() { try { crashFile?.delete() } catch (_: Throwable) { } }
 
     fun log(kind: Kind, action: String, detail: String = "") {
+        if (kind == Kind.ENGINE) {
+            lastEngineAction = action
+            lastEngineDetail = detail
+            lastEngineAt = System.currentTimeMillis()
+        }
         val f = file ?: return
         try {
             val ts = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date())

@@ -261,7 +261,8 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
             note(env, "NATIVE_DECODE_FAIL", "llama_decode 返回非 0");
             break;
         }
-        if ((i & 31) == 0) {
+        // 8 token 一次心跳：手机 CPU 上一条要十几秒，32 太稀会让人以为死机
+        if ((i & 7) == 0) {
             char buf[64];
             snprintf(buf, sizeof(buf), "token=%d outChars=%zu", i, out.size());
             note(env, "NATIVE_DECODE_STEP", buf);

@@ -214,7 +214,7 @@ object Annotator {
     }
 
     fun buildPrompt(sys: String, user: String, chunk: Chunk, idx: Int, total: Int,
-                    roster: Set<String>, recent: List<Ann>): String {
+                    roster: Set<String>, recent: List<Ann>, thinking: Boolean = false): String {
         val u = user
             .replace("{{CHUNK_INDEX}}", (idx + 1).toString())
             .replace("{{CHUNK_TOTAL}}", total.toString())
@@ -222,7 +222,18 @@ object Annotator {
             .replace("{{RECENT}}", if (recent.isEmpty()) "（无）" else recent.takeLast(3)
                 .joinToString(" / ") { it.speaker + "：" + it.text.take(24) })
             .replace("{{ORIGINAL}}", chunk.text)
+            // Qwen3 初版系软开关：放在 user 末尾，/no_think 让模板预置空 think 块
+            .plus(if (thinking) "\n/think" else "\n/no_think")
         return "<|im_start|>system\n$sys<|im_end|>\n<|im_start|>user\n$u<|im_end|>\n<|im_start|>assistant\n"
+    }
+
+    /** 把模型「想了什么」抽出来，单独存；标注 JSON 仍由 parse() 从 </think> 之后取。 */
+    fun extractThinking(raw: String): String {
+        val end = raw.lastIndexOf("</think>")
+        if (end < 0) return ""
+        var s = raw.indexOf("<think>")
+        if (s < 0) s = 0 else s += 7
+        return raw.substring(s, end).trim()
     }
 
     /** 四级 JSON 修复，抄 Alexandria repair_json_array，但更克制。 */
@@ -264,6 +275,33 @@ object Annotator {
         anns.joinToString("") { it.text } == original
 
     fun fallback(chunk: Chunk) = listOf(Ann(chunk.text, "旁白", "平稳、清晰地叙述，句间自然停顿"))
+}
+
+/** 思考外显的内容本地落盘，只留最近 20 块，不进主界面、不联网。 */
+object ThinkingStore {
+    private fun dir(c: Context) = File(c.filesDir, "thinking").apply { mkdirs() }
+
+    fun write(c: Context, index: Int, text: String) {
+        try {
+            File(dir(c), "block_%04d.txt".format(index)).writeText(text)
+            val all = dir(c).listFiles()?.filter { it.isFile && it.name.startsWith("block_") }
+                ?.sortedByDescending { it.name } ?: return
+            all.drop(20).forEach { it.delete() }
+        } catch (_: Throwable) { }
+    }
+
+    fun latest(c: Context): Pair<Int, String> = try {
+        val f = dir(c).listFiles()?.filter { it.isFile && it.name.startsWith("block_") }
+            ?.maxByOrNull { it.name }
+        if (f != null) {
+            val idx = f.name.removePrefix("block_").removeSuffix(".txt").toIntOrNull() ?: 0
+            idx to f.readText()
+        } else -1 to ""
+    } catch (_: Throwable) { -1 to "" }
+
+    fun clear(c: Context) {
+        try { dir(c).listFiles()?.forEach { it.delete() } } catch (_: Throwable) { }
+    }
 }
 
 // ─────────────────────────── WAV 合并（Antioch merger） ───────────────────────────
@@ -377,11 +415,19 @@ object Producer {
         }
         val work = File(c.filesDir, "work/${book.id}").apply { mkdirs() }
         val (sys, usr) = Annotator.templates(c)
+        val thinkOn = Prefs.thinking(c)
+        val nCtx = Prefs.nCtx(c)
+        val threads = Prefs.threads(c)
+        val temp = if (thinkOn) 0.6f else Prefs.temperature(c)
+        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
+            "think=$thinkOn nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}")
+        if (thinkOn) ThinkingStore.clear(c)
+        EventLog.resetEngine()
 
         // ── 标注阶段：只加载 LLM ──
         emit("正在理解文字", 0, chunks.size, 0, "语言模型正在逐块标注谁说的、怎么读…")
         val llmHandle = try {
-            NativeEngine.llmLoad(llm.absolutePath, 4096, 4)
+            NativeEngine.llmLoad(llm.absolutePath, nCtx, threads)
         } catch (t: Throwable) {
             _state.value = Progress(false, "没开始", 0, 0, 0, "语言模型加载失败：" + (t.message ?: ""))
             return
@@ -397,16 +443,22 @@ object Producer {
         var gateFails = 0
         try {
             for ((i, chunk) in chunks.withIndex()) {
-                val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent)
+                val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn)
                 // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
-                val budget = minOf(1024, chunk.text.length * 2 + 160)
+                // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
+                val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
+                            else minOf(1024, chunk.text.length * 2 + 160)
                 var result: List<Ann>? = null
                 for (attempt in 0..1) {
                     val raw = try {
-                        NativeEngine.llmGenerate(llmHandle, prompt, budget, 0f)
+                        NativeEngine.llmGenerate(llmHandle, prompt, budget, temp)
                     } catch (t: Throwable) {
                         EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
                         break
+                    }
+                    if (thinkOn) {
+                        val th = Annotator.extractThinking(raw)
+                        if (th.isNotBlank()) ThinkingStore.write(c, i, th)
                     }
                     val parsed = Annotator.parse(raw)
                     if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
