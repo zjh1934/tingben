@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0+11 (111) → **1.0.0+12 待发**（停止 / 断点续传） |
+| 版本 | **1.0.0+13 (113)** · 17,553,080 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 12 编译中（纯 Kotlin，走原生缓存，约 1~2 分钟） |
+| CI | run 12 失败（表达式体 return）→ run 13 (41710521541) 全绿 |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -169,3 +169,16 @@
 - 制作中断异常兜底写 `PRODUCE_EXCEPTION`，不再静默卡在 running。
 
 ⚠️ 一次 prefill 是单次 `llama_decode`，期间不响应停止，最多等这一批算完才退出。
+
+### 发布记录（R7）
+
+- `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`
+- 17,553,080 字节 / CRC 全过 / `versionName=1.0.0+13` / 签名不变，**直接覆盖安装**
+- 7 个 arm64 .so、无 .gguf、无 INTERNET
+- run 12 编译失败：`AnnCache.read` 写成 `= try { ... return null }`，表达式体禁止 return，改块体后 run 13 全绿
+
+### 待用户复验（按这个顺序）
+
+1. 设置页「试合成一句」→ 出 `probe.wav` 能试听（验 TTS JNI）
+2. 制作页「只想先听声音？直接朗读」→ 几分钟内出音频（验整条出声链）
+3. 点「开始制作」→ 进度页点「停止」→ 再点「继续制作」，看是不是从停下的块接着跑而不是重头
