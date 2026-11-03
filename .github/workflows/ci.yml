@@ -187,6 +187,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 同步 APK 到公开直链
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: python3 scripts/publish_apk.py
+
       - name: 上传构建报告
         if: always()
         uses: actions/upload-artifact@v4
