@@ -16,11 +16,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
+import java.security.MessageDigest
 import java.util.UUID
 
 // ─────────────────────────── 数据模型 ───────────────────────────
 
-data class Book(val id: String, val title: String, val path: String, val chars: Int)
+/** R18 · sha 是正文指纹：反复用「打开方式」打开同一本书不该让书架一直膨胀。 */
+data class Book(val id: String, val title: String, val path: String, val chars: Int,
+                val sha: String = "")
 data class Chapter(val index: Int, val title: String, val start: Int, val end: Int)
 data class Chunk(val index: Int, val chapter: Int, val text: String, val start: Int, val end: Int)
 data class Ann(val text: String, val speaker: String, val instruct: String)
@@ -38,7 +41,8 @@ object BookStore {
             val a = JSONArray(f.readText())
             (0 until a.length()).map { i ->
                 val o = a.getJSONObject(i)
-                Book(o.getString("id"), o.getString("title"), o.getString("path"), o.optInt("chars", 0))
+                Book(o.getString("id"), o.getString("title"), o.getString("path"),
+                    o.optInt("chars", 0), o.optString("sha", ""))
             }.filter { File(it.path).exists() }
         } catch (_: Throwable) { emptyList() }
     }
@@ -47,16 +51,34 @@ object BookStore {
         val a = JSONArray()
         books.forEach { b ->
             a.put(JSONObject().put("id", b.id).put("title", b.title)
-                .put("path", b.path).put("chars", b.chars))
+                .put("path", b.path).put("chars", b.chars).put("sha", b.sha))
         }
         meta(c).writeText(a.toString())
     }
 
+    private fun fingerprint(text: String): String = try {
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    } catch (_: Throwable) { "${text.length}_${text.hashCode()}" }
+
+    /**
+     * R18 · 同一份正文（同名 + 同指纹）只保留一本。
+     * 之前每次「打开方式 / 分享 / 粘贴」都无脑新建 UUID，书架越用越满，
+     * 而用户其实只是想再打开那本书。命中时返回旧书，不写新文件。
+     */
     fun add(c: Context, title: String, text: String): Book {
+        val sha = fingerprint(text)
+        val old = list(c).find {
+            it.title == title && (it.sha == sha || (it.sha.isEmpty() && it.chars == text.length))
+        }
+        if (old != null) {
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_DUP", "$title 已在书架，不重复添加")
+            return old
+        }
         val id = UUID.randomUUID().toString()
         val f = File(dir(c), "$id.txt")
         f.writeText(text)
-        val b = Book(id, title, f.absolutePath, text.length)
+        val b = Book(id, title, f.absolutePath, text.length, sha)
         val all = list(c).toMutableList().also { it.add(0, b) }
         save(c, all)
         EventLog.log(EventLog.Kind.MODEL, "BOOK_ADD", title)
@@ -891,22 +913,27 @@ object Producer {
         }
 
         // ── 合并 ──
-        emit("正在整理音频", annotated.size, annotated.size, gateFails + synthFails, "正在把各段接成一本…")
-        val outFile = File(c.filesDir, "audio/${book.id}.wav").apply { parentFile?.mkdirs() }
+        emit("正在整理音频", annotated.size, annotated.size, gateFails + synthFails, "正在把各段接成一个音频…")
+        // R18 · 旧版写死 audio/<bookId>.wav：做第 1 章和第 3 章会互相覆盖，
+        // 音频页又把文件名当 bookId，一章的成品显示成整本书。改成每次独立成品 id。
+        val outFile = File(AudioLibrary.dir(c), "${UUID.randomUUID()}.wav")
         val ok = WavMerger.merge(wavs, outFile)
         if (!ok || outFile.length() <= 44) {
             _state.value = Progress(false, "没完成", annotated.size, annotated.size,
                 gateFails + synthFails, "没能生成音频，请点设置页复制诊断信息发我")
             return
         }
-        // 章节信息（起止样本数，不伪造内嵌轨）
+        val item = AudioLibrary.register(c, book.id, book.title, only, direct, outFile)
+        EventLog.log(EventLog.Kind.PIPELINE, "AUDIO_REGISTER",
+            "${item.title} · ${item.scope} · ${item.mode} · ${item.bytes} 字节")
+        // 章节信息跟着成品 id 走，不再被下一次制作覆盖
         try {
             val chJson = JSONArray()
             chapters.forEach { ch ->
-                val n = wavs.size
                 chJson.put(JSONObject().put("index", ch.index).put("title", ch.title))
             }
-            File(outFile.parentFile, "${book.id}.chapters.json").writeText(chJson.toString())
+            File(outFile.parentFile, "${outFile.nameWithoutExtension}.chapters.json")
+                .writeText(chJson.toString())
         } catch (_: Throwable) { }
 
         _state.value = Progress(false, "完成", annotated.size, annotated.size,

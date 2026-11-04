@@ -149,9 +149,14 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     Toast.makeText(ctx, "这本书没读进来：${result.exceptionOrNull()?.message ?: "换个文件试试"}",
                         Toast.LENGTH_LONG).show()
                 } else {
+                    val before = BookStore.list(ctx).size
                     BookStore.add(ctx, r.title, r.text)
+                    val added = BookStore.list(ctx).size > before
                     refresh++
-                    Toast.makeText(ctx, "已加入书架：${r.title}（${r.kind}）", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx,
+                        if (added) "已加入书架：${r.title}（${r.kind}）"
+                        else "这本书已经在书架上了：${r.title}",
+                        Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -209,7 +214,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     BookStore.add(ctx, "分享的文字", text)
                     refresh++
                     screen = Screen.LIBRARY
-                    Toast.makeText(ctx, "分享的文字已加入书架", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, "文字已就绪（相同内容不会重复添加）", Toast.LENGTH_SHORT).show()
                 }
             }
             else -> {
@@ -298,7 +303,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
-                    onDone = { screen = Screen.AUDIO },
+                    onDone = { screen = Screen.AUDIO; refresh++ },
                     onStarted = { lastSelection = it })
                 Screen.PROGRESS -> ProgressScreen(ctx,
                     onBack = { screen = Screen.LIBRARY },
@@ -466,7 +471,8 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         Spacer(Modifier.height(10.dp))
         Text("把小说变成能听的音频", fontSize = 21.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("导入一本书，点一次开始，剩下的交给手机自己跑。", fontSize = 12.5.sp, color = Sub)
+        Text("书架只放原书；做好的声音在「音频」，跑过的活儿在「任务」。同一本书再打开一次不会多出一本。",
+            fontSize = 12.sp, color = Sub)
         Spacer(Modifier.height(14.dp))
         if (producing) {
             CardBox(Modifier.padding(bottom = 12.dp)) {
@@ -860,6 +866,91 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                     }
                 }
             }
+
+            // R18 · 工作看台：分段折叠小模块。
+            // 结构改写自 SimformSolutionsPvtLtd/SSComposeExpandableListView（MIT）的
+            // header/child 折叠模型，分列方式参照 ensemble-reads/ChaptersScreen；
+            // 用 Compose 原生实现，不引 JitPack 库。数据来自 Workbench 扫 work 目录。
+            Spacer(Modifier.height(16.dp))
+            val seenTask = remember(tick) { TaskResume.load(c) }
+            val segs = remember(tick, seenTask) { Workbench.segments(c, seenTask) }
+            val rest = remember(tick, seenTask) { Workbench.remainingCount(c, seenTask) }
+            var segOpen by remember { mutableStateOf(false) }
+            var segSel by remember { mutableStateOf<Int?>(null) }
+            // 与音频页共用 PlayQueue：不再有第二套 MediaPlayer 抢音频焦点。
+            val pqSeg by PlayQueue.state.collectAsState()
+            CardBox {
+                Row(Modifier.clickable { segOpen = !segOpen }, verticalAlignment = Alignment.CenterVertically) {
+                    Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text(if (segOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
+                }
+                Text("绿=已有声音 · 蓝=已标注 · 空=还没轮到；点一小格看原文、试听这一段。",
+                    fontSize = 11.sp, color = Sub)
+                if (segOpen) {
+                    Spacer(Modifier.height(10.dp))
+                    if (segs.isEmpty()) {
+                        Text("还没开始落盘，跑起来后这里会一段一段亮起来。", fontSize = 11.5.sp, color = Sub)
+                    } else segs.chunked(8).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            row.forEach { s ->
+                                val base = when {
+                                    s.hasAudio -> Good
+                                    s.annotated -> Primary
+                                    else -> Line
+                                }
+                                Box(
+                                    Modifier.size(30.dp)
+                                        .background(
+                                            if (segSel == s.index) PrimarySoft else base.copy(alpha = 0.18f),
+                                            RoundedCornerShape(8.dp))
+                                        .clickable { segSel = if (segSel == s.index) null else s.index },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("${s.index + 1}", fontSize = 10.sp,
+                                        color = if (segSel == s.index) Primary else base)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(5.dp))
+                    }
+                    if (rest > 0) Text("后面还有约 $rest 段待处理", fontSize = 11.sp, color = Sub)
+                    segSel?.let { sel ->
+                        val s = segs.find { it.index == sel }
+                        if (s != null) {
+                            Spacer(Modifier.height(10.dp))
+                            Text("第 ${s.index + 1} 段 · " +
+                                    if (s.hasAudio) "已合成 ${fmtTime(s.durationMs)}"
+                                    else if (s.annotated) "已标注，还没合成" else "还没轮到",
+                                fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
+                            Spacer(Modifier.height(5.dp))
+                            Text(if (s.preview.isBlank()) "（暂无文字预览）" else s.preview + "…",
+                                fontSize = 11.5.sp, color = Sub, lineHeight = 17.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Row {
+                                if (s.wav != null) {
+                                    val label = "第 ${s.index + 1} 段"
+                                    val onThis = pqSeg.label == label
+                                    Button(onClick = {
+                                        PlayQueue.setTracks(listOf(Track(s.wav, label)))
+                                        PlayQueue.playFrom(0)
+                                    }) {
+                                        Text(if (onThis && pqSeg.isPlaying) "重播这一段" else "试听这一段",
+                                            fontSize = 12.sp)
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    TextButton(onClick = { PlayQueue.release() }) {
+                                        Text(if (onThis && pqSeg.isPlaying) "停止" else "关掉预览",
+                                            fontSize = 11.5.sp, color = Sub)
+                                    }
+                                } else {
+                                    Text("这一段还没生成声音", fontSize = 11.5.sp, color = Sub)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(18.dp))
         // 点一次就锁住按钮：真机上用户狂点 10 次「停止」反而说明它没生效，
@@ -1030,63 +1121,136 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
 }
 
 // ── ④ 我的音频 ───────────────────────────────────────────────
+// R18 · 播放状态与 300ms 快照轮询改写自 m9939418/AlexExoPlayerMP3 的
+// PlaybackState / PlayerController / MiniPlayingBar；控件集（播放暂停 / 上下条 /
+// ±15s / 进度拖动）参照 PaperBack 与 andriishpek-sigma/AudiobookPlayer 的通行做法。
+// 本项目仍用系统 MediaPlayer，不引入 Media3 / Hilt / JitPack 新依赖。
+private fun fmtTime(ms: Long): String {
+    val s = (ms / 1000).coerceAtLeast(0)
+    return "%02d:%02d".format(s / 60, s % 60)
+}
+
 @Composable
 private fun AudioScreen(c: Context, refresh: Int) {
-    val dir = File(c.filesDir, "audio")
-    val files = remember(refresh) {
-        dir.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") }?.sortedByDescending { it.lastModified() }
-            ?: emptyList()
+    var localTick by remember { mutableStateOf(0) }
+    val items = remember(refresh, localTick) { AudioLibrary.list(c) }
+    var exportId by remember { mutableStateOf<String?>(null) }
+    // R18 · 播放器不再手搓：PlayQueue 由三份现成源码改写（ReaderVoice CachedAudioPlayer
+    // / AlexExoPlayerMP3 PlayerController / ensemble-reads PlaybackController）。
+    // 音频页与「分段看台」共用一个实例，切页不停播、不会两套 MediaPlayer 抢焦点。
+    val pq by PlayQueue.state.collectAsState()
+    LaunchedEffect(items) {
+        PlayQueue.setTracks(items.map { Track(it.file, "${it.title} · ${it.scope}") })
     }
-    var playing by remember { mutableStateOf<File?>(null) }
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
-    val clipboard = LocalClipboardManager.current
-    DisposableEffect(Unit) { onDispose { player?.release() } }
+    LaunchedEffect(Unit) { while (true) { delay(300); PlayQueue.tick() } }
+    val isPlaying = pq.isPlaying
+    val posMs = pq.positionMs
+    val durMs = pq.durationMs
+    val current = items.getOrNull(pq.index)
+
+    val release: () -> Unit = { PlayQueue.release() }
+    val step: (Int) -> Unit = { d -> if (d < 0) PlayQueue.previous() else PlayQueue.next() }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
-        val f = playing
+        val f = items.find { it.id == exportId }?.file
         if (uri != null && f != null) {
-            try { c.contentResolver.openOutputStream(uri)?.use { o -> f.inputStream().copyTo(o) }
-                Toast.makeText(c, "已保存", Toast.LENGTH_SHORT).show() } catch (_: Throwable) { }
+            try {
+                c.contentResolver.openOutputStream(uri)?.use { o -> f.inputStream().copyTo(o) }
+                Toast.makeText(c, "已保存", Toast.LENGTH_SHORT).show()
+            } catch (_: Throwable) { Toast.makeText(c, "保存失败", Toast.LENGTH_SHORT).show() }
         }
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("我的音频", fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("做好的有声书都在这儿，点开就听。", fontSize = 12.5.sp, color = Sub)
+        Text("每次制作产出一条成品。书架只放原书，任务页只放制作记录，这里只放做好的声音。",
+            fontSize = 12.sp, color = Sub)
         Spacer(Modifier.height(14.dp))
-        if (files.isEmpty()) {
+
+        // 顶部「现在播放」：控件集合取自 MiniPlayingBar 与 Media3 的
+        // PreviousButton / PlayPauseButton / NextButton 语义；状态由 PlayQueue 单向驱动。
+        if (current != null) {
+            CardBox(Modifier.padding(bottom = 12.dp)) {
+                Text(if (pq.ended) "已播完" else if (isPlaying) "播放中" else "已暂停",
+                    fontSize = 11.5.sp, color = Primary)
+                Spacer(Modifier.height(4.dp))
+                Text("${current.title} · ${current.scope}", fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 2)
+                Text("${current.mode} · ${fmtTime(AudioLibrary.durationMs(current.file))}",
+                    fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(12.dp))
+                Slider(
+                    value = if (durMs > 0) posMs.toFloat() / durMs.toFloat() else 0f,
+                    onValueChange = { v -> PlayQueue.seekTo((v * durMs.toFloat()).toLong()) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(fmtTime(posMs), fontSize = 11.sp, color = Sub)
+                    Spacer(Modifier.weight(1f))
+                    Text(fmtTime(durMs), fontSize = 11.sp, color = Sub)
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { step(-1) }) { Text("⏮ 上一条", fontSize = 12.sp) }
+                    TextButton(onClick = { PlayQueue.seekTo((posMs - 15000).coerceAtLeast(0)) }) {
+                        Text("−15s", fontSize = 12.sp)
+                    }
+                    Button(onClick = { PlayQueue.toggle() }) {
+                        Text(if (isPlaying) "⏸ 暂停" else "▶ 播放", fontSize = 13.sp)
+                    }
+                    TextButton(onClick = { PlayQueue.seekTo((posMs + 15000).coerceAtMost(durMs)) }) {
+                        Text("+15s", fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { step(1) }) { Text("下一条 ⏭", fontSize = 12.sp) }
+                }
+                // ensemble-reads PlaybackController.setSpeed 的同款档位
+                TextButton(onClick = {
+                    val nextSpeed = when (pq.speed) {
+                        1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f
+                    }
+                    PlayQueue.setSpeed(nextSpeed)
+                }) { Text("倍速 ${"%.2f".format(pq.speed).trimEnd('0').trimEnd('.')}x", fontSize = 11.5.sp, color = Sub) }
+                TextButton(onClick = release, Modifier.fillMaxWidth()) {
+                    Text("关闭播放器", fontSize = 11.5.sp, color = Sub)
+                }
+            }
+        }
+
+        if (items.isEmpty()) {
             CardBox {
                 Text("还没有音频", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 Text("回书架选一本书，点「制作有声书」。", fontSize = 12.sp, color = Sub)
             }
-        } else files.forEach { f ->
-            val title = remember(f) {
-                val id = f.name.removeSuffix(".wav")
-                BookStore.list(c).find { it.id == id }?.title ?: "有声书"
-            }
+        } else items.forEachIndexed { idx, item ->
+            val on = idx == pq.index
             CardBox(Modifier.padding(bottom = 10.dp)) {
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text("%.1f MB".format(f.length() / 1024f / 1024f), fontSize = 11.5.sp, color = Sub)
-                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
+                            fontSize = 14.5.sp, maxLines = 2)
+                        Text("${item.mode} · ${fmtTime(AudioLibrary.durationMs(item.file))} · %.1f MB"
+                            .format(item.bytes / 1024f / 1024f), fontSize = 11.5.sp, color = Sub)
+                    }
+                    if (on) Text("●", color = Primary, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(9.dp))
                 Row {
                     Button(onClick = {
-                        if (playing == f) {
-                            player?.stop(); player?.release(); player = null; playing = null
-                        } else {
-                            player?.release()
-                            val mp = MediaPlayer()
-                            try {
-                                mp.setDataSource(f.absolutePath); mp.prepare(); mp.start()
-                                player = mp; playing = f
-                                mp.setOnCompletionListener { playing = null }
-                            } catch (t: Throwable) {
-                                Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }) { Text(if (playing == f) "停止" else "试听") }
+                        if (!on || pq.ended) PlayQueue.playFrom(idx) else PlayQueue.toggle()
+                    }) {
+                        Text(if (on && isPlaying) "暂停" else if (on) "继续" else "试听", fontSize = 12.sp)
+                    }
                     Spacer(Modifier.width(8.dp))
-                    FilledTonalButton(onClick = { playing = f; export.launch(title + ".wav") }) { Text("保存到手机") }
+                    FilledTonalButton(onClick = {
+                        exportId = item.id
+                        export.launch("${item.title}_${item.scope}.wav")
+                    }) { Text("保存到手机", fontSize = 12.sp) }
+                    Spacer(Modifier.width(4.dp))
+                    TextButton(onClick = {
+                        if (on) release()
+                        AudioLibrary.remove(c, item.id); localTick++
+                    }) { Text("删除", fontSize = 11.5.sp, color = Warn) }
                 }
             }
         }

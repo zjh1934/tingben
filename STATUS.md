@@ -687,3 +687,39 @@ Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一�
 ### 下轮队列（未动）
 
 ① prompt hash 进缓存主键 + GBNF（路线 C，需连 `bucket()` 三处调用一起改并跑回归）；② 三档里的「改编剧本」= 换逐字契约，按用户要求搁置；③ 用户贴的四条「资源解析服务请求失败」不是坏链：前两条是 hf-mirror 与 HF 主域的 GB 级二进制解析器扛不住，第四条 `github.com/zjh1934/kongzhishouji/...` 是**另一个项目**的 APK，与听本无关。
+
+---
+
+## R18 · 音频页 / 工作看台 / 书架边界（本轮）
+
+用户一次提了三件事 + 一条纪律：**别手搓，去找现成代码改写**。
+
+### 做了什么
+
+1. **音频页**：从「一列 wav + 试听/保存」改成完整播放器 —— 播放/暂停、上一条/下一条、±15s、进度拖动、时长、倍速、状态、关闭、删除。控件集取自 `MiniPlayingBar` 与 Media3 `PreviousButton/PlayPauseButton/NextButton` 语义。
+2. **工作看台**：进度页新增可折叠「分段看台」，一行 8 个小胶囊 `1 2 3 4…`（绿=已有声音 / 蓝=已标注 / 空=未轮到），点一格展开原文预览 + 试听这一段。折叠模型改写自 `SSComposeExpandableListView`（MIT），分列方式参照 `ensemble-reads/ChaptersScreen.kt`。数据由 `Workbench` 扫 work 目录，**不新造状态**。
+3. **播放队列内核**：新文件 `core/PlayQueue.kt`，改写自 ReaderVoice `CachedAudioPlayer`（队列 + 播完自动下一段）+ AlexExoPlayerMP3 `PlayerController`（snapshot）+ ensemble-reads `PlaybackController`（playFrom/pause/next/prev/setSpeed）。**音频页与看台共用单例**，页面里已无手搓 MediaPlayer。
+4. **书架不再膨胀**（两个真因，详见 `docs/播放与看台_移植清单.md` §2）：
+   - `BookStore.add` 增 SHA-256 正文指纹，同名同内容重复导入直接返回旧书（`BOOK_IMPORT_DUP`）；
+   - 旧版成品写死 `audio/<bookId>.wav`，做第 1 章和第 3 章互相覆盖、音频页又把文件名当书 Id 显示成整本 → 新增 `AudioLibrary`（UUID + `index.json` 记书名/范围/方式/时间）。**书架只放原书，任务页只放制作记录，我的音频只放成品**，三层互不增长。
+
+### 联动检查（逐条过）
+
+| 点 | 处理 |
+|---|---|
+| 成品路径 UUID 化 | `AUDIO_REGISTER` 事件、`TaskResume.output` 绝对路径照常可用 |
+| 章节 sidecar | `${bookId}.chapters.json` → `${成品id}.chapters.json`，不再被下次覆盖 |
+| 「去试听」按钮 | 补 `refresh++`，否则新成品列表读不到 |
+| 音频页列表 | 改读 `AudioLibrary.list()`，兼容旧版 `<bookId>.wav` |
+| 两套播放器抢焦点 | 统一 `PlayQueue`，看台试听用单元素队列，离开看台回音频页时重新 `setTracks` |
+| 看台段索引 | `ann_` 与 `chunk_/direct_` 不一一对应，分开如实列，不假装对齐；只列前 60 段 |
+| 逐字 gate / prompt v2 / native / 状态机 | 本轮范围外，静态检查确认未动 |
+
+### 验证
+
+- 本地：`scripts/check_structure.py` 18 项通过；两处 UI 函数括号平衡；`segPlayer / currentId / 手搓 MediaPlayer` 零残留；`PlayQueue` 13 个 API 与调用点逐一对照。
+- CI 与拆包结果见下一条追加。**真机仍是零证据**。
+
+### 下轮队列
+
+① 段级「重做这一段」（要把 Workbench 从只读升级成可写，牵动 AnnCache 与 Producer）；② Media3 / 锁屏通知 / 后台播放（会动 Gradle 与前台服务，单独一轮）；③ prompt hash 进缓存主键 + GBNF。
