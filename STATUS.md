@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | 1.0.0+16 (116) → **1.0.0+17 待发**（外部导入 / 拟声 / 刷新 / 折叠 / 现代化） |
+| 版本 | **1.0.0+17 (117)** · 17,603,743 字节 · 已发布 |
 | APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 17 编译中（纯 Kotlin + manifest，走原生缓存） |
+| CI | **run 17 全绿**（原生缓存命中、编到成品、APK 闸门、Release、raw 直链同步） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -444,3 +444,12 @@ C++ 未改，走原生缓存。
 ### 待用户复验
 1. 开始制作 → 跑几块 → 直接划掉 App / 强制停止 → 重开：书架卡 + 常驻条 + 「任务」页都应看到《书名》和进度
 2. 点「继续制作」→ 应跳过已做块（日志里出现 `TASK_RESTORE` 和「N 块直接续上」）
+
+### 发布（run 17）
+
+```
+https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
+```
+
+本地复核：`PK` 头、zip CRC 全检 OK、无 .gguf、7 个 arm64-v8a .so、153 个条目、17,603,743 字节。
+C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重复 4~7 分钟原生编译，正是用户要的「多改一点再打包」。
