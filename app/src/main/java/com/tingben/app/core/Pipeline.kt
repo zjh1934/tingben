@@ -4,6 +4,7 @@ import android.content.Context
 import com.tingben.app.diag.AuditLog
 import com.tingben.app.diag.BlockAudit
 import com.tingben.app.diag.EventLog
+import com.tingben.app.diag.RawDump
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -309,7 +310,12 @@ object Annotator {
         val previewHead: String, val previewTail: String
     )
 
-    /** 四级 JSON 修复，抄 Alexandria repair_json_array，但更克制；同时把过程记下来。 */
+    /**
+     * R24 · 换成移植件 JsonSalvage（Alexandria clean_json_string + repair_json_array）：
+     * 括号计数找真闭合、字符串内控制字符修复、裸串过滤、截断到最后一个完整对象。
+     * 上一版手搓的「取最后一个右方括号」会被正文里的方括号骗到，也不处理字符串内裸换行。
+     * ParseMeta 字段语义保持不变，ruleChecks / BlockAudit 不跟着改。
+     */
     fun parseWithMeta(rawIn: String): Pair<List<Ann>?, ParseMeta> {
         var raw = rawIn
         val rawChars = raw.length
@@ -317,38 +323,13 @@ object Annotator {
         val thinkClosed = close >= 0
         val thinkChars = if (close >= 0) close else 0
         if (close >= 0) raw = raw.substring(close + THINK_CLOSE.length)
-        val fenceRemoved = raw.contains("```")
-        raw = raw.replace(Regex("```(?:json)?", RegexOption.IGNORE_CASE), "").trim()
-        val s = raw.indexOf('[')
-        val e = raw.lastIndexOf(']')
-        val body = if (s < 0) "" else if (e > s) raw.substring(s, e + 1) else raw.substring(s) + "]"
-        val trailingChars = if (e >= 0) raw.substring(e + 1).trim().length else 0
-        val head = raw.take(160).replace('\n', '⏎')
-        val tail = raw.takeLast(80).replace('\n', '⏎')
-        fun meta(level: Int) = ParseMeta(rawChars, thinkChars, body.length, s, e, level,
-            fenceRemoved, thinkClosed, trailingChars, head, tail)
-
-        val tries = mutableListOf(body)
-        tries.add(body.replace(Regex("\\}\\s*\\{"), "},\n{"))
-        // 正则只捞完整的单条对象
-        val objs = Regex("\\{[^{}]*\\}").findAll(body).map { it.value }.toList()
-        if (objs.isNotEmpty()) tries.add("[" + objs.joinToString(",") + "]")
-        val last = body.lastIndexOf("},")
-        if (last > 0) tries.add(body.substring(0, last + 1) + "]")
-
-        for ((level, t) in tries.withIndex()) {
-            try {
-                val a = JSONArray(t)
-                val out = mutableListOf<Ann>()
-                for (i in 0 until a.length()) {
-                    val o = a.getJSONObject(i)
-                    out.add(Ann(o.optString("text", ""), o.optString("speaker", "旁白"),
-                        o.optString("instruct", "平稳叙述")))
-                }
-                if (out.isNotEmpty() && out.all { it.text.isNotEmpty() }) return out to meta(level)
-            } catch (_: Throwable) { }
-        }
-        return null to meta(-1)
+        val ex = JsonSalvage.extract(raw)
+        val (anns, level) = JsonSalvage.repair(ex.body)
+        val meta = ParseMeta(rawChars, thinkChars, ex.body?.length ?: 0,
+            ex.jsonStart, ex.jsonEnd, level, ex.fenceRemoved, thinkClosed,
+            ex.trailingChars, raw.take(160).replace('\n', '⏎'),
+            raw.takeLast(80).replace('\n', '⏎'))
+        return anns to meta
     }
 
     fun parse(rawIn: String): List<Ann>? = parseWithMeta(rawIn).first
@@ -396,18 +377,17 @@ object Annotator {
         anns.joinToString("") { it.text } == original
 
     /**
-     * R22 · 采纳判定：逐条校验 + 确定性补齐，不再「全有或全无」整块降级。
+     * R22 建、R24 换成移植件 Adoption（Antioch annotate / generate_instructs）。
      *
-     * 抄 Antioch `script/annotator.rs` 的 annotate()：结构由确定性代码保证，
-     * LLM 只负责导演指令，单条失败用 sensible defaults 补齐，绝不因为尾部没标完
-     * 就把前面标对的整块丢掉。旧实现里模型吐到预算上限被腰斩 → 四级修复丢尾条
-     * → gate 全等失败 → fallback 全旁白「平稳叙述」，跑了半天听不出任何标注。
+     * 旧实现只做「顺序前缀匹配 + 尾部补齐」；移植件额外带 echo 检测、标签前缀剥离、
+     * 首句截断、去重、单条失败用 sensible defaults 补齐。模型吐到预算上限被腰斩时，
+     * 前面标对的条仍保留，尾部才由程序补成旁白，不再整块降级成「跑了半天啥也没标」。
      *
-     * 与逐字契约的关系：result 拼起来仍严格 == original（一个字没放宽），
-     * 只是把模型没覆盖到的尾部由程序补成旁白，而不是整块换成直读。
+     * 与逐字契约的关系：result 拼起来仍严格 == original（一个字没放宽）。
      */
     data class Reconcile(
-        val result: List<Ann>, val kept: Int, val filled: Int, val disposition: String
+        val result: List<Ann>, val kept: Int, val filled: Int, val disposition: String,
+        val drops: List<Adoption.Drop> = emptyList()
     ) {
         companion object {
             const val FULL = "FULL"         // 模型全标对
@@ -417,27 +397,8 @@ object Annotator {
     }
 
     fun reconcile(parsed: List<Ann>?, original: String): Reconcile {
-        val out = mutableListOf<Ann>()
-        var cursor = 0
-        var kept = 0
-        if (parsed != null) {
-            for (a in parsed) {
-                if (a.text.isEmpty() || cursor + a.text.length > original.length ||
-                    !original.regionMatches(cursor, a.text, 0, a.text.length)) break
-                out.add(a)
-                kept++
-                cursor += a.text.length
-            }
-        }
-        val rest = if (cursor < original.length) original.substring(cursor) else ""
-        val fill = if (rest.isNotEmpty()) directSegments(rest) else emptyList()
-        out.addAll(fill)
-        val disp = when {
-            kept > 0 && fill.isEmpty() -> Reconcile.FULL
-            kept > 0 -> Reconcile.PARTIAL
-            else -> Reconcile.FALLBACK
-        }
-        return Reconcile(out, kept, fill.size, disp)
+        val r = Adoption.adopt(parsed, original) { rest -> directSegments(rest) }
+        return Reconcile(r.anns, r.kept, r.filled, r.disposition, r.drops)
     }
 
     /** 标注结果全文（带来源标记），落进 audit jsonl 与「复制标注全文」。单块上限 8KB。 */
@@ -842,9 +803,11 @@ object Producer {
             "think" to thinkOn.toString(), "nCtx" to nCtx.toString(),
             "chunks" to chunks.size.toString(),
             "prompt" to ("v2 sha=" + Integer.toHexString(sys.hashCode()))))
+        // R24 · 移植 Alexandria llm_responses.log 的思路：每次 attempt 的原始产出全文按 run 落盘。
+        RawDump.begin(c, AuditLog.currentRun())
         EventLog.log(EventLog.Kind.AUDIT, "AUDIT_RUN_BEGIN",
             "run=${AuditLog.currentRun()} · ${chunks.size} 块 · " +
-                (if (direct) "不过语言模型" else "逐块标注"),
+                (if (direct) "不过语言模型" else "逐块标注") + " · 原始产出全文目录 " + RawDump.runDir(c),
             fields = mapOf("runId" to AuditLog.currentRun(), "book" to book.title,
                 "mode" to (if (direct) "直接朗读" else "标注后合成")))
         if (thinkOn) ThinkingStore.clear(c)
@@ -961,6 +924,18 @@ object Producer {
                                 EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
                                 break
                             }
+                            // R24 · 移植 Alexandria llm_responses.log：未经任何清洗的原始产出全文落盘，
+                            // 事后能自证「真标还是假标」，不再只有头 160 尾 80 的截取。
+                            val dumpPath = RawDump.write(c, i + 1, attempt + 1, raw,
+                                prompt.length, budget)
+                            EventLog.log(EventLog.Kind.AUDIT, "ANN_RAW_DUMP",
+                                "块 ${i + 1} 第 ${attempt + 1} 次 · 原始产出 ${raw.length} 字 · " +
+                                    (if (dumpPath.isEmpty()) "全文落盘失败" else "全文已落盘（诊断页可复制）"),
+                                fields = mapOf("block" to (i + 1).toString(),
+                                    "attempt" to (attempt + 1).toString(),
+                                    "outChars" to raw.length.toString(),
+                                    "budget" to budget.toString(),
+                                    "path" to dumpPath.takeLast(80)))
                             if (cancelRequested) {
                                 _state.value = halted(i, chunks.size, gateFails)
                                 return
@@ -993,6 +968,17 @@ object Producer {
                                     "disposition" to rec.disposition,
                                     "kept" to rec.kept.toString(), "filled" to rec.filled.toString(),
                                     "gateOk" to gateOk.toString()))
+                            // R24 · 移植件带回来的逐条判据结果：echo / 标签 / 太短 / 重复 / 位置不符。
+                            // 用户原话「不知道它标注是真标注还是假标注」——这里给出可核对的依据。
+                            if (rec.drops.isNotEmpty()) {
+                                EventLog.log(EventLog.Kind.AUDIT, "ANN_ADOPT_DETAIL",
+                                    "块 ${i + 1} 逐条判据 · " + rec.drops.joinToString("；") {
+                                        "第 ${it.index + 1} 条[${it.speaker}] ${it.reason}：${it.preview}"
+                                    },
+                                    level = EventLog.Level.WARN,
+                                    fields = mapOf("block" to (i + 1).toString(),
+                                        "drops" to rec.drops.size.toString()))
+                            }
                             EventLog.log(EventLog.Kind.AUDIT, "ANN_RAW",
                                 "块 ${i + 1} 第 $attempt 次 · 原始 ${meta.rawChars} 字 · 思考 ${meta.thinkChars} 字" +
                                     " · JSON 候选 ${meta.bodyChars} 字 · 修复层级 ${meta.repairLevel}" +

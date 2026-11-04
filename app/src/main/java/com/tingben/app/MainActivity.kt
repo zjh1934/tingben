@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
 import com.tingben.app.diag.AuditLog
 import com.tingben.app.diag.EventLog
+import com.tingben.app.diag.RawDump
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1635,6 +1636,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 var showRules by remember { mutableStateOf(false) }
                 var showPreview by remember { mutableStateOf(false) }
                 var showContent by remember { mutableStateOf(false) }
+                var showRaw by remember { mutableStateOf(false) }
                 var auditTick by remember { mutableStateOf(0) }
                 LaunchedEffect(Unit) {
                     while (true) { delay(3000); auditTick++ }
@@ -1644,6 +1646,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 val blocksText = remember(auditTick) { AuditLog.blocksText(c, 12) }
                 val previewText = remember(auditTick) { AuditLog.previewText(c, 3) }
                 val contentText = remember(auditTick) { AuditLog.contentText(c, 6) }
+                val rawText = remember(auditTick) { RawDump.latest(c) }
                 val hasEmpty = auditText.contains("零标注 ") && !auditText.contains("零标注 0")
 
                 fun buildDiag(full: Boolean): String = buildString {
@@ -1659,6 +1662,10 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     append("\n=== 标注结果（最近 3 块 · 逐条 text/speaker/instruct）===\n")
                         .append(AuditLog.contentText(c, 3)).append('\n')
                     append("\n=== 规则生效 ===\n").append(AuditLog.ruleText(c)).append('\n')
+                    append("\n=== 模型原始产出（未经清洗，最近一块）===\n")
+                    if (rawText.isBlank()) append("（暂无；标注后合成才有）\n")
+                    else append(if (full) rawText else rawText.take(400)).append('\n')
+                    append("原始产出全文目录：").append(RawDump.runDir(c)).append('\n')
                     append("\n=== 逐块明细（最近 12 块）===\n").append(AuditLog.blocksText(c, 12)).append('\n')
                     val crash = EventLog.lastCrash()
                     if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
@@ -1698,6 +1705,14 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         Toast.makeText(c, "已复制标注全文（最近 20 块），仅本机保存", Toast.LENGTH_SHORT).show()
                     }, Modifier.fillMaxWidth()) { Text("复制标注全文（最近 20 块）", fontSize = 11.5.sp) }
                 }
+                // R24 · 未经任何清洗的模型原始产出：能直接自证「真标还是假标」，
+                // 而不是只靠解析后的统计数字。移植 Alexandria llm_responses.log 的思路。
+                TextButton(onClick = { showRaw = !showRaw }, Modifier.fillMaxWidth()) {
+                    Text(if (showRaw) "收起模型原始产出" else "查看模型原始产出（未经清洗，最近一块）",
+                        fontSize = 11.5.sp, color = Primary)
+                }
+                if (showRaw) Text(rawText.ifBlank { "（暂无；标注后合成才有）" },
+                    fontSize = 10.sp, color = Sub)
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth()) {
                     TextButton(onClick = { showBlocks = !showBlocks }) {
@@ -1717,6 +1732,10 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Text(previewText, fontSize = 10.5.sp, color = Sub)
                 }
                 Spacer(Modifier.height(8.dp))
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(rawText.ifBlank { "（暂无模型原始产出）" }))
+                    Toast.makeText(c, "已复制最近一块模型原始产出全文，仅本机保存", Toast.LENGTH_SHORT).show()
+                }, Modifier.fillMaxWidth()) { Text("复制最近一块模型原始产出（全文）", fontSize = 11.5.sp) }
                 TextButton(onClick = {
                     clipboard.setText(AnnotatedString(buildDiag(false)))
                     Toast.makeText(c, "已复制诊断摘要，直接贴给我即可", Toast.LENGTH_SHORT).show()

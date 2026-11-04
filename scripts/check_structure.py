@@ -11,6 +11,10 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "app/src/main/java/com/tingben/app/MainActivity.kt",
  "app/src/main/java/com/tingben/app/diag/EventLog.kt",
  "app/src/main/java/com/tingben/app/diag/AuditLog.kt",
+ "app/src/main/java/com/tingben/app/core/JsonSalvage.kt",
+ "app/src/main/java/com/tingben/app/core/Adoption.kt",
+ "app/src/main/java/com/tingben/app/diag/RawDump.kt",
+ "docs/THIRD_PARTY_NOTICES.md",
  "scripts/build_native.sh", "scripts/check_structure.py", ".github/workflows/ci.yml", "keystore.jks",
  "contracts/model-manifest.json", "contracts/pipeline_spec.md"]
 for f in REQUIRED:
@@ -96,7 +100,21 @@ cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf
 for sym in ["NATIVE_JSON_CLOSE", "jsonDepth", "jsonStarted"]:
     if sym not in cpp_src: errs.append("native 缺少 JSON 闭合早停: " + sym)
 
+# R24 · 三处手搓换成移植件：符号必须真在源码里，旧手搓实现不许残留。
+R24_SYMBOLS = ["JsonSalvage", "Adoption", "RawDump", "ANN_RAW_DUMP", "ANN_ADOPT_DETAIL",
+               "复制最近一块模型原始产出", "查看模型原始产出", "cleanInstruct",
+               "THINK_UNCLOSED", "bracket", "DEFAULT_INSTRUCT"]
+for sym in R24_SYMBOLS:
+    if sym not in all_src: errs.append("缺少 R24 移植件符号: " + sym)
+if "= raw.lastIndexOf(']')" in pipe_src:
+    errs.append("R24 回退：parseWithMeta 又用 lastIndexOf 找 JSON 闭合")
+if "o.optString(\"instruct\", \"平稳叙述\")" in pipe_src:
+    errs.append("R24 回退：又出现手搓解析里的默认指令")
+notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+for who in ["Finrandojin", "Xydane", "MIT License"]:
+    if who not in notice: errs.append("第三方声明缺少: " + who)
+
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / native 早停 3 项"
-      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS)))
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / native 早停 3 项"
+      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS), len(R24_SYMBOLS)))
