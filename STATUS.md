@@ -677,3 +677,13 @@ Warning: An error occurred while preparing SDK package CMake 3.22.1:
 修法（`.github/workflows/ci.yml`）：SDK 步骤显式预装 `cmake;3.22.1` → 校验 `$ANDROID_HOME/cmake/3.22.1/bin/cmake --version` 真能跑 → 不行就删包重装一次 → 最后 `test -x` 兜底，让失败发生在「装工具」这一步，而不是伪装成编译失败。AGP 发现已装好就不会再自己下。
 
 Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一条追加。
+
+### R17 最终验证
+
+- **CI run 23 全绿**（修完 cmake 预装后复跑），`v1.0.0-23` / 17,655,814 字节。
+- **拆包硬验证**：dex 含 `制作方式 / 直接朗读 / 标注后合成 / 开始直接朗读 / ProduceMode / PRODUCE_MODE`；旧「只想先听声音」小按钮**零残留**；`assets/prompt_zh.txt` 仍是 v2、旧 v1 保留；7 个 arm64 .so、无权重、无 INTERNET。
+- 真机待验（零证据）：制作页点两档各起一次，事件流应出现 `PRODUCE_MODE 直接朗读（不过语言模型）` / `PRODUCE_MODE 标注后合成`；直接朗读档应跳过 LLM_LOAD 直接进合成。
+
+### 下轮队列（未动）
+
+① prompt hash 进缓存主键 + GBNF（路线 C，需连 `bucket()` 三处调用一起改并跑回归）；② 三档里的「改编剧本」= 换逐字契约，按用户要求搁置；③ 用户贴的四条「资源解析服务请求失败」不是坏链：前两条是 hf-mirror 与 HF 主域的 GB 级二进制解析器扛不住，第四条 `github.com/zjh1934/kongzhishouji/...` 是**另一个项目**的 APK，与听本无关。
