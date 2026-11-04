@@ -770,10 +770,19 @@ Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一�
 | 逐字 gate / prompt v2 / native / 状态机 / 断点分桶 | 本轮范围外 | 静态检查确认均未改动 |
 | 屏幕 flag 泄漏 | 任务停了还常亮 | `DisposableEffect(st.running)` 随状态切换 + `onDispose` 兜底清理 |
 
-### 四、验证
+### 四、验证（最终）
 
-- 本地：`check_structure.py` 18 项、Kotlin 括号平衡、`VoiceProfile` 13 个 API/常量与调用点对照、旧逻辑零残留。结果见下一条追加。
-- CI + 拆包结果见下一条追加。**真机仍是零证据**。
+- 本地 `check_structure.py` 18 项通过。Kotlin 括号计数里 `Importer.kt(-5 小括号) / Pipeline.kt(+1 大括号)` 与 **R18 基线完全一致**，是注释/字符串里的括号造成的计数假阳性，本轮未新增，CI 编译才是判据。
+- `sanitize()` 行为模拟 5 例：身份词被剥离（「年轻男声压低质问…」→「压低质问…」）；发声状态词「声音微微发颤 / 气声偏重 / 句尾下沉」**全部保留，零误杀**。
+- **CI run 26 全绿**（`049b6854`），APK `v1.0.0+26` / **17,704,964 字节**，经 blob API 取回拆包硬验：7 个 arm64 .so、无 `.gguf`、assets 含 prompt v2 + v1、dex 含 `DEFAULT_IDENTITY / INSTRUCT_TEMPLATE_VERSION / VOICE_IDENTITY / INSTRUCT_SANITIZED / 本次配置 / 默认身份锚点 / 清晰自然的中文普通话叙述声 / PlayQueue / AudioLibrary / 分段看台 / 直接朗读 / BOOK_IMPORT_DUP` 全 12 项、CRC 全检通过。
+- `FLAG_KEEP_SCREEN_ON` 是编译期常量，编译后内联成整数，dex 字符串池查不到属**预期**；改查 `addFlags / clearFlags / WindowManager / LayoutParams / DisposableEffect` 全在 dex 里，确认代码真编进去了。
+- **真机仍是零证据**。要验三件：① 同一本书相邻两段音色是否还飘（本轮就为这个）；② 任务跑起来屏幕是否常亮、停下是否恢复；③ 制作页「本次配置」四行与实际是否一致。
+
+### 四·补 · 一次同步事故与修复（如实记录）
+
+用 REST 通道同步时，第一版脚本用 `git ls-files` 取路径，**中文文件名被 `core.quotePath` 转义成八进制字符串**，与远端真实路径对不上 → 误判「远端多出 70 个文件」并生成删除条目，远端 main 一度被删掉 docs / samples / reference / logs / keystore 等。**CI run 25 立刻因结构自检缺文件而 failure** —— 闸门起作用了，没让坏包发出去。
+
+**立即强制回滚到 `2ca9226e`**（111 个文件全部恢复），改用 `git -c core.quotePath=false ls-files` 取真实 UTF-8 路径，且**只做增量、不生成任何删除条目**重提 `049b6854`（112 个文件 = 111 保留 + 1 新增 R19 文档），run 26 全绿。教训已补进 `docs/R19_路线图与决策记录.md` 纪律第 5 条。
 
 ### 五、新的有序队列（替代 R18 队列）
 
