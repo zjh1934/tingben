@@ -5,24 +5,31 @@ import org.json.JSONArray
 import java.io.File
 
 /**
- * R18 · 工作看台的分段数据。
+ * R18 建、R28 重写 · 工作看台的分段数据。
  *
- * 不新造状态、不猜进度：直接扫 work 目录里已经落盘的东西。
- *  ann_%04d.json        = 这一块标注完成
- *  chunk/direct_%04d.wav = 这一段声音已生成
- * 两者索引不保证一一对应（一块可能切成好几段），所以分开如实列，不假装对齐。
+ * R28 修一个旧账：以前把 `ann_%04d.json`（**块**索引）和 `chunk_%04d.wav`（**段**索引）
+ * 按同一个 i 并排画格。一块常切成好几段，所以「第 N 格」既不是第 N 块也不是第 N 段，
+ * 颜色（来自块）和声音（来自段）也永远对不上。现在以 `SegPlan.segmap.json` 为唯一真实
+ * 来源；没有 segmap 的旧缓存才降级扫目录，并一律标 UNKNOWN，不冒充已标注。
  */
 data class SegRow(
     val index: Int,
-    val annotated: Boolean,
-    // R27 · MODEL=真有模型标注 / FILL=模型产出未采纳，按原文直读 /
-    // UNKNOWN=旧缓存没写来源文件，不猜、不冒充已标注。
-    val src: String,
+    val block: Int,
+    val ann: Int,
+    val fromModel: Boolean?,
     val wav: File?,
-    val preview: String,
-    val durationMs: Long
+    val wavName: String,
+    val text: String,
+    val speaker: String,
+    val instruct: String,
+    val pendingRedo: Boolean
 ) {
     val hasAudio: Boolean get() = wav != null
+    val src: String get() = when (fromModel) {
+        true -> "MODEL"
+        false -> "FILL"
+        null -> "UNKNOWN"
+    }
 }
 
 object Workbench {
@@ -35,8 +42,20 @@ object Workbench {
 
     fun segments(c: Context, t: TaskInfo?): List<SegRow> {
         val work = workDir(c, t) ?: return emptyList()
-        val files = try { work.listFiles()?.toList() ?: emptyList() } catch (_: Throwable) { return emptyList() }
+        val redo = SegPlan.pending(work)
+        val mapped = SegPlan.readMap(work)
+        if (mapped != null) {
+            return mapped.take(60).map { m ->
+                val f = File(work, m.wavName)
+                SegRow(m.seg, m.block, m.ann, m.fromModel,
+                    f.takeIf { it.exists() && it.length() > 44 }, m.wavName,
+                    m.text, m.speaker, m.instruct,
+                    "seg:${m.seg}" in redo || "block:${m.block}" in redo)
+            }
+        }
 
+        // 旧缓存降级：仍按目录扫，但明确告诉 UI「这是旧缓存，来源未知」。
+        val files = try { work.listFiles()?.toList() ?: emptyList() } catch (_: Throwable) { return emptyList() }
         val annSet = mutableSetOf<Int>()
         val wavMap = mutableMapOf<Int, File>()
         files.forEach { f ->
@@ -46,15 +65,10 @@ object Workbench {
                 if (f.length() > 44) wavMap[i] = f
             }
         }
-
-        // 总段数 = 已落盘的最大索引、或任务报的总数，取大的那个。
-        // 这样「还没轮到」的段也能画成灰色小胶囊，用户看得出后面还有多少。
         val last = maxOf(
-            (annSet.maxOrNull() ?: -1),
-            (wavMap.keys.maxOrNull() ?: -1),
+            (annSet.maxOrNull() ?: -1), (wavMap.keys.maxOrNull() ?: -1),
             ((t?.total ?: 1) - 1)
         ).coerceAtLeast(0)
-        // 长书别把几百个胶囊全铺开，看台只列前 60 段 + 一句「还有 N 段」。
         val upTo = last.coerceAtMost(59)
 
         return (0..upTo).map { i ->
@@ -67,30 +81,29 @@ object Workbench {
                     }.take(64)
                 } catch (_: Throwable) { "" }
             } else if (t?.direct == true) "直接朗读（原文照读，不产出标注）" else ""
-
-            val src = if (!annFile.exists()) "UNKNOWN" else try {
-                val f = File(work, "ann_%04d.src".format(i))
-                if (f.exists()) f.readText().trim().uppercase().ifBlank { "UNKNOWN" } else "UNKNOWN"
-            } catch (_: Throwable) { "UNKNOWN" }
-
-            SegRow(
-                index = i,
-                annotated = annFile.exists(),
-                src = src,
-                wav = wavMap[i],
-                preview = preview,
-                durationMs = wavMap[i]?.let { AudioLibrary.durationMs(it) } ?: 0L
-            )
+            val w = wavMap[i]
+            SegRow(i, i, 0, null, w,
+                w?.name ?: "chunk_%04d.wav".format(i), preview, "旁白", "", false)
         }
     }
 
     fun remainingCount(c: Context, t: TaskInfo?): Int {
         val work = workDir(c, t) ?: return 0
+        val mapped = SegPlan.readMap(work)
+        if (mapped != null) return mapped.count { m ->
+            !File(work, m.wavName).let { it.exists() && it.length() > 44 }
+        }
         val files = try { work.listFiles()?.toList() ?: emptyList() } catch (_: Throwable) { return 0 }
         val last = files.mapNotNull { f ->
             annRe.matchEntire(f.name)?.groupValues?.get(1)?.toIntOrNull()
                 ?: wavRe.matchEntire(f.name)?.groupValues?.get(1)?.toIntOrNull()
         }.maxOrNull() ?: -1
         return ((t?.total ?: 1) - 1 - last).coerceAtLeast(0)
+    }
+
+    /** 判定条用：模型真标注 / 直读 / 未知。没有 segmap 时返回 null，UI 如实说「还没数据」。 */
+    fun verdict(c: Context, t: TaskInfo?): SegPlan.Verdict? {
+        val work = workDir(c, t) ?: return null
+        return SegPlan.readMap(work)?.let { SegPlan.verdict(it) }
     }
 }

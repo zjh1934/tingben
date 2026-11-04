@@ -905,6 +905,9 @@ object Producer {
             val roster = LinkedHashSet<String>()
             val recent = mutableListOf<Ann>()
             val collected = mutableListOf<Ann>()
+        // R28 · 与 collected 一一对应的段来源（块号 / 块内第几条 / 是否模型标注）。
+        // 只从磁盘读，不猜：旧缓存没记来源就是 null。
+        val segOrigin = mutableListOf<Triple<Int, Int, Boolean?>>()
             var resumed = 0
             try {
                 for ((i, chunk) in chunks.withIndex()) {
@@ -1086,6 +1089,8 @@ object Producer {
                             EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
                         }
                         AnnCache.write(work, i, result)
+                        // 这一块是真重跑过了，撤销「重新标注本块」的待办标记。
+                        SegPlan.clearRedo(work, "block:$i")
                         // R21 · 这一块的最终结论落盘：标了几条、text 多少字、差几个字、
                         // 9 条规则过了几条、模型吐出来的开头结尾是什么。不是只写一句「完成」。
                         val finalAnns = result ?: emptyList()
@@ -1107,6 +1112,9 @@ object Producer {
                             File(work, "ann_%04d.src".format(i))
                                 .writeText(if (srcKept > 0) "MODEL" else "FILL")
                         } catch (_: Throwable) { }
+                        // R27 只在内存里算 srcFlags，进程被杀续跑后就丢了；落盘后
+                        // 看台才能逐段（而不是逐块）判「这条是不是模型标的」。
+                        SegPlan.writeFlags(work, i, srcFlags)
                         val contentJson = Annotator.contentJson(finalAnns, srcFlags)
                         EventLog.log(EventLog.Kind.AUDIT, "ANN_CONTENT",
                             "块 ${i + 1}/${chunks.size} 最终采纳 ${finalAnns.size} 条（模型 $srcKept" +
@@ -1172,8 +1180,9 @@ object Producer {
                         }
                     }
                     val safe = result!!
-                    safe.forEach { a ->
+                    safe.forEachIndexed { k, a ->
                         collected.add(a)
+                        segOrigin.add(Triple(i, k, SegPlan.sourceOf(work, i, k)))
                         if (a.speaker.isNotBlank() && a.speaker != "旁白") roster.add(a.speaker)
                     }
                     recent.addAll(safe)
@@ -1272,6 +1281,24 @@ object Producer {
             strippedTotal += built.second
             Ann(base.text, base.speaker, built.first)
         }
+        // R28 · 唯一真实来源：把「第几段来自第几块第几条、是不是模型标的」落盘。
+        // 看台以前把 ann_（块索引）和 chunk_（段索引）按同一个 i 并排画格，
+        // 一块常切成好几段，格子既不是块也不是段。direct 档没跑 4B，不写 segmap，
+        // 判定条按 direct 单独说明，不把「没跑模型」冒充成「模型没采纳」。
+        if (!direct && segOrigin.size == toSpeak.size) {
+            val metas = toSpeak.mapIndexed { si, a ->
+                val (blk, ai, fm) = segOrigin[si]
+                SegMeta(si, blk, ai, fm, a.text, a.speaker, a.instruct,
+                    "chunk_%04d.wav".format(si))
+            }
+            SegPlan.writeMap(work, metas)
+            val v = SegPlan.verdict(metas)
+            EventLog.log(EventLog.Kind.PIPELINE, "LLM_VERDICT",
+                v.label + " · 模型 ${v.model} / 直读 ${v.fill} / 旧缓存未知 ${v.unknown}",
+                level = if (v.model == 0) EventLog.Level.WARN else EventLog.Level.INFO,
+                fields = mapOf("model" to v.model.toString(), "fill" to v.fill.toString(),
+                    "unknown" to v.unknown.toString(), "total" to v.total.toString()))
+        }
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_IDENTITY",
             "身份层=${if (globalVoice.isBlank()) "默认锚点" else "自定义"} · " +
                     "版本=$INSTRUCT_TEMPLATE_VERSION · 角色表=${cast.size} · " +
@@ -1308,6 +1335,7 @@ object Producer {
                         "lang" to "chinese", "speakerParam" to "null"))
                 if (wav.exists() && wav.length() > 44) {
                     wavs.add(wav)
+                    SegPlan.clearRedo(work, "seg:$i")
                 } else {
                     val code = try {
                         // 官方 Qwen3-TTS README 第 167 行：目标语言已知时显式传，别用 auto。
@@ -1318,8 +1346,10 @@ object Producer {
                         EventLog.log(EventLog.Kind.ENGINE, "TTS_ERROR", t.message ?: "")
                         -99
                     }
-                    if (code == 0 && wav.exists() && wav.length() > 44) wavs.add(wav)
-                    else { synthFails++; wav.delete() }
+                    if (code == 0 && wav.exists() && wav.length() > 44) {
+                        wavs.add(wav)
+                        SegPlan.clearRedo(work, "seg:$i")
+                    } else { synthFails++; wav.delete() }
                 }
                 emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
                     "已生成 ${i + 1}/${annotated.size} 段声音")
