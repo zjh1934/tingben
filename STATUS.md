@@ -789,3 +789,50 @@ Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一�
 - **P1（各自独立一轮，不合并发版）**：① 制作准备页（先列 4 处联动表再动 `start` 签名）；② 前台服务 + `PARTIAL_WAKE_LOCK` + 通知（动 manifest/权限/状态机）；③ 段级「重做这一段」（Workbench 只读→可写）。
 - **P2**：WAV 流式追加、prompt hash 进缓存主键 + GBNF、角色映射全量接进合成、CustomVoice/Base 权重、Media3/锁屏通知。
 - **明确不做**：无障碍保活、模拟点击、悬浮窗保活、多实例并行合成、PDF/OCR、模型进包、界面暴露 `.gguf`/token 事件、改编剧本档（换逐字契约，按用户要求搁置）。
+
+---
+
+## R20 · P1① 制作准备页（先列联动表，再动签名）
+
+用户「按你的节奏继续推进」。按 R19 队列走 **P1 第一项**，且遵守自己写下的纪律：**各自独立一轮，不合并发版** —— 前台服务、段级重做这轮都没碰。
+
+### 一、先落联动表，再写第一行代码
+
+`docs/P1_制作准备页_联动表.md`：不手搓依据 7 条（本地 `reference/` 4 个现成件 + 联网 3 条）、5 个真选项、**11 处联动**、「什么不进指纹/不进分桶」的理由、7 项验证清单。
+
+联网补核的结论：`index-tts-webui` 有「新建 Session 选预设」、`epub_to_audiobook` 有 `break_duration`（段间静音）与 `apply_*_preset()`、`tts-audiobook-tool` 的 Qwen3-TTS 把采样/语速/Event tags 都做成生成前预设 [citation:8][citation:9][citation:10] —— **「预设 + 段间静音」不是拍脑袋加的**。
+
+### 二、落地了什么
+
+**新文件**
+- `core/ProduceConfig.kt`：单一不可变 data class（抄 OfflineLLM `SettingsUiState`），5 个档位 + `toJson/fromJson` 宽容迁移（抄 `SettingsRepository` + PocketPal），`audioStamp()` 只含影响 WAV 的 3 项。
+- `ProduceOptions.kt`：`ExpandGroup`（state hoisted 折叠，抄 ProAndroidDev / SSComposeExpandableListView）+ 泛型 `OptionRow`（抄 OfflineLLM `SettingsScreen` 档位形态）。与主界面解耦，不引用文件私有常量。
+
+**界面**：制作页从「3 张平铺卡 + 一个主按钮」改成**四组折叠的本次制作准备页**，默认只露 ① 做什么。R19 那张只读「本次配置」卡升级成可编辑预设。
+
+**5 个选项全部真接进管线，没有假开关**：
+
+| 项 | 接到哪 |
+|---|---|
+| 朗读档位 / 语速倾向 / 情绪强度 | `VoiceProfile` 现成第二层 `roleStyle`（改标签为 `[风格层]`，零签名改动） |
+| 段间静音 | `WavMerger.merge(gapMs)`，24kHz/16bit/mono = 48B/ms，偶数对齐，header dataLen 含静音 |
+| 标注失败重做 | `for (attempt in 0..config.gateRetries)` |
+
+**明确没加**：输出格式 M4A（没编码器，会变假开关）、到点停（动状态机，P1②）、断点粒度、采样参数全展开、合成前试听第一块。**思考档不做本次级覆盖** —— 它参与 `bucket()`，两份真值源会把续跑搞串；界面只读展示 + 写清理由。
+
+### 三、11 处联动逐条过
+
+`Producer.start` 加带默认值参数 → **4 个调用点全显式传值**（制作页 / 进度页续跑 / 任务页续跑 / 任务页从头重做）；`TaskInfo` 末尾加 `config` 带默认值（既有构造点零改动）；`TaskResume.save/load` 写/读 config（旧书签缺字段回默认）；`Producer.restore` 自动跟随；`run()` 签名透传；`WavMerger.merge` 唯一调用点；`onGoCast` 新回调 → `Screen.PRODUCE` 传 `CAST` 跳转。
+
+**`AnnCache.bucket()` / `hasCached` / `clearProgress` 三个函数一行未动** —— config 绝不进分桶键，否则换档位读到空缓存、全书重跑。
+
+**旧 WAV 作废用两条**：① `INSTRUCT_TEMPLATE_VERSION` 2→3（instruct 多了风格层 ⇒ `voiceStamp` 变，复用 R14 既有机制）；② 新增 `produce_stamp.txt` 覆盖同版本内换预设，**首次写时若已有 WAV 也删**，避免「前半本旧味道、后半本新味道」。两条都只删 WAV、`ann_` 标注保留。
+
+### 四、验证
+
+结果见下一条追加。**真机仍是零证据**。
+
+### 五、队列更新
+
+- **P1 剩**：② 前台服务 + `PARTIAL_WAKE_LOCK` + 通知；③ 段级「重做这一段」。仍各自独立一轮。
+- **P2 追加**：把本次预设「存为预设」（抄 index-tts-webui 的 Session 预设管理），目前预设只随单任务走、不能复用给下一本。

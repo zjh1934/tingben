@@ -23,7 +23,9 @@ package com.tingben.app.core
  * 固定 seed(42) + 固定身份前缀能显著收敛，但不能保证 100% 比特级一致。
  * 要彻底根治得换 CustomVoice 权重用固定 speaker id —— 那是换模型，不在本轮。
  */
-const val INSTRUCT_TEMPLATE_VERSION = 2
+// R20 · 升 3：instruct 多了「本次风格层」（朗读档位/语速/情绪强度）。
+// 版本进 Prefs.voiceStamp ⇒ 旧分段 WAV 自动作废、标注保留，复用 R14 既有机制。
+const val INSTRUCT_TEMPLATE_VERSION = 3
 
 /** 留空时的默认身份锚点：只描述「谁在念」，不带任何情绪/节奏。 */
 const val DEFAULT_IDENTITY = "清晰自然的中文普通话叙述声，音区适中，无明显口音"
@@ -82,7 +84,7 @@ object VoiceProfile {
         if (g.isBlank() && r.isBlank()) return b to hits
         return buildString {
             append(g).append("。")
-            if (r.isNotBlank()) append("\n[角色风格] ").append(r)
+            if (r.isNotBlank()) append("\n[风格层] ").append(r)
             if (b.isNotBlank()) append("\n[本段情绪] ").append(b)
         }.trim() to hits
     }

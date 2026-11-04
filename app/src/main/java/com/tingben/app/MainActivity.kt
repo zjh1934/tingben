@@ -314,7 +314,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
                     onDone = { screen = Screen.AUDIO; refresh++ },
-                    onStarted = { lastSelection = it })
+                    onStarted = { lastSelection = it },
+                    onGoCast = { screen = Screen.CAST })
                 Screen.PROGRESS -> ProgressScreen(ctx,
                     onBack = { screen = Screen.LIBRARY },
                     onResume = {
@@ -325,7 +326,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                             val sel = t?.only ?: lastSelection
                             bookId = b.id; lastSelection = sel
                             Producer.start(ctx, b, sel, t?.direct ?: false,
-                                if (t != null) t.think else null)
+                                if (t != null) t.think else null,
+                                t?.config ?: ProduceConfig())
                         }
                     })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
@@ -336,7 +338,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
                         if (b != null) {
                             bookId = b.id; lastSelection = t.only
-                            Producer.start(ctx, b, t.only, t.direct, t.think)
+                            Producer.start(ctx, b, t.only, t.direct, t.think, t.config)
                             screen = Screen.PROGRESS
                         } else {
                             Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
@@ -603,21 +605,34 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
 @Composable
 private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> Unit,
                           onProgress: () -> Unit, onDone: () -> Unit,
-                          onStarted: (Set<Int>?) -> Unit) {
+                          onStarted: (Set<Int>?) -> Unit,
+                          onGoCast: () -> Unit = {}) {
     val book = remember(id, refresh) { id?.let { BookStore.list(c).find { b -> b.id == it } } }
     val st by Producer.state.collectAsState()
-    val chapters = remember(book) { book?.let { ChapterSplitter.split(BookStore.read(c, it)).first } ?: emptyList() }
+    // R20 · 一次 split 同时拿章节与全部块，用来显示「预计几块」，不再只取 .first。
+    val split = remember(book) { book?.let { ChapterSplitter.split(BookStore.read(c, it)) } }
+    val chapters = split?.first ?: emptyList()
+    val allChunks = split?.second ?: emptyList()
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
     val thinkOn = remember(refresh) { Prefs.thinking(c) }
     // R17 · 进页面时对齐已有任务：书正以「直接朗读」跑着，别把高亮停在标注档，
     // 否则用户看到的模式和任务页/断点续跑用的不是同一套。
+    // R20 · 本次预设也对齐已有任务书签，续跑时界面显示的档位与实际跑的一致。
     var mode by remember(book, refresh) {
         val t = TaskResume.load(c)
         mutableStateOf(if (t != null && t.bookId == id && t.direct)
             ProduceMode.DIRECT else ProduceMode.ANNOTATE)
     }
+    var cfg by remember(book, refresh) {
+        val t = TaskResume.load(c)
+        mutableStateOf(if (t != null && t.bookId == id) t.config else ProduceConfig())
+    }
     val directMode = mode == ProduceMode.DIRECT
+    val estimate = remember(selected, book) {
+        if (selected.isEmpty() || selected.size == chapters.size) allChunks.size
+        else allChunks.count { it.chapter in selected }
+    }
     // 两种模式的缓存分桶不同，hasCached 必须跟着 mode 走，
     // 不然切到直接朗读还会显示「继续制作」，点的却是标注档的旧缓存。
     val hasCached = remember(book, refresh, selected, cacheTick, thinkOn, mode) {
@@ -645,35 +660,13 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             }
         }
 
-        // R19 · 起任务前看得见全貌。只读卡，不改 Producer.start 签名 ——
-        // 完整的「本次制作」预设页要连 start / 任务书签 / 续跑三处一起改，单列下一轮。
-        CardBox(Modifier.padding(bottom = 12.dp)) {
-            Text("本次配置", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Spacer(Modifier.height(7.dp))
-            val scopeText = when {
-                selected.isEmpty() || selected.size == chapters.size -> "整本 ${chapters.size} 章"
-                selected.size == 1 -> "第 ${selected.first() + 1} 章"
-                else -> "选中 ${selected.size} 章"
-            }
-            val cfg = listOf(
-                "范围" to scopeText,
-                "方式" to if (directMode) "直接朗读（不过语言模型）" else "标注后合成",
-                "思考" to if (directMode) "不适用" else if (thinkOn) "开（会明显变慢）" else "关（推荐）",
-                "声音" to if (Prefs.voiceDescription(c).isBlank()) "默认身份锚点" else "自定义音色"
-            )
-            cfg.forEach { (k, v) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text(text = k, modifier = Modifier.width(52.dp), fontSize = 11.5.sp, color = Sub)
-                    Text(text = v, fontSize = 11.5.sp)
-                }
-            }
-            Text("以上是跨书默认值，在设置页改。完整「本次制作」预设页下一轮做。",
-                fontSize = 11.sp, color = Sub)
-        }
+        // R20 · 「本次制作」预设页：四组折叠，默认只露第一组。
+        // 改的是本次级配置，不写回 Prefs；随任务书签落盘，续跑不丢（联动表 §3）。
+        var showAllChapters by remember(book) { mutableStateOf(false) }
 
-        CardBox(Modifier.padding(bottom = 12.dp)) {
-            Text("制作方式", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Spacer(Modifier.height(10.dp))
+        ExpandGroup("① 做什么", "方式和范围，默认就能用", defaultOpen = true) {
+            Text("制作方式", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
             ProduceMode.values().forEach { m ->
                 val on = mode == m
                 Row(
@@ -701,20 +694,19 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 }
                 if (m != ProduceMode.DIRECT) Spacer(Modifier.height(6.dp))
             }
-        }
-
-        CardBox(Modifier.padding(bottom = 12.dp)) {
+            Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("制作范围", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text("制作范围", fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f))
                 TextButton(onClick = { selected = if (selected.size == chapters.size) emptySet() else chapters.map { it.index }.toSet() }) {
                     Text(if (selected.size == chapters.size) "清空" else "全选")
                 }
             }
-            Text(if (selected.isEmpty()) "整本（不勾就是全部）" else "已选 ${selected.size} 章",
+            Text(if (selected.isEmpty()) "整本 · 预计约 $estimate 块" else "已选 ${selected.size} 章 · 预计约 $estimate 块",
                 fontSize = 12.sp, color = Sub)
+            Text("每块约 500 字，块数只是估算，实际以分章结果为准。", fontSize = 10.5.sp, color = Sub)
             // R10 · epub 常有几十上百章，之前写死 2..40 导致长书根本没法选单章。
             // 改成默认只列 20 章 + 「显示全部」，几百章也不刷屏。
-            var showAllChapters by remember(book) { mutableStateOf(false) }
             val visibleChapters = if (chapters.size > 20 && !showAllChapters)
                 chapters.take(20) else chapters
             if (chapters.size >= 2) {
@@ -741,11 +733,56 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             }
         }
 
+        ExpandGroup("② 怎么读", cfg.summary()) {
+            OptionRow("朗读档位", "决定整本怎么演", 
+                ReadingStyle.values().map { it to it.label }, cfg.style) { cfg = cfg.copy(style = it) }
+            OptionRow("语速倾向", "写进导演指令的自然语言引导，不是精确倍速",
+                Pace.values().map { it to it.label }, cfg.pace) { cfg = cfg.copy(pace = it) }
+            OptionRow("情绪强度", "防止模型用力过猛",
+                Intensity.values().map { it to it.label }, cfg.intensity) { cfg = cfg.copy(intensity = it) }
+            TextButton(onClick = onGoCast) { Text("给角色单独指定音色 →", fontSize = 12.sp) }
+            Text("全局音色在设置页「声音」里改；以上档位叠在它上面，正文一个字不动。",
+                fontSize = 10.5.sp, color = Sub)
+        }
+
+        ExpandGroup("③ 怎么跑", "长任务相关") {
+            OptionRow("段间静音", "段落之间留白",
+                ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) { cfg = cfg.copy(gapMs = it) }
+            OptionRow("标注失败重做", "手机上每次重试都要再跑几分钟",
+                ProduceConfig.RETRY_OPTIONS.map { it to "${it}次" }, cfg.gateRetries) { cfg = cfg.copy(gateRetries = it) }
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Text("思考过程", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Text(if (directMode) "不适用" else if (thinkOn) "开（会明显变慢）" else "关（推荐）",
+                    fontSize = 12.sp, color = Sub)
+            }
+            Text("思考档是全局设置，在设置页改。不做本次级覆盖 —— 它参与缓存分桶，两套真值会把续跑搞串。",
+                fontSize = 10.5.sp, color = Sub)
+        }
+
+        ExpandGroup("④ 高级", "一般不用改") {
+            listOf(
+                "上下文窗口" to "${Prefs.nCtx(c)} token",
+                "推理线程" to "${Prefs.threads(c)} 线程",
+                "随机度" to "${if (thinkOn) 0.6f else Prefs.temperature(c)}"
+            ).forEach { (k, v) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text(k, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
+                    Text(v, fontSize = 11.5.sp)
+                }
+            }
+            Text("这三项是跨书默认值，去设置页改。", fontSize = 10.5.sp, color = Sub)
+            TextButton(onClick = { cfg = ProduceConfig() }) { Text("本次恢复默认", fontSize = 12.sp) }
+        }
+
+        Text("以上只影响这一次制作；跨书默认值在设置页。续跑会沿用本次预设。",
+            fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+        Spacer(Modifier.height(10.dp))
+
         Button(
             onClick = {
                 val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
                 onStarted(sel)
-                Producer.start(c, book, sel, directRead = directMode)
+                Producer.start(c, book, sel, directRead = directMode, config = cfg)
                 onProgress()
             },
             enabled = !st.running,
@@ -1117,7 +1154,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                             TextButton(onClick = {
                                 Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
                                 val b = BookStore.list(c).find { x -> x.id == t.bookId }
-                                if (b != null) { Producer.start(c, b, t.only, t.direct, t.think); onProgress() }
+                                if (b != null) { Producer.start(c, b, t.only, t.direct, t.think, t.config); onProgress() }
                             }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
                             TextButton(onClick = {
                                 Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)

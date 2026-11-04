@@ -495,16 +495,28 @@ object WavMerger {
         return h
     }
 
-    fun merge(parts: List<File>, out: File): Boolean {
+    /**
+     * R20 · 段间静音：24kHz / 16bit / mono ⇒ 每毫秒 48 字节，取偶数保证 16bit 对齐。
+     * 依据 epub_to_audiobook 的 break_duration 参数（0-5000ms）。
+     * 只在段与段之间插，最后一段后不插；header 的 dataLen 必须把静音算进去。
+     * gapMs 默认 0，旧调用点行为不变；不影响分段 WAV 内容，故不进任何缓存指纹。
+     */
+    fun merge(parts: List<File>, out: File, gapMs: Int = 0): Boolean {
         return try {
             val chunks = parts.mapNotNull { pcmOf(it) }
             if (chunks.isEmpty()) false else {
-                val total = chunks.sumOf { it.size }
+                val gapBytes = (gapMs.coerceIn(0, 5000) * 48 / 2) * 2
+                val silence = if (gapBytes > 0) ByteArray(gapBytes) else ByteArray(0)
+                val total = chunks.sumOf { it.size } + silence.size * (chunks.size - 1).coerceAtLeast(0)
                 out.outputStream().use { os ->
                     os.write(header(total))
-                    chunks.forEach { os.write(it) }
+                    chunks.forEachIndexed { i, pcm ->
+                        if (i > 0 && silence.isNotEmpty()) os.write(silence)
+                        os.write(pcm)
+                    }
                 }
-                EventLog.log(EventLog.Kind.PIPELINE, "MERGE_DONE", "${parts.size} 块 / $total 字节")
+                EventLog.log(EventLog.Kind.PIPELINE, "MERGE_DONE",
+                    "${parts.size} 块 / $total 字节 · 段间静音 ${gapMs}ms")
                 true
             }
         } catch (_: Throwable) { false }
@@ -590,15 +602,18 @@ object Producer {
     }
 
     fun start(c: Context, book: Book, onlyChapters: Set<Int>? = null,
-              directRead: Boolean = false, thinkOverride: Boolean? = null) {
+              directRead: Boolean = false, thinkOverride: Boolean? = null,
+              config: ProduceConfig = ProduceConfig()) {
         if (busy) return
         busy = true
         cancelRequested = false
         appCtx = c.applicationContext
         // 续跑必须沿用建任务时的思考档：bucket 里含 think，换了档会读到空缓存、全书重跑
         val thinkOn = thinkOverride ?: Prefs.thinking(c)
+        // R20 · 本次预设随书签落盘；续跑入口统一传 t.config，风格不因进程重启而断层。
         current = TaskInfo(book.id, book.title, onlyChapters, directRead, thinkOn,
-            0, 0, "running", "正在准备", System.currentTimeMillis())
+            0, 0, "running", "正在准备", System.currentTimeMillis(),
+            config = config)
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
         // 上一次点过「停止」的话，native 的 g_cancel 还是 true；整次制作开始才复位。
@@ -609,10 +624,11 @@ object Producer {
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_MODE",
             (if (directRead) "直接朗读（不过语言模型）" else "标注后合成") +
                 " · think=" + thinkOn +
-                " · " + (onlyChapters?.let { "选中 ${it.size} 章" } ?: "整本"))
+                " · " + (onlyChapters?.let { "选中 ${it.size} 章" } ?: "整本") +
+                " · 本次预设=" + config.summary())
         scope.launch {
             try {
-                run(c, book, onlyChapters, directRead, thinkOverride)
+                run(c, book, onlyChapters, directRead, thinkOverride, config)
             } catch (t: Throwable) {
                 if (t !is kotlinx.coroutines.CancellationException) {
                     EventLog.log(EventLog.Kind.CRASH, "PRODUCE_EXCEPTION", t.message ?: "")
@@ -652,7 +668,7 @@ object Producer {
     }
 
     private fun run(c: Context, book: Book, only: Set<Int>?, direct: Boolean,
-                    thinkOverride: Boolean? = null) {
+                    thinkOverride: Boolean? = null, config: ProduceConfig = ProduceConfig()) {
         if (!NativeEngine.isAvailable()) {
             _state.value = Progress(false, "没开始", 0, 0, 0, NativeEngine.shortReason())
             return
@@ -687,7 +703,8 @@ object Producer {
         val threads = Prefs.threads(c)
         val temp = if (thinkOn) 0.6f else Prefs.temperature(c)
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
-            "think=$thinkOn nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}")
+            "think=$thinkOn nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}" +
+                " · 预设=" + config.summary())
         if (thinkOn) ThinkingStore.clear(c)
         EventLog.resetEngine()
 
@@ -757,7 +774,9 @@ object Producer {
                             }
                         }
                         try {
-                        for (attempt in 0..1) {
+                        // R20 · 重试次数由「本次制作」预设控制（0/1/2 次）。
+                        // 手机上每次重试都要再跑几分钟 4B，用户该能自己定要几次。
+                        for (attempt in 0..config.gateRetries) {
                             // R9 · 停止可能发生在 prefill 里，generate 返回后必须立刻查；
                             // 否则空结果会被当成「标注失败」再重试一次，停止就永远不生效。
                             if (cancelRequested) {
@@ -847,6 +866,32 @@ object Producer {
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_MODE",
             "voice_design · 指纹=$voiceStamp · 角色=${cast.size} · seed=${knobs.seed} · temp=${knobs.temperature}")
 
+        // R20 · 预设指纹：voiceStamp 覆盖「升级 App 导致模板版本变化」，
+        // 这里覆盖「同一版本内用户把叙事改成广播剧」。两者都只删 WAV、保留 ann_ 标注：
+        // 换风格应该「复用标注、重合成」，不是重跑几小时的 4B。
+        // gapMs / gateRetries 不进指纹（前者只在合并插静音，后者只影响标注重试）。
+        val presetFile = File(work, "produce_stamp.txt")
+        val presetStamp = config.audioStamp()
+        try {
+            val oldWavs = work.listFiles()?.count { f ->
+                f.isFile && f.name.endsWith(".wav") && f.length() > 44
+            } ?: 0
+            val changed = presetFile.exists() && presetFile.readText().trim() != presetStamp
+            // 首次写也要删：如果 App 刚从没有风格层的版本升上来且已有旧 WAV，
+            // 不能让续跑跳过它们、听出「前半本旧味道、后半本新味道」。
+            if (changed || (!presetFile.exists() && oldWavs > 0)) {
+                val killed = work.listFiles()?.filter { f ->
+                    f.isFile && f.name.endsWith(".wav")
+                } ?: emptyList()
+                killed.forEach { it.delete() }
+                EventLog.log(EventLog.Kind.PIPELINE, "PRESET_INVALIDATE",
+                    "本次预设变了（$presetStamp），作废 ${killed.size} 段旧音频，标注保留")
+            }
+            presetFile.writeText(presetStamp)
+        } catch (_: Throwable) { }
+        EventLog.log(EventLog.Kind.PIPELINE, "PRESET_APPLIED",
+            config.summary() + " · 指纹=" + presetStamp)
+
         val ttsHandle = try {
             NativeEngine.ttsLoad(tk!!.absolutePath, tok!!.absolutePath, null)
         } catch (t: Throwable) {
@@ -870,8 +915,9 @@ object Producer {
             if (castOn && !VoiceCast.isNarrator(ann.speaker) && role == null) unmapped++
             val identity = role?.description?.takeIf { it.isNotBlank() } ?: globalVoice
             // R19 · 程序层兜底：4B 漏写的音色身份词在这里剥掉，避免逐段换声。
+            // R20 · 本次风格层（朗读档位/语速/情绪强度）挂到现成的第二层，零签名改动。
             // 只改 instruct，text 原样，gate 不受影响。
-            val built = VoiceProfile.buildWithReport(identity, null, base.instruct)
+            val built = VoiceProfile.buildWithReport(identity, config.styleInstruct(), base.instruct)
             strippedTotal += built.second
             Ann(base.text, base.speaker, built.first)
         }
@@ -927,7 +973,7 @@ object Producer {
         // R18 · 旧版写死 audio/<bookId>.wav：做第 1 章和第 3 章会互相覆盖，
         // 音频页又把文件名当 bookId，一章的成品显示成整本书。改成每次独立成品 id。
         val outFile = File(AudioLibrary.dir(c), "${UUID.randomUUID()}.wav")
-        val ok = WavMerger.merge(wavs, outFile)
+        val ok = WavMerger.merge(wavs, outFile, config.gapMs)
         if (!ok || outFile.length() <= 44) {
             _state.value = Progress(false, "没完成", annotated.size, annotated.size,
                 gateFails + synthFails, "没能生成音频，请点设置页复制诊断信息发我")

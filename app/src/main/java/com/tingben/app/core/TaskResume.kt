@@ -27,7 +27,10 @@ data class TaskInfo(
     val phase: String,          // running / interrupted / stopped / done
     val stage: String,
     val updatedAt: Long,
-    val output: String? = null
+    val output: String? = null,
+    // R20 · 本次制作预设随书签走：进程被杀后回来续跑，风格/静音/重试次数不丢。
+    // 放末尾且带默认值 ⇒ 所有既有构造点零改动。
+    val config: ProduceConfig = ProduceConfig()
 )
 
 object TaskResume {
@@ -47,6 +50,7 @@ object TaskResume {
                 .put("stage", t.stage)
                 .put("updatedAt", t.updatedAt)
                 .put("output", t.output ?: "")
+                .put("config", t.config.toJson())
             val a = JSONArray()
             t.only?.sorted()?.forEach { a.put(it) }
             o.put("only", a)
@@ -73,7 +77,8 @@ object TaskResume {
                 o.optBoolean("direct", false), o.optBoolean("think", false),
                 o.optInt("total", 0), o.optInt("done", 0),
                 o.optString("phase", "interrupted"), o.optString("stage", ""),
-                o.optLong("updatedAt", 0L), out)
+                o.optLong("updatedAt", 0L), out,
+                ProduceConfig.fromJson(o.optJSONObject("config")))
         }
     } catch (_: Throwable) { null }
 
