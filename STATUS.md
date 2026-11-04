@@ -37,13 +37,13 @@
 - **R24 解决的是「看不出标了没」，不是「标得更准」**：移植件的效果要真机跑一次，
   看 `ANN_RAW_DUMP` / `ANN_ADOPT_DETAIL` / 诊断页「查看模型原始产出」再判断
 - 只 WAV；M4A / m4b / 锁屏通知 / 后台播放未做
-- **前台服务 + PARTIAL_WAKE_LOCK + 通知未做**（连续两轮被插队，下一轮第一件）
+- **前台服务 + PARTIAL_WAKE_LOCK + 通知未做**（连续四轮被插队；R26 本轮第一件，见 `docs/P1②_前台服务_联动表.md`）
 - 单一音色（voicedesign 物理限制）；CustomVoice / Base 未换权重
 - 段级重做、流式合并、GBNF、骨架化标注、角色音色根治：见 `docs/R22_标注链路与双模型协作_设计.md`
 
 ## 下轮队列
 
-1. **P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知**（动 manifest / 权限 / 状态机，单独一轮）
+1. **P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知** → **R26 本轮推进**（先列 12 处联动表，动 manifest / 通知渠道 / Producer 四处；单独一轮）
 2. 等真机 R22/R24 反馈：`NATIVE_JSON_CLOSE`、`ANN_DISPOSITION`、`ANN_CONTENT`、
    `ANN_ADOPT_DETAIL` 是否真标出角色；诊断页「复制最近一块模型原始产出」贴回来自证
 3. P1③ 段级「重做这一段」；之后按 `docs/R19_路线图与决策记录.md` 推进

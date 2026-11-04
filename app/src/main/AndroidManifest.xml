@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- R26 · 长任务前台服务（dataSync）：四个权限跟着 targetSdk 35 一起声明，
+         缺任一权限 startForeground 会抛 SecurityException。绝不申请 INTERNET。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:name=".TingbenApp"
         android:allowBackup="true"
@@ -44,5 +51,13 @@
                 <data android:scheme="content" />
             </intent-filter>
         </activity>
+
+        <!-- R26 · 只从可见界面启动；不导出、不自动重启、不伪装 mediaPlayback。
+             依据 docs/后台保活与浮窗_调研.md：dataSync 在 Android 15 起约 6h 超时，
+             到点停 + 任务页点继续，不承诺永不中断。 -->
+        <service
+            android:name=".ProduceService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

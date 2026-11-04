@@ -9,6 +9,7 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "app/src/main/AndroidManifest.xml", "app/src/main/assets/prompt_zh.txt",
  "app/src/main/cpp/CMakeLists.txt", "app/src/main/cpp/tingben_native.cpp",
  "app/src/main/java/com/tingben/app/MainActivity.kt",
+ "app/src/main/java/com/tingben/app/ProduceService.kt",
  "app/src/main/java/com/tingben/app/diag/EventLog.kt",
  "app/src/main/java/com/tingben/app/diag/AuditLog.kt",
  "app/src/main/java/com/tingben/app/core/JsonSalvage.kt",
@@ -128,12 +129,45 @@ if re.search(r"if\s*\(\s*buf\.length\s*>=\s*110", pipe_src):
 if "mutableStateOf(if (t != null && t.bookId == id && t.direct)" in main_src:
     errs.append("R25 回退：新书默认又变回标注档")
 
+# R26 · 前台服务：manifest 四项权限 + dataSync 服务声明必须真在，
+# 同时把「无障碍 / 浮窗 / 伪装播放」这三条明确不做的路线钉成反向断言。
+for perm in ["android.permission.FOREGROUND_SERVICE",
+             "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+             "android.permission.POST_NOTIFICATIONS",
+             "android.permission.WAKE_LOCK"]:
+    if perm not in m: errs.append("Manifest 缺少 R26 权限: " + perm)
+if 'android:name=".ProduceService"' not in m: errs.append("Manifest 未注册 ProduceService")
+if 'android:foregroundServiceType="dataSync"' not in m: errs.append("前台服务类型不是 dataSync")
+for banned in ["BIND_ACCESSIBILITY_SERVICE", "SYSTEM_ALERT_WINDOW", "systemExempted",
+               "foregroundServiceType=\"mediaPlayback\""]:
+    if banned in m: errs.append("R26 回退：出现了明确不做的权限/类型 " + banned)
+
+fgs_src = (ROOT / "app/src/main/java/com/tingben/app/ProduceService.kt").read_text(encoding="utf-8", errors="replace")
+R26_ALL = ["FGS_BEGIN", "FGS_READY", "FGS_FINISH", "FGS_DESTROY", "FGS_WAKELOCK",
+           "FGS_CANCEL", "FGS_NOTIF_PERMISSION", "FGS_START_FAIL", "BATTERY_SETTINGS_OPEN",
+           "PARTIAL_WAKE_LOCK", "FOREGROUND_SERVICE_TYPE_DATA_SYNC", "UNIT_TIMEOUT_MS",
+           "POST_NOTIFICATIONS", "ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS",
+           "ProduceService", "dataSync", "前台服务 "]
+for sym in R26_ALL:
+    if sym not in all_src: errs.append("缺少 R26 符号: " + sym)
+for call in ["ProduceService.begin(", "ProduceService.finish(", "ProduceService.update(",
+             "ProduceService.touch(", "ProduceService.stopping("]:
+    if call not in pipe_src: errs.append("Producer 缺少 R26 调用点: " + call)
+for sym in ["FOREGROUND_SERVICE_TYPE_DATA_SYNC", "PARTIAL_WAKE_LOCK", "startForegroundCompat",
+            "STOP_FOREGROUND_DETACH", "START_NOT_STICKY"]:
+    if sym not in fgs_src: errs.append("ProduceService 缺少移植件形状: " + sym)
+# 反向断言：唤醒锁不许整轮常驻（必须带超时 acquire），不许变成自动重启
+if "wl.acquire(UNIT_TIMEOUT_MS)" not in fgs_src:
+    errs.append("R26 回退：唤醒锁没有按块带超时申请")
+if "START_STICKY" in fgs_src:
+    errs.append("R26 回退：前台服务变成自动重启")
+
 notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 for who in ["Finrandojin", "Xydane", "MIT License", "ensemblereads", "ReaderVoice-Mobile"]:
     if who not in notice: errs.append("第三方声明缺少: " + who)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / R25 符号 %d 项 / native 早停 3 项"
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / native 早停 3 项"
       % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS), len(R24_SYMBOLS),
-         len(R25_ALL) + len(R25_MAIN)))
+         len(R25_ALL) + len(R25_MAIN), len(R26_ALL) + 5 + 5))

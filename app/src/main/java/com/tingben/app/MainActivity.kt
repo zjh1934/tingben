@@ -1195,10 +1195,12 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
         CardBox {
             Text("关于后台运行", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(6.dp))
-            Text("手机系统不允许 App 在后台长时间占着 CPU 跑模型，锁屏或切出去久了进程会被回收，"
-                    + "这在 Android 上是系统行为，不是软件坏了。\n\n"
-                    + "听本的做法是：每完成一块就把结果写进手机，任务状态单独记一份。"
-                    + "回来后在这里点「继续制作」，从停下的那块接着算，前面几小时的活不会白干。",
+            Text("R26 起制作会挂一条可见通知（前台服务 dataSync），按块让 CPU 保持唤醒，"
+                    + "通知里能直接点「停止」。但 Android 仍可能因省电策略、内存或约 6 小时的前台服务超时"
+                    + "暂停长任务，这是系统行为，不是软件坏了。\n\n"
+                    + "听本的做法仍是：每完成一块就把结果写进手机，任务状态单独记一份。"
+                    + "回来后在这里点「继续制作」，从停下的那块接着算，前面几小时的活不会白干。"
+                    + "不会在后台偷偷自动接着跑。",
                 fontSize = 11.5.sp, color = Sub, lineHeight = 17.sp)
         }
     }
@@ -1440,8 +1442,8 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
-        GroupLabel("② 音频模型 · 长期默认", "只管声音怎么发出来：音色、采样、拟声、试音")
-
+        // R26 维护订正：R25 文档声称这张卡「物理挪回 ①」，实际代码还挂在 ② 下面。
+        // 上下文 / 线程 / 随机度全是语言模型参数，必须和思考开关同组。
         // 模型参数：只暴露三个真能改的
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Text("语言模型 · 推理参数", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -1460,6 +1462,8 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
             Text("8192 在部分手机上会因内存不足崩，不确定就别动。", fontSize = 11.sp, color = Sub)
         }
+
+        GroupLabel("② 音频模型 · 长期默认", "只管声音怎么发出来：音色、采样、拟声、试音")
 
         // R11 · 非语言表达：哭腔 / 笑 / 叹气 / 抽泣。只增强导演指令，正文一字不改。
         CardBox(Modifier.padding(bottom = 11.dp)) {
@@ -1657,6 +1661,22 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             Spacer(Modifier.height(5.dp))
             Text("听本 · 本地离线把小说变成能听的音频。模型后导入、不联网；正文一个字不改。",
                 fontSize = 12.5.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
+            // R26 · 只引导用户去系统设置，不申请新权限、不反射厂商 Activity、不假装豁免。
+            TextButton(onClick = {
+                try {
+                    c.startActivity(android.content.Intent(
+                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    EventLog.log(EventLog.Kind.PIPELINE, "BATTERY_SETTINGS_OPEN",
+                        "用户主动打开系统电池优化设置")
+                } catch (_: Throwable) {
+                    Toast.makeText(c, "这台手机没提供该设置入口", Toast.LENGTH_SHORT).show()
+                }
+            }, Modifier.fillMaxWidth()) { Text("后台运行设置（系统电池优化）", fontSize = 12.sp) }
+            Text("前台服务 + 可见通知 + 按块唤醒锁已接上；系统省电策略仍可能暂停长任务。"
+                    + "想更稳，可在这里把听本设为「无限制」。回来在「任务」页点继续即可。",
+                fontSize = 11.sp, color = Sub)
         }
         CardBox {
             Row(Modifier.clickable { advanced = !advanced }, verticalAlignment = Alignment.CenterVertically) {
@@ -1688,6 +1708,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         .append(android.os.Build.VERSION.RELEASE).append(" / ")
                         .append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "").append('\n')
                     append("引擎 ").append(if (NativeEngine.isAvailable()) NativeEngine.version() else "未装载").append('\n')
+                    append("前台服务 ").append(ProduceService.status()).append('\n')
                     append("设置 ").append(Prefs.summary(c)).append('\n')
                     append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
                     append("\n=== 标注审计 ===\n").append(AuditLog.summaryText(c)).append('\n')

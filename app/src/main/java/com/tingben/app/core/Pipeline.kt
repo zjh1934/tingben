@@ -1,6 +1,7 @@
 package com.tingben.app.core
 
 import android.content.Context
+import com.tingben.app.ProduceService
 import com.tingben.app.diag.AuditLog
 import com.tingben.app.diag.BlockAudit
 import com.tingben.app.diag.EventLog
@@ -662,6 +663,7 @@ object Producer {
             current?.let { TaskResume.save(c, it.copy(phase = "stopped",
                 stage = _state.value.stage, done = _state.value.done,
                 updatedAt = System.currentTimeMillis())) }
+            ProduceService.stopping(c)
         }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_STOP", "用户点了停止")
     }
@@ -711,6 +713,23 @@ object Producer {
                 " · think=" + thinkOn +
                 " · " + (onlyChapters?.let { "选中 ${it.size} 章" } ?: "整本") +
                 " · 本次预设=" + config.summary())
+        // R26 · 通知权限：四个启动入口全汇到 start，只在这里申请一次。
+        // Android 13+ 不授权时通知不进抽屉，前台服务仍在但用户看不见；拒绝也不拦制作。
+        ProduceService.activityOf(c)?.let { act ->
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                act.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                runCatching {
+                    act.requestPermissions(
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7001)
+                    EventLog.log(EventLog.Kind.PIPELINE, "FGS_NOTIF_PERMISSION",
+                        "已向用户申请 POST_NOTIFICATIONS（拒绝不影响制作）")
+                }
+            }
+        }
+        // R26 · 必须在协程开跑前起服务：startForegroundService 要求 5 秒内 startForeground，
+        // 且只能从可见界面发起，不能等进程进后台再偷偷起。
+        ProduceService.begin(c, book.title)
         scope.launch {
             try {
                 run(c, book, onlyChapters, directRead, thinkOverride, config)
@@ -724,6 +743,10 @@ object Producer {
                 busy = false
                 // 只要没走到 done，就如实落一条「中断」书签，进程被杀也有据可查
                 if (current?.phase == "running") markInterrupted("中断")
+                // R26 · 完成 / 停止 / 出错 / 缺模型提前 return 全走这里：
+                // 收服务、释放唤醒锁、把通知换成「任务已结束」。漏了会挂一整夜。
+                val p = _state.value
+                ProduceService.finish(c.applicationContext, p.stage, p.done, p.total)
             }
         }
     }
@@ -749,6 +772,10 @@ object Producer {
                 updatedAt = System.currentTimeMillis())
             current = up
             TaskResume.save(c, up)
+        }
+        // R26 · 通知是切到后台后唯一可见的界面，每块 / 每段都要更新进度条。
+        appCtx?.let { ctx ->
+            ProduceService.update(ctx.applicationContext, stage, done, total, msg)
         }
     }
 
@@ -875,6 +902,9 @@ object Producer {
                         _state.value = halted(i, chunks.size, gateFails)
                         return
                     }
+                    // R26 · 每块重新申请一次带 30 分钟硬超时的唤醒锁，
+                    // 不整轮常驻；结束由 Producer.finally 统一释放。
+                    ProduceService.touch(c.applicationContext, "标注块 ${i + 1}/${chunks.size}")
                     // 断点续传：这一块之前标过就直接读盘，不重跑 4B；
                     // 同时照样喂进 roster / recent，保证后面块的上下文是连贯的。
                     var result = AnnCache.read(work, i)
@@ -1236,6 +1266,8 @@ object Producer {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
                     return
                 }
+                // R26 · 合成阶段同样按段刷新唤醒锁；TTS 单次可能几分钟。
+                ProduceService.touch(c.applicationContext, "合成段 ${i + 1}/${toSpeak.size}")
                 val wav = File(work, String.format(if (direct) "direct_%04d.wav" else "chunk_%04d.wav", i))
                 // R22 · 让「这一段到底用什么指令读的」可见：这里是最终 instruct（含身份层/风格层），
                 // 不是 4B 原始产出。voice_design 的 speaker 必须传 null（qwen.h 285-288 行）。

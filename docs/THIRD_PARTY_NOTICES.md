@@ -74,8 +74,9 @@
 - 来源：`reference/ReaderVoice-Mobile/data-room/src/main/kotlin/com/readervoice/data/semantic/SemanticSegmenter.kt`
 - 用途：`app/src/main/java/com/tingben/app/core/TextSplitter.kt`
   （引号栈、source-exact 区间切片：拼回去逐字无损，不在引号中间断）
-- 许可证：未核实（上游仓库未随精选包提供 LICENSE；此处只借鉴算法思路，未复制源码文件）
-- 说明：若后续要引入其源码文件，先回上游仓库核实许可证再补本节。
+- 许可证：MIT License，Copyright (c) 2026 ReaderVoice-Mobile contributors
+  （R26 维护订正：本地 `reference/ReaderVoice-Mobile/LICENSE` 已核实，旧写「未核实」不再成立）
+- 说明：算法思路移植，未复制源码文件；若后续引入其源码，保留本节版权声明。
 
 ## 5. Antioch / chunker.rs（断句部分）
 
@@ -84,6 +85,37 @@
   （`split_into_segments` 先段落再句子、`is_heading_like` 短标题单独成段、
   `split_sentences` 的边界判据；中文标点集与引号栈为本地适配）
 - 许可证：MIT License，Copyright (c) 2026 Xydane（同第 2 节全文）
+
+## 6. ReaderVoice-Mobile / 前台服务形状（R26）
+
+- 来源：`reference/ReaderVoice-Mobile/app-android/src/main/java/com/readervoice/app/ChapterDirectorService.kt`
+  与 `VoiceDesignService.kt`；manifest 声明取自同仓 `app-android/src/main/AndroidManifest.xml`
+- 用途：`app/src/main/java/com/tingben/app/ProduceService.kt`
+  （`ACTION_START/ACTION_CANCEL`、`createChannel`、`startForegroundCompat` 带
+  `FOREGROUND_SERVICE_TYPE_DATA_SYNC`、`buildNotification` 打开 + 停止两个 PendingIntent、
+  `START_NOT_STICKY`、结束 `STOP_FOREGROUND_DETACH`）
+- 许可证：MIT License
+- Copyright (c) 2026 ReaderVoice-Mobile contributors
+
+> MIT License
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
 
 ## 未采用但调研过的现成方案（登记，避免下轮又去搜）
 
