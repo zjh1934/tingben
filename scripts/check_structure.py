@@ -213,6 +213,103 @@ notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 for who in ["Finrandojin", "Xydane", "MIT License", "ensemblereads", "ReaderVoice-Mobile"]:
     if who not in notice: errs.append("第三方声明缺少: " + who)
 
+# R20 补强：mask_strings 会把 KDoc 里提前出现的 */ 当成闭合符抹掉，
+# 于是上面那条检查对「KEY_*/DEFAULT_」这类注入恒不触发。改用原始文本行级检查兜底。
+for p in kt_files:
+    raw_src = p.read_text(encoding="utf-8", errors="replace")
+    for no, line in enumerate(raw_src.splitlines(), 1):
+        s = line.strip()
+        if s.startswith('*') and '*/' in s and s != '*/':
+            errs.append("KDoc 正文出现注释收尾符（原始文本）: %s:%d" % (p.relative_to(ROOT), no))
+
+# ── U1 · 全局壳：只许改表现层，导航骨架/数据流必须守恒 ──────────────
+chrome_path = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
+chrome_src = chrome_path.read_text(encoding="utf-8", errors="replace") if chrome_path.exists() else ""
+for sym in ["AppTopBar", "AppBottomBar", "RefreshStrip", "ChromeSpec",
+            "TAB_LIBRARY", "TAB_TASKS", "TAB_AUDIO", "TAB_NONE"]:
+    if sym not in chrome_src: errs.append("U1 缺壳层符号: " + sym)
+for sym in ["chromeOf(screen)",
+            "onSettings = { screen = Screen.SETTINGS; refresh++ }"]:
+    if sym not in main_src: errs.append("U1 回退：MainActivity 没接壳层: " + sym)
+# 调用必须是真实代码行，注释里出现同名字符串不算（反向验证抓到过这个漏洞）
+for sym in ["AppTopBar", "AppBottomBar", "RefreshStrip"]:
+    if not re.search(r"^\s*" + sym + r"\(", main_src, re.M):
+        errs.append("U1 回退：MainActivity 没有真实调用 " + sym)
+# 旧 UI 不许残留（产品名/定位/文字刷新按钮/4 Tab 组件/注释式提示）
+for sym in ["⟳ 刷新", "TabButton(", '把小说变成能听的音频", fontSize = 11',
+            "下拉刷新 · 或点右上角", '听本", fontSize = 22']:
+    if sym in main_src: errs.append("U1 回退：旧 UI 残留 " + sym)
+# 导航骨架守恒：这些一行都不许动
+for sym in [
+    "BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }",
+    "var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }",
+    "onBack = { screen = modelsFrom }",
+    "screen = Screen.LIBRARY",
+]:
+    if sym not in main_src: errs.append("U1 回退：导航骨架被改动 " + sym)
+enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
+if enum_m:
+    got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))
+    want = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
+            "SETTINGS", "MODELS", "CAST", "MIXER"}
+    if got != want: errs.append("U1 回退：Screen 枚举被改 " + str(got ^ want))
+else:
+    errs.append("U1 回退：找不到 Screen 枚举")
+# mask_strings 保持字符数不变，用它做括号配对定位，避免正则被内层 } 提前截断
+masked_main = mask_strings(main_src)
+head = "when (screen) {"
+start = masked_main.find(head)
+if start >= 0:
+    open_i = start + len(head) - 1  # 指向那个 '{'
+    depth = 0
+    end = None
+    for k in range(open_i, len(masked_main)):
+        if masked_main[k] == "{": depth += 1
+        elif masked_main[k] == "}":
+            depth -= 1
+            if depth == 0:
+                end = k
+                break
+    block = main_src[open_i:(end + 1)] if end else ""
+    n = len(re.findall(r"Screen\.[A-Z_]+\s*->", block))
+    if n != 9: errs.append("U1 回退：when(screen) 分发分支 %d 个，应为 9" % n)
+else:
+    errs.append("U1 回退：找不到 when(screen) 分发")
+# chromeOf 必须覆盖全部 9 个目的地（漏一个 = 那一页顶栏标题为空、Tab 不高亮）
+co_m = re.search(r"private fun chromeOf\(s: Screen\): ChromeSpec = when \(s\) \{(.*?)\n\}",
+                 main_src, re.S)
+if co_m:
+    covered = set(re.findall(r"Screen\.([A-Z_]+)\s*->", co_m.group(1)))
+    if len(covered) != 9: errs.append("U1 回退：chromeOf 只覆盖 %d/9 个目的地" % len(covered))
+else:
+    errs.append("U1 回退：找不到 chromeOf 映射")
+# 底栏只能有 3 个顶层 Tab，且不含「设置」
+tabs_m = re.search(r"TOP_TABS\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
+if tabs_m:
+    body = tabs_m.group(1)
+    if body.count(" to ") != 3 or "设置" in body:
+        errs.append("U1 回退：顶层 Tab 不是 3 个或仍含设置入口")
+else:
+    errs.append("U1 回退：找不到 TOP_TABS")
+# 下拉刷新机制保留、阈值不变（必须查代码行，注释里也写了 55f，会被字符串包含骗过）
+if "if (acc > 55f) {" not in chrome_src or "onRefresh()" not in chrome_src:
+    errs.append("U1 回退：下拉刷新机制或阈值被改动")
+# 真 bug 回归：删书必须触发刷新
+if "BookStore.delete(c, b.id); onChanged()" not in main_src:
+    errs.append("U1 回退：删书后没调 onChanged()，列表不会刷新")
+# 括号平衡（用项目自带的 mask_strings，避免字符串/注释里的括号误判）
+for p in kt_files:
+    masked = mask_strings(p.read_text(encoding="utf-8", errors="replace"))
+    depth = 0
+    ok = True
+    for ch in masked:
+        if ch == "{": depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth < 0: ok = False; break
+    if not ok or depth != 0:
+        errs.append("U1 括号不平衡: %s (depth=%d)" % (p.relative_to(ROOT), depth))
+
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
 print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / R31 符号 %d 项 / native 早停 3 项"

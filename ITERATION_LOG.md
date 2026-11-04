@@ -394,3 +394,15 @@ binary Manifest `1.0.0+40` / dex 23 个 R31 字面量全在。
 
 **队列（方向变更后重排）**：① 标注工厂导入通道（接契约进 App，跳过 4B）→ ② 调音台显示当前任务真实
 ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标注标为实验性/已撤主路。
+
+
+---
+
+## U1 · 全局壳（R32 落地）
+
+- 新增 `AppChrome.kt`：顶层目的地常量 / `ChromeSpec` / `AppTopBar` / `AppBottomBar` / `RefreshStrip`，抄 Now in Android `TopLevelDestination` 形状，零业务逻辑、颜色由调用方传入。
+- `MainActivity.kt`：顶栏删产品名+定位+文字刷新按钮；底栏 4 Tab → 3 Tab；设置移左上角 ☰；新增 `chromeOf(Screen)` 单一映射（顺手修 CAST 从不亮 Tab）；下拉手势抽成可复用件；补 `BookStore.delete` 后的 `onChanged()`。
+- **守恒**：Screen 9 值 / when 9 分支 / refresh 计数器 / BackHandler / modelsFrom / 外部 intent 落地 / ProduceService / 前台服务 / 4B 与 prompt / native / Manifest / Gradle 全部零 diff。
+- 验证：CI 自检加 U1 守恒断言；`scripts/r32_verify.py` 反向注入 11/11 拦下，并抓出 4 个假绿（注释骗过字符串断言、`mask_strings` 令 R20 KDoc 检查恒不触发等），已全部修掉。
+- 本地无 gradle-wrapper.jar / Android SDK，**真编译由 CI 承担**。
+- 未做：Material3 PullToRefreshBox 与 4 页下拉、书架页细节（U2）、其余页文案（U3）、调音台一级入口（U4）。

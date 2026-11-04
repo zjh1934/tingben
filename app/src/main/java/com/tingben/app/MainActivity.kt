@@ -284,29 +284,16 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
     }
 
+    // U1 · 顶层目的地归属集中到 chromeOf()，顶栏/底栏只消费规格，不再各自写 screen == ...
+    val chrome = chromeOf(screen)
     Column(Modifier.fillMaxSize().background(Bg)) {
-        // 顶栏：产品名 + 一句定位 + 一个主动作；刷新按钮常驻书架，下拉也能刷
-        Row(
-            Modifier.fillMaxWidth().background(Card).padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("听本", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Primary)
-                Text("把小说变成能听的音频", fontSize = 11.sp, color = Sub)
-            }
-            if (screen == Screen.LIBRARY) {
-                FilledTonalButton(
-                    onClick = { refresh++; Toast.makeText(ctx, "书架已刷新", Toast.LENGTH_SHORT).show() },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) { Text("⟳ 刷新", fontSize = 12.5.sp) }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = { openBookPicker() },
-                    shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) { Text("＋ 导入", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-            }
-        }
+        AppTopBar(
+            spec = chrome,
+            onSettings = { screen = Screen.SETTINGS; refresh++ },
+            onImport = { openBookPicker() },
+            surface = Card,
+            primary = Primary
+        )
         Box(Modifier.weight(1f)) {
             when (screen) {
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
@@ -403,16 +390,22 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     fontSize = 12.5.sp, color = Primary)
             }
         }
-        // 底栏 4 个 Tab：长任务有自己独立的区域，不再藏在书架/设置里
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().background(Card).padding(vertical = 6.dp)) {
-            TabButton("书架", screen == Screen.LIBRARY || screen == Screen.PRODUCE,
-                Modifier.weight(1f)) { screen = Screen.LIBRARY }
-            TabButton("任务", screen == Screen.TASKS || screen == Screen.PROGRESS,
-                Modifier.weight(1f)) { screen = Screen.TASKS }
-            TabButton("音频", screen == Screen.AUDIO, Modifier.weight(1f)) { screen = Screen.AUDIO; refresh++ }
-            TabButton("设置", screen == Screen.SETTINGS || screen == Screen.MODELS || screen == Screen.MIXER,
-                Modifier.weight(1f)) { screen = Screen.SETTINGS; refresh++ }
-        }
+        // U1 · 3 个顶层 Tab；设置入口移到顶栏左侧，设置域页面不高亮任何 Tab
+        AppBottomBar(
+            active = chrome.activeTab,
+            onTab = { idx ->
+                screen = when (idx) {
+                    TAB_TASKS -> Screen.TASKS
+                    TAB_AUDIO -> Screen.AUDIO
+                    else -> Screen.LIBRARY
+                }
+                if (idx == TAB_AUDIO) refresh++
+            },
+            surface = Card,
+            primary = Primary,
+            primarySoft = PrimarySoft,
+            sub = Sub
+        )
     }
 }
 
@@ -425,20 +418,21 @@ private fun queryName(c: Context, uri: Uri): String {
     return name
 }
 
-@Composable
-private fun TabButton(label: String, on: Boolean, mod: Modifier, click: () -> Unit) {
-    Column(mod.clickable { click() }.padding(vertical = 3.dp),
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.background(if (on) PrimarySoft else Color.Transparent, RoundedCornerShape(50))
-                .padding(horizontal = 13.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(label, fontSize = 13.sp,
-                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (on) Primary else Sub)
-        }
-    }
+/**
+ * U1 · 全 App 唯一的「目的地 → 壳规格」映射（Now in Android 的 TopLevelDestination 思路）。
+ * 原先 4 处 screen == ... 判断散在顶栏和底栏里，Screen.CAST 还漏了高亮；这里一次定义。
+ * ⚠️ 只描述显示，不改导航：when(screen) 分发、refresh 计数、modelsFrom、BackHandler 全不动。
+ */
+private fun chromeOf(s: Screen): ChromeSpec = when (s) {
+    Screen.LIBRARY  -> ChromeSpec("书架", TAB_LIBRARY, showImport = true)
+    Screen.PRODUCE  -> ChromeSpec("制作", TAB_LIBRARY)
+    Screen.PROGRESS -> ChromeSpec("进度", TAB_TASKS)
+    Screen.TASKS    -> ChromeSpec("任务", TAB_TASKS)
+    Screen.AUDIO    -> ChromeSpec("我的音频", TAB_AUDIO)
+    Screen.SETTINGS -> ChromeSpec("设置")
+    Screen.MODELS   -> ChromeSpec("模型")
+    Screen.CAST     -> ChromeSpec("角色音色")
+    Screen.MIXER    -> ChromeSpec("调音台")
 }
 
 @Composable
@@ -464,32 +458,13 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     var pasteTitle by remember { mutableStateOf("") }
     var pasteText by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        // R11 · 书架刷新：下拉手势 + 顶栏 ⟳ 按钮双保险。放在固定小条上，避免和列表滚动抢手势。
-        var pulled by remember { mutableStateOf(false) }
-        Box(
-            Modifier.fillMaxWidth().height(if (pulled) 42.dp else 30.dp)
-                .background(if (pulled) PrimarySoft else Color.Transparent, RoundedCornerShape(12.dp))
-                .pointerInput(Unit) {
-                    var acc = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { acc = 0f },
-                        onDragEnd = {
-                            if (acc > 55f) {
-                                onChanged()
-                                Toast.makeText(c, "书架已刷新", Toast.LENGTH_SHORT).show()
-                            }
-                            pulled = false; acc = 0f
-                        },
-                        onVerticalDrag = { _, dy ->
-                            if (dy > 0) { acc += dy; pulled = acc > 20f }
-                        }
-                    )
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(if (pulled) "松开即可刷新" else "下拉刷新 · 或点右上角 ⟳ 刷新",
-                fontSize = 11.5.sp, color = if (pulled) Primary else Sub)
-        }
+        // U1 · 下拉刷新条抽到 AppChrome 壳层；手势阈值与旧实现一致，删掉「点右上角」注释
+        RefreshStrip(
+            onRefresh = onChanged,
+            primary = Primary,
+            primarySoft = PrimarySoft,
+            sub = Sub
+        )
         Spacer(Modifier.height(10.dp))
         Text("把小说变成能听的音频", fontSize = 21.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
@@ -602,7 +577,7 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     Spacer(Modifier.height(10.dp))
                     Row {
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { BookStore.delete(c, b.id) }) { Text("删除", color = Sub) }
+                        TextButton(onClick = { BookStore.delete(c, b.id); onChanged() }) { Text("删除", color = Sub) }
                         Button(onClick = { onOpen(b.id) }) { Text("制作有声书") }
                     }
                 }
