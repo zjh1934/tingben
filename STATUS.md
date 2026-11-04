@@ -4,8 +4,8 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+32`（run 32，结论以构建报告为准） |
-| APK | 约 17.7MB / arm64-v8a / 固定 debug 签名 |
+| 版本 | `1.0.0+32`（run 32 全绿） |
+| APK | 17,771,032 字节 / arm64-v8a / 固定 debug 签名 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
 | CI | 以文末最新 run 为准 |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
