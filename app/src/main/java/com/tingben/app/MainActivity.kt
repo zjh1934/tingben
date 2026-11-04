@@ -969,7 +969,8 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         fontSize = 14.sp, modifier = Modifier.weight(1f))
                     Text(if (segOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
                 }
-                Text("绿=已有声音 · 蓝=已标注 · 空=还没轮到；点一小格看原文、试听这一段。",
+                Text("绿=已有声音 · 蓝=模型真标注 · 黄=模型没采纳按原文直读 · "
+                        + "灰=没轮到/旧缓存未记来源；点一小格看原文、试听这一段。",
                     fontSize = 11.sp, color = Sub)
                 if (segOpen) {
                     Spacer(Modifier.height(10.dp))
@@ -980,7 +981,8 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                             row.forEach { s ->
                                 val base = when {
                                     s.hasAudio -> Good
-                                    s.annotated -> Primary
+                                    s.src == "MODEL" -> Primary
+                                    s.src == "FILL" -> Warn
                                     else -> Line
                                 }
                                 Box(
@@ -1004,8 +1006,18 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         if (s != null) {
                             Spacer(Modifier.height(10.dp))
                             Text("第 ${s.index + 1} 段 · " +
-                                    if (s.hasAudio) "已合成 ${fmtTime(s.durationMs)}"
-                                    else if (s.annotated) "已标注，还没合成" else "还没轮到",
+                                    if (s.hasAudio) "已合成 ${fmtTime(s.durationMs)}" +
+                                            when (s.src) {
+                                                "MODEL" -> "（模型标注）"
+                                                "FILL" -> "（模型未采纳，按原文直读）"
+                                                else -> ""
+                                            }
+                                    else when (s.src) {
+                                        "MODEL" -> "模型已标注，还没合成"
+                                        "FILL" -> "模型产出没被采纳，按原文直读"
+                                        "UNKNOWN" -> "已落盘（旧缓存没记来源）"
+                                        else -> "还没轮到"
+                                    },
                                 fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary)
                             Spacer(Modifier.height(5.dp))
                             Text(if (s.preview.isBlank()) "（暂无文字预览）" else s.preview + "…",

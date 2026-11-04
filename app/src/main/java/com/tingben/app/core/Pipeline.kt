@@ -348,11 +348,15 @@ object Annotator {
         val joined = anns.joinToString("") { it.text }
         var cursor = 0
         var ordered = anns.isNotEmpty()
+        // R27 · 与 Adoption 对齐：模型可以跳过标题/空行，只要每条 text 是
+        // 原文中「cursor 之后的有序子串」即可；缺口与尾部由程序补齐。
+        // VERBATIM 仍查模型有没有逐字覆盖整块，两条各管一件事，不再互相打架。
         for (a in anns) {
-            if (a.text.isEmpty() || original.indexOf(a.text, cursor) != cursor) { ordered = false; break }
-            cursor += a.text.length
+            if (a.text.isEmpty()) { ordered = false; break }
+            val pos = original.indexOf(a.text, cursor)
+            if (pos < 0) { ordered = false; break }
+            cursor = pos + a.text.length
         }
-        if (cursor != original.length) ordered = false
         val bound = original.count { it in "。！？；.!?;" } + 2
         val inlineTag = Regex("\\[[A-Za-z_]{2,}\\]")
         val dependent = listOf("仍然", "依旧", "同上", "如前", "继续")
@@ -388,7 +392,8 @@ object Annotator {
      */
     data class Reconcile(
         val result: List<Ann>, val kept: Int, val filled: Int, val disposition: String,
-        val drops: List<Adoption.Drop> = emptyList()
+        val drops: List<Adoption.Drop> = emptyList(),
+        val srcModel: List<Boolean> = emptyList()
     ) {
         companion object {
             const val FULL = "FULL"         // 模型全标对
@@ -399,15 +404,16 @@ object Annotator {
 
     fun reconcile(parsed: List<Ann>?, original: String): Reconcile {
         val r = Adoption.adopt(parsed, original) { rest -> directSegments(rest) }
-        return Reconcile(r.anns, r.kept, r.filled, r.disposition, r.drops)
+        return Reconcile(r.anns, r.kept, r.filled, r.disposition, r.drops, r.srcModel)
     }
 
     /** 标注结果全文（带来源标记），落进 audit jsonl 与「复制标注全文」。单块上限 8KB。 */
-    fun contentJson(anns: List<Ann>, kept: Int): String = try {
+    fun contentJson(anns: List<Ann>, srcModel: List<Boolean>): String = try {
         val arr = JSONArray()
         anns.forEachIndexed { i, a ->
             arr.put(JSONObject().put("text", a.text).put("speaker", a.speaker)
-                .put("instruct", a.instruct).put("src", if (i < kept) "MODEL" else "FILL"))
+                .put("instruct", a.instruct)
+                .put("src", if (srcModel.getOrElse(i) { false }) "MODEL" else "FILL"))
         }
         val s = arr.toString()
         if (s.length > 8192) s.substring(0, 8192) + "…（本块标注全文超长，已截断）" else s
@@ -419,12 +425,13 @@ object Annotator {
      * 现在逐条给 text 全文 + instruct 全文 + 来源标记，单块 16KB 才截断。
      * 逐字全文也同时落在 audit jsonl 与诊断页，主日志只是让「贴一段日志」就能自证。
      */
-    fun contentLines(anns: List<Ann>, kept: Int): String = buildString {
+    fun contentLines(anns: List<Ann>, srcModel: List<Boolean>): String = buildString {
         anns.forEachIndexed { i, a ->
             append(i + 1).append(". [").append(a.speaker).append("] ")
                 .append(a.text.replace('\n', '⏎'))
                 .append("\n   → ").append(a.instruct)
-                .append("  〈").append(if (i < kept) "模型标注" else "程序补齐").append("〉\n")
+                .append("  〈").append(if (srcModel.getOrElse(i) { false }) "模型标注" else "程序补齐")
+                .append("〉\n")
         }
     }.let { if (it.length > 16384) it.substring(0, 16384) + "…（已截断，全文见诊断页）" else it.trimEnd() }
 
@@ -846,6 +853,9 @@ object Producer {
 
         val annotated: List<Ann>
         var gateFails = 0
+        // R27 · 「已标注 X/Y 块」以前按「跑完几块」算，降级直读也算标了。
+        // 真机截图因此出现「已标注 1/2」而诊断写「一条没采纳」。单独数真标过的块。
+        var modelHits = 0
         if (direct) {
             // 快速出声路径：不加载 4B、不标注，原文按符号切段后直接交给 TTS。
             // 真机 4B 逐 token 约 10 秒，整本不可等；先让用户几分钟内听到声音。
@@ -922,7 +932,8 @@ object Producer {
                             instructEmpty = result.count { it.instruct.isBlank() },
                             status = AuditLog.CACHED, failCode = "-", rules = emptyMap(),
                             previewHead = "（本块从磁盘续上，未重跑语言模型）", previewTail = "",
-                            elapsedMs = 0L, fromCache = true))
+                            elapsedMs = 0L, fromCache = true,
+                            finalVerbatim = Annotator.gate(result, chunk.text)))
                         EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
                             "块 ${i + 1}/${chunks.size} 从磁盘续上 · 角色表 ${roster.size} · 近邻 ${recent.size}")
                     } else {
@@ -932,6 +943,8 @@ object Producer {
                         var lastFailCode = "-"
                         var attemptCount = 0
                         var usedFallback = false
+                        // R27 · 采纳 0 条时，把第一条被丢弃的原因带进审计摘要。
+                        var firstDrop = "-"
                         val blockStartAt = System.currentTimeMillis()
                         val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn,
                             // R16 · 上一块末尾 120 字作为「紧邻前因」。续跑读盘的块也照样传，
@@ -1003,10 +1016,13 @@ object Producer {
                             val failCode = when {
                                 parsed == null -> "EMPTY_ARRAY"
                                 rec.disposition == Annotator.Reconcile.FALLBACK ->
-                                    if (meta.repairLevel < 0) "JSON_SYNTAX_FAIL" else "CONCAT_LEN_MISMATCH"
+                                    if (meta.repairLevel < 0) "JSON_SYNTAX_FAIL" else "ADOPT_0_KEPT"
                                 !gateOk -> "RECONCILE_BROKEN"
                                 else -> "-"
                             }
+                            // R27 · 旧码叫 CONCAT_LEN_MISMATCH，实际是「逐条采纳 0 条」，
+                            // 名字把人往「长度不对」上带。改名并保留首因原文。
+                            if (rec.drops.isNotEmpty()) firstDrop = rec.drops.first().reason
                             lastMeta = meta; lastChecks = checks; lastRec = rec
                             lastFailCode = failCode; attemptCount++
                             EventLog.log(EventLog.Kind.AUDIT, "ANN_DISPOSITION",
@@ -1079,13 +1095,23 @@ object Producer {
                         // 最终走 fallback（重试全失败）时全部是程序补齐；否则前 rec.kept 条来自模型。
                         val rec0 = lastRec
                         val srcKept = if (usedFallback) 0 else (rec0?.kept ?: 0)
+                        // 缺口补齐后模型条目可能插在中间，不能再用「前 kept 条」判来源。
+                        val srcFlags = if (usedFallback) List(finalAnns.size) { false }
+                            else (rec0?.srcModel ?: List(finalAnns.size) { false })
                         val disposition = if (usedFallback) Annotator.Reconcile.FALLBACK
                             else (rec0?.disposition ?: Annotator.Reconcile.FALLBACK)
-                        val contentJson = Annotator.contentJson(finalAnns, srcKept)
+                        if (srcKept > 0) modelHits++
+                        // R27 · 看台小格颜色不再只看「有没有 ann 文件」：
+                        // 有文件但全是直读段 = 黄，真的有模型标注 = 蓝。
+                        try {
+                            File(work, "ann_%04d.src".format(i))
+                                .writeText(if (srcKept > 0) "MODEL" else "FILL")
+                        } catch (_: Throwable) { }
+                        val contentJson = Annotator.contentJson(finalAnns, srcFlags)
                         EventLog.log(EventLog.Kind.AUDIT, "ANN_CONTENT",
                             "块 ${i + 1}/${chunks.size} 最终采纳 ${finalAnns.size} 条（模型 $srcKept" +
                                 " / 补齐 ${finalAnns.size - srcKept}）· $disposition ｜ " +
-                                Annotator.contentLines(finalAnns, srcKept).replace('\n', '｜'),
+                                Annotator.contentLines(finalAnns, srcFlags).replace('\n', '｜'),
                             level = if (srcKept == 0) EventLog.Level.WARN else EventLog.Level.INFO,
                             fields = mapOf("block" to (i + 1).toString(),
                                 "annCount" to finalAnns.size.toString(),
@@ -1106,7 +1132,9 @@ object Producer {
                             previewHead = m?.previewHead ?: "", previewTail = m?.previewTail ?: "",
                             elapsedMs = System.currentTimeMillis() - blockStartAt, fromCache = false,
                             disposition = disposition, kept = srcKept,
-                            filled = finalAnns.size - srcKept, annsJson = contentJson))
+                            filled = finalAnns.size - srcKept, annsJson = contentJson,
+                            adoptFirstDrop = firstDrop,
+                            finalVerbatim = Annotator.gate(finalAnns, chunk.text)))
                         EventLog.log(EventLog.Kind.AUDIT, "ANN_AUDIT",
                             "块 ${i + 1}/${chunks.size} ${if (usedFallback) "降级直读" else "通过"} · " +
                                 "$disposition（模型 $srcKept 条）· " +
@@ -1151,9 +1179,9 @@ object Producer {
                     recent.addAll(safe)
                     while (recent.size > 3) recent.removeAt(0)
                     emit("正在理解文字", i + 1, chunks.size, gateFails,
-                        "已标注 ${i + 1}/${chunks.size} 块" +
-                            (if (resumed > 0) " · $resumed 块直接续上" else "") +
-                            if (gateFails > 0) " · $gateFails 块改走直读" else "")
+                        "已完成 ${i + 1}/${chunks.size} 块 · 模型真标注 $modelHits 块" +
+                            " · 改走直读 $gateFails 块" +
+                            (if (resumed > 0) " · 磁盘续上 $resumed 块（旧缓存未记来源）" else ""))
                 }
             } finally {
                 try { NativeEngine.llmFree(llmHandle) } catch (_: Throwable) { }

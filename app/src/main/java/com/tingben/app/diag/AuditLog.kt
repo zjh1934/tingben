@@ -48,7 +48,12 @@ data class BlockAudit(
     val disposition: String = "",
     val kept: Int = 0,
     val filled: Int = 0,
-    val annsJson: String = ""
+    val annsJson: String = "",
+    // R27 · 回答「模型到底产出了没有 / 为什么没进下一步」：
+    // adoptFirstDrop 是逐条采纳时第一条被丢弃的原因（NOT_FOUND_AFTER_0 等）；
+    // finalVerbatim 是最终真正喂给 TTS 的段拼回来是否 == 原文。
+    val adoptFirstDrop: String = "-",
+    val finalVerbatim: Boolean = true
 ) {
     fun toJson(): String = JSONObject().apply {
         put("runId", runId); put("block", block); put("total", total); put("attempt", attempt)
@@ -61,6 +66,7 @@ data class BlockAudit(
         put("elapsedMs", elapsedMs); put("fromCache", fromCache)
         put("disposition", disposition); put("kept", kept); put("filled", filled)
         put("annsJson", annsJson)
+        put("adoptFirstDrop", adoptFirstDrop); put("finalVerbatim", finalVerbatim)
     }.toString()
 
     companion object {
@@ -77,7 +83,8 @@ data class BlockAudit(
                 o.optString("failCode", "-"), rules, o.optString("previewHead", ""),
                 o.optString("previewTail", ""), o.optLong("elapsedMs"), o.optBoolean("fromCache"),
                 o.optString("disposition", ""), o.optInt("kept"), o.optInt("filled"),
-                o.optString("annsJson", ""))
+                o.optString("annsJson", ""),
+                o.optString("adoptFirstDrop", "-"), o.optBoolean("finalVerbatim", true))
         } catch (_: Throwable) { null }
     }
 }
@@ -145,9 +152,19 @@ object AuditLog {
         val full = b.count { it.disposition == "FULL" }
         val partial = b.count { it.disposition == "PARTIAL" }
         val allFallback = b.count { it.disposition == "FALLBACK" }
-        val empty = b.count { !it.fromCache && it.annCount == 0 }
+        // R27 · 真机截图暴露的口径事故：旧版把「模型候选」和「最终直读段」的
+        // 数字并排写，于是出现「差 +0」却「逐字保真 0/1」的自相矛盾。
+        // 现在两段数字各自标明对象，并给出模型产出没被采纳的第一条原因。
+        val noModel = b.count { !it.fromCache && it.kept == 0 }
+        val finalOk = b.count { it.finalVerbatim }
         val fails = b.filter { it.failCode != "-" && it.failCode.isNotBlank() }
             .groupingBy { it.failCode }.eachCount().entries
+            .sortedByDescending { it.value }.joinToString(" / ") { "${it.key}×${it.value}" }
+            .ifBlank { "无" }
+            .replace("CONCAT_LEN_MISMATCH", "采纳0条(旧码)")
+        val dropCounts = b.mapNotNull {
+            it.adoptFirstDrop.takeIf { d -> d != "-" && d.isNotBlank() }
+        }.groupingBy { it }.eachCount().entries
             .sortedByDescending { it.value }.joinToString(" / ") { "${it.key}×${it.value}" }
             .ifBlank { "无" }
         val orig = b.sumOf { it.origChars }
@@ -159,17 +176,19 @@ object AuditLog {
         sb.append("本次标注审计 · run=").append(m["run"] ?: runId)
             .append(" · ").append(m["mode"] ?: "-").append(" · ").append(m["chunks"] ?: b.size).append(" 块\n")
         sb.append("结果：PASS ").append(pass).append(" / 缓存续上 ").append(cached)
-            .append(" / 降级直读 ").append(fallback).append(" / 零标注 ").append(empty).append('\n')
+            .append(" / 降级直读 ").append(fallback).append(" / 模型产出未被采纳 ").append(noModel).append('\n')
         sb.append("采纳：模型全标对 ").append(full).append(" / 部分标对+程序补齐 ").append(partial)
             .append(" / 一条没采纳（整块直读）").append(allFallback).append('\n')
         sb.append("失败码：").append(fails).append('\n')
-        sb.append("长度：原文合计 ").append(orig).append(" 字；标注 text 合计 ").append(text)
+        sb.append("未采纳首因：").append(dropCounts).append('\n')
+        sb.append("模型候选：原始产出 ").append(raw).append(" 字 · 有效 JSON ")
+            .append(body).append(" 字（非 JSON 占 ").append(waste).append("%）\n")
+        sb.append("最终进 TTS：").append(text).append(" 字 / 原文 ").append(orig)
             .append(" 字（差 ").append(if (text - orig >= 0) "+" else "").append(text - orig)
-            .append("）；模型原始产出 ").append(raw).append(" 字，其中有效 JSON 候选 ").append(body)
-            .append(" 字（非 JSON 占 ").append(waste).append("%）\n")
+            .append("）· 逐字相等 ").append(finalOk).append('/').append(b.size).append(" 块\n")
         sb.append(ruleText(c))
-        if (empty > 0) sb.append("⚠ 有 ").append(empty)
-            .append(" 块跑完却没标出任何条目 —— 看「产出预览」里它到底吐了什么。\n")
+        if (noModel > 0) sb.append("⚠ 有 ").append(noModel)
+            .append(" 块模型吐了 JSON 却一条没进合成 —— 看「未采纳首因」与「模型原始产出全文」。\n")
         return sb.toString().trimEnd()
     }
 
@@ -178,7 +197,7 @@ object AuditLog {
         if (b.isEmpty()) return "规则生效：本次没有经过语言模型的块。\n"
         val keys = AnnotatorRules.LABELS.keys
         return buildString {
-            append("规则生效（按块计）：\n")
+            append("规则生效（按模型候选的原始产出计，不代表最终采纳）：\n")
             keys.forEach { k ->
                 val total = b.count { it.rules.containsKey(k) }
                 val ok = b.count { it.rules[k] == true }
@@ -258,8 +277,8 @@ object AuditLog {
 /** 规则中文名集中放这里，避免 UI 与校验逻辑各写一份。 */
 object AnnotatorRules {
     val LABELS = linkedMapOf(
-        "VERBATIM" to "逐字保真（拼回原文）",
-        "ORDERED_SUBSTRING" to "每条 text 是原文有序连续片段",
+        "VERBATIM" to "模型 text 逐字覆盖整块（含标题/空行）",
+        "ORDERED_SUBSTRING" to "模型 text 是原文有序子串（缺口由程序补）",
         "JSON_ONLY" to "只输出一个 JSON 数组",
         "NO_TRAILING_TEXT" to "JSON 后无解释尾文",
         "NO_INLINE_TAG" to "instruct 无方括号行内标签",

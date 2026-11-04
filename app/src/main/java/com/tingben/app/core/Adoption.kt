@@ -19,6 +19,13 @@ package com.tingben.app.core
  *  - 字符集扩到中文：标签认中文冒号，首句截断认 句号叹号问号
  *  - 去重命中不静默吞字，而是停下改由程序补齐，避免破坏逐字相等
  *  - 每条丢弃都记原因，写进 ANN_ADOPT_DETAIL 事件，用户能自证「真标还是假标」
+ *
+ * R27 · 真机日志定案后的第二处改写（向 Antioch 的「结构归程序」靠拢）：
+ *  旧版要求第一条 text 必须从原文第 0 个字符开始严格前缀匹配。模型把
+ *  「第一章 试音」这类标题/空行当元信息跳过时，第一条就 NOT_PREFIX_AT_0，
+ *  整块 kept=0 → FALLBACK → 全部换成直读段，模型 896 字合规 JSON 一条都没进 TTS。
+ *  现在允许「有序子串 + 缺口补齐」：命中前的缺口按标点补成旁白段。
+ *  顺序、不重叠、拼回逐字相等三条都由 tailSegments + gate 保证，没有放宽契约。
  */
 object Adoption {
 
@@ -29,7 +36,10 @@ object Adoption {
 
     data class Result(
         val anns: List<Ann>, val kept: Int, val filled: Int, val disposition: String,
-        val drops: List<Drop>
+        val drops: List<Drop>,
+        // R27 · 允许前导缺口后，「前 kept 条来自模型」不再成立（缺口段插在前面）。
+        // 逐条记 true/false，ANN_CONTENT / 诊断页的〈模型标注〉标记才不会错位。
+        val srcModel: List<Boolean> = emptyList()
     )
 
     private val LABEL = Regex("^(?:\\[[^\\]]*\\]|[\\u4e00-\\u9fa5A-Za-z ]{1,20})[:：]\\s*")
@@ -60,18 +70,29 @@ object Adoption {
               tailSegments: (String) -> List<Ann>): Result {
         val drops = mutableListOf<Drop>()
         val out = mutableListOf<Ann>()
+        val flags = mutableListOf<Boolean>()
         val seen = HashSet<Pair<String, String>>()
         var cursor = 0
         var kept = 0
+        var gapFilled = 0
 
         if (parsed != null) for ((idx, a) in parsed.withIndex()) {
             if (a.text.isEmpty()) {
                 drops += Drop(idx, a.speaker, "", "EMPTY_TEXT"); break
             }
-            if (cursor + a.text.length > original.length ||
-                !original.regionMatches(cursor, a.text, 0, a.text.length)) {
-                drops += Drop(idx, a.speaker, a.text.take(24), "NOT_PREFIX_AT_$cursor")
+            // R27 · 不再要求从原文第 0 字严格前缀。模型跳过标题/空行时，
+            // 允许从 cursor 往后找这一条的有序出现位置，前面的缺口由程序补齐。
+            val pos = original.indexOf(a.text, cursor)
+            if (pos < 0) {
+                drops += Drop(idx, a.speaker, a.text.take(24), "NOT_FOUND_AFTER_$cursor")
                 break
+            }
+            if (pos > cursor) {
+                val gap = tailSegments(original.substring(cursor, pos))
+                out.addAll(gap)
+                repeat(gap.size) { flags.add(false) }
+                gapFilled += gap.size
+                cursor = pos
             }
             if (!seen.add(a.speaker to a.text)) {
                 drops += Drop(idx, a.speaker, a.text.take(24), "DUPLICATE")
@@ -85,6 +106,7 @@ object Adoption {
             } else {
                 out.add(Ann(a.text, a.speaker, inst))
             }
+            flags.add(true)
             kept++
             cursor += a.text.length
         }
@@ -92,11 +114,12 @@ object Adoption {
         val rest = if (cursor < original.length) original.substring(cursor) else ""
         val fill = if (rest.isNotEmpty()) tailSegments(rest) else emptyList()
         out.addAll(fill)
+        repeat(fill.size) { flags.add(false) }
         val disp = when {
-            kept > 0 && fill.isEmpty() -> "FULL"
+            kept > 0 && fill.isEmpty() && gapFilled == 0 -> "FULL"
             kept > 0 -> "PARTIAL"
             else -> "FALLBACK"
         }
-        return Result(out, kept, fill.size, disp, drops)
+        return Result(out, kept, fill.size + gapFilled, disp, drops, flags)
     }
 }

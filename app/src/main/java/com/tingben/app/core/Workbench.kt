@@ -15,6 +15,9 @@ import java.io.File
 data class SegRow(
     val index: Int,
     val annotated: Boolean,
+    // R27 · MODEL=真有模型标注 / FILL=模型产出未采纳，按原文直读 /
+    // UNKNOWN=旧缓存没写来源文件，不猜、不冒充已标注。
+    val src: String,
     val wav: File?,
     val preview: String,
     val durationMs: Long
@@ -65,9 +68,15 @@ object Workbench {
                 } catch (_: Throwable) { "" }
             } else if (t?.direct == true) "直接朗读（原文照读，不产出标注）" else ""
 
+            val src = if (!annFile.exists()) "UNKNOWN" else try {
+                val f = File(work, "ann_%04d.src".format(i))
+                if (f.exists()) f.readText().trim().uppercase().ifBlank { "UNKNOWN" } else "UNKNOWN"
+            } catch (_: Throwable) { "UNKNOWN" }
+
             SegRow(
                 index = i,
                 annotated = annFile.exists(),
+                src = src,
                 wav = wavMap[i],
                 preview = preview,
                 durationMs = wavMap[i]?.let { AudioLibrary.durationMs(it) } ?: 0L

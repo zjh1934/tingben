@@ -162,6 +162,27 @@ if "wl.acquire(UNIT_TIMEOUT_MS)" not in fgs_src:
 if "START_STICKY" in fgs_src:
     errs.append("R26 回退：前台服务变成自动重启")
 
+# R27 · 真机截图定案：模型吐了合规 JSON 却一条没进合成，且三处显示口径混用。
+# 正向：有序子串+缺口补齐、逐条来源、首因、真标注计数、最终逐字相等都要真在源码里。
+R27_ALL = ["ADOPT_0_KEPT", "NOT_FOUND_AFTER_", "srcModel", "adoptFirstDrop",
+           "finalVerbatim", "未采纳首因", "模型产出未被采纳", "模型真标注",
+           "ann_%04d.src", "旧缓存未记来源", "最终进 TTS", "模型候选"]
+for sym in R27_ALL:
+    if sym not in all_src: errs.append("缺少 R27 符号: " + sym)
+# 反向断言只认代码形态，注释里描述旧 bug 的字面量不该把自己拦下。
+if re.search(r"original\.regionMatches\(\s*cursor", all_src):
+    errs.append("R27 回退：又变回「从原文第 0 字严格前缀」")
+if re.search(r"indexOf\(a\.text,\s*cursor\)\s*!=\s*cursor", pipe_src):
+    errs.append("R27 回退：规则判定又要求严格前缀")
+if '"NOT_PREFIX_AT_$cursor"' in all_src:
+    errs.append("R27 回退：采纳首因又变回 NOT_PREFIX_AT")
+if "if (i < kept) \"MODEL\"" in pipe_src:
+    errs.append("R27 回退：逐条来源又按「前 kept 条」猜")
+if '"已标注 ${i + 1}/${chunks.size} 块"' in pipe_src:
+    errs.append("R27 回退：进度又按跑完块数写「已标注」")
+if "s.src == \"MODEL\"" not in main_src:
+    errs.append("R27 回退：看台没有按真实来源着色")
+
 notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 for who in ["Finrandojin", "Xydane", "MIT License", "ensemblereads", "ReaderVoice-Mobile"]:
     if who not in notice: errs.append("第三方声明缺少: " + who)
