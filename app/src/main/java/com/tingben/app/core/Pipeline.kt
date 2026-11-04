@@ -851,6 +851,9 @@ object Producer {
             AuditLog.endRun()
         }
 
+        // R28 · 必须在 if/else 之外定义：合成阶段在分支外，
+        // 放 else 里会 Unresolved reference（CI run 36 真编译错，已修）。
+        val segOrigin = mutableListOf<Triple<Int, Int, Boolean?>>()
         val annotated: List<Ann>
         var gateFails = 0
         // R27 · 「已标注 X/Y 块」以前按「跑完几块」算，降级直读也算标了。
@@ -905,9 +908,6 @@ object Producer {
             val roster = LinkedHashSet<String>()
             val recent = mutableListOf<Ann>()
             val collected = mutableListOf<Ann>()
-        // R28 · 与 collected 一一对应的段来源（块号 / 块内第几条 / 是否模型标注）。
-        // 只从磁盘读，不猜：旧缓存没记来源就是 null。
-        val segOrigin = mutableListOf<Triple<Int, Int, Boolean?>>()
             var resumed = 0
             try {
                 for ((i, chunk) in chunks.withIndex()) {
