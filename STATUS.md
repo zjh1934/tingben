@@ -575,3 +575,9 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 ### 状态
 
 本地静态自检全绿（括号 / THINK_CLOSE 断言 / 11 个 Kotlin / JNI 符号 / 4 处归一化 / 逐字 gate / 无 INTERNET）；本轮改了 `tingben_native.cpp`，CI 会全量重编原生引擎。真机待验：跑两小块，看事件流里是否连续出现 `ANN_BLOCK_BEGIN 1/2 → ANN_BLOCK_END 1/2 → ANN_BLOCK_BEGIN 2/2`，以及 `NATIVE_KV_RESET posMax=-1`。
+
+### R15 验证结果
+
+- **CI run 20 全绿**，`v1.0.0-20` / 17,654,062 字节。
+- **拆包硬验证**：`libtingben_native.so` 含 `NATIVE_KV_RESET` / `posMax` / `llama_batch_init` / `llama_batch_free`，**不含** `llama_batch_get_one` 符号引用（确认新 pos 路径真的编进去了，不是注释改改）；dex 含 `ANN_BLOCK_BEGIN / ANN_BLOCK_END / ANN_WAIT / THINK_CLOSE / THINK_TRUNCATED`；7 个 arm64 .so、无权重、无 INTERNET。
+- 真机待验（零证据）：跑两小块，事件流应连续出现 `ANN_BLOCK_BEGIN 1/2 → ANN_BLOCK_END 1/2 → ANN_BLOCK_BEGIN 2/2`，且 `NATIVE_KV_RESET posMax=-1`。若 posMax≠-1，说明位置没归零，但显式 pos 已让第二块不再依赖它。
