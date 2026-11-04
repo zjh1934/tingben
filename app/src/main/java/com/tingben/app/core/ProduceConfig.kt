@@ -7,7 +7,7 @@ import org.json.JSONObject
  *
  * 不手搓依据（逐条见 docs/P1_制作准备页_联动表.md §1）：
  * - 单一不可变配置 data class：OfflineLLM `SettingsUiState.kt`
- * - KEY_*/DEFAULT_*、缺字段回默认：OfflineLLM `SettingsRepository.kt` / PocketPal 版本迁移
+ * - KEY 常量与 DEFAULT 常量、缺字段回默认：OfflineLLM `SettingsRepository.kt` / PocketPal 版本迁移
  * - 「新建 Session 时选预设」：Sansui233/index-tts-webui
  * - 参数分组 / break_duration 段间静音 / 质量预设：epub_to_audiobook Provider Configuration Tabs
  * - 枚举档位 → 自然语言导演指令：qwentts.cpp/examples/tts.sh 官方 voice_design
