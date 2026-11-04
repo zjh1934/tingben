@@ -271,7 +271,6 @@ BLOCKS = [
                 Spacer(Modifier.height(10.dp))
                 Button(onClick = onLibrary, Modifier.fillMaxWidth()) { Text("去书架") }
             }
-        } else {
 """, "任务页去大标题/说明"),
 
     (1236, 1247, "", "任务页后台长文整块删"),
@@ -393,6 +392,10 @@ BLANK_LITERALS = [
 
 # ── ④ 精确串替换 / 删除 ──────────────────────────────────────────────
 EXACT = [
+    # DROP 把「其中 N 段是旧缓存」的 Text 删掉后，原地的 if 条件没了分支，
+    # Kotlin 会报 "Expecting an expression"。连同条件行一起清掉。
+    ("                if (verdict != null && verdict.unknown > 0)\n", "",
+     "清掉删 Text 后悬空的 if"),
     ("Text(p.why, fontSize = 10.5.sp, color = Sub)", "", "采样预设理由去注释"),
     ('Text("现成音色网格（移植 ReaderVoice 中文 persona 表）", fontSize = 12.sp,\n'
      '                    fontWeight = FontWeight.Bold)',
@@ -499,6 +502,27 @@ CONSERVED = [
 for token in CONSERVED:
     if token not in s:
         fail(f"守恒项丢失：{token}")
+
+# 删文案最容易出的哑巴错：if (...) 的唯一 body 被删掉，留下悬空条件。
+# CI run 42 真编译就栽在这上面（"Expecting an expression"），静态括号计数抓不到。
+ls = s.splitlines()
+for i, line in enumerate(ls):
+    head = line.lstrip()
+    if not head.startswith('if ('):
+        continue
+    close = head.find(')')
+    if close < 0 or head[close + 1:].strip():
+        continue  # 条件后就带 body 的单行 if，不是悬空候选
+    j = i + 1
+    while j < len(ls) and not ls[j].strip():
+        j += 1
+    if j >= len(ls):
+        continue
+    nxt = ls[j]
+    indent_if = len(line) - len(line.lstrip())
+    indent_next = len(nxt) - len(nxt.lstrip())
+    if nxt.lstrip().startswith('}') and indent_next <= indent_if:
+        fail(f"第 {i + 1} 行留下悬空 if，删除说明文案把唯一分支带走了：{line.strip()}")
 
 # 结构平衡（去掉字符串与注释后粗查）
 def strip_noise(src):

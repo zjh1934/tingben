@@ -954,7 +954,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                     verdict.effective -> Good
                     else -> Warn
                 })
-                if (verdict != null && verdict.unknown > 0)
             }
             Spacer(Modifier.height(8.dp))
             CardBox {
@@ -1126,7 +1125,6 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                 Spacer(Modifier.height(10.dp))
                 Button(onClick = onLibrary, Modifier.fillMaxWidth()) { Text("去书架") }
             }
-        } else {
         } else {
             CardBox {
                 Row(verticalAlignment = Alignment.CenterVertically) {
