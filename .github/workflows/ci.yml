@@ -9,7 +9,8 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: tingben-build
+  # R36：旧组里两个 queued run 互相等 runner，换成新组让本次构建独立调度
+  group: tingben-build-r36
   cancel-in-progress: false
 
 jobs:
