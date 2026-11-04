@@ -453,3 +453,34 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 
 本地复核：`PK` 头、zip CRC 全检 OK、无 .gguf、7 个 arm64-v8a .so、153 个条目、17,603,743 字节。
 C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重复 4~7 分钟原生编译，正是用户要的「多改一点再打包」。
+
+## R13 · 音色模块调研：不手搓，先扒别人的实现
+
+用户口径：「不希望你纯手搓代码，要去搜别人是怎么写的，手搓的不是不好，是不够好」。
+
+**本轮一行业务代码没动、没发包**，固定地址仍是 `1.0.0+17`。
+
+### 交付
+
+- `docs/音色模块_开源实现调研.md`：300 行多源交叉，含 4 个模块的可抄文件、许可证、改动点、联动风险、未核验项标注
+- `docs/音色模块_移植清单.md`：把每个改动点钉到具体源码文件 + 8 项联动检查 + 5 步下轮顺序
+- `reference/`：新抓 4 个上游仓库 16 个源码文件 + `精选_Kotlin现成件/` 11 个本地现成件
+
+### 关键更正
+
+调研报告曾写「Android 端没找到可直接编译的现成 Kotlin 文件、组件只能自己写」——**被本地已有资料推翻**：
+`reference/OfflineLLM/` 有 Kotlin Compose 的 `SettingsRepository.kt`（采样参数常量集中）+ `SettingsScreen.kt`；
+`reference/ReaderVoice-Mobile/` 有 `CharacterProfileStore.kt`（角色档案 JSON 原子落盘 + USER_LOCKED）、
+`CosyVoiceVoiceProfile.kt`（schemaVersion/profileHash）、`CharacterManagerActivity.kt`（角色管理页）。
+⇒ 下轮这四块**全部有现成 Kotlin 可抄**，Alexandria 只补别名算法，PocketPal 只补配置版本迁移。
+
+### 已核实的硬事实
+
+- `qwentts.cpp/src/sampling-defaults.h`：9 个默认值（temp 0.9 / top_k 50 / top_p 1.0 / rep 1.05 / max_new 2048 / subtalker 同 0.9,50,1.0）
+- 四个示例脚本实锤：voice_design 用 `--instruct`、custom_voice 用 `--speaker vivian`、base/clone 用 `--ref-spk/--ref-rvq/--ref-text`
+- `generate_personas.py` 里 `alias_of` / `_token_jaccard` / `_resolve_to_canonical` / `_NARRATOR_LABELS` 全部存在
+
+### 下轮队列
+
+按移植清单 5 步走：配置中心 → JNI 扩参 → 固定音色描述 → 角色表 → 两步克隆只登记。
+每步跑 8 项联动检查（缓存 key 失效、断点分桶不动、模式非法编译期挡住、JNI 三处签名同步、逐字 gate、诊断日志、APK 闸门、USER_LOCKED）。
