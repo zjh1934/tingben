@@ -30,17 +30,29 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK 35
+      - name: Android SDK 35 + CMake
         run: |
           set +e
           echo "ANDROID_HOME=$ANDROID_HOME"
           SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ -x "$SM" ]; then
             yes | "$SM" --licenses > /dev/null 2>&1
-            "$SM" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools" 2>&1 | tail -20
+            # 以前只装 platforms/build-tools，把 cmake;3.22.1 留给 AGP 在
+            # configureCMakeDebug 阶段自己下。sdkmanager 偶发拿到损坏 zip
+            # （Error on ZipFile unknown archive），Gradle 才炸，且报错看着像代码错。
+            # 这里显式预装并校验可执行文件，坏了就删包重装一次。
+            "$SM" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools" "cmake;3.22.1" 2>&1 | tail -30
           fi
+          CM="$ANDROID_HOME/cmake/3.22.1/bin/cmake"
+          if [ ! -x "$CM" ] || ! "$CM" --version >/dev/null 2>&1; then
+            echo "::warning::cmake 3.22.1 包损坏或未装，清理后重试一次"
+            rm -rf "$ANDROID_HOME/cmake/3.22.1"
+            "$SM" --install "cmake;3.22.1" 2>&1 | tail -30
+          fi
+          "$CM" --version | head -1
           ls "$ANDROID_HOME/platforms" | tail -5
           test -d "$ANDROID_HOME/platforms/android-35"
+          test -x "$CM"
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4

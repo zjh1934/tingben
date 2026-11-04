@@ -660,3 +660,20 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 ### 验证
 
 本地静态自检全绿（旧按钮零残留、6 个联动关键字齐、11 个 Kotlin 括号平衡、`Producer.start` 4 处调用 + `clearProgress` 4 处均未漏改、`check_structure` 通过）。CI 编译 + 拆包核对结果见文末追加。真机效果仍是零证据。
+
+### R17 验证 · run 22 失败，已定位并修掉（不是代码错）
+
+run 22 **failure**。没有当成「环境偶发、重跑就好」放过去，拉了回写日志 `logs/build-22.md` 逐行读：
+
+```
+Caused by: ... InstallFailedException: Failed to install the following SDK components:
+    cmake;3.22.1
+Warning: An error occurred while preparing SDK package CMake 3.22.1:
+    Error on ZipFile unknown archive
+```
+
+根因：workflow 的 SDK 步骤只显式装 `platforms;android-35 / build-tools / platform-tools`，**把 cmake;3.22.1 留给 AGP 在 `configureCMakeDebug` 阶段自己下载**；这次 runner 是全新 SDK（连 NDK 27 都是当场装的），sdkmanager 下到了损坏 zip，Gradle 在配置原生构建时炸，报错长得像编译错，其实跟本轮 Kotlin 一行关系都没有。
+
+修法（`.github/workflows/ci.yml`）：SDK 步骤显式预装 `cmake;3.22.1` → 校验 `$ANDROID_HOME/cmake/3.22.1/bin/cmake --version` 真能跑 → 不行就删包重装一次 → 最后 `test -x` 兜底，让失败发生在「装工具」这一步，而不是伪装成编译失败。AGP 发现已装好就不会再自己下。
+
+Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一条追加。
