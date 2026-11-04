@@ -303,6 +303,14 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     next.n_seq_id[0] = 1;
     next.seq_id[0][0] = 0;
     next.logits[0] = 1;
+
+    // R22 · JSON 数组闭合即停。llmGenerate 在本项目里唯一用途就是产出标注数组，
+    // 小模型吐完 `]` 常不主动发 EOG，旧实现会一直吐到 maxTokens：尾部被预算腰斩
+    // → 四级修复只能保住最后一个完整对象之前的条 → gate 全等失败 → 整块降级直读。
+    // 只在「已见到第一个 [」之后启用；字符串内的 ] 不计；全程没出现 [ 时行为不变。
+    int jsonDepth = 0;
+    bool jsonStarted = false, inStr = false, esc = false;
+
     for (int i = 0; i < limit; ++i) {
         if (g_cancel.load()) { LOGI("generate cancelled"); break; }
         llama_token id = llama_sampler_sample(h->smpl, h->ctx, -1);
@@ -311,6 +319,29 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
         char piece[64];
         int len = llama_token_to_piece(vocab, id, piece, sizeof(piece), 0, true);
         if (len > 0) out.append(piece, (size_t)len);
+
+        bool jsonClosed = false;
+        for (int p = 0; p < len; ++p) {
+            const char ch = piece[p];
+            if (inStr) {
+                if (esc) esc = false;
+                else if (ch == '\\') esc = true;
+                else if (ch == '"') inStr = false;
+                continue;
+            }
+            if (ch == '"') { inStr = true; continue; }
+            if (ch == '[') { ++jsonDepth; jsonStarted = true; }
+            else if (ch == ']' && jsonStarted) {
+                --jsonDepth;
+                if (jsonDepth <= 0) { jsonClosed = true; break; }
+            }
+        }
+        if (jsonClosed) {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "token=%d outChars=%zu · JSON 数组已闭合", i, out.size());
+            note(env, "NATIVE_JSON_CLOSE", buf);
+            break;
+        }
 
         next.token[0] = id;
         next.pos[0]   = (llama_pos)(toks.size() + i);

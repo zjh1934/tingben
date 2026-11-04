@@ -9,7 +9,8 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ```
 备用（Release 页）：`https://github.com/zjh1934/tingben-android/releases/latest`
 
-- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+24`），当前版本见 `STATUS.md` 末尾
+- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+29`），当前版本见 `STATUS.md` 末尾
+- 想知道「模型到底标了什么」：设置页「高级（诊断）→ 查看标注内容」，或复制诊断摘要（已带最近 3 块逐条标注全文）
 - 浏览器直接打开即可下载；包名 `com.tingben.app`，与旧墨听不同，**可同时安装、不用卸载**
 - 固定签名，后续新版直接覆盖安装，模型和已做好的音频都保留
 - 源码：`https://github.com/zjh1934/tingben-android`（公开）

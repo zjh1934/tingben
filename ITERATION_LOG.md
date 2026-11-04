@@ -178,3 +178,21 @@
 段间静音也刻意不进任何指纹 —— 它只在合并阶段插零帧，分段 WAV 内容一个字节没变，成品每次都是新 UUID 本来就会重新合并。把「什么该让缓存失效」想清楚，比多写几个开关值钱。
 
 **run 27 编译失败，丢人但值得记**：新文件 KDoc 里手滑写了 `KEY_*/DEFAULT_*`，`*/` 把块注释提前闭合，后面十几行全成了顶层声明，编译器刷了上百条 `Expecting a top level declaration`。本地括号计数、结构自检、往返模拟全绿，就是抓不到这个 —— 说明「静态检查项目」本身也得跟着踩过的坑长。已加一条「块注释内不得出现 `*/` 字面量」到 R19 纪律，run 28 全绿。这类错不该留到 CI 才发现，下次本地脚本先扫。
+
+## R22 · 一手资料进上下文 → 核心链路与日志同版重做
+
+用户两句必须一起接住：「日志里要能看见**标注过后的内容**，我现在不知道它是真标注还是假标注，感觉标了跟没标一样，白费力气」；以及「你不应该去研究回来，应该自己进上下文去搜、读进去，再定核心代码设计」。
+
+**这轮真读了**：官方 `examples__test_model_12hz_voice_design.py` / `custom_voice.py`、`Qwen3-TTS README`（167 / 203 / 288-290 行）、`qwentts-cpp/src__qwen.h`（133-142 / 268-292 / 384-390 行）、`sampling-defaults.h`、`examples__tts.sh`、Antioch `script/annotator.rs`（20-30 / 77-96 / 112-165 行），以及本项目 `tingben_native.cpp` 生成循环与 `Pipeline.kt` 的 gate / fallback。逐条依据写进 `docs/R22_标注链路与双模型协作_设计.md`，**没有一条是二手转述**。
+
+**读出来的根因链**（不是猜）：native 只靠 EOG / `limit` 停 → 模型吐完 `]` 继续废话到预算腰斩 → 四级修复丢尾条 → gate 全有或全无判整块失败 → fallback 全旁白「平稳叙述」 → 音频听不出标注 → 日志只给统计数字，用户无法自证。Antioch 的解法恰好是「**单条失败 `continue`，用 sensible defaults 补齐，不牵连整块**」。
+
+**同版四处改动**：
+1. native 加 JSON 数组闭合早停（`NATIVE_JSON_CLOSE`），字符串内 `]` 与转义引号不误判，没见到 `[` 时行为不变
+2. `Annotator.reconcile()`：逐条校验 + 确定性补齐，三档 `FULL/PARTIAL/FALLBACK`；**`result` 拼起来仍严格 == 原文**，gate 保留为断言；`PARTIAL` 直接采纳不重试，省一次几分钟 4B 空转
+3. 日志摊开内容：`ANN_CONTENT`（逐条 text/speaker/instruct + 来源）、`ANN_DISPOSITION`、`TTS_INPUT`（最终 instruct）、`BlockAudit.annsJson` 落盘、诊断页「查看标注内容 / 复制标注全文」、连「复制诊断摘要」都带最近 3 块全文
+4. 双模型协作：`lang` 由 auto → 显式 `chinese`（官方 README 167 行），`INSTRUCT_TEMPLATE_VERSION` 升 4 让旧 WAV 作废、标注保留；确认 `speaker=null` 对 voice_design 正确
+
+**两条自我订正**：`qwen.h:142` 明写 `qt_synthesize ... thread safe` 且 `max_batch>1` 支持并发批处理 —— 我以前「端侧不能并行」的说法错了，改成「引擎支持、CPU 收益待真机量」；「小模型回显平行 JSON 会循环」仍只当 Antioch 的工程假设，不当实测结论。
+
+**联动检查 9 项**（缓存作废 / 旧 jsonl 兼容 / 主日志不被刷爆 / native 缓存 key 自动失效 / 诊断页折叠…）写在设计文档第六节。刻意不动：prompt v2、`Producer.start` 签名、`bucket()`、状态机、前台服务（连续两轮顺延，不合并发版）。

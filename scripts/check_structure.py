@@ -78,7 +78,18 @@ AUDIT_SYMBOLS = ["AUDIT_RUN_BEGIN", "ANN_RAW", "ANN_PREVIEW", "ANN_EMPTY", "ANN_
 for sym in AUDIT_SYMBOLS:
     if sym not in all_src: errs.append("缺少标注审计符号: " + sym)
 
+# R22 · 核心链路（逐条采纳）与「标注内容可看见」的符号必须真在源码里。
+R22_SYMBOLS = ["ANN_CONTENT", "ANN_DISPOSITION", "TTS_INPUT", "reconcile", "contentJson",
+               "contentLines", "contentText", "annsJson", "disposition", "lang=chinese",
+               "查看标注内容", "复制标注全文"]
+for sym in R22_SYMBOLS:
+    if sym not in all_src: errs.append("缺少 R22 核心链路符号: " + sym)
+
+cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
+for sym in ["NATIVE_JSON_CLOSE", "jsonDepth", "jsonStarted"]:
+    if sym not in cpp_src: errs.append("native 缺少 JSON 闭合早停: " + sym)
+
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项"
-      % (len(REQUIRED), len(AUDIT_SYMBOLS)))
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / native 早停 3 项"
+      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS)))

@@ -395,6 +395,73 @@ object Annotator {
     fun gate(anns: List<Ann>, original: String): Boolean =
         anns.joinToString("") { it.text } == original
 
+    /**
+     * R22 · 采纳判定：逐条校验 + 确定性补齐，不再「全有或全无」整块降级。
+     *
+     * 抄 Antioch `script/annotator.rs` 的 annotate()：结构由确定性代码保证，
+     * LLM 只负责导演指令，单条失败用 sensible defaults 补齐，绝不因为尾部没标完
+     * 就把前面标对的整块丢掉。旧实现里模型吐到预算上限被腰斩 → 四级修复丢尾条
+     * → gate 全等失败 → fallback 全旁白「平稳叙述」，跑了半天听不出任何标注。
+     *
+     * 与逐字契约的关系：result 拼起来仍严格 == original（一个字没放宽），
+     * 只是把模型没覆盖到的尾部由程序补成旁白，而不是整块换成直读。
+     */
+    data class Reconcile(
+        val result: List<Ann>, val kept: Int, val filled: Int, val disposition: String
+    ) {
+        companion object {
+            const val FULL = "FULL"         // 模型全标对
+            const val PARTIAL = "PARTIAL"   // 模型标对前若干条，尾部由程序补齐
+            const val FALLBACK = "FALLBACK" // 一条都没采纳，整块直读
+        }
+    }
+
+    fun reconcile(parsed: List<Ann>?, original: String): Reconcile {
+        val out = mutableListOf<Ann>()
+        var cursor = 0
+        var kept = 0
+        if (parsed != null) {
+            for (a in parsed) {
+                if (a.text.isEmpty() || cursor + a.text.length > original.length ||
+                    !original.regionMatches(cursor, a.text, 0, a.text.length)) break
+                out.add(a)
+                kept++
+                cursor += a.text.length
+            }
+        }
+        val rest = if (cursor < original.length) original.substring(cursor) else ""
+        val fill = if (rest.isNotEmpty()) directSegments(rest) else emptyList()
+        out.addAll(fill)
+        val disp = when {
+            kept > 0 && fill.isEmpty() -> Reconcile.FULL
+            kept > 0 -> Reconcile.PARTIAL
+            else -> Reconcile.FALLBACK
+        }
+        return Reconcile(out, kept, fill.size, disp)
+    }
+
+    /** 标注结果全文（带来源标记），落进 audit jsonl 与「复制标注全文」。单块上限 8KB。 */
+    fun contentJson(anns: List<Ann>, kept: Int): String = try {
+        val arr = JSONArray()
+        anns.forEachIndexed { i, a ->
+            arr.put(JSONObject().put("text", a.text).put("speaker", a.speaker)
+                .put("instruct", a.instruct).put("src", if (i < kept) "MODEL" else "FILL"))
+        }
+        val s = arr.toString()
+        if (s.length > 8192) s.substring(0, 8192) + "…（本块标注全文超长，已截断）" else s
+    } catch (_: Throwable) { "[]" }
+
+    /** 主日志里给人看的逐条内容：前 8 条全文，其余只报条数，整体限 3KB。 */
+    fun contentLines(anns: List<Ann>, kept: Int): String = buildString {
+        anns.take(8).forEachIndexed { i, a ->
+            append(i + 1).append(". [").append(a.speaker).append("] ")
+                .append(a.text.take(70).replace('\n', '⏎'))
+                .append("\n   → ").append(a.instruct)
+                .append("  〈").append(if (i < kept) "模型标注" else "程序补齐").append("〉\n")
+        }
+        if (anns.size > 8) append("… 其余 ").append(anns.size - 8).append(" 条见「标注全文」\n")
+    }.let { if (it.length > 3072) it.substring(0, 3072) + "…（已截断）" else it.trimEnd() }
+
     // 降级也必须切短句：真机日志里块 1 降级成整块 500 字一次喂 TTS，
     // 合成阶段从 04:49 卡到 05:24（35 分钟）。长文本单次合成在手机上是灾难。
     fun fallback(chunk: Chunk) = directSegments(chunk.text)
@@ -845,6 +912,7 @@ object Producer {
                     } else {
                         var lastMeta: Annotator.ParseMeta? = null
                         var lastChecks: Map<String, Boolean> = emptyMap()
+                        var lastRec: Annotator.Reconcile? = null
                         var lastFailCode = "-"
                         var attemptCount = 0
                         var usedFallback = false
@@ -899,14 +967,28 @@ object Producer {
                             }
                             val (parsed, meta) = Annotator.parseWithMeta(raw)
                             val checks = Annotator.ruleChecks(parsed ?: emptyList(), chunk.text, meta, roster)
-                            val pass = parsed != null && Annotator.gate(parsed, chunk.text)
+                            // R22 · 逐条采纳 + 确定性补齐：尾部没标完只补旁白，不再整块降级。
+                            val rec = Annotator.reconcile(parsed, chunk.text)
+                            // gate 仍是最终裁判，这里只是断言 reconcile 没破坏逐字契约。
+                            val gateOk = Annotator.gate(rec.result, chunk.text)
+                            val pass = rec.disposition != Annotator.Reconcile.FALLBACK && gateOk
                             val failCode = when {
                                 parsed == null -> "EMPTY_ARRAY"
-                                !pass -> if (meta.repairLevel < 0) "JSON_SYNTAX_FAIL" else "CONCAT_LEN_MISMATCH"
+                                rec.disposition == Annotator.Reconcile.FALLBACK ->
+                                    if (meta.repairLevel < 0) "JSON_SYNTAX_FAIL" else "CONCAT_LEN_MISMATCH"
+                                !gateOk -> "RECONCILE_BROKEN"
                                 else -> "-"
                             }
-                            lastMeta = meta; lastChecks = checks
+                            lastMeta = meta; lastChecks = checks; lastRec = rec
                             lastFailCode = failCode; attemptCount++
+                            EventLog.log(EventLog.Kind.AUDIT, "ANN_DISPOSITION",
+                                "块 ${i + 1} 第 $attempt 次 · ${rec.disposition} · 采纳 ${rec.kept} 条" +
+                                    " · 程序补齐 ${rec.filled} 条 · 拼回原文 " +
+                                    "${if (gateOk) "逐字相等" else "有差异"}",
+                                fields = mapOf("block" to (i + 1).toString(),
+                                    "disposition" to rec.disposition,
+                                    "kept" to rec.kept.toString(), "filled" to rec.filled.toString(),
+                                    "gateOk" to gateOk.toString()))
                             EventLog.log(EventLog.Kind.AUDIT, "ANN_RAW",
                                 "块 ${i + 1} 第 $attempt 次 · 原始 ${meta.rawChars} 字 · 思考 ${meta.thinkChars} 字" +
                                     " · JSON 候选 ${meta.bodyChars} 字 · 修复层级 ${meta.repairLevel}" +
@@ -928,7 +1010,7 @@ object Producer {
                                     fields = mapOf("block" to (i + 1).toString(),
                                         "rawChars" to meta.rawChars.toString()))
                             }
-                            if (pass) { result = parsed; break }
+                            if (pass) { result = rec.result; break }
                             // 思考档常见：预算全花在推理上，JSON 被拦腰截断。
                             // 重试同样的 prompt 只会再来一次几分钟的空转，直接降级。
                             // 旧写法是 !raw.contains("") —— 空串恒包含，这个分支永远进不来，
@@ -954,6 +1036,21 @@ object Producer {
                         val finalAnns = result ?: emptyList()
                         val m = lastMeta
                         val joinedLen = finalAnns.sumOf { it.text.length }
+                        // R22 · 用户要的是「标注过后的内容」，不是统计数字。
+                        // 最终走 fallback（重试全失败）时全部是程序补齐；否则前 rec.kept 条来自模型。
+                        val rec0 = lastRec
+                        val srcKept = if (usedFallback) 0 else (rec0?.kept ?: 0)
+                        val disposition = if (usedFallback) Annotator.Reconcile.FALLBACK
+                            else (rec0?.disposition ?: Annotator.Reconcile.FALLBACK)
+                        val contentJson = Annotator.contentJson(finalAnns, srcKept)
+                        EventLog.log(EventLog.Kind.AUDIT, "ANN_CONTENT",
+                            "块 ${i + 1}/${chunks.size} 最终采纳 ${finalAnns.size} 条（模型 $srcKept" +
+                                " / 补齐 ${finalAnns.size - srcKept}）· $disposition ｜ " +
+                                Annotator.contentLines(finalAnns, srcKept).replace('\n', '｜'),
+                            level = if (srcKept == 0) EventLog.Level.WARN else EventLog.Level.INFO,
+                            fields = mapOf("block" to (i + 1).toString(),
+                                "annCount" to finalAnns.size.toString(),
+                                "kept" to srcKept.toString(), "disposition" to disposition))
                         AuditLog.write(c, BlockAudit(
                             runId = AuditLog.currentRun(), block = i + 1, total = chunks.size,
                             attempt = attemptCount, origChars = chunk.text.length,
@@ -968,9 +1065,12 @@ object Producer {
                             failCode = if (usedFallback) lastFailCode else "-",
                             rules = lastChecks,
                             previewHead = m?.previewHead ?: "", previewTail = m?.previewTail ?: "",
-                            elapsedMs = System.currentTimeMillis() - blockStartAt, fromCache = false))
+                            elapsedMs = System.currentTimeMillis() - blockStartAt, fromCache = false,
+                            disposition = disposition, kept = srcKept,
+                            filled = finalAnns.size - srcKept, annsJson = contentJson))
                         EventLog.log(EventLog.Kind.AUDIT, "ANN_AUDIT",
                             "块 ${i + 1}/${chunks.size} ${if (usedFallback) "降级直读" else "通过"} · " +
+                                "$disposition（模型 $srcKept 条）· " +
                                 "标 ${finalAnns.size} 条 · text ${joinedLen} 字（原文 ${chunk.text.length}） · " +
                                 "规则 ${lastChecks.values.count { it }}/${lastChecks.size} · " +
                                 (if (usedFallback) lastFailCode else "-"),
@@ -1033,7 +1133,8 @@ object Producer {
             stampFile.writeText(voiceStamp)
         } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_MODE",
-            "voice_design · 指纹=$voiceStamp · 角色=${cast.size} · seed=${knobs.seed} · temp=${knobs.temperature}")
+            "voice_design · 指纹=$voiceStamp · 角色=${cast.size} · seed=${knobs.seed}" +
+                " · temp=${knobs.temperature} · lang=chinese（官方 README：目标语言已知时显式传，别用 auto）")
 
         // R20 · 预设指纹：voiceStamp 覆盖「升级 App 导致模板版本变化」，
         // 这里覆盖「同一版本内用户把叙事改成广播剧」。两者都只删 WAV、保留 ann_ 标注：
@@ -1113,11 +1214,22 @@ object Producer {
                     return
                 }
                 val wav = File(work, String.format(if (direct) "direct_%04d.wav" else "chunk_%04d.wav", i))
+                // R22 · 让「这一段到底用什么指令读的」可见：这里是最终 instruct（含身份层/风格层），
+                // 不是 4B 原始产出。voice_design 的 speaker 必须传 null（qwen.h 285-288 行）。
+                EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
+                    "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
+                        a.text.take(50).replace('\n', '⏎') + " → " + a.instruct.replace('\n', '｜'),
+                    level = EventLog.Level.TRACE,
+                    fields = mapOf("seg" to (i + 1).toString(), "speaker" to a.speaker,
+                        "textChars" to a.text.length.toString(), "instructChars" to a.instruct.length.toString(),
+                        "lang" to "chinese", "speakerParam" to "null"))
                 if (wav.exists() && wav.length() > 44) {
                     wavs.add(wav)
                 } else {
                     val code = try {
-                        NativeEngine.ttsSynthesize(ttsHandle, a.text, a.instruct, null, "auto",
+                        // 官方 Qwen3-TTS README 第 167 行：目标语言已知时显式传，别用 auto。
+                        // 全中文书固定 chinese；lang 参与合成结果，故 INSTRUCT_TEMPLATE_VERSION 升 4 作废旧 WAV。
+                        NativeEngine.ttsSynthesize(ttsHandle, a.text, a.instruct, null, "chinese",
                             wav.absolutePath, knobs)
                     } catch (t: Throwable) {
                         EventLog.log(EventLog.Kind.ENGINE, "TTS_ERROR", t.message ?: "")

@@ -24,8 +24,10 @@ package com.tingben.app.core
  * 要彻底根治得换 CustomVoice 权重用固定 speaker id —— 那是换模型，不在本轮。
  */
 // R20 · 升 3：instruct 多了「本次风格层」（朗读档位/语速/情绪强度）。
-// 版本进 Prefs.voiceStamp ⇒ 旧分段 WAV 自动作废、标注保留，复用 R14 既有机制。
-const val INSTRUCT_TEMPLATE_VERSION = 3
+// R22 · 升 4：TTS 的 lang 由 auto 改成显式 chinese（官方 README 第 167 行建议），
+// 合成结果会变，必须让旧分段 WAV 作废；标注结果（跑了几分钟的 4B 产物）保留复用。
+// 版本进 Prefs.voiceStamp ⇒ 复用 R14 既有机制，不新增指纹字段。
+const val INSTRUCT_TEMPLATE_VERSION = 4
 
 /** 留空时的默认身份锚点：只描述「谁在念」，不带任何情绪/节奏。 */
 const val DEFAULT_IDENTITY = "清晰自然的中文普通话叙述声，音区适中，无明显口音"

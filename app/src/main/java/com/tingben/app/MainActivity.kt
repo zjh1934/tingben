@@ -1634,6 +1634,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 var showBlocks by remember { mutableStateOf(false) }
                 var showRules by remember { mutableStateOf(false) }
                 var showPreview by remember { mutableStateOf(false) }
+                var showContent by remember { mutableStateOf(false) }
                 var auditTick by remember { mutableStateOf(0) }
                 LaunchedEffect(Unit) {
                     while (true) { delay(3000); auditTick++ }
@@ -1642,6 +1643,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 val rulesText = remember(auditTick) { AuditLog.ruleText(c) }
                 val blocksText = remember(auditTick) { AuditLog.blocksText(c, 12) }
                 val previewText = remember(auditTick) { AuditLog.previewText(c, 3) }
+                val contentText = remember(auditTick) { AuditLog.contentText(c, 6) }
                 val hasEmpty = auditText.contains("零标注 ") && !auditText.contains("零标注 0")
 
                 fun buildDiag(full: Boolean): String = buildString {
@@ -1653,6 +1655,9 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     append("设置 ").append(Prefs.summary(c)).append('\n')
                     append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
                     append("\n=== 标注审计 ===\n").append(AuditLog.summaryText(c)).append('\n')
+                    // R22 · 摘要也要能直接看到「标了什么」，不用用户再点一次展开。
+                    append("\n=== 标注结果（最近 3 块 · 逐条 text/speaker/instruct）===\n")
+                        .append(AuditLog.contentText(c, 3)).append('\n')
                     append("\n=== 规则生效 ===\n").append(AuditLog.ruleText(c)).append('\n')
                     append("\n=== 逐块明细（最近 12 块）===\n").append(AuditLog.blocksText(c, 12)).append('\n')
                     val crash = EventLog.lastCrash()
@@ -1678,6 +1683,20 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Spacer(Modifier.height(4.dp))
                     Text("⚠ 有块跑完却没标出条目，展开「产出截取」看模型吐了什么",
                         fontSize = 11.sp, color = Warn)
+                }
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = { showContent = !showContent }, Modifier.fillMaxWidth()) {
+                    Text(if (showContent) "收起标注内容" else "查看标注内容（每条 text / speaker / instruct）",
+                        fontSize = 12.sp, color = Primary)
+                }
+                if (showContent) {
+                    Text("〈模型标注〉= 语言模型真标出来的；〈程序补齐〉= 没标完的尾部由程序补成旁白。",
+                        fontSize = 10.sp, color = Warn)
+                    Text(contentText, fontSize = 10.5.sp, color = Sub)
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(AuditLog.contentText(c, 20)))
+                        Toast.makeText(c, "已复制标注全文（最近 20 块），仅本机保存", Toast.LENGTH_SHORT).show()
+                    }, Modifier.fillMaxWidth()) { Text("复制标注全文（最近 20 块）", fontSize = 11.5.sp) }
                 }
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth()) {

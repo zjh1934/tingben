@@ -1,6 +1,7 @@
 package com.tingben.app.diag
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -41,7 +42,13 @@ data class BlockAudit(
     val previewHead: String,
     val previewTail: String,
     val elapsedMs: Long,
-    val fromCache: Boolean
+    val fromCache: Boolean,
+    // R22 · 用户要「从日志里能看到标注过后的内容」，不是只给统计数字。
+    // annsJson 是最终采纳的逐条全文（text/speaker/instruct/src），按块落进 jsonl。
+    val disposition: String = "",
+    val kept: Int = 0,
+    val filled: Int = 0,
+    val annsJson: String = ""
 ) {
     fun toJson(): String = JSONObject().apply {
         put("runId", runId); put("block", block); put("total", total); put("attempt", attempt)
@@ -52,6 +59,8 @@ data class BlockAudit(
         put("rules", JSONObject().apply { rules.forEach { (k, v) -> put(k, v) } })
         put("previewHead", previewHead); put("previewTail", previewTail)
         put("elapsedMs", elapsedMs); put("fromCache", fromCache)
+        put("disposition", disposition); put("kept", kept); put("filled", filled)
+        put("annsJson", annsJson)
     }.toString()
 
     companion object {
@@ -66,7 +75,9 @@ data class BlockAudit(
                 o.optInt("annCount"), o.optInt("textChars"), o.optInt("lenDelta"), o.optInt("firstDiff", -1),
                 o.optString("speakers", ""), o.optInt("instructEmpty"), o.optString("status", "?"),
                 o.optString("failCode", "-"), rules, o.optString("previewHead", ""),
-                o.optString("previewTail", ""), o.optLong("elapsedMs"), o.optBoolean("fromCache"))
+                o.optString("previewTail", ""), o.optLong("elapsedMs"), o.optBoolean("fromCache"),
+                o.optString("disposition", ""), o.optInt("kept"), o.optInt("filled"),
+                o.optString("annsJson", ""))
         } catch (_: Throwable) { null }
     }
 }
@@ -131,6 +142,9 @@ object AuditLog {
         val pass = b.count { it.status == PASS }
         val cached = b.count { it.status == CACHED }
         val fallback = b.count { it.status == FALLBACK }
+        val full = b.count { it.disposition == "FULL" }
+        val partial = b.count { it.disposition == "PARTIAL" }
+        val allFallback = b.count { it.disposition == "FALLBACK" }
         val empty = b.count { !it.fromCache && it.annCount == 0 }
         val fails = b.filter { it.failCode != "-" && it.failCode.isNotBlank() }
             .groupingBy { it.failCode }.eachCount().entries
@@ -146,6 +160,8 @@ object AuditLog {
             .append(" · ").append(m["mode"] ?: "-").append(" · ").append(m["chunks"] ?: b.size).append(" 块\n")
         sb.append("结果：PASS ").append(pass).append(" / 缓存续上 ").append(cached)
             .append(" / 降级直读 ").append(fallback).append(" / 零标注 ").append(empty).append('\n')
+        sb.append("采纳：模型全标对 ").append(full).append(" / 部分标对+程序补齐 ").append(partial)
+            .append(" / 一条没采纳（整块直读）").append(allFallback).append('\n')
         sb.append("失败码：").append(fails).append('\n')
         sb.append("长度：原文合计 ").append(orig).append(" 字；标注 text 合计 ").append(text)
             .append(" 字（差 ").append(if (text - orig >= 0) "+" else "").append(text - orig)
@@ -188,6 +204,46 @@ object AuditLog {
         if (b.isEmpty()) return "（暂无产出片段）"
         return b.joinToString("\n\n") { a ->
             "— 块 ${a.block}/${a.total}（${a.status}）截取，非全文 —\n开头：${a.previewHead}\n结尾：${a.previewTail}"
+        }
+    }
+
+    /**
+     * R22 · 标注过后的内容本身。用户原话：「我现在不知道它是真标注还是假标注，
+     * 感觉标注和没标注都一样，白费那个力气」。统计数字回答不了这个问题，
+     * 所以按块把最终采纳的每条 text / speaker / instruct 全文摊开，标明来源。
+     * 只在本机、按 run 轮转留最近 3 次，不联网。
+     */
+    fun contentText(c: Context, n: Int = 6): String {
+        val b = recent(c, n)
+        if (b.isEmpty()) return "（暂无标注记录）"
+        return b.joinToString("\n\n") { a ->
+            val sb = StringBuilder()
+            sb.append("— 块 ").append(a.block).append('/').append(a.total)
+                .append(" · ").append(a.status)
+                .append(" · 采纳 ").append(a.disposition.ifBlank { "-" })
+                .append("（模型 ").append(a.kept).append(" 条 / 程序补齐 ").append(a.filled)
+                .append(" 条）\n")
+            if (a.fromCache && a.annsJson.isBlank()) {
+                sb.append("（本块从磁盘续上，未重跑语言模型，无逐条正文）")
+            } else if (a.annsJson.isBlank()) {
+                sb.append("（本块没有留下逐条标注全文）")
+            } else {
+                try {
+                    val arr = JSONArray(a.annsJson)
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        sb.append(i + 1).append(". [").append(o.optString("speaker"))
+                            .append("] ").append(o.optString("text").replace('\n', '⏎'))
+                            .append("\n   → ").append(o.optString("instruct"))
+                            .append("  〈").append(o.optString("src")).append("〉")
+                        if (i < arr.length() - 1) sb.append('\n')
+                    }
+                } catch (_: Throwable) {
+                    // 单块 8KB 截断时 JSON 不完整，退而给原始串，别整块丢掉
+                    sb.append(a.annsJson.take(2000))
+                }
+            }
+            sb.toString()
         }
     }
 
