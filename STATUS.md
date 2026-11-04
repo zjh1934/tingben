@@ -615,3 +615,9 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 ### 状态
 
 本地静态自检全绿（模拟装配无残留占位符、分区顺序正确、11 个 Kotlin 括号平衡、逐字 gate 未动、buildPrompt 定义/调用 2 处）。改了 Kotlin → CI 编译 + 拆包核对。真机出声与 v2 效果仍是零证据。
+
+### R16 验证结果
+
+- **CI run 21 全绿**，`v1.0.0-21` / 17,655,812 字节。
+- **拆包硬验证**：`assets/` 里 `prompt_zh.txt`(v2) 与 `prompt_zh_v1.txt`(旧版，可回滚) 都在；v2 内含 WRONG/RIGHT/示例/硬契约，v1 旧铁律完整；dex 含 `PROMPT_VERSION` / `PROMPT_PLACEHOLDER_LEAK` / `CONTEXT_BEFORE` / `v2 sha=`；7 个 arm64 .so、无权重、无 INTERNET。
+- 真机待验（零证据）：事件流应出现 `PROMPT_VERSION v2 sha=…` 且 `PROMPT_PLACEHOLDER_LEAK` 为 0；对照 v1/v2 各跑一次试音短篇，只比 JSON 一次通过率、gate 通过率、平均 decode token 数、prefill 秒数。
