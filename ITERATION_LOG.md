@@ -196,3 +196,19 @@
 **两条自我订正**：`qwen.h:142` 明写 `qt_synthesize ... thread safe` 且 `max_batch>1` 支持并发批处理 —— 我以前「端侧不能并行」的说法错了，改成「引擎支持、CPU 收益待真机量」；「小模型回显平行 JSON 会循环」仍只当 Antioch 的工程假设，不当实测结论。
 
 **联动检查 9 项**（缓存作废 / 旧 jsonl 兼容 / 主日志不被刷爆 / native 缓存 key 自动失效 / 诊断页折叠…）写在设计文档第六节。刻意不动：prompt v2、`Producer.start` 签名、`bucket()`、状态机、前台服务（连续两轮顺延，不合并发版）。
+
+**验证**：本地结构自检 + 17 个 Kotlin 文件括号净值（MainActivity 本轮改动 0 差；`Importer.kt` 的 `Regex("""…""")` 三引号是检查脚本已知假阳性，CI 真编译为准）+ reconcile 6 例 +
+
+## R23 · 把上一轮跑完（复核 + 日志全文 + 交付）
+
+上一轮代码/文档/包已落盘但收尾没做完。本轮按长期记忆纪律开工先读 playbook 与 environment-facts，
+再：① 真读本地一手源码（官方两个示例、官方 README 副本、两份 qwen.h、sampling-defaults.h、Antioch annotator.rs）
+并列出行号；② 联网核实官方模型卡与 qwentts.cpp 模式规则（GitHub README 直取两次被拦，如实标未取到）；
+③ 逐行核对 reconcile / 标注循环 / toSpeak / native 早停 / AuditLog / 诊断页；④ 远端核实 run 30 全绿、
+发布仓 APK 17,771,027 字节与本地一致；⑤ 本地拆包硬验 `.so` 内 `NATIVE_JSON_CLOSE` 命中。
+
+**修掉一处真缺口**：主事件流 `ANN_CONTENT` 仍把正文截 70 字、只给前 8 条，用户贴「最近事件」时
+依旧看不出标了什么。改为逐条全文 + 16KB 上限，自检加 3 个 R23 符号与「不许退回 take(70)」断言，
+并做反向验证（回退版必须 FAIL）。其余契约、prompt v2、native、状态机一律不动。
+
+详见 `docs/R23_本轮复核与交付说明.md`。 早停状态机 6 例 → **run 30 全绿** → 拆包硬验 17,771,027 字节、CRC 全过、7 个 arm64 .so、dex 九个新符号全命中、**`.so` 内 `NATIVE_JSON_CLOSE` 命中**（证明 native 不是旧缓存）。发布 `1.0.0+30`。

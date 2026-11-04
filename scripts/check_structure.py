@@ -85,11 +85,18 @@ R22_SYMBOLS = ["ANN_CONTENT", "ANN_DISPOSITION", "TTS_INPUT", "reconcile", "cont
 for sym in R22_SYMBOLS:
     if sym not in all_src: errs.append("缺少 R22 核心链路符号: " + sym)
 
+# R23 · 主事件流 ANN_CONTENT 必须给逐条全文，不许退回 70 字截取。
+R23_SYMBOLS = ["已截断，全文见诊断页", "16384", "R23 · 主事件流里给人看的逐条内容"]
+pipe_src = (ROOT / "app/src/main/java/com/tingben/app/core/Pipeline.kt").read_text(encoding="utf-8", errors="replace")
+for sym in R23_SYMBOLS:
+    if sym not in pipe_src: errs.append("缺少 R23 主日志全文符号: " + sym)
+if "a.text.take(70)" in pipe_src: errs.append("R23 回退：contentLines 又把正文截成 70 字")
+
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
 for sym in ["NATIVE_JSON_CLOSE", "jsonDepth", "jsonStarted"]:
     if sym not in cpp_src: errs.append("native 缺少 JSON 闭合早停: " + sym)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / native 早停 3 项"
-      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS)))
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / native 早停 3 项"
+      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS)))

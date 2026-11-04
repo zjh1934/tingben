@@ -451,16 +451,20 @@ object Annotator {
         if (s.length > 8192) s.substring(0, 8192) + "…（本块标注全文超长，已截断）" else s
     } catch (_: Throwable) { "[]" }
 
-    /** 主日志里给人看的逐条内容：前 8 条全文，其余只报条数，整体限 3KB。 */
+    /**
+     * R23 · 主事件流里给人看的逐条内容：用户原话「从日志里面能有它标注过后的内容」。
+     * 旧版只给前 8 条、每条正文截 70 字，贴「最近事件」给开发者看时仍像没标；
+     * 现在逐条给 text 全文 + instruct 全文 + 来源标记，单块 16KB 才截断。
+     * 逐字全文也同时落在 audit jsonl 与诊断页，主日志只是让「贴一段日志」就能自证。
+     */
     fun contentLines(anns: List<Ann>, kept: Int): String = buildString {
-        anns.take(8).forEachIndexed { i, a ->
+        anns.forEachIndexed { i, a ->
             append(i + 1).append(". [").append(a.speaker).append("] ")
-                .append(a.text.take(70).replace('\n', '⏎'))
+                .append(a.text.replace('\n', '⏎'))
                 .append("\n   → ").append(a.instruct)
                 .append("  〈").append(if (i < kept) "模型标注" else "程序补齐").append("〉\n")
         }
-        if (anns.size > 8) append("… 其余 ").append(anns.size - 8).append(" 条见「标注全文」\n")
-    }.let { if (it.length > 3072) it.substring(0, 3072) + "…（已截断）" else it.trimEnd() }
+    }.let { if (it.length > 16384) it.substring(0, 16384) + "…（已截断，全文见诊断页）" else it.trimEnd() }
 
     // 降级也必须切短句：真机日志里块 1 降级成整块 500 字一次喂 TTS，
     // 合成阶段从 04:49 卡到 05:24（35 分钟）。长文本单次合成在手机上是灾难。

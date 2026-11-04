@@ -1,10 +1,10 @@
 # 听本 · 当前状态
 
-**2026-11-04 · R22 构建中**
+**2026-11-04 · R22 已发**
 
 | 项 | 值 |
 |---|---|
-| 版本 | 见文末最新发布记录（上一版 `1.0.0+29`） |
+| 版本 | `1.0.0+30`（run 30 全绿） |
 | APK | 约 17.7MB / arm64-v8a / 固定 debug 签名 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
 | CI | 以文末最新 run 为准 |
@@ -20,6 +20,8 @@
 - 标注：v2 提示词 + 四级 JSON 修复 + 字符级 gate + 逐块落盘断点续传 + 思考外显
 - **R22 新增**：逐条采纳/确定性补齐（PARTIAL 不再整块降级）、native JSON 闭合早停、
   标注内容全文进日志（`ANN_CONTENT` / `TTS_INPUT` / 诊断页「查看标注内容」）
+- **R23 收尾**：主事件流 `ANN_CONTENT` 从「前 8 条 / 正文截 70 字 / 3KB」放开为逐条全文（16KB 上限）；
+  一手资料逐行复核与代码核对写在 `docs/R23_本轮复核与交付说明.md`
 - 播放：PlayQueue 统一内核、倍速 / ±15s / 上一条下一条 / 分段看台试听 / 成品独立 id
 - 声音：身份层 + 风格层 + 本段情绪层、角色→音色表、拟声增强、采样参数接出 JNI、lang 显式 chinese
 - 原生引擎进包（7 个 arm64 .so）、固定签名、无 INTERNET、<100MB 闸门、CI 缓存加速
@@ -893,3 +895,20 @@ P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知**顺延到下一轮第一件**�
   dex 内 `AUDIT_RUN_BEGIN` `ANN_RAW` `ANN_PREVIEW` `ANN_EMPTY` `ANN_AUDIT` `AUDIT_SUMMARY`
   `parseWithMeta` `ruleChecks` `BlockAudit` `readDetail` 全命中；`assets/` 里 v2 与 v1 回滚版都在
 - **真机仍是零证据**：跑试音短篇 → 设置页「高级」看 `AUDIT_SUMMARY`，贴诊断摘要给我
+
+### 发布记录（R22）
+- `1.0.0+30` · **17,771,027 字节** · **run 30 全绿**（`tingben_native.cpp` 改了 ⇒ CI 缓存 key 失效、原生引擎完整重编，未复用旧 .so）
+- 固定地址不变，签名不变，**直接覆盖安装**；`INSTRUCT_TEMPLATE_VERSION` 升 4 会作废旧分段 WAV、**标注保留复用**
+- 拆包硬验：`PK` 头 / CRC 全过 / 154 条目 / 7 个 arm64 .so / 无 .gguf / binary Manifest 无 INTERNET / assets v2+v1；
+  dex 内 `ANN_CONTENT` `ANN_DISPOSITION` `TTS_INPUT` `reconcile` `contentText` `annsJson`
+  `查看标注内容` `复制标注全文` `lang=chinese` 全命中；
+  **`libtingben_native.so` 内 `NATIVE_JSON_CLOSE` 命中**（native 真重编的硬证据）
+- 本地验证：结构自检 20 必备 / 审计 13 项 / R22 12 项 / native 3 项；reconcile 对拍 6 例全部满足逐字 gate；
+  JSON 早停状态机 6 例（含字符串内 `]`、转义引号、嵌套数组）全过
+- **真机验证清单**：跑试音短篇 → 设置页「高级 → 查看标注内容」或「复制诊断信息（摘要）」贴给我。
+  重点看 `NATIVE_JSON_CLOSE`、`ANN_DISPOSITION` 的 `kept` 是否 >0、`ANN_CONTENT` 里有没有非「旁白 / 平稳叙述」
+
+### 发布记录（R23）
+
+（本轮 CI 完成后回填：run 号 / 版本 / APK 字节 / 拆包硬验结果。本轮只改 `Pipeline.kt` 的
+`contentLines()` 与 `check_structure.py` 自检，native 未动 ⇒ CI 原生缓存命中。）
