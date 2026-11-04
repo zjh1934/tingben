@@ -284,7 +284,20 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <b>没碰：</b>native / JNI 签名 / Producer.start / bucket / gate 表达式 / prompt v2 / 状态机 / 网络权限。</div>
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加</footer>
+<div class="panel" style="margin-top:14px">
+<b>⑧ R26 · 项目文件维护 + P1② 前台服务（顺延四轮后兑现）</b>
+<div class="tree" style="margin-top:8px">
+维护：两份迭代日志收成单一指针 · README/STATUS 订正 · ReaderVoice 许可证核实为 MIT · R25 说挪没挪的「推理参数」卡真挪回 ① 组<br>
+不手搓：ProduceService.kt 移植 ReaderVoice ChapterDirectorService / VoiceDesignService（MIT）的 FGS 形状<br>
+落地：dataSync 前台服务 + 4 权限 + 可见通知（进度条 / 停止按钮 / 点开回书架）+ 按块 PARTIAL_WAKE_LOCK（30min 硬超时）<br>
+联动 12 处先列表再动：Producer.start / finally / emit / stop / 两个循环；TaskResume / bucket / 签名 / native / prompt v2 一行未动<br>
+用户可见：任务页说明改真实口径 · 设置页加「后台运行设置」跳系统电池优化 · 诊断摘要加 FGS 状态行
+</div>
+<div class="redline" style="margin-top:10px"><b>仍不做：</b>无障碍保活、模拟点击、浮窗保活、为保活而亮屏、后台自动续跑伪装、mediaPlayback 伪装。<br>
+<b>下一轮：</b>P1③ 段级「重做这一段」，单独一轮。</div>
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加，⑧ 由 R26 追加</footer>
 </div>
 </body>
 </html>

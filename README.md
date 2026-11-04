@@ -33,6 +33,13 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 
 > 「只想先听声音」那种藏在按钮底下的小字捷径已删，直接朗读是正式选项。
 
+**制作开始后会有一条「听本 · 本地制作中」的常驻通知**：显示书名、阶段、`已完成 X/Y` 进度，
+通知里能直接点「停止」，点通知回书架/任务页。这是 Android 前台服务（dataSync），
+配合按块 `PARTIAL_WAKE_LOCK`（每块 30 分钟硬超时）让 CPU 在推理期间别睡。
+⚠️ 它**不保证不被杀**：系统省电策略、内存紧张、Android 15 起约 6 小时的前台服务超时都可能暂停任务；
+回来在「任务」页点「继续制作」即可，已做好的块不会重算。想更稳，去设置页「关于 → 后台运行设置」
+把听本设为不受电池优化限制。
+
 ## 三个模型（唯一确定、不进包）
 
 | 槽位 | 文件 | 国内地址 |
@@ -68,6 +75,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 - 制作进行中任何页面底部都有常驻任务条；按系统返回统一回书架，不会退掉 App
 - **本次预设不进缓存分桶**：换朗读档位只作废已合成的分段 WAV、标注保留（复用标注重合成），不会重跑几小时的 4B；段间静音只在合并时插入，连 WAV 都不用作废
 - 任务跑着时前台屏幕常亮（`FLAG_KEEP_SCREEN_ON`，零权限）；**不等于保活**
+- 长任务用 `dataSync` 前台服务 + 可见通知 + 按块唤醒锁承载；**不申请无障碍、不弹浮窗、不模拟点击、不自动续跑伪装**，被杀后在任务页由用户点继续
 - **书架只放原书 · 任务页只放制作记录 · 我的音频只放成品**，三层互不增长（同内容重复导入有 SHA-256 去重）
 
 ## 架构：四层移植，不是整包微调
@@ -79,6 +87,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 | 引擎组合 / 断点 / 合并 | Antioch (MIT) | llama.cpp + qwentts.cpp 同栈、逐块 WAV、WAV 拼接 |
 | 产品不变量 | ReaderVoice-Mobile | 原文不可改、UNKNOWN 合法、进程被杀只丢当前批、角色档案 USER_LOCKED |
 | 播放器 / 折叠看台 | AlexExoPlayerMP3 · SSComposeExpandableListView(MIT) · ensemble-reads(Apache-2.0) | 队列内核、300ms 状态快照、header/child 折叠、控件集 |
+| 长任务前台服务 | ReaderVoice-Mobile (MIT) | dataSync FGS 形状、通知渠道、打开/停止 PendingIntent、按块唤醒锁 |
 
 自己写的是：中文 prompt、字符级逐字 gate、Kotlin 一键编排、CI、界面。
 `docs/听本_项目导图.html` 是完整导图，`docs/R19_路线图与决策记录.md` 是当前有序队列，`docs/*_移植清单.md` 逐块登记了抄哪个文件。
@@ -88,6 +97,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ```
 app/src/main/java/com/tingben/app/
   MainActivity.kt          全部 Compose 界面（书架/制作/进度/任务/音频/设置/模型/角色页）
+  ProduceService.kt        前台服务 dataSync、进度通知、按块 PARTIAL_WAKE_LOCK（移植 ReaderVoice, MIT）
   ProduceOptions.kt        折叠分组 + 档位胶囊控件（改写自现成实现）
   core/ProduceConfig.kt    本次制作预设（单一 data class + 宽容 JSON 迁移 + 指纹）
   core/Pipeline.kt         书架、模型槽位、分块、标注 gate、WAV 合并、一键编排、任务书签

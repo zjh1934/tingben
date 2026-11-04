@@ -255,3 +255,28 @@
 旧 bug 字面量也拦了），已改成匹配定义/代码形态并重跑 5/5 通过。
 
 文档：`docs/R25_断句与设置分层_联动表.md`；第三方声明补 3 节。
+
+
+## R26 · 项目文件维护 + P1② 前台服务（按队列，不再顺延）
+
+用户：「维护一下你的项目文件再开始干活」「按你的节奏继续推进」。
+
+**先维护**：`docs/ITERATION_LOG.md` 曾与根目录并存且停在 R21 → 收成单一指针；README 版本举例
+`+29` → `+33`；STATUS 顺延次数改「四轮」；第三方声明里 ReaderVoice 的「许可证未核实」经本地
+`LICENSE` 核实为 MIT，已订正；另外抓到 **R25 文档说「推理参数卡挪回①」但代码还挂在②**，本轮真挪了。
+
+**再干活**：只做 P1②，先写 `docs/P1②_前台服务_联动表.md`（12 处联动 + 4 项验证），然后落地：
+
+- 不手搓：`ProduceService.kt` 形状移植 ReaderVoice-Mobile `ChapterDirectorService.kt` /
+  `VoiceDesignService.kt`（MIT）—— FGS dataSync、通知渠道、打开 + 停止两个 PendingIntent、
+  `START_NOT_STICKY`、结束 `STOP_FOREGROUND_DETACH`。
+- manifest 4 权限 + service 声明；`Producer.start` 从可见界面起服务并申请 POST_NOTIFICATIONS，
+  `finally` 统一收服务；`emit` 刷通知进度；`stop` 切「正在停止」；两个循环按块 `touch()`
+  带 30 分钟硬超时的 PARTIAL_WAKE_LOCK。
+- `TaskResume` / `bucket()` / `start` 签名 / native / prompt v2 **一行未动**。
+- 任务页说明、设置页「后台运行设置」入口、诊断摘要加 FGS 状态行。
+
+**验证**：结构自检 25 项全过；Kotlin 22 文件括号状态机全 0（第一版词法屏蔽把
+`Importer.kt` 的三引号误判成 -4，改进屏蔽后复核为 0，该文件本轮未改）；
+**反向验证 3/3**：注入违禁权限 / 删 `finish` 调用 / 去唤醒锁超时，全部被自检拦下，还原后基线通过。
+CI 与拆包结果见 STATUS 的 R26 段。

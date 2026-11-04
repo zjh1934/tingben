@@ -43,10 +43,34 @@
 
 ## 下轮队列
 
-1. **P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知** → **R26 本轮推进**（先列 12 处联动表，动 manifest / 通知渠道 / Producer 四处；单独一轮）
+1. **P1③ 段级「重做这一段」**（Workbench 只读 → 可写，牵动 AnnCache / Producer / 缓存指纹 / 书签，单独一轮）
 2. 等真机 R22/R24 反馈：`NATIVE_JSON_CLOSE`、`ANN_DISPOSITION`、`ANN_CONTENT`、
    `ANN_ADOPT_DETAIL` 是否真标出角色；诊断页「复制最近一块模型原始产出」贴回来自证
-3. P1③ 段级「重做这一段」；之后按 `docs/R19_路线图与决策记录.md` 推进
+3. 之后按 `docs/R19_路线图与决策记录.md` 的 P2 推进
+
+## R26 · 项目文件维护 + P1② 前台服务（本轮）
+
+**先维护**：两份迭代日志收成单一指针（根目录 `ITERATION_LOG.md` 是唯一真源）；README 版本举例
+`+29 → +33`；STATUS 顺延次数改「四轮」；ReaderVoice 许可证经本地 `LICENSE` 核实为 MIT；
+**R25 文档声称「推理参数卡挪回①」但代码仍挂在②**，本轮真挪回语言模型组。
+
+**再干活**（连续顺延四轮后按队列兑现，没合并别的功能）：
+
+| 层 | 落地 |
+|---|---|
+| 不手搓 | `ProduceService.kt` 形状移植 ReaderVoice-Mobile `ChapterDirectorService.kt` / `VoiceDesignService.kt`（MIT）：FGS dataSync、通知渠道、打开 + 停止两个 PendingIntent、`START_NOT_STICKY`、`STOP_FOREGROUND_DETACH` |
+| manifest | +4 权限（FGS / FGS_DATA_SYNC / POST_NOTIFICATIONS / WAKE_LOCK）+ `<service foregroundServiceType="dataSync" exported="false">` |
+| Producer | `start` 从可见界面 `begin()` 并申请通知权限、`finally` 统一 `finish()`、`emit` 刷通知进度、`stop` 切「正在停止」；标注块 / 合成段各 `touch()` 一次，唤醒锁按块带 30 分钟硬超时 |
+| 界面 | 任务页后台说明改真实口径、设置页「关于」加系统电池优化入口、诊断摘要加 `前台服务 ...` 状态行 |
+| 未动 | `TaskResume` / `bucket()` / `start` 签名 / native / prompt v2 / 缓存分桶 / 状态机字段 |
+
+**联动表**：`docs/P1②_前台服务_联动表.md`（12 处 + 4 项验证）。
+**本地验证**：结构自检 25 项全过；Kotlin 22 文件括号状态机全 0；反向验证 3/3
+（注入违禁权限 / 删 `finish` 调用 / 去唤醒锁超时，全部被拦，还原后基线通过）。
+**CI / 拆包**：见本节末尾的发布记录（run 34）。
+
+**诚实边界**：FGS 不保证不被杀；Doze 忽略常规唤醒锁；Android 15 起 dataSync 约 6h 超时；
+不做无障碍 / 浮窗 / 模拟点击 / 自动续跑伪装。被杀后仍是「任务页点继续」，不是后台接着算。
 
 ## R3 真机反馈（已修，待复验）
 
