@@ -861,6 +861,7 @@ object Producer {
         // R11 · 拟声表达：只在合成前增强 instruct，text 一字不动（逐字 gate 不受影响）
         val nonVerbalOn = Prefs.nonVerbal(c)
         var unmapped = 0
+        var strippedTotal = 0
         val toSpeak = annotated.map { ann ->
             val base = if (nonVerbalOn) NonVerbal.apply(ann) else ann
             // R14 · 身份层（角色专属 > 全局）由用户/角色表固定，4B 只负责本段情绪。
@@ -868,9 +869,18 @@ object Producer {
             val role = if (castOn) VoiceCast.resolve(c, ann.speaker) else null
             if (castOn && !VoiceCast.isNarrator(ann.speaker) && role == null) unmapped++
             val identity = role?.description?.takeIf { it.isNotBlank() } ?: globalVoice
-            val instruct = VoiceProfile.build(identity, null, base.instruct)
-            Ann(base.text, base.speaker, instruct)
+            // R19 · 程序层兜底：4B 漏写的音色身份词在这里剥掉，避免逐段换声。
+            // 只改 instruct，text 原样，gate 不受影响。
+            val built = VoiceProfile.buildWithReport(identity, null, base.instruct)
+            strippedTotal += built.second
+            Ann(base.text, base.speaker, built.first)
         }
+        EventLog.log(EventLog.Kind.ENGINE, "VOICE_IDENTITY",
+            "身份层=${if (globalVoice.isBlank()) "默认锚点" else "自定义"} · " +
+                    "版本=$INSTRUCT_TEMPLATE_VERSION · 角色表=${cast.size} · " +
+                    "seed=${knobs.seed} · ${annotated.size} 段")
+        if (strippedTotal > 0) EventLog.log(EventLog.Kind.PIPELINE, "INSTRUCT_SANITIZED",
+            "从 $strippedTotal 处导演指令里剥掉音色身份词；身份由固定层提供，不再逐段重造")
         if (nonVerbalOn) {
             val hits = NonVerbal.count(annotated)
             EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL",

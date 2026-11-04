@@ -126,6 +126,16 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     // 系统返回键/手势统一回书架，而不是直接退出 App。
     BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }
 
+    // R19 · 长任务在跑时保持屏幕常亮：只加前台窗口 flag，零权限、零 WakeLock。
+    // ⚠️ 这不等于保活：锁屏/切后台后 CPU 仍会睡、进程仍可能被回收。
+    // 后台续跑要走前台服务 + PARTIAL_WAKE_LOCK + 电池白名单，单列下一轮，不混在这轮验。
+    val act = ctx as? android.app.Activity
+    DisposableEffect(st.running) {
+        val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        if (st.running) act?.window?.addFlags(flag) else act?.window?.clearFlags(flag)
+        onDispose { act?.window?.clearFlags(flag) }
+    }
+
     // R10/R11 · 导入逻辑抽成局部函数：主动选择器、兜底选择器、外部打开方式共用一条路。
     fun importBook(uri: Uri?, tag: String = "PICKER") {
         if (uri == null) {
@@ -633,6 +643,32 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 Spacer(Modifier.height(10.dp))
                 Button(onClick = onDone, Modifier.fillMaxWidth()) { Text("去听") }
             }
+        }
+
+        // R19 · 起任务前看得见全貌。只读卡，不改 Producer.start 签名 ——
+        // 完整的「本次制作」预设页要连 start / 任务书签 / 续跑三处一起改，单列下一轮。
+        CardBox(Modifier.padding(bottom = 12.dp)) {
+            Text("本次配置", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(7.dp))
+            val scopeText = when {
+                selected.isEmpty() || selected.size == chapters.size -> "整本 ${chapters.size} 章"
+                selected.size == 1 -> "第 ${selected.first() + 1} 章"
+                else -> "选中 ${selected.size} 章"
+            }
+            val cfg = listOf(
+                "范围" to scopeText,
+                "方式" to if (directMode) "直接朗读（不过语言模型）" else "标注后合成",
+                "思考" to if (directMode) "不适用" else if (thinkOn) "开（会明显变慢）" else "关（推荐）",
+                "声音" to if (Prefs.voiceDescription(c).isBlank()) "默认身份锚点" else "自定义音色"
+            )
+            cfg.forEach { (k, v) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text(text = k, modifier = Modifier.width(52.dp), fontSize = 11.5.sp, color = Sub)
+                    Text(text = v, fontSize = 11.5.sp)
+                }
+            }
+            Text("以上是跨书默认值，在设置页改。完整「本次制作」预设页下一轮做。",
+                fontSize = 11.sp, color = Sub)
         }
 
         CardBox(Modifier.padding(bottom = 12.dp)) {

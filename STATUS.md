@@ -727,6 +727,56 @@ Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一�
 - ⚠️ 本环境 `raw.githubusercontent.com` 被网关策略 403（不是文件坏），所以核验走 API；用户手机浏览器历轮可正常下载安装。
 - **真机仍是零证据**：需验 ① 同一 txt 连续「打开方式」两次书架不增；② 做第 3 章 → 音频页显示「书名 · 第 3 章」且再做第 5 章两条都在；③ 进度页小格随合成变绿、点开能试听那一段。
 
-### 下轮队列
+### 下轮队列（R18 时）
 
 ① 段级「重做这一段」（要把 Workbench 从只读升级成可写，牵动 AnnCache 与 Producer）；② Media3 / 锁屏通知 / 后台播放（会动 Gradle 与前台服务，单独一轮）；③ prompt hash 进缓存主键 + GBNF。
+
+---
+
+## R19 · 维护项目文件 + 有序推进 P0
+
+用户指令：**「这一轮维护一下项目文件，然后的话有序推进」**。上一轮是纯回答（音色归属 / 语速 / 并行 / 预设 / 界面 / 夜间保活），口头结论不落盘就会丢，所以先钉成 `docs/R19_路线图与决策记录.md`，再按 P0→P1→P2 推进，**不跳步、不把整张清单塞进一轮**。
+
+### 一、文档维护
+
+| 文件 | 动作 |
+|---|---|
+| `docs/R19_路线图与决策记录.md` | **新增**：6 条决策（D1~D6）+ P0/P1/P2 有序队列 + 明确不做 + 5 条每轮纪律 |
+| `README.md` | **全重写订正**：版本不再硬编码 +6、删掉已删的「只想先听声音」小按钮、四步路径对齐两档制作方式、代码地图补齐 6 个新 core 文件、如实说补真机 `PRODUCE_DONE` 证据与音色边界 |
+| `docs/听本_项目导图.html` | 追加「⑥ 现状与有序队列」，标明立项蓝图与落地实现的差异（原本写 5 页 / 分文件 pipeline，实际是 4 Tab + 单文件 Pipeline.kt） |
+| `STATUS.md` / `ITERATION_LOG.md` | 本条与下条 |
+
+### 二、P0 代码推进（3 件，未动状态机 / native / prompt）
+
+1. **收敛「每一小段音色都不一样」**（用户实测反馈）
+   - 真因 A：全局音色描述默认**留空 = 每段无身份锚点**，voice_design 每次重新「造声」→ 新增 `DEFAULT_IDENTITY` 兜底。
+   - 真因 B：v2 提示词明禁音色身份词，但 abliterated 权重遵循不稳，4B 偶尔漏写「年轻男声 / 低沉沙哑」叠进情绪层 → 新增 `VoiceProfile.sanitize()` 程序层剥离（只替换身份词、不丢整句情绪，保留「气声偏重」等发声状态词）。
+   - `INSTRUCT_TEMPLATE_VERSION` 1→2 ⇒ `Prefs.voiceStamp` 自动变化 ⇒ 旧分段 WAV 作废、标注不重算（沿用 R14 的 `voice_stamp.txt` 机制，**没改 `bucket()` 签名**）。
+   - 新增 `VOICE_IDENTITY` / `INSTRUCT_SANITIZED` 两条诊断事件；`Prefs.summary` 显示身份锚点与模板版本。
+   - ⚠️ 如实边界：固定 seed + 固定身份前缀是**收敛**，不是根治；权重每次 synthesize 仍重新采样，彻底根治要换 CustomVoice 固定 speaker id（换模型，用户没点头不做）。
+
+2. **任务运行时前台屏幕常亮**：`App()` 里 `DisposableEffect(st.running)` 加/清 `FLAG_KEEP_SCREEN_ON`，零权限、零 WakeLock、**只在前台**。代码注释里明写「不等于保活」，避免被误当成后台续跑已做。
+
+3. **制作页「本次配置」只读卡**：范围 / 方式 / 思考 / 声音四行，起任务前看得见全貌。**刻意不改 `Producer.start` 签名** —— 完整的「本次制作」预设页要连 `TaskResume` 书签、`TaskCenterScreen` 续跑、`ProgressScreen` 进度重算、`hasCached` 分桶四处一起改，按用户「改一处联动很多处」的提醒单列 P1。
+
+### 三、联动检查（逐条过）
+
+| 点 | 风险 | 处理 |
+|---|---|---|
+| `VoiceProfile.build` 签名 | 角色页预览、其它调用点 | 保留原签名，新增 `buildWithReport`；`build` 委托取 first，调用点零改动 |
+| 身份词误杀 | 「声音微微发颤 / 气声偏重 / 尾音下沉」是发声状态 | 只列明确身份名词，不收「温暖/沉稳/温柔」等边界词；替换而非删整句 |
+| 旧 WAV 复用 | 身份层变了但续跑跳过旧块 | 模板版本升 2 → `voiceStamp` 变 → `VOICE_INVALIDATE`，复用既有机制 |
+| `NonVerbal.apply` | 追加的导演短语含「气声」 | 在 `buildWithReport` 里 sanitize 的是整条 instruct，实测词表不含「气声」 |
+| 逐字 gate / prompt v2 / native / 状态机 / 断点分桶 | 本轮范围外 | 静态检查确认均未改动 |
+| 屏幕 flag 泄漏 | 任务停了还常亮 | `DisposableEffect(st.running)` 随状态切换 + `onDispose` 兜底清理 |
+
+### 四、验证
+
+- 本地：`check_structure.py` 18 项、Kotlin 括号平衡、`VoiceProfile` 13 个 API/常量与调用点对照、旧逻辑零残留。结果见下一条追加。
+- CI + 拆包结果见下一条追加。**真机仍是零证据**。
+
+### 五、新的有序队列（替代 R18 队列）
+
+- **P1（各自独立一轮，不合并发版）**：① 制作准备页（先列 4 处联动表再动 `start` 签名）；② 前台服务 + `PARTIAL_WAKE_LOCK` + 通知（动 manifest/权限/状态机）；③ 段级「重做这一段」（Workbench 只读→可写）。
+- **P2**：WAV 流式追加、prompt hash 进缓存主键 + GBNF、角色映射全量接进合成、CustomVoice/Base 权重、Media3/锁屏通知。
+- **明确不做**：无障碍保活、模拟点击、悬浮窗保活、多实例并行合成、PDF/OCR、模型进包、界面暴露 `.gguf`/token 事件、改编剧本档（换逐字契约，按用户要求搁置）。

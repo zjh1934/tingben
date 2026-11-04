@@ -163,8 +163,9 @@ object Prefs {
         // 思考模式禁用贪心，实际恒 0.6，别显示用户设的 0.0 让他以为生效了
         append(" · 温度 ").append(if (thinking(c)) 0.6f else temperature(c))
         append(" · 拟声表达 ").append(if (nonVerbal(c)) "开" else "关")
-        append("\n声音 · ").append(if (voiceDescription(c).isBlank()) "默认音色" else "自定义音色")
+        append("\n声音 · ").append(if (voiceDescription(c).isBlank()) "默认身份锚点" else "自定义音色")
         append(" · 角色映射 ").append(if (castEnabled(c)) "开" else "关")
+        append(" · instruct v").append(INSTRUCT_TEMPLATE_VERSION)
         append(" · seed ").append(ttsKnobs(c).seed)
         append(" · 指纹 ").append(voiceStamp(c))
     }

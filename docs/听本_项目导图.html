@@ -236,7 +236,43 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 </div>
 <div class="warn"><b>如实说：</b>G5 我能用单测证明，G6 只有你在真机上点过才算。沙盒没有 kotlinc/gradle/ndk，编译只能走 GitHub Actions；「编译通过」永远不等于「真机能用」。</div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成</footer>
+<h2>⑥ 现状与有序队列 · R19 追加</h2>
+<div class="panel">
+<div class="redline"><b>上面 ①~⑤ 是立项蓝图，保留作历史记录。</b>落地实现和它有差异，别拿蓝图当现状：</div>
+<div class="tree" style="margin-top:12px"><b>蓝图 → 实际</b>
+├── 界面「5 页」 → <b>4 个底栏 Tab</b>（书架 / 我的音频 / 任务 / 设置）+ 制作 / 进度 / 模型 / 角色页
+├── pipeline 分 5 个文件 → <b>单文件 core/Pipeline.kt</b> + 7 个 core 小文件（AudioLibrary / PlayQueue / Workbench / VoiceProfile / VoiceCast / Prefs / NonVerbal）
+├── 「真机出声没人验过」（G6） → <b>已有一次 PRODUCE_DONE 5,802,284 字节</b>（约 121 秒 WAV）；但「整本体验 / 音色稳定」仍是零证据
+├── 「只导出 WAV」 → 仍成立；M4A / m4b / MP3 未做
+└── 「首版 5 页、默认 3 项设置」 → 设置已分 8 组折叠；制作方式两档做成正式选项
+</div>
+</div>
+
+<div class="two" style="margin-top:14px">
+<div class="panel">
+<b>P0 · R19 已推进</b>
+<div class="tree" style="margin-top:8px">
+① 默认身份锚点 + 剥掉 4B 漏写的音色身份词（收敛「逐段换声」，<b>非根治</b>）
+② 任务运行时前台屏幕常亮（零权限，<b>不等于保活</b>）
+③ 制作页「本次配置」只读卡（<b>零签名改动</b>）
+④ 项目文件维护：本导图 / README 全重写 / R19 决策记录 / STATUS / 迭代日志
+</div>
+</div>
+<div class="panel">
+<b>P1 · 各自独立一轮，不合并发版</b>
+<div class="tree" style="margin-top:8px">
+① 制作准备页 → 先列 <b>start 签名 / 任务书签 / 续跑 / 进度重算 / 缓存分桶</b> 四处联动表
+② 前台服务 + PARTIAL_WAKE_LOCK + 通知（动 manifest / 权限 / 状态机）
+③ 段级「重做这一段」（Workbench 只读 → 可写）
+</div>
+<div class="redline" style="margin-top:10px"><b>P2：</b>WAV 流式追加、prompt hash + GBNF、角色映射全量接进合成、CustomVoice/Base 换权重、Media3/锁屏通知。</div>
+</div>
+</div>
+
+<div class="warn" style="margin-top:14px"><b>明确不做：</b>无障碍保活、模拟点击、悬浮窗保活、为亮屏而亮屏、多实例并行合成、PDF/OCR、模型进包、界面暴露 .gguf / token 事件、改编剧本档（要换逐字契约，按用户要求搁置）。<br>
+六条决策与纪律详见 <b>docs/R19_路线图与决策记录.md</b>；后台保活依据见 <b>docs/后台保活与浮窗_调研.md</b>。</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加</footer>
 </div>
 </body>
 </html>
