@@ -183,12 +183,38 @@ if '"已标注 ${i + 1}/${chunks.size} 块"' in pipe_src:
 if "s.src == \"MODEL\"" not in main_src:
     errs.append("R27 回退：看台没有按真实来源着色")
 
+# R31 · 调音台：12 维网格 / 4 组采样预设 / 生效快照 / A/B 日志必须真在源码里。
+# 反向断言：不许把参数埋回折叠里当唯一入口、不许出现第二份 TtsKnobs 真值源。
+mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
+R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
+           "MIXER_PROFILE", "MIXER_AB", "Mixer.CHAIN", "调音台", "🎛 调音台",
+           "Anatomy-First", "12 维", "A/B 试听", "MixerScreen", "Screen.MIXER",
+           "当前生效配置", "恢复上游默认值"]
+for sym in R31_ALL:
+    if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
+for sym in ["GENDER", "PITCH", "TIMBRE", "BREATH", "PERSONA",
+            "SamplingPreset", "VoicePreset", "fun render()", "fun snapshot("]:
+    if sym not in mixer_src: errs.append("Mixer.kt 缺少移植件形状: " + sym)
+for pid in ["P01", "P02", "P03", "P06", "P10", "P11", "P21"]:
+    if pid not in mixer_src: errs.append("Mixer.kt 缺少现成音色网格条目: " + pid)
+for sid in ["upstream", "stable", "drama", "deterministic"]:
+    if sid not in mixer_src: errs.append("Mixer.kt 缺少采样预设: " + sid)
+if "Screen.MIXER -> MixerScreen" not in main_src:
+    errs.append("R31 回退：调音台页没接进导航")
+if "onMixer = { screen = Screen.MIXER }" not in main_src:
+    errs.append("R31 回退：设置页没有调音台入口")
+# 调音台只读汇总，不许自己存一份 TtsKnobs 副本
+if "private val knobs" in mixer_src or "var knobs" in mixer_src:
+    errs.append("R31 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
+if "MIXER_AB" not in main_src:
+    errs.append("R31 回退：A/B 试听没把完整参数写进日志")
+
 notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 for who in ["Finrandojin", "Xydane", "MIT License", "ensemblereads", "ReaderVoice-Mobile"]:
     if who not in notice: errs.append("第三方声明缺少: " + who)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / native 早停 3 项"
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / R31 符号 %d 项 / native 早停 3 项"
       % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS), len(R24_SYMBOLS),
-         len(R25_ALL) + len(R25_MAIN), len(R26_ALL) + 5 + 5))
+         len(R25_ALL) + len(R25_MAIN), len(R26_ALL) + 5 + 5, len(R31_ALL) + 11 + 7 + 4))

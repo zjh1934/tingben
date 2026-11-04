@@ -297,7 +297,23 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <b>下一轮：</b>P1③ 段级「重做这一段」，单独一轮。</div>
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加，⑧ 由 R26 追加</footer>
+<div class="panel" style="margin-top:14px">
+<b>⑨ R28 · 段级重做 + 「语言模型是否生效」一眼判定</b>
+<div class="tree" style="margin-top:8px">
+用户：性能页不做（意义不大）· 按节奏推进 · 「正在跑测试，一点底都没有」· 别手搓<br>
+不手搓：ReaderVoice Scheduler.invalidate / RenderUnitRef.cacheKey / AudioCacheScanner（MIT）→ 单元级失效，只标脏、禁整章清<br>
+判定条：进度页看台上方四口径（直接朗读 / 还没数据 / 已生效 X 段 / 全是直读）+ 日志 LLM_VERDICT<br>
+看台：点一格看原文全文 / speaker / instruct / 来自第几块第几条 → 「重合成这一段」「重新标注本块」<br>
+修两个真 bug：ann_（块）与 chunk_（段）索引错格 · 续跑后逐条来源全丢（flag_%04d.json 落盘）<br>
+11 处联动先列表再动：start 签名 / bucket / TaskResume / native / prompt v2 / 双指纹全部未动
+</div>
+<div class="redline" style="margin-top:10px"><b>删除：</b>性能页（CPU/GPU/内存浮窗）从队列删除，不排期、不留占位。<br>
+<b>CI 复盘：</b>run 36/37 真编译错 <code>Unresolved reference 'segOrigin'</code> —— 定义在 else 分支内、合成阶段在分支外；已提到分支外并补反向断言。<b>静态自检抓不到作用域，必须有一次 CI 真编译。</b><br>
+<b>发布：</b>run 38 全绿 · <code>1.0.0+38</code> · 17,820,388 字节 · 拆包硬验全过。<br>
+<b>下一轮：</b>按 <code>docs/本次测试_语言模型生效判定卡.md</code> 的回传结果定，不再预设功能。</div>
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加，⑧ 由 R26 追加，⑨ 由 R28 追加</footer>
 </div>
 </body>
 </html>

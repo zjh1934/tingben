@@ -309,3 +309,48 @@ Python 等价实现对拍 4/4（跳标题旧 FALLBACK → 新 PARTIAL 且逐字�
 
 文档：`docs/R27_真机日志定案_标注为何没进合成.md`。
 真机仍零证据：+35 要跑试音短篇看「未采纳首因」是 `-` 还是 `NOT_FOUND_AFTER_0`。
+
+
+---
+
+## R28 · 2026-11-04 · 段级重做 + 判定条 + 项目文件维护
+
+**用户**：性能页不做（意义不大）；按节奏推进；正在跑真机测试，「一点底都没有，语言模型到底有没有起作用」；**别手搓，去看别人怎么做的拿过来改**。
+
+**拿来主义**：逐行读了本地 `reference/ReaderVoice-Mobile/scheduler/Scheduler.kt`（44-68 `plan`、70-73 `invalidate`）、
+`RenderUnitRef.kt`（16-34 稳定段 id + cacheKey）、`AudioCache.kt`（只认 wav 按序），MIT。
+改写成线性 Producer 能用的形状：脏标记一个 `redo.json`，重做靠删文件让既有跳过逻辑自然失效，
+**零签名改动**。
+
+**改了 4 个源码文件 + 新增 1 个**：
+- 新增 `core/SegPlan.kt`（段映射 / flags / 脏标记 / 两动作 / verdict）
+- `core/Pipeline.kt`：公共展开记 `segOrigin`、写 flags、`segmap.json` + `LLM_VERDICT`、成功后清待办
+- `core/Workbench.kt` 重写：segmap 为主、旧目录降级且一律 UNKNOWN
+- `MainActivity.kt`：判定条 + 逐段详情 + 两个重做按钮 + `redoNonce`
+
+**修掉两个真 bug**：看台把块索引与段索引按同一 i 并排（颜色与声音永远对不上）；
+R27 的 `srcFlags` 只在内存里算，续跑后来源全丢。
+
+**验证**：结构自检 + 语义对拍 + 判定口径对拍 + 反向注入，全绿。
+期间验证脚本自己写错 3 条断言（`val direct` 实为 `run()` 参数、期望 (1,1,1,4) 实为 (2,1,1,4)、
+`AnnCache.clear` 是既有 `clearProgress`），逐条核实后修正再跑，未当产品失败。
+
+**维护**：R19 勾掉 P1③、删除性能页 P1④、修「下一轮第一件」；STATUS 追加 R28；
+README 修「前台服务顺延到下一轮」的过时表述、代码地图补 `SegPlan.kt`；导图同步。
+
+**队列**：下一轮按判定卡回传的 `ANN_CONTENT` / 未采纳首因定 —— 仍是 `NOT_FOUND_AFTER_0`
+就启动骨架化标注（换契约，单独一轮）；`model > 0` 但听不出差别就转音频侧。
+
+**CI 复盘（如实记）**：run 36 / 37 真编译失败，报错 `Unresolved reference 'segOrigin'`
+（CI 把日志回写到 `logs/build-36.md` 才拿到）—— 本地静态自检括号 / 符号全过也抓不到
+**变量作用域**：`segOrigin` 被我定义在 `else`（标注分支）里，而写 `segmap.json` 的合成阶段在分支外。
+已提到 `if (direct)` 之前、补一条反向断言，再推 run 38/39。
+**这条印证纪律**：静态自检 ≠ 编译过，必须有一次 CI 真编译；本地脚本全绿不能当发版依据。
+
+**发布（最终）**：CI **run 38 全绿** · `1.0.0+38` · APK **17,820,388 字节** ·
+拆包硬验 CRC 全过 / 7 个 arm64 .so / 权重 0 / 无 INTERNET /
+dex 含 `SegPlan` `LLM_VERDICT` `segmap.json` `redoSynthesize` `redoBlock` /
+binary dex 读到 `1.0.0+38`。run 36/37 因 `segOrigin` 作用域真编译失败（日志回写后定位、已修）；
+run 39 为 push+dispatch 重复触发，已取消，固定直锁 `+38`。
+拆包脚本首次把 `durationMs` / `preview` 词面当「旧字段残留」误报过一次 —— 这两个词在音频页 /
+诊断页本就合法存在，已改成由源码层断言负责，不拿 dex 词面判字段。

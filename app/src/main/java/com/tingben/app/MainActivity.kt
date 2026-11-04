@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER }
 
 /** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
 private enum class ProduceMode { ANNOTATE, DIRECT }
@@ -356,8 +356,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
                     onLibrary = { screen = Screen.LIBRARY },
-                    onCast = { screen = Screen.CAST })
+                    onCast = { screen = Screen.CAST },
+                    onMixer = { screen = Screen.MIXER })
                 Screen.CAST -> CastScreen(ctx, onBack = { screen = Screen.SETTINGS })
+                Screen.MIXER -> MixerScreen(ctx, onBack = { screen = Screen.SETTINGS })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },
@@ -408,7 +410,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             TabButton("任务", screen == Screen.TASKS || screen == Screen.PROGRESS,
                 Modifier.weight(1f)) { screen = Screen.TASKS }
             TabButton("音频", screen == Screen.AUDIO, Modifier.weight(1f)) { screen = Screen.AUDIO; refresh++ }
-            TabButton("设置", screen == Screen.SETTINGS || screen == Screen.MODELS,
+            TabButton("设置", screen == Screen.SETTINGS || screen == Screen.MODELS || screen == Screen.MIXER,
                 Modifier.weight(1f)) { screen = Screen.SETTINGS; refresh++ }
         }
     }
@@ -1436,7 +1438,8 @@ private fun SettingOption(label: String, options: List<String>, current: Int, on
 
 @Composable
 private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
-                            onLibrary: () -> Unit, onCast: () -> Unit) {
+                            onLibrary: () -> Unit, onCast: () -> Unit,
+                            onMixer: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val missing = remember(refresh) { ModelStore.missing(c) }
     val st by Producer.state.collectAsState()
@@ -1454,7 +1457,25 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("设置", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
+        // R31 · 发力点转到音频模型：调音台是独立一页，不把 9 个参数埋在折叠里。
+        Card(
+            Modifier.fillMaxWidth().padding(bottom = 11.dp)
+                .clickable { onMixer() },
+            colors = CardDefaults.cardColors(containerColor = PrimarySoft),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("🎛 调音台 · 打开音频模型控制台", fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold, color = Primary)
+                    Spacer(Modifier.height(3.dp))
+                    Text("当前全部生效参数、12 维音色、4 组采样预设、A/B 试听对比",
+                        fontSize = 11.sp, color = Sub)
+                }
+                Text("›", fontSize = 20.sp, color = Primary)
+            }
+        }
         // R25 · 用户原话「哪些是长期有效的模型设置，哪些是仅这一轮任务的设置，没分开」。
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Text("作用域", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -2053,6 +2074,324 @@ private fun CastScreen(c: Context, onBack: () -> Unit) {
             TextButton(onClick = { VoiceCast.clear(c); ver++ }) {
                 Text("清空角色表（不影响已导入的模型和书）", fontSize = 12.sp, color = Warn)
             }
+        }
+    }
+}
+
+// ── ⑥ 调音台（R31）：音频模型控制台 ─────────────────────────────
+// 不手搓：卡片/折叠/档位控件复用本文件既有的 CardBox / SettingOption / GroupLabel；
+// 12 维音色网格与 4 组采样预设来自 core/Mixer.kt（移植现成源码），页面只负责画和写日志。
+@Composable
+private fun MixerScreen(c: Context, onBack: () -> Unit) {
+    var tick by remember { mutableStateOf(0) }
+    val knobs = remember(tick) { Prefs.ttsKnobs(c) }
+    val rows = remember(tick) { Mixer.snapshot(c) }
+    val scope = rememberCoroutineScope()
+    val missing = remember(tick) { ModelStore.missing(c) }
+
+    var presetOpen by remember { mutableStateOf(true) }
+    var samplingOpen by remember { mutableStateOf(true) }
+    var boundaryOpen by remember { mutableStateOf(false) }
+    var voiceDraft by remember(tick) { mutableStateOf(Prefs.voiceDescription(c)) }
+    var abText by remember {
+        mutableStateOf("雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。")
+    }
+    var bPresetId by remember { mutableStateOf("stable") }
+    var busyA by remember { mutableStateOf(false) }
+    var busyB by remember { mutableStateOf(false) }
+    var fileA by remember { mutableStateOf("") }
+    var fileB by remember { mutableStateOf("") }
+    var abMsg by remember { mutableStateOf("") }
+
+    fun put(k: TtsKnobs) {
+        Prefs.setTtsKnobs(c, k); tick++
+        Mixer.logProfile(c, "用户改采样参数")
+    }
+    // A/B 只比采样参数：instruct 固定成「当前身份层 + 一句中性表演指令」，两边完全一致。
+    fun synth(side: String, k: TtsKnobs, out: String, busy: (Boolean) -> Unit, done: (String) -> Unit) {
+        busy(true)
+        abMsg = "正在合成 $side …（手机 CPU 慢，约 1~3 分钟）"
+        scope.launch(Dispatchers.IO) {
+            val res = runCatching {
+                if (!NativeEngine.isAvailable()) throw IllegalStateException("本地引擎没装载，请重启 App")
+                val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
+                val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
+                val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
+                if (h == 0L) throw IllegalStateException("声音模型打不开")
+                try {
+                    val identity = Prefs.voiceDescription(c).trim().ifBlank { DEFAULT_IDENTITY }
+                    val instruct = "$identity。平稳、清晰地叙述，句间自然停顿。"
+                    val f = File(c.filesDir, out)
+                    val code = NativeEngine.ttsSynthesize(h, abText, instruct, null, "chinese",
+                        f.absolutePath, k)
+                    if (code != 0 || !f.exists() || f.length() <= 44)
+                        throw IllegalStateException("没生成声音，code=$code")
+                    EventLog.log(EventLog.Kind.ENGINE, "MIXER_AB",
+                        "side=$side · textChars=${abText.length} · seed=${k.seed} · temp=${k.temperature} · " +
+                            "subTemp=${k.subTemperature} · rep=${k.repetitionPenalty} · topK=${k.topK} · " +
+                            "topP=${k.topP} · subTopK=${k.subTopK} · subTopP=${k.subTopP} · " +
+                            "max=${k.maxNewTokens} · hash=${k.hash()} · bytes=${f.length()} · instruct=$instruct")
+                    f.absolutePath
+                } finally { NativeEngine.ttsFree(h) }
+            }
+            withContext(Dispatchers.Main) {
+                busy(false)
+                val p = res.getOrNull()
+                done(p ?: "")
+                abMsg = if (p != null) "$side 出声了 ✓ ${File(p).length()} 字节，点右边试听"
+                        else "$side 失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
+                res.exceptionOrNull()?.let {
+                    EventLog.log(EventLog.Kind.CRASH, "MIXER_AB_FAIL", it.message ?: "")
+                }
+            }
+        }
+    }
+    fun play(path: String) {
+        try {
+            val mp = MediaPlayer()
+            mp.setDataSource(path); mp.prepare(); mp.start()
+            mp.setOnCompletionListener { it.release() }
+        } catch (_: Throwable) { Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show() }
+    }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ 返回", fontSize = 13.sp) }
+            Text("调音台", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("音频模型（VoiceDesign 1.7B · 12Hz）的全部可调维度。改完立即写进日志，"
+            + "已生成的旧音频自动作废重做。", fontSize = 11.5.sp, color = Sub)
+        Spacer(Modifier.height(10.dp))
+
+        // ① 当前生效（只读）：一眼看全，不用进每个折叠翻
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Text("当前生效配置", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(3.dp))
+            Text(Mixer.CHAIN, fontSize = 10.5.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
+            var lastGroup = ""
+            rows.forEach { r ->
+                if (r.group != lastGroup) {
+                    lastGroup = r.group
+                    Text(r.group, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Primary,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp))
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Text(r.label, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
+                    Text(r.value, fontSize = 11.5.sp, modifier = Modifier.weight(1.35f))
+                }
+            }
+            Spacer(Modifier.height(7.dp))
+            TextButton(onClick = {
+                Mixer.logProfile(c, "手动导出当前配置到日志")
+                Toast.makeText(c, "已写进诊断日志，复制诊断信息即可贴出", Toast.LENGTH_SHORT).show()
+            }) { Text("复制进诊断日志", fontSize = 12.sp) }
+        }
+
+        // ② 音色身份：12 维 + Anatomy-First 预设网格
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Row(Modifier.clickable { presetOpen = !presetOpen }, verticalAlignment = Alignment.CenterVertically) {
+                Text("① 音色身份 · 12 维", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                    modifier = Modifier.weight(1f))
+                Text(if (presetOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
+            }
+            if (presetOpen) {
+                Spacer(Modifier.height(4.dp))
+                Text("先定物理声学（性别/年龄/音区/质地/明暗/颗粒），最后才写气质。"
+                    + "Alexandria 40 组对照实验：纯情绪或人设描述，每一句都会变成不同的声音。",
+                    fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.height(6.dp))
+                VoiceDimension.entries.forEach { d ->
+                    Text("${d.label} · ${d.hint}", fontSize = 10.5.sp, color = Sub,
+                        modifier = Modifier.padding(vertical = 1.dp))
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("现成音色网格（移植 ReaderVoice 中文 persona 表）", fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                VoicePresets.ALL.forEach { p ->
+                    Row(Modifier.fillMaxWidth()
+                        .clickable {
+                            voiceDraft = p.render()
+                            Prefs.setVoiceDescription(c, p.render()); tick++
+                            Mixer.logProfile(c, "应用音色预设 ${p.id} ${p.name}", p.render())
+                        }
+                        .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${p.id} ${p.name}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(p.chips(), fontSize = 10.5.sp, color = Sub)
+                        }
+                        Text("应用 ›", fontSize = 11.5.sp, color = Primary)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = voiceDraft, onValueChange = { voiceDraft = it },
+                    modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5,
+                    label = { Text("音色身份（instruct ①，全书固定）", fontSize = 11.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                )
+                Spacer(Modifier.height(5.dp))
+                Row {
+                    Button(onClick = {
+                        Prefs.setVoiceDescription(c, voiceDraft); tick++
+                        Mixer.logProfile(c, "保存自定义音色", voiceDraft)
+                    }) { Text("保存音色", fontSize = 12.sp) }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = {
+                        voiceDraft = ""; Prefs.setVoiceDescription(c, ""); tick++
+                        Mixer.logProfile(c, "清空音色，回默认锚点")
+                    }) { Text("清空回默认", fontSize = 12.sp) }
+                }
+            }
+        }
+
+        // ③ 采样：4 组预设 + 9 个细调
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Row(Modifier.clickable { samplingOpen = !samplingOpen }, verticalAlignment = Alignment.CenterVertically) {
+                Text("② 采样参数 · 9 项", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                    modifier = Modifier.weight(1f))
+                Text(if (samplingOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
+            }
+            if (samplingOpen) {
+                Spacer(Modifier.height(4.dp))
+                Text("主 talker 决定「说什么节奏」，副 talker 决定声学细节。默认值逐字取自 "
+                    + "qwentts.cpp/sampling-defaults.h。", fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.height(7.dp))
+                SamplingPresets.ALL.forEach { p ->
+                    val on = knobs.hash() == p.knobs.hash()
+                    Row(Modifier.fillMaxWidth().clickable { put(p.knobs) }.padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(p.name, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                color = if (on) Primary else Color.Unspecified)
+                            Text(p.why, fontSize = 10.5.sp, color = Sub)
+                        }
+                        if (on) Text("生效", fontSize = 11.sp, color = Good)
+                    }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = Line)
+                SettingOption("seed（固定可复现）", listOf("42", "1234", "随机"),
+                    listOf(42L, 1234L, -1L).indexOf(knobs.seed).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(seed = listOf(42L, 1234L, -1L)[i]))
+                }
+                SettingOption("主 temperature", listOf("0", "0.6", "0.9", "1.1"),
+                    listOf(0f, 0.6f, 0.9f, 1.1f).indexOf(knobs.temperature).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(temperature = listOf(0f, 0.6f, 0.9f, 1.1f)[i]))
+                }
+                SettingOption("主 top_k", listOf("0", "20", "50"),
+                    listOf(0, 20, 50).indexOf(knobs.topK).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(topK = listOf(0, 20, 50)[i]))
+                }
+                SettingOption("主 top_p", listOf("0.8", "0.95", "1.0"),
+                    listOf(0.8f, 0.95f, 1.0f).indexOf(knobs.topP).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(topP = listOf(0.8f, 0.95f, 1.0f)[i]))
+                }
+                SettingOption("重复惩罚", listOf("1.0", "1.05", "1.1", "1.2"),
+                    listOf(1.0f, 1.05f, 1.1f, 1.2f).indexOf(knobs.repetitionPenalty).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(repetitionPenalty = listOf(1.0f, 1.05f, 1.1f, 1.2f)[i]))
+                }
+                SettingOption("副 temperature（电音/语速抖动）", listOf("0", "0.4", "0.6", "0.9", "1.1"),
+                    listOf(0f, 0.4f, 0.6f, 0.9f, 1.1f).indexOf(knobs.subTemperature).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(subTemperature = listOf(0f, 0.4f, 0.6f, 0.9f, 1.1f)[i]))
+                }
+                SettingOption("副 top_k", listOf("0", "20", "50"),
+                    listOf(0, 20, 50).indexOf(knobs.subTopK).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(subTopK = listOf(0, 20, 50)[i]))
+                }
+                SettingOption("副 top_p", listOf("0.8", "0.95", "1.0"),
+                    listOf(0.8f, 0.95f, 1.0f).indexOf(knobs.subTopP).coerceAtLeast(0)) { i ->
+                    put(knobs.copy(subTopP = listOf(0.8f, 0.95f, 1.0f)[i]))
+                }
+                TextButton(onClick = { Prefs.resetTtsKnobs(c); tick++
+                    Mixer.logProfile(c, "恢复上游默认值") }) {
+                    Text("恢复上游默认值", fontSize = 12.sp)
+                }
+            }
+        }
+
+        // ④ 边界（只读，避免和制作准备页的「仅本次」出现两份真值源）
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Row(Modifier.clickable { boundaryOpen = !boundaryOpen }, verticalAlignment = Alignment.CenterVertically) {
+                Text("③ 合成边界 · 只读", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                    modifier = Modifier.weight(1f))
+                Text(if (boundaryOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
+            }
+            if (boundaryOpen) {
+                Spacer(Modifier.height(5.dp))
+                Text("这几项属于「仅本次任务」或引擎固定能力，故意不在调音台重复设一份："
+                    + "段间静音/风格/语速/情绪在制作准备页；并发数由 CPU 单 compute worker 决定；"
+                    + "lang 固定 chinese。", fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.height(6.dp))
+                rows.filter { it.group == "边界" || it.group == "表演层" }.forEach { r ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Text(r.label, fontSize = 11.sp, color = Sub, modifier = Modifier.weight(1f))
+                        Text(r.value, fontSize = 11.sp, modifier = Modifier.weight(1.2f))
+                    }
+                }
+            }
+        }
+
+        // ⑤ A/B 试听：同一句、同一 instruct，只换采样参数，直接听差别
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Text("④ A/B 试听对比", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("同一句文本、同一音色描述，只换一组采样参数。A = 当前生效；B = 选中的预设（不改全局设置）。",
+                fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(7.dp))
+            OutlinedTextField(
+                value = abText, onValueChange = { abText = it },
+                modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3,
+                label = { Text("对比用文本", fontSize = 11.sp) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text("B 用哪组预设：", fontSize = 11.5.sp, color = Sub)
+            Row(Modifier.fillMaxWidth()) {
+                SamplingPresets.ALL.forEach { p ->
+                    TextButton(onClick = { bPresetId = p.id }) {
+                        Text(p.name, fontSize = 10.5.sp,
+                            fontWeight = if (bPresetId == p.id) FontWeight.Bold else FontWeight.Normal,
+                            color = if (bPresetId == p.id) Primary else Sub)
+                    }
+                }
+            }
+            val enabled = missing.isEmpty() && !busyA && !busyB
+            val bKnobs = SamplingPresets.find(bPresetId)?.knobs ?: TtsKnobs()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { synth("A（当前）", knobs, "mixer_a.wav", { busyA = it }, { fileA = it }) },
+                    enabled = enabled, modifier = Modifier.weight(1f)) {
+                    Text(if (busyA) "…" else "合成 A", fontSize = 12.sp)
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { synth("B（${SamplingPresets.find(bPresetId)?.name}）", bKnobs,
+                            "mixer_b.wav", { busyB = it }, { fileB = it }) },
+                    enabled = enabled, modifier = Modifier.weight(1f)) {
+                    Text(if (busyB) "…" else "合成 B", fontSize = 12.sp)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { if (fileA.isNotBlank()) play(fileA) }, enabled = fileA.isNotBlank()) {
+                    Text("▶ 听 A", fontSize = 12.sp)
+                }
+                Spacer(Modifier.width(12.dp))
+                TextButton(onClick = { if (fileB.isNotBlank()) play(fileB) }, enabled = fileB.isNotBlank()) {
+                    Text("▶ 听 B", fontSize = 12.sp)
+                }
+            }
+            if (abMsg.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(abMsg, fontSize = 11.sp, color = Sub)
+            }
+            if (missing.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text("还缺模型文件，先去设置页导入。", fontSize = 11.sp, color = Warn)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text("每次合成都会把完整 9 个参数、instruct 全文与指纹写进日志（MIXER_AB），"
+                + "贴诊断信息即可复盘。", fontSize = 10.5.sp, color = Sub)
         }
     }
 }

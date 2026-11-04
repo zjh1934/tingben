@@ -9,10 +9,11 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ```
 备用（Release 页）：`https://github.com/zjh1934/tingben-android/releases/latest`
 
-- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+35`），当前版本见 `STATUS.md` 头部
+- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+38`），当前版本见 `STATUS.md` 头部
 - 想知道「模型到底标了什么」：设置页「高级（诊断）→ 查看标注内容」，或复制诊断摘要（已带最近 3 块逐条标注全文）。
   诊断摘要把「模型候选的原始产出」与「最终真正进 TTS 的段」分开写，并给出「未采纳首因」；
-  进度页与分段看台也区分「模型真标注」和「模型没采纳按原文直读」
+  进度页与分段看台也区分「模型真标注」和「模型没采纳按原文直读」；
+  看台上方有「语言模型是否生效」判定条，不用贴日志就能判（见 `docs/本次测试_语言模型生效判定卡.md`）
 - 浏览器直接打开即可下载；包名 `com.tingben.app`，与旧墨听不同，**可同时安装、不用卸载**
 - 固定签名，后续新版直接覆盖安装，模型和已做好的音频都保留
 - 源码：`https://github.com/zjh1934/tingben-android`（公开）
@@ -31,7 +32,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
    （设置页已按 ① 语言模型 / ② 音频模型 分组，顶部有「作用域」说明）。
    本次预设随任务书签落盘，杀进程回来续跑也不丢。
    然后点「开始制作」
-4. 进度页看阶段、分段看台点小格试听单段 →「任务」页管长任务 →「我的音频」里完整播放器试听 / 保存到手机
+4. 进度页看阶段、分段看台点小格看原文 / 试听 / 重做这一段 →「任务」页管长任务 →「我的音频」里完整播放器试听 / 保存到手机
 
 > 「只想先听声音」那种藏在按钮底下的小字捷径已删，直接朗读是正式选项。
 
@@ -105,7 +106,8 @@ app/src/main/java/com/tingben/app/
   core/Pipeline.kt         书架、模型槽位、分块、标注 gate、WAV 合并、一键编排、任务书签
   core/AudioLibrary.kt     成品登记（UUID + index.json，书架不膨胀）
   core/PlayQueue.kt        播放队列单例（音频页与分段看台共用）
-  core/Workbench.kt        分段看台数据（扫 work 目录，不造状态）
+  core/SegPlan.kt          段映射 / 逐条来源 / 单元级失效（移植 ReaderVoice scheduler, MIT）
+  core/Workbench.kt        分段看台数据（读 segmap.json，旧缓存降级且标未知）
   core/VoiceProfile.kt     instruct 三层 + 默认身份锚点 + 身份词剥离
   core/VoiceCast.kt        角色→音色映射、别名合并、USER_LOCKED
   core/Prefs.kt            全部用户配置 + 声音指纹（配置变了作废旧 WAV）
@@ -128,7 +130,7 @@ scripts/                    build_native.sh / check_structure.py / publish_apk.p
 - **真机已有一次完整链路证据**：`PRODUCE_DONE 5,802,284 字节`（约 121 秒 WAV）。但「每一段音色稳定、角色不飘、整本体验」**仍是零证据** —— 沙盒没有 NDK/kotlinc/真机，编译通过永远不等于好用。
 - **音色**：voicedesign 是**单音色**权重，一个声音演所有情绪；4B 标出的 `speaker` 目前只是文字标签，通过全局/角色描述影响 instruct，**不是按角色切声线**。R19 加了默认身份锚点 + 身份词剥离来收敛「逐段换声」，但权重每次重新采样的固有特性不能靠代码根治。
 - **非语言表达**：原文写到哭 / 笑 / 叹气 / 抽泣 / 咳嗽时自动加导演指令，正文一字不改，设置页可关。精确的行内标签（`[gasp]` 等）是下一代权重能力，本模型不解析。详见 `docs/NONVERBAL_RESEARCH.md`。
-- **后台**：任务跑着时前台屏幕常亮（`FLAG_KEEP_SCREEN_ON`，零权限）；**这不等于保活**。锁屏/切后台后靠逐块落盘恢复，前台服务 + 唤醒锁顺延到下一轮。详见 `docs/后台保活与浮窗_调研.md`。
+- **后台**：任务跑着时前台屏幕常亮（`FLAG_KEEP_SCREEN_ON`，零权限）；**这不等于保活**。前台服务 `dataSync` + 可见通知 + 按块 `PARTIAL_WAKE_LOCK`（R26 已落地），锁屏/切后台后靠逐块原子落盘 + 任务页恢复，目标仍是「到点停 + 回来点继续」。详见 `docs/后台保活与浮窗_调研.md`。
 - **标注可观测（R21）**：每块记模型原始产出长度、有效 JSON 长度、标出几条、拼回原文差几个字、
   9 条提示词规则 PASS/VIOLATE、失败码与产出开头结尾截取；「跑半天啥也没标」会变成 `ANN_EMPTY` 告警。
   双模型怎么配合见 `docs/双模型配合_我的想法.md`，日志设计见 `docs/日志重设计_标注审计.md`。
