@@ -828,9 +828,14 @@ Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一�
 
 **旧 WAV 作废用两条**：① `INSTRUCT_TEMPLATE_VERSION` 2→3（instruct 多了风格层 ⇒ `voiceStamp` 变，复用 R14 既有机制）；② 新增 `produce_stamp.txt` 覆盖同版本内换预设，**首次写时若已有 WAV 也删**，避免「前半本旧味道、后半本新味道」。两条都只删 WAV、`ann_` 标注保留。
 
-### 四、验证
+### 四、验证（最终）
 
-结果见下一条追加。**真机仍是零证据**。
+- 本地：`check_structure.py` 18 项通过；括号计数与 R19 基线完全一致（`Importer.kt -5 小括号` / `Pipeline.kt +1 大括号` 均为注释假阳性，**本轮未新增**）；4 个 `Producer.start` 调用点逐一确认都传了 config。
+- `TaskResume` 往返模拟：新书签原样回读、旧书签（无 config）回默认、脏数据（未知枚举 / 越界数值）回默认；预设指纹在「换风格」时变、在「只改 gapMs / gateRetries」时不变。
+- `WavMerger` 静音数学：0/300/600ms → 0/14400/28800 字节每段间，均偶数对齐；0ms 时总字节数与旧版合并完全一致。
+- **CI run 27 失败 → run 28 全绿**（`cbb1bf7e`）。失败根因不是业务逻辑：新文件 KDoc 注释里写了 `KEY_*/DEFAULT_*`，其中 **`*/` 提前闭合了块注释**，后面十几行全被当成顶层声明，编译器刷了上百条 `Expecting a top level declaration`。已改成「KEY 常量与 DEFAULT 常量」，并全仓扫描其它 `.kt` 确认没有第二处（`Prefs.kt` 里是 `KEY_* / DEFAULT_*`，星号后是空格不成对，安全）。
+- APK `v1.0.0+28` / **17,721,345 字节**，经 blob API 取回拆包硬验：7 个 arm64 .so、无 `.gguf`、assets 含 prompt v2 + v1、dex 含 `ProduceConfig / ReadingStyle / DRAMA / 广播剧 / 段间静音 / 本次恢复默认 / ① 做什么 / ② 怎么读 / ③ 怎么跑 / ④ 高级 / 预计约 / PRESET_INVALIDATE / PRESET_APPLIED / styleInstruct / audioStamp / produce_stamp.txt / INSTRUCT_TEMPLATE_VERSION / 本次预设 / ExpandGroup / OptionRow / DEFAULT_IDENTITY / PlayQueue / AudioLibrary / 分段看台 / 直接朗读 / BOOK_IMPORT_DUP` 共 26 项，CRC 全检通过。
+- **真机仍是零证据**。要验三件：① 切「广播剧 / 偏慢 / 饱满」跑 2 块，听得出与默认档的差别；② 段间静音 600ms 成品段落之间真有留白；③ 改完预设 → 杀进程 → 任务页「继续制作」，档位不退回默认、且不重跑 4B。
 
 ### 五、队列更新
 
