@@ -12,7 +12,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 - **方向（R31 定，R33 订正）**：App 发力点转到音频模型调参；换模型不做。
   **端侧 4B 标注不撤、不替换、保持现状**——想用就用、不想用就不用，只是把 4B 的调整沉到后面。
   沙盒标注工厂是**可选的第二条输入来源**（格式见 `docs/标注工厂_输出契约.md`），导入通道待接。
-- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+47`），当前版本见 `STATUS.md` 头部
+- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+48`），当前版本见 `STATUS.md` 头部
 - 想知道「模型到底标了什么」：设置页「高级（诊断）→ 查看标注内容」，或复制诊断摘要（已带最近 3 块逐条标注全文）。
   诊断摘要把「模型候选的原始产出」与「最终真正进 TTS 的段」分开写，并给出「未采纳首因」；
   进度页与分段看台也区分「模型真标注」和「模型没采纳按原文直读」；
@@ -66,12 +66,17 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 - **音频调试**：「试合成一句」不跑整本，只让声音模型读一句话并试听
 - **声音**：全局音色描述（留空用默认身份锚点）、9 个 TTS 采样参数（默认值逐字抄 `qwentts.cpp/sampling-defaults.h`）
 - **角色音色**：角色→音色映射表，`USER_LOCKED` 人工修正优先
-- **调音台（R31 建，R33 提一级入口，R36 重设计）**：左上角 ☰ →「调音台」直达独立页（设置页也保留入口）——
-  **8 个折叠组**（默认展开「当前生效配置 / 预设库」）、18 行只读快照、12 维音色逐维可编辑（10 条现成中文网格）、
-  9 项采样参数（含 `max_new_tokens`）、自定义预设可存 / 改名 / 删除（`.part` 原子落盘）、
-  5 项表演层标「仅本次」、4 张内置角色卡、参数覆盖核对表、A/B 试听（不写回长期默认）。
-  每次改动与试听都把完整参数写进日志（`MIXER_PROFILE` / `MIXER_AB`）。
-  维度体系见 `docs/R31_调音台_维度体系与联动表.md`，重设计落地见 `docs/R36_调音台重设计_落地.md`。
+- **调音台（R31 建，R33 提一级入口，R36 重设计，R38 重做）**：左上角 ☰ →「调音台」直达独立页（设置页也保留入口）——
+  **首屏固定「音色身份」卡**：「当前生效 · 全书固定」只读回显 + 多行草稿输入框 + 保存 / 清空回默认，
+  按保存才生效；12 维音色生成器（10 条现成中文网格）只「写入草稿」，不偷偷改音色。
+  **9 项采样逐项对应官方**：中文名 · `qt_tts_params` 官方字段名 · 官方默认值 · 当前值 · 一行说明 ·
+  触达状态 · 常用档位 · 精确值输入 · 单项恢复官方默认（默认展开这一组）。
+  另有参数触达矩阵（到引擎 / 上层 / 结构三态，**不画假开关**）、官方资料索引 O1~O7（按名称自行查，
+  App 无联网权限不摆假链接）、自定义预设库（`.part` 原子落盘）、4 张内置角色卡、A/B 试听（不写回长期默认）。
+  每次改动与试听都把完整参数写进日志（`MIXER_PROFILE` / `MIXER_AB` / `TTS_PARAMS`），
+  JNI 实收值另打 `TTS_PARAMS_APPLIED`。⚠️ 12 维网格是辅助拼装器，不是官方 API 字段。
+  维度体系见 `docs/R31_调音台_维度体系与联动表.md`，触达矩阵见 `docs/R38_调音台重做_联动表与参数触达矩阵.md`，
+  落地见 `docs/R38_调音台重做_落地.md`。
 - **高级（诊断）**：静态快照、本次标注审计汇总、9 条规则生效统计、逐块明细、产出截取片段；
   两级复制（摘要 / 完整日志）。跑完却没标出条目会直接告警
 
@@ -113,7 +118,8 @@ app/src/main/java/com/tingben/app/
   ProduceService.kt        前台服务 dataSync、进度通知、按块 PARTIAL_WAKE_LOCK（移植 ReaderVoice, MIT）
   ProduceOptions.kt        折叠分组 + 档位胶囊控件（改写自现成实现）
   core/ProduceConfig.kt    本次制作预设（单一 data class + 宽容 JSON 迁移 + 指纹）
-  core/Mixer.kt            调音台（R36）：12 维逐维音色 / 9 项采样 / 自定义预设库 / 生效快照 / 全参数日志
+  core/Mixer.kt            调音台（R36/R38）：12 维音色 / 9 项采样 / 预设库 / 生效快照 / 触达三态 / 全参数日志
+  core/ParamSpec.kt        9 项采样的官方字段名 / 默认值 / 说明 / 触达状态（纯元数据，不复制真值源）
   core/Pipeline.kt         书架、模型槽位、分块、标注 gate、WAV 合并、一键编排、任务书签
   core/AudioLibrary.kt     成品登记（UUID + index.json，书架不膨胀）
   core/PlayQueue.kt        播放队列单例（音频页与分段看台共用）
@@ -133,7 +139,7 @@ contracts/                 模型清单、中文 prompt、流水线规格
 samples/                   试音短篇.txt / 旧巷钟声.txt / 解析测试.epub
 scripts/                    build_native.sh / check_structure.py / publish_apk.py /
                             r32_verify.py / r33_ui_clean.py / r33_verify.py / r33_apk_audit.py /
-                            r36_apply.py / r36_verify.py / sync_remote.py
+                            r36_apply.py / r36_verify.py / r38_param_audit.py / r38_apk_verify.py / sync_remote.py
 .github/workflows/ci.yml   自检 → 原生缓存 → 编译 → APK 闸门 → Release + raw 直链
 ```
 
