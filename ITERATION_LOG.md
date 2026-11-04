@@ -354,3 +354,43 @@ binary dex 读到 `1.0.0+38`。run 36/37 因 `segOrigin` 作用域真编译失�
 run 39 为 push+dispatch 重复触发，已取消，固定直锁 `+38`。
 拆包脚本首次把 `durationMs` / `preview` 词面当「旧字段残留」误报过一次 —— 这两个词在音频页 /
 诊断页本就合法存在，已改成由源码层断言负责，不拿 dex 词面判字段。
+
+
+---
+
+## R31 · 方向变更 + 调音台（run 40 全绿）
+
+**用户定的方向**：4B 端侧标注效率太低、标得也不好 → 标注挪到元宝沙盒逐块做；
+App 这一侧「这一年就干这个事情」——把音频模型能调的参数调好、控制台显示出来。
+换模型这条路不走。
+
+**干了什么**：
+- 把本地一手源码真读进上下文：`qwen.h:303-320` / `sampling-defaults.h` / qwentts README 采样链 /
+  ReaderVoice `096b_personas.py` 中文 12 维网格 / 官方 VoiceDesign 多属性示例；联网核了
+  Alexandria `VOICE_REFERENCE.md` 的 40 组 Anatomy-First 实验、AutoShorts 12 维预设、
+  ebook2audiobook 参数面板、Qwen3-TTS-X 稳定档推荐、long-form TTS 不可变 profile 实践。
+- 新建 `core/Mixer.kt`：12 维音色定义、10 条现成网格、4 组采样预设、只读生效快照、全参数日志。
+  全部从既有 `Prefs` / `ProduceConfig` 读，**不存第二份真值源**。
+- `MainActivity.kt` 加独立 `MixerScreen`（当前生效 / 音色身份 / 采样 / 边界只读 / A/B 试听），
+  设置页顶部醒目入口、底栏「设置」高亮扩到 MIXER。7 处联动先列表再动。
+- `docs/标注工厂_输出契约.md` + `听本_标注工厂示例.json`：沙盒骨架化标注的 schema/4 道校验/
+  字段纪律/作用域划分；示例 27 段、3 说话人、逐字相等、区间连续。**只定契约不接管线**。
+
+**7 处联动**：Screen 枚举与 when 分支 / SettingsScreen 签名 / 底栏高亮 / 设置页入口 /
+Prefs 写入走既有入口 / 缓存作废复用 R14 / 日志新增两事件。
+`Producer.start` 签名、`bucket()`、TaskResume、native、prompt v2 一行没动。
+
+**验证**：`check_structure.py` 追加 R31 符号 38 项 + 反向断言（不许第二份真值源、
+不许 A/B 写回 Prefs、不许没接导航），本地 25 项全过；新增段字符串模板栈扫描平衡；
+**CI run 40 全绿**；拆包 CRC 全过 / 7 个 arm64 .so / 权重 0 / 无 INTERNET /
+binary Manifest `1.0.0+40` / dex 23 个 R31 字面量全在。
+另 3 个（`Mixer.snapshot`、`Screen.MIXER`、`Anatomy-First`）是源码级引用或注释，编译后不进 dex
+字符串池，属预期，由源码层自检覆盖，不当作缺失。
+
+**发布**：`1.0.0+40` · **17,869,546 字节** · 固定直链同步 · 直接覆盖装。
+
+⚠️ 真机仍是零证据：A/B 能不能在 24117RK2CC 上听出差别、稳定档是否真减少电音感，都要跑一次。
+控制台解决的是「看得见、调得动、能复盘」，不是「声音已经变好」。
+
+**队列（方向变更后重排）**：① 标注工厂导入通道（接契约进 App，跳过 4B）→ ② 调音台显示当前任务真实
+ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标注标为实验性/已撤主路。

@@ -9,6 +9,8 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ```
 备用（Release 页）：`https://github.com/zjh1934/tingben-android/releases/latest`
 
+- **方向（R31）**：端侧 4B 标注撤下主路，标注改在元宝沙盒做完再导入；App 发力点转到音频模型调参。
+  沙盒输出格式见 `docs/标注工厂_输出契约.md`，导入通道下一轮接。
 - 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+38`），当前版本见 `STATUS.md` 头部
 - 想知道「模型到底标了什么」：设置页「高级（诊断）→ 查看标注内容」，或复制诊断摘要（已带最近 3 块逐条标注全文）。
   诊断摘要把「模型候选的原始产出」与「最终真正进 TTS 的段」分开写，并给出「未采纳首因」；
@@ -63,6 +65,10 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 - **音频调试**：「试合成一句」不跑整本，只让声音模型读一句话并试听
 - **声音**：全局音色描述（留空用默认身份锚点）、9 个 TTS 采样参数（默认值逐字抄 `qwentts.cpp/sampling-defaults.h`）
 - **角色音色**：角色→音色映射表，`USER_LOCKED` 人工修正优先
+- **调音台（R31）**：设置页顶部「🎛 调音台」进独立页 —— 当前生效配置 18 行只读快照、
+  12 维音色（10 条现成中文网格）、9 项采样参数、4 组预设、A/B 试听对比。
+  每次改动与试听都把完整参数写进日志（`MIXER_PROFILE` / `MIXER_AB`）。
+  维度体系与证据见 `docs/R31_调音台_维度体系与联动表.md`。
 - **高级（诊断）**：静态快照、本次标注审计汇总、9 条规则生效统计、逐块明细、产出截取片段；
   两级复制（摘要 / 完整日志）。跑完却没标出条目会直接告警
 
@@ -103,6 +109,7 @@ app/src/main/java/com/tingben/app/
   ProduceService.kt        前台服务 dataSync、进度通知、按块 PARTIAL_WAKE_LOCK（移植 ReaderVoice, MIT）
   ProduceOptions.kt        折叠分组 + 档位胶囊控件（改写自现成实现）
   core/ProduceConfig.kt    本次制作预设（单一 data class + 宽容 JSON 迁移 + 指纹）
+  core/Mixer.kt            调音台：12 维音色 / 4 组采样预设 / 生效快照 / 全参数日志
   core/Pipeline.kt         书架、模型槽位、分块、标注 gate、WAV 合并、一键编排、任务书签
   core/AudioLibrary.kt     成品登记（UUID + index.json，书架不膨胀）
   core/PlayQueue.kt        播放队列单例（音频页与分段看台共用）
