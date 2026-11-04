@@ -119,7 +119,7 @@ for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
 R25_MAIN = ["private fun GroupLabel(", "① 语言模型 · 长期默认", "② 音频模型 · 长期默认",
             "仅本次", "作用域", "ACTION_MAIN 也被当成", "ProduceMode.DIRECT",
-            "实验性：真机上曾 10 分钟只产出 0 条标注"]
+            "标注后合成（实验性）"]
 for sym in R25_MAIN:
     if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
 # 反向断言：按字符腰斩的旧实现、把标注档当默认的旧写法不许回来
@@ -229,7 +229,7 @@ for sym in ["AppTopBar", "AppBottomBar", "RefreshStrip", "ChromeSpec",
             "TAB_LIBRARY", "TAB_TASKS", "TAB_AUDIO", "TAB_NONE"]:
     if sym not in chrome_src: errs.append("U1 缺壳层符号: " + sym)
 for sym in ["chromeOf(screen)",
-            "onSettings = { screen = Screen.SETTINGS; refresh++ }"]:
+            "onMenu = { idx ->"]:
     if sym not in main_src: errs.append("U1 回退：MainActivity 没接壳层: " + sym)
 # 调用必须是真实代码行，注释里出现同名字符串不算（反向验证抓到过这个漏洞）
 for sym in ["AppTopBar", "AppBottomBar", "RefreshStrip"]:
@@ -292,10 +292,10 @@ if tabs_m:
 else:
     errs.append("U1 回退：找不到 TOP_TABS")
 # 下拉刷新机制保留、阈值不变（必须查代码行，注释里也写了 55f，会被字符串包含骗过）
-if "if (acc > 55f) {" not in chrome_src or "onRefresh()" not in chrome_src:
+if "if (acc > 55f)" not in chrome_src or "onRefresh()" not in chrome_src:
     errs.append("U1 回退：下拉刷新机制或阈值被改动")
-# 真 bug 回归：删书必须触发刷新
-if "BookStore.delete(c, b.id); onChanged()" not in main_src:
+# 真 bug 回归：删书必须触发刷新（R33 起走确认弹窗）
+if "BookStore.delete(c, id); confirmDelete = null; onChanged()" not in main_src:
     errs.append("U1 回退：删书后没调 onChanged()，列表不会刷新")
 # 括号平衡（用项目自带的 mask_strings，避免字符串/注释里的括号误判）
 for p in kt_files:
@@ -309,6 +309,33 @@ for p in kt_files:
             if depth < 0: ok = False; break
     if not ok or depth != 0:
         errs.append("U1 括号不平衡: %s (depth=%d)" % (p.relative_to(ROOT), depth))
+
+# ── R33 · UI 返工：安全区 / 零文案刷新 / 一级菜单 / 全局清注释 ─────────
+def ui_literals(src):
+    """只取字符串字面量；注释里提到「下拉刷新」是说明，不算 UI 文案。"""
+    return re.findall(r'"((?:\\.|[^"\\])*)"', src)
+
+R33_MUST = ["statusBarsPadding()", "taskExpanded", "confirmDelete",
+            "AlertDialog(", "onMenu = { idx ->",
+            "BookStore.delete(c, id); confirmDelete = null; onChanged()",
+            ".clickable { taskExpanded = !taskExpanded }"]
+for sym in R33_MUST:
+    if sym not in main_src: errs.append("R33 缺新壳层符号: " + sym)
+for sym in ["DropdownMenu(", "MENU_ITEMS", "width(if (pulled)"]:
+    if sym not in chrome_src: errs.append("R33 缺壳层符号: " + sym)
+R33_BAN = ["下拉刷新", "松开即可刷新", "已刷新", "把小说变成能听的音频",
+           "书架只放原书", "每块约 500 字", "算完一块才会往上走一格",
+           "下滑收起细节", "本页 = 长期默认", "关于后台运行",
+           "每次制作产出一条成品", "听本 · 本地离线把小说变成能听的音频",
+           "①②③ 仅本次、不写回设置", "这台手机给不起模型要的思考长度",
+           "同一句文本、同一音色描述"]
+for src_name, src in [("MainActivity", main_src), ("AppChrome", chrome_src)]:
+    lits = ui_literals(src)
+    for ban in R33_BAN:
+        if any(ban in x for x in lits):
+            errs.append("R33 回退：%s 又出现注释式文案 %s" % (src_name, ban))
+if "statusBarsPadding()" not in main_src:
+    errs.append("R33 回退：顶栏又贴回状态栏")
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)

@@ -4,23 +4,24 @@ package com.tingben.app
  * U1 · 应用级「壳」：顶层目的地、顶栏、底栏、下拉刷新条集中在这一层。
  *
  * 不手搓依据：Now in Android 的 NiaAppState / TopLevelDestination 思路 ——
- * 顶层目的地集中定义，页面只负责内容，导航归属不散落在各个 when 分支里；
- * 顶栏左侧导航图标用官方 CenterAlignedTopAppBar 的 navigationIcon 形态。
+ * 顶层目的地集中定义，页面只负责内容，导航归属不散落在各个 when 分支里。
  * 逐条见 docs/R32_全局UI重构_审计与联动表.md。
  *
- * 本文件零业务逻辑：不认识 Screen 枚举、不碰 refresh 计数器、不碰任何数据层。
- * 颜色由调用方传入，避免在这里复制一份设计常量造成两份真值源。
+ * R33 · U1 返工：
+ * - 顶栏 ☰ 改成一级导航菜单（设置 / 调音台 / 模型 / 角色音色），调音台不再藏在二层；
+ * - 下拉刷新条去掉全部提示文字与 Toast，只留一条随手势变色的细横杠；
+ * - 状态栏安全区由 App() 外层 Column 的 statusBarsPadding() 统一负责，本层不重复加。
  *
- * ⚠️ U1 边界：下拉刷新沿用原手势阈值（acc > 55f），只把它抽成可复用组件，
- * 没有换成 Material3 PullToRefreshBox —— 换滚动容器会牵动 4 个页面，单列 U2。
+ * 本文件零业务逻辑：不认识 Screen 枚举、不碰 refresh 计数器、不碰任何数据层。
  */
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -28,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,25 +55,38 @@ private val TOP_TABS = listOf(
     TAB_AUDIO to "音频",
 )
 
+private val MENU_ITEMS = listOf("设置", "调音台", "模型", "角色音色")
+
 /**
- * 统一顶栏：左侧设置入口（不再用底栏第 4 个 Tab）、中间当前页标题、右侧仅书架显示导入。
- * 删掉了产品名 + 产品定位 + 文字刷新按钮 —— 它们与状态栏/通知重叠且是「边用边读」的注释。
+ * 统一顶栏：左侧 ☰ 一级菜单、中间当前页标题、右侧仅书架显示导入 ＋。
+ * 不显示产品名 / 产品定位 / 刷新按钮 / 任何操作提示文字。
  */
 @Composable
 internal fun AppTopBar(
     spec: ChromeSpec,
-    onSettings: () -> Unit,
+    onMenu: (Int) -> Unit,
     onImport: () -> Unit,
     surface: Color,
     primary: Color,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().background(surface).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onSettings) {
-            // 不引入 material-icons-extended 依赖：文字字形即可，离线构建零新增依赖
-            Text("☰", fontSize = 19.sp, color = primary)
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                // 不引入 material-icons-extended 依赖：文字字形即可，离线构建零新增依赖
+                Text("☰", fontSize = 19.sp, color = primary)
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                MENU_ITEMS.forEachIndexed { i, label ->
+                    DropdownMenuItem(
+                        text = { Text(label, fontSize = 13.sp) },
+                        onClick = { menuOpen = false; onMenu(i) }
+                    )
+                }
+            }
         }
         Text(
             spec.title,
@@ -94,7 +107,7 @@ internal fun AppTopBar(
     }
 }
 
-/** 3 个顶层 Tab。设置移走后底栏不再承担「设置」入口。 */
+/** 3 个顶层 Tab。设置入口在顶栏菜单，底栏不再承担「设置」。 */
 @Composable
 internal fun AppBottomBar(
     active: Int,
@@ -145,8 +158,8 @@ private fun AppTab(
 }
 
 /**
- * 下拉刷新条。把原先写在 LibraryScreen 里的手搓手势抽到壳层，供后续页面一行接入。
- * 阈值与旧实现完全一致（累计下滑 > 55f 触发），行为等价，不改成 PullToRefreshBox。
+ * 下拉刷新条：沿用原手势阈值（累计下滑 > 55f 触发），零文字、零 Toast。
+ * 视觉反馈只有一条随下拉变长变色的细横杠 —— 基础操作不需要写在界面上教人。
  */
 @Composable
 internal fun RefreshStrip(
@@ -155,22 +168,18 @@ internal fun RefreshStrip(
     primarySoft: Color,
     sub: Color,
 ) {
-    val c = LocalContext.current
     var pulled by remember { mutableStateOf(false) }
     Box(
         Modifier
             .fillMaxWidth()
-            .height(if (pulled) 38.dp else 26.dp)
+            .height(if (pulled) 30.dp else 22.dp)
             .background(if (pulled) primarySoft else Color.Transparent, RoundedCornerShape(12.dp))
             .pointerInput(Unit) {
                 var acc = 0f
                 detectVerticalDragGestures(
                     onDragStart = { acc = 0f },
                     onDragEnd = {
-                        if (acc > 55f) {
-                            onRefresh()
-                            Toast.makeText(c, "已刷新", Toast.LENGTH_SHORT).show()
-                        }
+                        if (acc > 55f) onRefresh()
                         pulled = false
                         acc = 0f
                     },
@@ -184,10 +193,11 @@ internal fun RefreshStrip(
             },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            if (pulled) "松开即可刷新" else "下拉刷新",
-            fontSize = 11.5.sp,
-            color = if (pulled) primary else sub
+        Box(
+            Modifier
+                .width(if (pulled) 44.dp else 26.dp)
+                .height(3.dp)
+                .background(if (pulled) primary else sub.copy(alpha = 0.35f), RoundedCornerShape(50))
         )
     }
 }
