@@ -245,16 +245,26 @@ object Annotator {
     }
 
     fun buildPrompt(sys: String, user: String, chunk: Chunk, idx: Int, total: Int,
-                    roster: Set<String>, recent: List<Ann>, thinking: Boolean = false): String {
+                    roster: Set<String>, recent: List<Ann>, thinking: Boolean = false,
+                    contextBefore: String = "（无）"): String {
         val u = user
             .replace("{{CHUNK_INDEX}}", (idx + 1).toString())
             .replace("{{CHUNK_TOTAL}}", total.toString())
             .replace("{{ROSTER}}", if (roster.isEmpty()) "（暂无）" else roster.joinToString("、"))
+            // R16 · 紧邻前因：上一块末尾的原文，给「谁正在说话 / 引号有没有闭合」。
+            // 放 target 之前，不放之后 —— 端侧 prefill 很贵，不放目标段之后的整段原文。
+            .replace("{{CONTEXT_BEFORE}}", contextBefore.ifBlank { "（无）" })
+            // 最近 3 条给完整一点的句子，24 字经常被截在半句里反而误导归属。
             .replace("{{RECENT}}", if (recent.isEmpty()) "（无）" else recent.takeLast(3)
-                .joinToString(" / ") { it.speaker + "：" + it.text.take(24) })
+                .joinToString(" / ") { it.speaker + "：" + it.text.take(40) })
             .replace("{{ORIGINAL}}", chunk.text)
             // Qwen3 初版系软开关：放在 user 末尾，/no_think 让模板预置空 think 块
             .plus(if (thinking) "\n/think" else "\n/no_think")
+        // 改 prompt 最容易出的哑巴错：新增占位符忘了在装配里替换，花括号原样喂给模型。
+        if (u.contains("{{")) {
+            EventLog.log(EventLog.Kind.PIPELINE, "PROMPT_PLACEHOLDER_LEAK",
+                "块 ${idx + 1} 仍有未替换占位符，检查 prompt 模板与 buildPrompt 是否同步")
+        }
         return "<|im_start|>system\n$sys<|im_end|>\n<|im_start|>user\n$u<|im_end|>\n<|im_start|>assistant\n"
     }
 
@@ -639,6 +649,10 @@ object Producer {
             return
         }
         val (sys, usr) = Annotator.templates(c)
+        // R16 · prompt 是契约，不是文案。哪一版 prompt 出的标注必须能查，
+        // 否则以后 A/B 或回滚时，旧缓存和新结果混在一起说不清。
+        EventLog.log(EventLog.Kind.ENGINE, "PROMPT_VERSION",
+            "v2 sha=" + Integer.toHexString(sys.hashCode()) + " sysChars=" + sys.length)
         val thinkOn = thinkOverride ?: Prefs.thinking(c)
         val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
         val nCtx = Prefs.nCtx(c)
@@ -690,7 +704,10 @@ object Producer {
                         EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
                             "块 ${i + 1}/${chunks.size} 从磁盘续上 · 角色表 ${roster.size} · 近邻 ${recent.size}")
                     } else {
-                        val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn)
+                        val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn,
+                            // R16 · 上一块末尾 120 字作为「紧邻前因」。续跑读盘的块也照样传，
+                            // 保证同一块无论重跑还是续跑，看到的上下文一致。
+                            chunks.getOrNull(i - 1)?.text?.takeLast(120) ?: "（无）")
                         // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
                         // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
                         val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)

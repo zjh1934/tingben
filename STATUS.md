@@ -581,3 +581,37 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 - **CI run 20 全绿**，`v1.0.0-20` / 17,654,062 字节。
 - **拆包硬验证**：`libtingben_native.so` 含 `NATIVE_KV_RESET` / `posMax` / `llama_batch_init` / `llama_batch_free`，**不含** `llama_batch_get_one` 符号引用（确认新 pos 路径真的编进去了，不是注释改改）；dex 含 `ANN_BLOCK_BEGIN / ANN_BLOCK_END / ANN_WAIT / THINK_CLOSE / THINK_TRUNCATED`；7 个 arm64 .so、无权重、无 INTERNET。
 - 真机待验（零证据）：跑两小块，事件流应连续出现 `ANN_BLOCK_BEGIN 1/2 → ANN_BLOCK_END 1/2 → ANN_BLOCK_BEGIN 2/2`，且 `NATIVE_KV_RESET posMax=-1`。若 posMax≠-1，说明位置没归零，但显式 pos 已让第二块不再依赖它。
+
+## R16 · 标注提示词重设计（不等真机成品，直接推进）
+
+用户明确：不再等成品验证，直接改 prompt 方案；且指出「不是简单替换，架构也会跟着变」，要求先研究清楚设计。本轮 = 多源研究 + 完整设计 + 最小闭环落地。
+
+### 研究结论（底稿 `docs/标注提示词_多源研究报告.md`）
+
+- 逐字保真只能由程序做字符级 gate，prompt 只负责降低失败率；**契约定义前置 → 负面清单**优于单写「不要改写」。
+- 一个**同形 one-shot** 对 4B 最有效；WRONG/RIGHT 只留 2 条最高频反例；结尾只封口、不长篇重申（解码到几百 token 后模型无力回头改前文）。
+- 小模型回显平行 JSON 数组会循环（`antioch/annotator.rs` 原注释），根子在「让 4B 同时复现原文 + 切分 + 归属 + 写指令」。
+- 上下文按「活跃角色 → 紧邻前因 → 最近 3 条 → 目标块」摆放；**post-cue 只做条件化二级 pass**，不免费占 prefill。
+- 本地 `llama.h:1527` 确有 `llama_sampler_init_grammar`（GBNF）；但 GBNF 只守语法壳，不保证 text 逐字等于原文，也不等于云端 `json_schema/strict`。
+- 两端侧硬事实：默认非思考（思考吃预算致 JSON 截断）；第二轮整块 review 在 9s/token 下通常不划算，程序化 check_text_loss 才是必需的那第二遍。
+
+### v2 模板（`app/src/main/assets/prompt_zh.txt`，旧版存 `prompt_zh_v1.txt`）
+
+硬契约前置 → 输出格式（固定字段顺序 + 条数上界）→ instruct 四槽（意图/强度/节奏/发声，禁音色身份、禁方括号、每行情绪写全）→ 2 条反例 → 1 个 one-shot；user 改 XML 四分区。system 795 → 968 字（净增 173，已从初稿 1246 字压下来）。
+
+### 联动落地（本轮只动四处，native / 状态机零改动）
+
+1. `Annotator.buildPrompt` 加 `contextBefore` 分区、近邻 24 → 40 字、**占位符泄漏自检**（新增占位符忘了替换会写 `PROMPT_PLACEHOLDER_LEAK`）
+2. `Producer.run` 调用点传上一块末尾 120 字作紧邻前因（续跑读盘的块也照样传，保证重跑/续跑上下文一致）
+3. 开工写 `PROMPT_VERSION v2 sha=… sysChars=…`，哪版 prompt 出的标注可追溯
+4. 文档：`docs/PROMPT_REDESIGN.md`（9 个联动部件清单、A/B/C 三路线、缓存作废分级与版本表、验证指标、代价）
+
+### 明确没做（有理由）
+
+- **prompt hash 进缓存主键**：`bucket()` 牵动 `Producer` / `TaskCenter` 续跑 / `realProgress` 三处，与路线 C 一起单独一轮做，不夹在改文案的轮次里。
+- 路线 B（确定性切分 + LLM 只写短标签）、路线 C（GBNF）：给足蓝图，等 A 的真机数据再拍。
+- **不预设「角色漂」**：用户还没听过成品，跨块 speaker 一致性只登记为观测量，不当作待修 bug。
+
+### 状态
+
+本地静态自检全绿（模拟装配无残留占位符、分区顺序正确、11 个 Kotlin 括号平衡、逐字 gate 未动、buildPrompt 定义/调用 2 处）。改了 Kotlin → CI 编译 + 拆包核对。真机出声与 v2 效果仍是零证据。
