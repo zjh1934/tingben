@@ -239,3 +239,19 @@
 同步方式：`git push` 实测 403，改走 `scripts/sync_remote.py` 的 Git Trees API 增量提交，
 带 `base_tree` 只增不删、逐文件核对 blob sha；本轮只传了 7 个变化文件。
 详见 `docs/R24_拿来主义移植清单.md`。
+
+
+## R25 · 断句移植件 / 设置分层 / 日志不骗人
+
+用户贴 `+32` 真机日志定案：标注档 643 秒 0 条标注，日志还写「通过」；直接朗读档段尾从半句腰斩。
+
+- 拿三份现成源码拼 `TextSplitter.kt`（Antioch chunker / ReaderVoice SemanticSegmenter /
+  ensemble-reads SegmentMerger），不再手搓 `buf.length >= 110`。
+- 设置页按 ① 语言模型 / ② 音频模型 分组 + 作用域卡；准备页四组标「仅本次 / 跨书默认」。
+- `ANN_BLOCK_END` 零产出改 WARN；新增 `SPLIT_STATS`、`ANN_PHASE_HINT`；MAIN 冷启动不再误报分享失败。
+- 新书默认直接朗读，标注档标实验性。
+
+踩坑：反向验证时两条自检断言写太松（只查符号字符串、删定义仍通过；回退断言把注释里的
+旧 bug 字面量也拦了），已改成匹配定义/代码形态并重跑 5/5 通过。
+
+文档：`docs/R25_断句与设置分层_联动表.md`；第三方声明补 3 节。

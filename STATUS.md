@@ -1,11 +1,11 @@
 # 听本 · 当前状态
 
-**2026-11-04 · R24 已发**
+**2026-11-04 · R25 已发**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+32`（run 32 全绿） |
-| APK | 17,771,032 字节 / arm64-v8a / 固定 debug 签名 |
+| 版本 | `1.0.0+33`（run 33 全绿） |
+| APK | 17,787,418 字节 / arm64-v8a / 固定 debug 签名 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
 | CI | 以文末最新 run 为准 |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
@@ -926,3 +926,41 @@ P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知**顺延到下一轮第一件**�
   17 个 Kotlin 括号里 `Importer.kt` 三引号是已知假阳性，CI 真编译通过
 - **真机仍是零证据**：跑试音短篇 → 贴「最近事件」或「复制诊断信息（摘要）」，
   看 `ANN_CONTENT` 里有没有非「旁白 / 平稳叙述」的条目
+
+
+---
+
+## R25 · 断句 / 设置分层 / 日志定案（插队轮）
+
+用户贴 `1.0.0+32` 真机诊断，把上一轮「文本模型是不是在帮倒忙」定案：
+
+- 标注档块 1/2 耗时 **643428ms（10 分 43 秒）**，`prefill` 约 600 秒（979 token），
+  decode 到 383 字后 `NATIVE_DECODE_FAIL`（紧接用户点停止），**0 条标注**；
+  日志却写「· 通过」。**不是标得不准，是根本没产出可用标注，而且日志把白跑伪装成成功。**
+- 直接朗读档 2 块 → 8 段，单段约 3.5 分钟，段尾有从半句腰斩的迹象。
+
+本轮改动（详见 `docs/R25_断句与设置分层_联动表.md`）：
+
+1. **断句移植件** `core/TextSplitter.kt`：三份现成源码拼成（Antioch `chunker.rs` MIT /
+   ReaderVoice `SemanticSegmenter.kt` / ensemble-reads `SegmentMerger.kt` Apache-2.0），
+   只在句末标点 / 段落 / 次级标点边界断，**字符硬切恒为 0**，超长整句保留，切片拼回逐字无损。
+   `SPLIT_STATS` 事件把「有没有从中间断」写进日志。
+2. **设置页按模型分组**：顶部「作用域」卡 + ① 语言模型 / ② 音频模型两组；
+   「推理参数」卡从音频组物理挪到语言模型组。
+3. **作用域分层**：设置页 = 长期默认（写回 Prefs，所有书生效）；制作准备页 ①②③ = 仅本次
+   （ProduceConfig，不写回，随书签落盘），④ = 跨书默认值只读。
+4. **默认档位**：新书默认「直接朗读」，标注档标「实验性」；已有任务按书签原样恢复。
+5. **日志修四处**：`ANN_BLOCK_END` 零产出/被中断一律 WARN 不许写「通过」；新增
+   `SPLIT_STATS` / `ANN_PHASE_HINT`；冷启动 `ACTION_MAIN` 不再误报 `EXTERNAL_IMPORT_EMPTY`。
+
+验证：断句 Python 对拍 4 组（逐字无损 4/4、硬切 0/4、半句腰斩 0/4）；反向验证 5/5
+（含一次「断言写太松」自查修正）；全仓 Kotlin 括号配对全 0；`check_structure.py` 新增
+R25 正向 15 项 + 反向 2 条，本地自检通过。
+**CI run 33 全绿**（commit `34b86a9e`），APK 17,787,418 字节。拆包硬验：CRC 全过 /
+7 个 arm64 .so / 无 `.gguf` / binary Manifest 读到 `1.0.0+33` / dex 里 `SPLIT_STATS`、
+`ANN_PHASE_HINT`、`TextSplitter`、`GroupLabel`、`directWithStats` 全在，
+旧 `buf.length >= 110` 字面量 0 残留。
+
+⚠️ 真机仍是零证据：这轮改的是「按符号断 / 作用域分开 / 日志不骗人」，不是「声音变好听」。
+
+**下一轮第一件（已连续四轮顺延）**：P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知。
