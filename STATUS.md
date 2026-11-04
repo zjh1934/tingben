@@ -1,10 +1,10 @@
 # 听本 · 当前状态
 
-**2026-11-04 · R23 已发**
+**2026-11-04 · R24 已发**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+31`（run 31 全绿） |
+| 版本 | `1.0.0+32`（run 32，结论以构建报告为准） |
 | APK | 约 17.7MB / arm64-v8a / 固定 debug 签名 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
 | CI | 以文末最新 run 为准 |
@@ -22,6 +22,10 @@
   标注内容全文进日志（`ANN_CONTENT` / `TTS_INPUT` / 诊断页「查看标注内容」）
 - **R23 收尾**：主事件流 `ANN_CONTENT` 从「前 8 条 / 正文截 70 字 / 3KB」放开为逐条全文（16KB 上限）；
   一手资料逐行复核与代码核对写在 `docs/R23_本轮复核与交付说明.md`
+- **R24 拿来主义**：三处手搓换成现成项目移植件 —— `JsonSalvage.kt`（Alexandria, MIT）、
+  `Adoption.kt`（Antioch, MIT）、`RawDump.kt`（原始产出全文落盘 + 诊断页查看/复制）；
+  新增 `ANN_RAW_DUMP` / `ANN_ADOPT_DETAIL` 事件与 `docs/THIRD_PARTY_NOTICES.md`；
+  12 组第三方源码对拍 12 一致，详见 `docs/R24_拿来主义移植清单.md`
 - 播放：PlayQueue 统一内核、倍速 / ±15s / 上一条下一条 / 分段看台试听 / 成品独立 id
 - 声音：身份层 + 风格层 + 本段情绪层、角色→音色表、拟声增强、采样参数接出 JNI、lang 显式 chinese
 - 原生引擎进包（7 个 arm64 .so）、固定签名、无 INTERNET、<100MB 闸门、CI 缓存加速
@@ -30,6 +34,8 @@
 
 - **真机出声已有一次证据**（`PRODUCE_DONE 5,802,284 字节`），但 R22 的「标注是否真进音频」仍零证据，
   要跑试音短篇看 `ANN_CONTENT` 里有没有非「旁白 / 平稳叙述」
+- **R24 解决的是「看不出标了没」，不是「标得更准」**：移植件的效果要真机跑一次，
+  看 `ANN_RAW_DUMP` / `ANN_ADOPT_DETAIL` / 诊断页「查看模型原始产出」再判断
 - 只 WAV；M4A / m4b / 锁屏通知 / 后台播放未做
 - **前台服务 + PARTIAL_WAKE_LOCK + 通知未做**（连续两轮被插队，下一轮第一件）
 - 单一音色（voicedesign 物理限制）；CustomVoice / Base 未换权重
@@ -38,7 +44,8 @@
 ## 下轮队列
 
 1. **P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知**（动 manifest / 权限 / 状态机，单独一轮）
-2. 等真机 R22 反馈：`NATIVE_JSON_CLOSE`、`ANN_DISPOSITION`、`ANN_CONTENT` 是否真标出角色
+2. 等真机 R22/R24 反馈：`NATIVE_JSON_CLOSE`、`ANN_DISPOSITION`、`ANN_CONTENT`、
+   `ANN_ADOPT_DETAIL` 是否真标出角色；诊断页「复制最近一块模型原始产出」贴回来自证
 3. P1③ 段级「重做这一段」；之后按 `docs/R19_路线图与决策记录.md` 推进
 
 ## R3 真机反馈（已修，待复验）

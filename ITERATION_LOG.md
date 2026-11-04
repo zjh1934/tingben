@@ -212,3 +212,30 @@
 并做反向验证（回退版必须 FAIL）。其余契约、prompt v2、native、状态机一律不动。
 
 详见 `docs/R23_本轮复核与交付说明.md`。 早停状态机 6 例 → **run 30 全绿** → 拆包硬验 17,771,027 字节、CRC 全过、7 个 arm64 .so、dex 九个新符号全命中、**`.so` 内 `NATIVE_JSON_CLOSE` 命中**（证明 native 不是旧缓存）。发布 `1.0.0+30`。
+
+## R24 · 不要手搓：三处核心逻辑换成现成项目移植件
+
+用户插话定纪律：「不要什么都手搓，去看别人怎么做的，拿过来改」。这轮不新增功能，
+只把上一轮我自己写的三处逻辑换成本地 `reference/` 里早就有、而且更完整的开源实现：
+
+1. `parseWithMeta` 的四级 JSON 修复 → **Alexandria** `clean_json_string` / `repair_json_array`，
+   落地 `core/JsonSalvage.kt`（括号计数、字符串内控制字符、裸串过滤、字段顺序无关）
+2. `reconcile` 的逐条采纳 → **Antioch** `annotator.rs` 采纳管线，落地 `core/Adoption.kt`
+   （echo 检测、标签剥离、首句截断、去重、单条 sensible defaults，逐条丢弃原因进日志）
+3. 日志只留头尾截取 → **Alexandria** `llm_responses.log`，落地 `diag/RawDump.kt`
+   （每次 attempt 原始产出全文按 run 落盘、只留最近 3 次、诊断页可查看/复制）
+
+两个 MIT 许可证与版权方写进 `docs/THIRD_PARTY_NOTICES.md`，自检强制检查。
+
+**验证**：结构自检 24 项全绿；本轮 5 个 Kotlin 文件括号 0 异常；拿 Alexandria 原 Python
+函数当基准做 12 组对拍 → 12 一致 / 0 不一致；反向验证（注入旧实现字面量必须 FAIL）通过。
+**如实订正**：原以为括号计数能在「正文含方括号」时多救回条目，实测截断场景两者都 0 条；
+真实可观测收益是「字符串内裸换行：旧版 0 条 / 移植件 1 条」。注释已按实测改，不夸大。
+
+**一次自检自摆乌龙**：我把旧实现的字面量写进了新注释，回退断言立刻报红。
+按 playbook「文本级检查先做词法屏蔽」的教训，同时改了注释措辞与断言精度
+（改成匹配赋值形态），不是简单放宽检查。
+
+同步方式：`git push` 实测 403，改走 `scripts/sync_remote.py` 的 Git Trees API 增量提交，
+带 `base_tree` 只增不删、逐文件核对 blob sha；本轮只传了 7 个变化文件。
+详见 `docs/R24_拿来主义移植清单.md`。
