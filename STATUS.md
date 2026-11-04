@@ -520,3 +520,16 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 ### 状态
 
 本机静态自检全绿；代码推 `main` 后由 CI 编译（改了 `tingben_native.cpp`，原生缓存 key 会 miss，本轮会全量重编一次，之后稳定）。固定地址在新 run 绿之前仍是 `1.0.0+17`。
+
+### R14 验证结果（CI + 拆包硬验证）
+
+- **CI run 19 全绿**：结构自检 → SDK → 原生缓存/完整性 → 交叉编译（77s，只重编 glue）→ 引擎守门 → assembleDebug（75s）→ APK 闸门 → Release + 直链同步，17 步全部 success。
+- **APK 拆包硬验证**（不是只看 CI 绿灯）：`v1.0.0-19` / 17,653,117 字节 / 7 个 arm64 .so / 无 .gguf / 无 INTERNET。
+  - `libtingben_native.so` 里**确实含** `Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw` —— 排除旧项目那种「编译过了但 JNI 找不到实现」的假绿。
+  - dex 里含 `VoiceCast / VoiceProfile / TtsKnobs / voice_stamp / VOICE_INVALIDATE / VOICE_UNMAPPED`。
+  - `assets/prompt_zh.txt` 含「不要描述音色身份」新约束。
+- 直链 `raw.githubusercontent.com` 在本环境返回 502（网关限速），改走 GitHub API 取回同一个包做拆包验证；用户浏览器直下不受影响。
+
+### 真机待验（零证据，如实说）
+
+试合成一句 → 填一个全局音色听差别 → 角色页给某个角色写描述 → 跑一小块看 `VOICE_MODE` / `VOICE_INVALIDATE`。
