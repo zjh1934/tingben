@@ -1,11 +1,11 @@
 # 听本 · 当前状态
 
-**2026-11-04 · R25 已发**
+**2026-11-04 · R26 已发**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+33`（run 33 全绿） |
-| APK | 17,787,418 字节 / arm64-v8a / 固定 debug 签名 |
+| 版本 | `1.0.0+34`（run 34 全绿） |
+| APK | 17,787,616 字节 / arm64-v8a / 固定 debug 签名 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
 | CI | 以文末最新 run 为准 |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
@@ -37,7 +37,8 @@
 - **R24 解决的是「看不出标了没」，不是「标得更准」**：移植件的效果要真机跑一次，
   看 `ANN_RAW_DUMP` / `ANN_ADOPT_DETAIL` / 诊断页「查看模型原始产出」再判断
 - 只 WAV；M4A / m4b / 锁屏通知 / 后台播放未做
-- **前台服务 + PARTIAL_WAKE_LOCK + 通知未做**（连续四轮被插队；R26 本轮第一件，见 `docs/P1②_前台服务_联动表.md`）
+- **R26 前台服务 / 通知 / 按块唤醒锁已落地，真机仍零证据**：要看通知是否常驻、锁屏后是否还在、
+  被杀后任务页能否如实标「已中断」并续跑；拆包与 CI 只证明打进了包
 - 单一音色（voicedesign 物理限制）；CustomVoice / Base 未换权重
 - 段级重做、流式合并、GBNF、骨架化标注、角色音色根治：见 `docs/R22_标注链路与双模型协作_设计.md`
 
@@ -71,6 +72,29 @@
 
 **诚实边界**：FGS 不保证不被杀；Doze 忽略常规唤醒锁；Android 15 起 dataSync 约 6h 超时；
 不做无障碍 / 浮窗 / 模拟点击 / 自动续跑伪装。被杀后仍是「任务页点继续」，不是后台接着算。
+
+### R26 发布记录（run 34）
+
+```
+https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
+```
+
+`1.0.0+34` · **17,787,616 字节** · 签名不变，**直接覆盖装**，模型与已做好的音频都保留。
+
+- CI run 34 **success / 22 步**：`交叉编译两个推理引擎` 为 skipped（native 未改，原生缓存命中，
+  没重复 4~7 分钟交叉编译）；`编译失败 → 日志回写` skipped（没触发）。
+- 拆包硬验：zip CRC 全过 / 154 条目 / **7 个 arm64 .so** / 无 `.gguf` / 无 `INTERNET`；
+  binary Manifest 读到 `1.0.0+34`、4 个新权限、`ProduceService`。
+- dex 硬验：19 个 R26 符号 17 个直接命中；另 2 个是预期形态 ——
+  `ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS` 是框架常量，编进 dex 的是它的值
+  `android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS`（已命中）；
+  `NATIVE_JSON_CLOSE` 在 `libtingben_native.so` 里（已命中，属上一轮功能）。
+  `dataSync` 在 binary XML 里是枚举整数而非字符串，以源码 manifest 与 CI 为准。
+- 旧 `buf.length >= 110` 腰斩写法零残留。
+
+⚠️ **真机仍是零证据**：FGS 能不能让这台小米锁屏后少被杀、通知里的「停止」灵不灵、
+系统电池优化白名单有没有用，都要跑一次才知道。装完先验：开始制作 → 下拉通知栏看进度条 →
+点「停止」→ 任务页点「继续制作」看是否跳过已做块。
 
 ## R3 真机反馈（已修，待复验）
 
