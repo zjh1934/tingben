@@ -240,11 +240,12 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <div class="panel">
 <div class="redline"><b>上面 ①~⑤ 是立项蓝图，保留作历史记录。</b>落地实现和它有差异，别拿蓝图当现状：</div>
 <div class="tree" style="margin-top:12px"><b>蓝图 → 实际</b>
-├── 界面「5 页」 → <b>4 个底栏 Tab</b>（书架 / 我的音频 / 任务 / 设置）+ 制作 / 进度 / 模型 / 角色页
+├── 界面「5 页」 → <b>R33 后：底栏 3 Tab</b>（书架 / 任务 / 我的音频）+ 左上角 ☰ 一级菜单（设置 / 调音台 / 模型 / 角色音色）；制作 / 进度页仍独立
 ├── pipeline 分 5 个文件 → <b>单文件 core/Pipeline.kt</b> + 7 个 core 小文件（AudioLibrary / PlayQueue / Workbench / VoiceProfile / VoiceCast / Prefs / NonVerbal）
 ├── 「真机出声没人验过」（G6） → <b>已有一次 PRODUCE_DONE 5,802,284 字节</b>（约 121 秒 WAV）；但「整本体验 / 音色稳定」仍是零证据
 ├── 「只导出 WAV」 → 仍成立；M4A / m4b / MP3 未做
-└── 「首版 5 页、默认 3 项设置」 → 设置已分 8 组折叠；制作方式两档做成正式选项
+└── 「首版 5 页、默认 3 项设置」 → 设置已分 8 组折叠；制作方式两档做成正式选项<br>
+    <b>R33</b>：顶栏 statusBarsPadding 避开状态栏、全局清注释式文案、粘贴框默认展开、书卡图标化 + 删除确认 + 删完刷新、常驻任务条上扒展开 / 下扒收起、调音台进 ☰ 一级入口（docs/R33_U1返工_全局文案清理与安全区.md）
 </div>
 </div>
 
@@ -313,7 +314,7 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <b>下一轮：</b>按 <code>docs/本次测试_语言模型生效判定卡.md</code> 的回传结果定，不再预设功能。</div>
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加，⑧ 由 R26 追加，⑨ 由 R28 追加</footer>
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33 订正，⑧ 由 R26 追加，⑨ 由 R28 追加</footer>
 </div>
 </body>
 </html>

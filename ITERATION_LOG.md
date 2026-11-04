@@ -416,3 +416,16 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - dex 新符号全命中：`AppTopBar / AppBottomBar / RefreshStrip / ChromeSpec / chromeOf / TAB_LIBRARY / TAB_NONE / ☰ / 下拉刷新 / 调音台 / MIXER_PROFILE`；旧符号零残留：`⟳ 刷新 / TabButton / 下拉刷新 · 或点右上角 / 顶栏产品名与定位`。
 - 一处如实说明：`BookStore.delete(...); onChanged()` 这种**源码级**串不会原样出现在 dex 里（编译成 lambda 类），由 `check_structure.py` 的源码断言负责，不拿 dex 字符串当证据。
 - ⚠️ **真机仍是零证据**：本轮没在 24117RK2CC 上点过任何一屏。重点验「左上角 ☰ 能否进设置」「设置域 4 页返回路径」「书架下拉刷新是否仍触发」「删书后列表是否立刻消失」。
+
+
+---
+
+## R33 · U1 返工：状态栏安全区 + 全局清注释式文案（`1.0.0+43`）
+
+- 用户点名做脏：☰/＋ 仍顶进状态栏、下拉刷新还带小字、大标题与「书架只放原书」等注释式文案到处都是。本轮只改表现层。
+- 落地：外层 `Column` 加 `statusBarsPadding()`；`RefreshStrip` 零文字零 Toast（手势阈值 `acc > 55f` 原样）；☰ 改 `DropdownMenu` 一级导航并顺手把调音台提成一级入口；书架大标题/副标题/重复任务卡删；粘贴框默认展开带粘贴/清除/建书；书卡图标化 + 删除 `AlertDialog` + 删完 `onChanged()`；常驻任务条改上扒展开/下扒收起、点整卡不再跳页；其余 7 页页面级大标题与教程说明一并清理。
+- **一行未动**：`Screen` 9 值、`when` 9 分支、`refresh` 计数器、`BackHandler`、`chromeOf`、`modelsFrom`、外部 intent 落地、`Producer.start`、`ProduceService`、native / prompt v2 / `Prefs` / 缓存分桶 / 任务书签 / 4B 设置。
+- **run 42 失败**：真编译抓到两处静态括号计数抓不到的连带错误（悬空 `if`、任务页多一个 `} else {`），已修并在清理脚本加通用检测。**run 43 全绿**（真 Gradle 编译，17 步全 success）。
+- 验证：结构自检 25 项；`r33_verify.py` 反向注入 6/6 全拦下、基线全绿、文件逐字节还原；`r33_apk_audit.py` 拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / `1.0.0+43` / 14 新符号 / 9 旧文案零残留。收尾复核订正两处校验陷阱：binary AXML 权限需按 UTF-16LE 搜；「把小说变成」前缀误报实为通知渠道 description，改精确串并登记 U2。
+- **发布**：`1.0.0+43` · **17,869,544 字节** · 固定直链同步 · 直接覆盖装，模型与音频保留。
+- ⚠️ 真机仍是零证据。下一轮：真机验 → U2 其余 3 页下拉刷新 + 通知渠道描述清理 → 语言模型设置沉页尾 → 沙盒标注导入通道（各自独立一轮）。

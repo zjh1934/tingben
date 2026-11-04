@@ -9,9 +9,10 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ```
 备用（Release 页）：`https://github.com/zjh1934/tingben-android/releases/latest`
 
-- **方向（R31）**：端侧 4B 标注撤下主路，标注改在元宝沙盒做完再导入；App 发力点转到音频模型调参。
-  沙盒输出格式见 `docs/标注工厂_输出契约.md`，导入通道下一轮接。
-- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+38`），当前版本见 `STATUS.md` 头部
+- **方向（R31 定，R33 订正）**：App 发力点转到音频模型调参；换模型不做。
+  **端侧 4B 标注不撤、不替换、保持现状**——想用就用、不想用就不用，只是把 4B 的调整沉到后面。
+  沙盒标注工厂是**可选的第二条输入来源**（格式见 `docs/标注工厂_输出契约.md`），导入通道待接。
+- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+43`），当前版本见 `STATUS.md` 头部
 - 想知道「模型到底标了什么」：设置页「高级（诊断）→ 查看标注内容」，或复制诊断摘要（已带最近 3 块逐条标注全文）。
   诊断摘要把「模型候选的原始产出」与「最终真正进 TTS 的段」分开写，并给出「未采纳首因」；
   进度页与分段看台也区分「模型真标注」和「模型没采纳按原文直读」；
@@ -22,16 +23,16 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 
 ## 用起来就四步
 
-1. 装包，第一次进设置页 →「导入 / 查看模型」→ 导入三个 GGUF（约 5GB，App 自己不联网）
-2. 书架右上「＋ 导入一本书」→ 选 **txt / md / epub**（仓库 `samples/` 里有测试用书）；也可以在微信、文件管理器里对一本书点「打开方式 → 听本」直接加进来；或点「没有文件？粘贴一段文字」
-3. 点书卡的「制作有声书」→ **制作准备页**，四组折叠，默认只露第一组：
+1. 装包，左上角 ☰ →「模型」→ 导入三个 GGUF（约 5GB，App 自己不联网）
+2. 顶栏右上「＋」导入一本书 → 选 **txt / md / epub**（仓库 `samples/` 里有测试用书）；也可以在微信、文件管理器里对一本书点「打开方式 → 听本」直接加进来；或直接在书架默认展开的输入框里粘贴文字（带粘贴 / 清除 / 建书，可折叠收起）
+3. 点书卡的 ▶ 图标 → **制作准备页**，四组折叠，默认只露第一组：
    - **① 做什么 · 仅本次**：制作方式二选一（**默认直接朗读** / 标注后合成＝实验性）、勾章节、预计块数
    - **② 怎么读**：朗读档位（叙事 / 对白 / 广播剧）、语速倾向、情绪强度、角色音色入口
    - **③ 怎么跑**：段间静音（0/300/600ms）、标注失败重做次数、思考档只读展示
    - **④ 高级**：跨书默认值只读 + 「本次恢复默认」
    
    ①②③ 只影响**这一次制作**，不写回设置页；④ 是跨书长期默认值，去设置页改
-   （设置页已按 ① 语言模型 / ② 音频模型 分组，顶部有「作用域」说明）。
+   （设置页按 ① 语言模型 / ② 音频模型 分组，组标题直接写明「长期默认」；R33 已删掉单独的说明卡）。
    本次预设随任务书签落盘，杀进程回来续跑也不丢。
    然后点「开始制作」
 4. 进度页看阶段、分段看台点小格看原文 / 试听 / 重做这一段 →「任务」页管长任务 →「我的音频」里完整播放器试听 / 保存到手机
@@ -65,7 +66,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 - **音频调试**：「试合成一句」不跑整本，只让声音模型读一句话并试听
 - **声音**：全局音色描述（留空用默认身份锚点）、9 个 TTS 采样参数（默认值逐字抄 `qwentts.cpp/sampling-defaults.h`）
 - **角色音色**：角色→音色映射表，`USER_LOCKED` 人工修正优先
-- **调音台（R31）**：设置页顶部「🎛 调音台」进独立页 —— 当前生效配置 18 行只读快照、
+- **调音台（R31，R33 提为一级入口）**：左上角 ☰ →「调音台」直达独立页（设置页第一张卡也保留入口）—— 当前生效配置 18 行只读快照、
   12 维音色（10 条现成中文网格）、9 项采样参数、4 组预设、A/B 试听对比。
   每次改动与试听都把完整参数写进日志（`MIXER_PROFILE` / `MIXER_AB`）。
   维度体系与证据见 `docs/R31_调音台_维度体系与联动表.md`。
@@ -105,7 +106,8 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 
 ```
 app/src/main/java/com/tingben/app/
-  MainActivity.kt          全部 Compose 界面（书架/制作/进度/任务/音频/设置/模型/角色页）
+  MainActivity.kt          页面主体与编排（书架/制作/进度/任务/音频/设置/模型/角色/调音台）
+  AppChrome.kt             U1 抽出的全局壳：顶栏 ☰ 菜单 / ＋、底栏 3 Tab、零文案下拉刷新、chromeOf 映射、状态栏安全区
   ProduceService.kt        前台服务 dataSync、进度通知、按块 PARTIAL_WAKE_LOCK（移植 ReaderVoice, MIT）
   ProduceOptions.kt        折叠分组 + 档位胶囊控件（改写自现成实现）
   core/ProduceConfig.kt    本次制作预设（单一 data class + 宽容 JSON 迁移 + 指纹）
@@ -127,7 +129,8 @@ app/src/main/cpp/          tingben_native.cpp + CMakeLists + 上游公开头
 app/src/main/assets/       prompt_zh.txt (v2) + prompt_zh_v1.txt（可回滚）
 contracts/                 模型清单、中文 prompt、流水线规格
 samples/                   试音短篇.txt / 旧巷钟声.txt / 解析测试.epub
-scripts/                    build_native.sh / check_structure.py / publish_apk.py
+scripts/                    build_native.sh / check_structure.py / publish_apk.py /
+                            r33_ui_clean.py / r33_verify.py / r33_apk_audit.py
 .github/workflows/ci.yml   自检 → 原生缓存 → 编译 → APK 闸门 → Release + raw 直链
 ```
 
