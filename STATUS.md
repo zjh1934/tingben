@@ -720,6 +720,13 @@ Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一�
 - 本地：`scripts/check_structure.py` 18 项通过；两处 UI 函数括号平衡；`segPlayer / currentId / 手搓 MediaPlayer` 零残留；`PlayQueue` 13 个 API 与调用点逐一对照。
 - CI 与拆包结果见下一条追加。**真机仍是零证据**。
 
+### R18 最终验证
+
+- **CI run 24 全绿**（`a74243d3`，API 通道提交；git push 被网关 403，改走 REST 建 blob/tree/commit 更新 ref）。补提交的中文名文档单独一条 `e27f4f9b`。
+- APK `v1.0.0+24` / **17,688,581 字节**，已通过 blob API 取回并拆包硬验：`lib/arm64-v8a/` 7 个 .so、无 `.gguf`、assets 含 prompt v2 + v1、dex 含 `PlayQueue / AudioLibrary / Workbench / 分段看台 / 上一条 / 下一条 / 试听这一段 / 倍速 / BOOK_IMPORT_DUP / AUDIO_REGISTER / 制作方式 / 直接朗读 / 关闭播放器 / 我的音频` 全 14 项、CRC 全检通过。
+- ⚠️ 本环境 `raw.githubusercontent.com` 被网关策略 403（不是文件坏），所以核验走 API；用户手机浏览器历轮可正常下载安装。
+- **真机仍是零证据**：需验 ① 同一 txt 连续「打开方式」两次书架不增；② 做第 3 章 → 音频页显示「书名 · 第 3 章」且再做第 5 章两条都在；③ 进度页小格随合成变绿、点开能试听那一段。
+
 ### 下轮队列
 
 ① 段级「重做这一段」（要把 Workbench 从只读升级成可写，牵动 AnnCache 与 Producer）；② Media3 / 锁屏通知 / 后台播放（会动 Gradle 与前台服务，单独一轮）；③ prompt hash 进缓存主键 + GBNF。
