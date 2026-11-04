@@ -83,7 +83,13 @@ class MainActivity : ComponentActivity() {
 
     private fun pushIncoming(i: android.content.Intent?) {
         if (i == null) return
-        val raw = when (i.action) {
+        // R25 · 真机日志：冷启动 ACTION_MAIN 也被当成「收到分享但没拿到 Uri」记进 CRASH。
+        // 只有 VIEW / EDIT / SEND 是外部导入，普通启动根本不推 incoming。
+        val act = i.action
+        if (act != android.content.Intent.ACTION_VIEW &&
+            act != android.content.Intent.ACTION_EDIT &&
+            act != android.content.Intent.ACTION_SEND) return
+        val raw = when (act) {
             android.content.Intent.ACTION_VIEW, android.content.Intent.ACTION_EDIT -> uriFrom(i)
             android.content.Intent.ACTION_SEND -> uriFrom(i)
                 ?: i.getStringExtra(android.content.Intent.EXTRA_TEXT)
@@ -623,8 +629,11 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     // R20 · 本次预设也对齐已有任务书签，续跑时界面显示的档位与实际跑的一致。
     var mode by remember(book, refresh) {
         val t = TaskResume.load(c)
-        mutableStateOf(if (t != null && t.bookId == id && t.direct)
-            ProduceMode.DIRECT else ProduceMode.ANNOTATE)
+        // R25 · 真机证据：标注档 643 秒 0 条标注，日志还把它写成「通过」。
+        // 新书默认走直接朗读；已有任务仍按书签原样恢复，不擅自改正在跑的档。
+        mutableStateOf(if (t != null && t.bookId == id)
+            (if (t.direct) ProduceMode.DIRECT else ProduceMode.ANNOTATE)
+        else ProduceMode.DIRECT)
     }
     var cfg by remember(book, refresh) {
         val t = TaskResume.load(c)
@@ -666,7 +675,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         // 改的是本次级配置，不写回 Prefs；随任务书签落盘，续跑不丢（联动表 §3）。
         var showAllChapters by remember(book) { mutableStateOf(false) }
 
-        ExpandGroup("① 做什么", "方式和范围，默认就能用", defaultOpen = true) {
+        ExpandGroup("① 做什么 · 仅本次", "方式和范围，只影响这一次，不写回设置", defaultOpen = true) {
             Text("制作方式", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             ProduceMode.values().forEach { m ->
@@ -689,7 +698,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                             if (m == ProduceMode.DIRECT)
                                 "原文照读，不过语言模型；不分角色、不加语气，几分钟就能出声"
                             else
-                                "先逐块判断谁说的、怎么读，再合成；手机会慢不少，但更有戏",
+                                "实验性：真机上曾 10 分钟只产出 0 条标注。先逐块判断谁说的、怎么读，再合成；手机会慢很多，可能白跑",
                             fontSize = 11.5.sp, color = Sub
                         )
                     }
@@ -735,7 +744,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             }
         }
 
-        ExpandGroup("② 怎么读", cfg.summary()) {
+        ExpandGroup("② 怎么读 · 仅本次", cfg.summary()) {
             OptionRow("朗读档位", "决定整本怎么演", 
                 ReadingStyle.values().map { it to it.label }, cfg.style) { cfg = cfg.copy(style = it) }
             OptionRow("语速倾向", "写进导演指令的自然语言引导，不是精确倍速",
@@ -747,7 +756,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 fontSize = 10.5.sp, color = Sub)
         }
 
-        ExpandGroup("③ 怎么跑", "长任务相关") {
+        ExpandGroup("③ 怎么跑 · 仅本次", "长任务相关") {
             OptionRow("段间静音", "段落之间留白",
                 ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) { cfg = cfg.copy(gapMs = it) }
             OptionRow("标注失败重做", "手机上每次重试都要再跑几分钟",
@@ -761,7 +770,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 fontSize = 10.5.sp, color = Sub)
         }
 
-        ExpandGroup("④ 高级", "一般不用改") {
+        ExpandGroup("④ 高级 · 跨书默认值（只读）", "一般不用改") {
             listOf(
                 "上下文窗口" to "${Prefs.nCtx(c)} token",
                 "推理线程" to "${Prefs.threads(c)} 线程",
@@ -776,7 +785,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             TextButton(onClick = { cfg = ProduceConfig() }) { Text("本次恢复默认", fontSize = 12.sp) }
         }
 
-        Text("以上只影响这一次制作；跨书默认值在设置页。续跑会沿用本次预设。",
+        Text("①②③ 仅本次、不写回设置；④ 是跨书长期默认值，去设置页改。续跑会沿用本次预设。",
             fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
         Spacer(Modifier.height(10.dp))
 
@@ -1333,6 +1342,15 @@ private fun AudioScreen(c: Context, refresh: Int) {
 }
 
 // ── ⑤ 设置：分组折叠，不把整页塞满 ─────────────────────────────
+/** R25 · 设置页按模型分组的小标题，明确「长期默认」作用域。 */
+@Composable
+private fun GroupLabel(title: String, sub: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
+        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
+        Text(sub, fontSize = 11.sp, color = Sub)
+    }
+}
+
 @Composable
 private fun SettingOption(label: String, options: List<String>, current: Int, onPick: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
@@ -1370,9 +1388,20 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("设置", fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(14.dp))
+        // R25 · 用户原话「哪些是长期有效的模型设置，哪些是仅这一轮任务的设置，没分开」。
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Text("作用域", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("本页 = 长期默认：改一次，对所有书都生效，写回本机设置。\n"
+                + "制作准备页标「仅本次」的 = 只影响这一次，不写回本页。",
+                fontSize = 12.sp, color = Sub)
+            Spacer(Modifier.height(4.dp))
+            Text("下面按 ① 语言模型 / ② 音频模型 分开，不再混在一起。",
+                fontSize = 11.sp, color = Sub)
+        }
 
         CardBox(Modifier.padding(bottom = 11.dp)) {
-            Text("模型", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("模型文件（两个模型共用）", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(5.dp))
             Text(
                 if (missing.isEmpty()) "都准备好了，可以制作有声书。" else "还差：" + missing.joinToString("、"),
@@ -1385,11 +1414,13 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
+        GroupLabel("① 语言模型 · 长期默认", "只管文字怎么被理解：思考、上下文、线程、随机度")
+
         // 思考外显开关：打开后进度页能逐块看推理，代价是明显更慢
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("思考过程", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("语言模型 · 思考过程", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(Modifier.height(3.dp))
                     Text(if (thinkOn) "开着：每块先想再标，进度页能逐块看推理。"
                          else "关着：直接出标注，最快最省。",
@@ -1409,12 +1440,33 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
+        GroupLabel("② 音频模型 · 长期默认", "只管声音怎么发出来：音色、采样、拟声、试音")
+
+        // 模型参数：只暴露三个真能改的
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Text("语言模型 · 推理参数", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            SettingOption("上下文窗口", listOf("4096", "6144", "8192"),
+                listOf(4096, 6144, 8192).indexOf(nCtx).coerceAtLeast(0)) { i ->
+                Prefs.setNCtx(c, listOf(4096, 6144, 8192)[i]); cfg++
+            }
+            SettingOption("运算线程", listOf("2", "4", "6", "8"),
+                listOf(2, 4, 6, 8).indexOf(threads).coerceAtLeast(0)) { i ->
+                Prefs.setThreads(c, listOf(2, 4, 6, 8)[i]); cfg++
+            }
+            SettingOption("随机度（思考关时有效）", listOf("0 稳", "0.3", "0.6"),
+                listOf(0f, 0.3f, 0.6f).indexOf(temp).coerceAtLeast(0)) { i ->
+                Prefs.setTemperature(c, listOf(0f, 0.3f, 0.6f)[i]); cfg++
+            }
+            Text("8192 在部分手机上会因内存不足崩，不确定就别动。", fontSize = 11.sp, color = Sub)
+        }
+
         // R11 · 非语言表达：哭腔 / 笑 / 叹气 / 抽泣。只增强导演指令，正文一字不改。
         CardBox(Modifier.padding(bottom = 11.dp)) {
             val nv = remember(cfg) { Prefs.nonVerbal(c) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("哭声、笑声、叹气", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("音频模型 · 拟声表达", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(Modifier.height(3.dp))
                     Text(if (nv) "开着：原文写到哭 / 笑 / 叹气时，让声音带出哭腔、气声笑或叹息。"
                          else "关着：一律平稳朗读。",
@@ -1439,7 +1491,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             var samplingOpen by remember { mutableStateOf(false) }
             fun putKnobs(k: TtsKnobs) { Prefs.setTtsKnobs(c, k); cfg++ }
 
-            Text("声音", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("音频模型 · 音色与采样", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(5.dp))
             Text("给整本书定一个固定的嗓子，角色不再每块自己变声。留空 = 沿用原来的默认声音。",
                 fontSize = 11.5.sp, color = Sub)
@@ -1520,28 +1572,9 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
-        // 模型参数：只暴露三个真能改的
-        CardBox(Modifier.padding(bottom = 11.dp)) {
-            Text("模型设置", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Spacer(Modifier.height(4.dp))
-            SettingOption("上下文窗口", listOf("4096", "6144", "8192"),
-                listOf(4096, 6144, 8192).indexOf(nCtx).coerceAtLeast(0)) { i ->
-                Prefs.setNCtx(c, listOf(4096, 6144, 8192)[i]); cfg++
-            }
-            SettingOption("运算线程", listOf("2", "4", "6", "8"),
-                listOf(2, 4, 6, 8).indexOf(threads).coerceAtLeast(0)) { i ->
-                Prefs.setThreads(c, listOf(2, 4, 6, 8)[i]); cfg++
-            }
-            SettingOption("随机度（思考关时有效）", listOf("0 稳", "0.3", "0.6"),
-                listOf(0f, 0.3f, 0.6f).indexOf(temp).coerceAtLeast(0)) { i ->
-                Prefs.setTemperature(c, listOf(0f, 0.3f, 0.6f)[i]); cfg++
-            }
-            Text("8192 在部分手机上会因内存不足崩，不确定就别动。", fontSize = 11.sp, color = Sub)
-        }
-
         // 音频模型调试：真合成，不是 Toast 假按钮；第二个按钮直接验哭/笑/叹气效果
         CardBox(Modifier.padding(bottom = 11.dp)) {
-            Text("音频调试", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("音频模型 · 试音", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(4.dp))
             Text("不跑整本，只让声音模型读一句，确认能出声、能带情绪。", fontSize = 11.5.sp, color = Sub)
             Spacer(Modifier.height(9.dp))

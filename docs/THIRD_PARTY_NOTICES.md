@@ -61,6 +61,30 @@
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
+## 3. ensemble-reads / SegmentMerger
+
+- 来源：`reference/播放与看台现成源码/ensemble-reads__app__src__main__java__com__ensemblereads__app__player__SegmentMerger.kt`
+- 用途：`app/src/main/java/com/tingben/app/core/TextSplitter.kt`
+  （相邻单元合并到目标长度、**超长单段保留原样不切碎语义**、`MAX_SEG_CHARS` 常量思路）
+- 许可证：Apache-2.0（见上游仓库）
+- 说明：算法思路与常量移植，实现为 Kotlin 重写，未复制源文件。
+
+## 4. ReaderVoice-Mobile / SemanticSegmenter
+
+- 来源：`reference/ReaderVoice-Mobile/data-room/src/main/kotlin/com/readervoice/data/semantic/SemanticSegmenter.kt`
+- 用途：`app/src/main/java/com/tingben/app/core/TextSplitter.kt`
+  （引号栈、source-exact 区间切片：拼回去逐字无损，不在引号中间断）
+- 许可证：未核实（上游仓库未随精选包提供 LICENSE；此处只借鉴算法思路，未复制源码文件）
+- 说明：若后续要引入其源码文件，先回上游仓库核实许可证再补本节。
+
+## 5. Antioch / chunker.rs（断句部分）
+
+- 来源：`reference/antioch-audiobook/src/script/chunker.rs`
+- 用途：`app/src/main/java/com/tingben/app/core/TextSplitter.kt`
+  （`split_into_segments` 先段落再句子、`is_heading_like` 短标题单独成段、
+  `split_sentences` 的边界判据；中文标点集与引号栈为本地适配）
+- 许可证：MIT License，Copyright (c) 2026 Xydane（同第 2 节全文）
+
 ## 未采用但调研过的现成方案（登记，避免下轮又去搜）
 
 - **llama.cpp GBNF / JSON Schema 约束输出**：官方支持 `llama_sampler_init_grammar`，

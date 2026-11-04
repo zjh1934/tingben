@@ -431,22 +431,17 @@ object Annotator {
     // 合成阶段从 04:49 卡到 05:24（35 分钟）。长文本单次合成在手机上是灾难。
     fun fallback(chunk: Chunk) = directSegments(chunk.text)
 
-    /** 直接朗读用的短句切分：只按边界断，不删一个字，避免 TTS 一次吃 500 字。 */
-    fun directSegments(text: String): List<Ann> {
-        val out = mutableListOf<Ann>()
-        val buf = StringBuilder()
-        for (ch0 in text) {
-            buf.append(ch0)
-            val boundary = ch0 == '。' || ch0 == '！' || ch0 == '？' || ch0 == '；' ||
-                    ch0 == '\n' || ch0 == '!' || ch0 == '?'
-            if (buf.length >= 110 || (buf.length >= 60 && boundary)) {
-                if (buf.isNotBlank()) out.add(Ann(buf.toString(), "旁白", "平稳、清晰地叙述，句间自然停顿"))
-                buf.setLength(0)
-            }
-        }
-        if (buf.isNotBlank()) out.add(Ann(buf.toString(), "旁白", "平稳、清晰地叙述，句间自然停顿"))
-        return out
+    /**
+     * R25 · 断句改为移植件：只在句末标点 / 段落 / 次级标点边界断，绝不按字数腰斩。
+     * 旧实现 `buf.length >= 110` 会把「冷风就」这类半句切进上一段，真机 TTS_INPUT 里能看到。
+     * 切片拼回去与原文逐字相等（TextSplitter.Stats.charsIn == charsOut）。
+     */
+    fun directWithStats(text: String): Pair<List<Ann>, TextSplitter.Stats> {
+        val (segs, st) = TextSplitter.split(text)
+        return segs.map { Ann(it, "旁白", "平稳、清晰地叙述，句间自然停顿") } to st
     }
+
+    fun directSegments(text: String): List<Ann> = directWithStats(text).first
 }
 
 /** 思考外显的内容本地落盘，只留最近 20 块，不进主界面、不联网。 */
@@ -825,15 +820,39 @@ object Producer {
         val annotated: List<Ann>
         var gateFails = 0
         if (direct) {
-            // 快速出声路径：不加载 4B、不标注，原文整块当旁白直接交给 TTS。
+            // 快速出声路径：不加载 4B、不标注，原文按符号切段后直接交给 TTS。
             // 真机 4B 逐 token 约 10 秒，整本不可等；先让用户几分钟内听到声音。
-            annotated = chunks.flatMap { Annotator.directSegments(it.text) }
+            val stats = mutableListOf<TextSplitter.Stats>()
+            annotated = chunks.flatMap { ch ->
+                val (segs, s) = Annotator.directWithStats(ch.text)
+                stats.add(s)
+                segs
+            }
+            // R25 · 用户原话「起码按符号断，不能按字符段」：把断句结果写进日志，
+            // 贴一段事件就能核对有没有从半句腰斩、原文有没有少字。
+            EventLog.log(EventLog.Kind.PIPELINE, "SPLIT_STATS",
+                "${chunks.size} 块 → ${annotated.size} 段 · 只在标点/段落边界断 · " +
+                    "字符硬切 0 · 句段边界 ${stats.sumOf { it.sentenceCuts }} · " +
+                    "次级边界 ${stats.sumOf { it.softCuts }} · " +
+                    "超长整句保留 ${stats.sumOf { it.oversize }} · " +
+                    "最长 ${stats.maxOfOrNull { it.longest } ?: 0} 字 · " +
+                    "原文 ${stats.sumOf { it.charsIn }} 字 拼回 ${stats.sumOf { it.charsOut }} 字" +
+                    (if (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }) " · 逐字无损" else " · ⚠️字数不一致"),
+                fields = mapOf("chunks" to chunks.size.toString(), "segments" to annotated.size.toString(),
+                    "hardCuts" to "0", "lossless" to
+                        (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
             EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
                 "${chunks.size} 块跳过标注，切成 ${annotated.size} 段直接朗读")
             emit("正在生成声音", 0, annotated.size, 0, "直接朗读原文，不跑语言模型…")
             writeAuditSummary()
         } else {
             // ── 标注阶段：只加载 LLM ──
+            // 真机 16:23→16:29 prefill 单独花了约 600 秒，期间只有 ANN_WAIT，看着像死机。
+            // 开工先说清阶段，别让用户以为「进度一直不动 = 挂了」。
+            EventLog.log(EventLog.Kind.PIPELINE, "ANN_PHASE_HINT",
+                "这一块先把提示词读进模型（NATIVE_PREFILL_*），再逐 token 生成；" +
+                    "预读期间块进度不会动，手机 CPU 上可能好几分钟，不是死机。",
+                fields = mapOf("nCtx" to nCtx.toString(), "chunks" to chunks.size.toString()))
             emit("正在理解文字", 0, chunks.size, 0, "语言模型正在逐块标注谁说的、怎么读…")
             val llmHandle = try {
                 NativeEngine.llmLoad(llm!!.absolutePath, nCtx, threads)
@@ -1074,10 +1093,24 @@ object Producer {
                                 "ruleTotal" to lastChecks.size.toString()))
                         } finally {
                             beat.cancel()
+                            // R25 · 真机日志出现「0 条标注 · 通过 · 耗时 643428ms」：
+                            // 用户点了停止，result 为空，旧文案照样写「通过」，把白跑 10 分钟
+                            // 伪装成成功。零产出、无结果、被中断一律 WARN，不许叫通过。
+                            val endCount = result?.size ?: 0
+                            val endStatus = when {
+                                cancelRequested -> "用户中断（本次不计产出）"
+                                result == null -> "无结果（生成失败或被停止）"
+                                endCount == 0 -> "零标注 ⚠️ 白跑"
+                                usedFallback -> "降级直读"
+                                else -> "通过"
+                            }
+                            val bad = cancelRequested || result == null || endCount == 0 || usedFallback
                             EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_END",
-                                "块 ${i + 1}/${chunks.size} 结束 · ${result?.size ?: 0} 条标注 · " +
-                                    (if (usedFallback) "降级直读" else "通过") +
-                                    " · 耗时 ${System.currentTimeMillis() - blockStartAt}ms")
+                                "块 ${i + 1}/${chunks.size} 结束 · $endCount 条标注 · $endStatus" +
+                                    " · 耗时 ${System.currentTimeMillis() - blockStartAt}ms",
+                                level = if (bad) EventLog.Level.WARN else EventLog.Level.INFO,
+                                fields = mapOf("block" to (i + 1).toString(),
+                                    "annCount" to endCount.toString(), "status" to endStatus))
                         }
                     }
                     val safe = result!!

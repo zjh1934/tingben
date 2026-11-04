@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """听本 · CI 自检：必备文件 / 权重泄漏 / 无网络权限 / 包名 / KDoc 坑 / 审计符号。只依赖标准库。"""
 from pathlib import Path
-import os, sys
+import os, re, sys
 ROOT = Path(__file__).resolve().parent.parent
 errs = []
 REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts",
@@ -110,11 +110,30 @@ if "= raw.lastIndexOf(']')" in pipe_src:
     errs.append("R24 回退：parseWithMeta 又用 lastIndexOf 找 JSON 闭合")
 if "o.optString(\"instruct\", \"平稳叙述\")" in pipe_src:
     errs.append("R24 回退：又出现手搓解析里的默认指令")
+# R25 · 断句移植件 / 设置分层 / 日志不许把零产出写成成功。
+main_src = (ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt").read_text(encoding="utf-8", errors="replace")
+R25_ALL = ["TextSplitter", "SPLIT_STATS", "ANN_PHASE_HINT", "ANN_BLOCK_END",
+           "directWithStats", "零标注 ⚠️ 白跑", "用户中断（本次不计产出）"]
+for sym in R25_ALL:
+    if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
+R25_MAIN = ["private fun GroupLabel(", "① 语言模型 · 长期默认", "② 音频模型 · 长期默认",
+            "仅本次", "作用域", "ACTION_MAIN 也被当成", "ProduceMode.DIRECT",
+            "实验性：真机上曾 10 分钟只产出 0 条标注"]
+for sym in R25_MAIN:
+    if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
+# 反向断言：按字符腰斩的旧实现、把标注档当默认的旧写法不许回来
+# 只认代码形态；注释里写这个字面量是说明旧 bug，不该把自己拦下。
+if re.search(r"if\s*\(\s*buf\.length\s*>=\s*110", pipe_src):
+    errs.append("R25 回退：又出现按 110 字腰斩的旧切分")
+if "mutableStateOf(if (t != null && t.bookId == id && t.direct)" in main_src:
+    errs.append("R25 回退：新书默认又变回标注档")
+
 notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
-for who in ["Finrandojin", "Xydane", "MIT License"]:
+for who in ["Finrandojin", "Xydane", "MIT License", "ensemblereads", "ReaderVoice-Mobile"]:
     if who not in notice: errs.append("第三方声明缺少: " + who)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / native 早停 3 项"
-      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS), len(R24_SYMBOLS)))
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / R25 符号 %d 项 / native 早停 3 项"
+      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS), len(R24_SYMBOLS),
+         len(R25_ALL) + len(R25_MAIN)))
