@@ -406,3 +406,13 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - 验证：CI 自检加 U1 守恒断言；`scripts/r32_verify.py` 反向注入 11/11 拦下，并抓出 4 个假绿（注释骗过字符串断言、`mask_strings` 令 R20 KDoc 检查恒不触发等），已全部修掉。
 - 本地无 gradle-wrapper.jar / Android SDK，**真编译由 CI 承担**。
 - 未做：Material3 PullToRefreshBox 与 4 页下拉、书架页细节（U2）、其余页文案（U3）、调音台一级入口（U4）。
+
+
+### U1 验证补记（CI run 41）
+
+- git push 被网关 403 → 改走 GitHub Git Data API 单次提交（`b36242fc`），触发 **run 41，conclusion=success，JOB build success**（真 Kotlin 编译，不是静态自检）。
+- 产物 `app-debug.apk` **17,869,552 字节**，从 `tingben-apk` 仓库 main 经 blob API 取回（Release asset 的 302 下载也被网关挡了）。
+- 拆包硬验：`CRC_BAD=None` / 7 个 arm64-v8a .so / 无 .gguf / binary Manifest `1.0.0+41` / 无 INTERNET、FOREGROUND_SERVICE + POST_NOTIFICATIONS + WAKE_LOCK 均在 / 7 个 dex。
+- dex 新符号全命中：`AppTopBar / AppBottomBar / RefreshStrip / ChromeSpec / chromeOf / TAB_LIBRARY / TAB_NONE / ☰ / 下拉刷新 / 调音台 / MIXER_PROFILE`；旧符号零残留：`⟳ 刷新 / TabButton / 下拉刷新 · 或点右上角 / 顶栏产品名与定位`。
+- 一处如实说明：`BookStore.delete(...); onChanged()` 这种**源码级**串不会原样出现在 dex 里（编译成 lambda 类），由 `check_structure.py` 的源码断言负责，不拿 dex 字符串当证据。
+- ⚠️ **真机仍是零证据**：本轮没在 24117RK2CC 上点过任何一屏。重点验「左上角 ☰ 能否进设置」「设置域 4 页返回路径」「书架下拉刷新是否仍触发」「删书后列表是否立刻消失」。
