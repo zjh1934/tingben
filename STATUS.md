@@ -1,10 +1,10 @@
 # 听本 · 当前状态
 
-**2026-11-04 · R22 已发**
+**2026-11-04 · R23 已发**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+30`（run 30 全绿） |
+| 版本 | `1.0.0+31`（run 31 全绿） |
 | APK | 约 17.7MB / arm64-v8a / 固定 debug 签名 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
 | CI | 以文末最新 run 为准 |
@@ -910,5 +910,12 @@ P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知**顺延到下一轮第一件**�
 
 ### 发布记录（R23）
 
-（本轮 CI 完成后回填：run 号 / 版本 / APK 字节 / 拆包硬验结果。本轮只改 `Pipeline.kt` 的
-`contentLines()` 与 `check_structure.py` 自检，native 未动 ⇒ CI 原生缓存命中。）
+- `1.0.0+31` · **17,771,033 字节** · **run 31 全绿**（只改 Kotlin + 自检，native 未动 ⇒ 原生缓存命中）
+- 固定地址不变、签名不变，**直接覆盖装**；本轮只放开主事件流 `ANN_CONTENT` 全文，旧分段 WAV 与标注缓存都不作废
+- 拆包硬验：`PK` 头 / CRC 全过 / 154 条目 / 7 个 arm64 .so / 无 `.gguf` / binary Manifest `1.0.0+31`；
+  dex 内 `已截断，全文见诊断页`、`16384` 命中，且 `a.text.take(70)` 残留为 0；
+  `.so` 内 `NATIVE_JSON_CLOSE` 仍在（沿用 run 30 重编产物）
+- 结构自检 20 项 + 审计 13 + R22 12 + **R23 3** + native 3；反向验证回退版被拦下；
+  17 个 Kotlin 括号里 `Importer.kt` 三引号是已知假阳性，CI 真编译通过
+- **真机仍是零证据**：跑试音短篇 → 贴「最近事件」或「复制诊断信息（摘要）」，
+  看 `ANN_CONTENT` 里有没有非「旁白 / 平稳叙述」的条目
