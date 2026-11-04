@@ -1,6 +1,7 @@
 package com.tingben.app.core
 
 import android.content.Context
+import org.json.JSONObject
 import java.security.MessageDigest
 
 /**
@@ -70,6 +71,8 @@ object Prefs {
     private const val KEY_TTS_SUBTEMP = "ttsSubTemp"
     private const val KEY_TTS_SUBTOPK = "ttsSubTopK"
     private const val KEY_TTS_SUBTOPP = "ttsSubTopP"
+    private const val KEY_DEFAULT_PERF = "defaultPerf"
+    private const val KEY_CAST_SEEDED = "castSeeded"
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -144,6 +147,18 @@ object Prefs {
     }
 
     fun resetTtsKnobs(c: Context) = setTtsKnobs(c, TtsKnobs())
+
+    /** R36 · 新任务的默认表演层。只影响「以后新建的任务」，不回写正在跑的 TaskInfo。 */
+    fun defaultPerf(c: Context): ProduceConfig = try {
+        ProduceConfig.fromJson(JSONObject(sp(c).getString(KEY_DEFAULT_PERF, "") ?: ""))
+    } catch (_: Throwable) { ProduceConfig() }
+
+    fun setDefaultPerf(c: Context, v: ProduceConfig) =
+        sp(c).edit().putString(KEY_DEFAULT_PERF, v.toJson().toString()).apply()
+
+    /** 角色预设只 seed 一次，避免覆盖用户后来改过的角色表。 */
+    fun castSeeded(c: Context) = sp(c).getBoolean(KEY_CAST_SEEDED, false)
+    fun setCastSeeded(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_CAST_SEEDED, v).apply()
 
     /**
      * 声音指纹：音色描述 / 角色表 / 采样 / instruct 模板 任一变化，旧 WAV 必须作废。

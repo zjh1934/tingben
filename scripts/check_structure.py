@@ -219,8 +219,12 @@ for p in kt_files:
     raw_src = p.read_text(encoding="utf-8", errors="replace")
     for no, line in enumerate(raw_src.splitlines(), 1):
         s = line.strip()
-        if s.startswith('*') and '*/' in s and s != '*/':
-            errs.append("KDoc 正文出现注释收尾符（原始文本）: %s:%d" % (p.relative_to(ROOT), no))
+        if s.startswith('*') and '*/' in s:
+            # 行尾的 */ 是合法收尾（单行 KDoc 会把正文与收尾写在同一行）；
+            # 只拦正文中间出现、其后还有内容的 */ —— 那才会提前闭合块注释。
+            body = s[:-2].rstrip() if s.endswith('*/') else s
+            if '*/' in body:
+                errs.append("KDoc 正文出现注释收尾符（原始文本）: %s:%d" % (p.relative_to(ROOT), no))
 
 # ── U1 · 全局壳：只许改表现层，导航骨架/数据流必须守恒 ──────────────
 chrome_path = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
@@ -336,6 +340,28 @@ for src_name, src in [("MainActivity", main_src), ("AppChrome", chrome_src)]:
             errs.append("R33 回退：%s 又出现注释式文案 %s" % (src_name, ban))
 if "statusBarsPadding()" not in main_src:
     errs.append("R33 回退：顶栏又贴回状态栏")
+
+# ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 / 角色卡 ──
+R36_ALL = ["MixerSection(", "rememberSaveable(key)", "MixerPresetStore", "MixerPreset(",
+           "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_PERF", "MIXER_DIM",
+           "MIXER_CAST", "当前生效配置", "预设库", "角色预设", "合成边界与覆盖核对",
+           "max_new_tokens（单次音频上限）", "下个任务起", "可增删改", "同名覆盖",
+           "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
+for sym in R36_ALL:
+    if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
+for sym in ["private fun MixerSection(", "Screen.MIXER -> MixerScreen",
+            "onMixer = { screen = Screen.MIXER }", "t.config else Prefs.defaultPerf(c)"]:
+    if sym not in main_src: errs.append("缺少 R36 界面符号: " + sym)
+# 反向：设置页不许再画第二遍 9 项采样，不许出现第二份真值源
+for banned in ["声音采样（进阶）", "putKnobs(", "descDraft"]:
+    if banned in main_src: errs.append("R36 回退：设置页又出现第二套采样 " + banned)
+if "var knobs" in mixer_src:
+    errs.append("R36 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
+if main_src.count("Screen.MIXER ->") != 1:
+    errs.append("R36 回退：调音台导航分支异常")
+bld = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8", errors="replace")
+for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
+    if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)

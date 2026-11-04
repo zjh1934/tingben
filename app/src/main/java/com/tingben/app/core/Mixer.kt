@@ -28,20 +28,24 @@ import com.tingben.app.diag.EventLog
  * 调音台自己不存一份副本 —— 避免出现两份真值源把续跑搞串。
  */
 
-/** 官方 + 社区一致的 12 个音色身份维度。表演类（情绪/语调/意图）不在这里。 */
-enum class VoiceDimension(val label: String, val hint: String) {
-    GENDER("性别", "男声 / 女声 / 中性"),
-    AGE("年龄", "少年 / 青年 / 中年 / 老年"),
-    PITCH("音区", "高 / 中高 / 中 / 中低 / 低"),
-    TIMBRE("音色质地", "清亮 / 温润 / 浑厚 / 沙哑 / 醇厚…"),
-    BRIGHTNESS("明暗", "明亮 / 中等 / 低沉 / 暗"),
-    ROUGHNESS("颗粒感", "光滑 / 微粗 / 粗糙"),
-    BREATH("气息", "低 / 中 / 高（气声）"),
-    WEIGHT("分量与音量", "轻 / 中 / 重；音量大小"),
-    RATE("语速", "慢 / 中 / 快；只写稳定倾向"),
-    CLARITY("吐字", "清晰标准 / 自然 / 略含混"),
-    ACCENT("口音", "普通话 / 方言 / 无"),
-    PERSONA("气质", "儒雅 / 沉稳 / 活泼 / 威严…（只做锚点，不写情绪）")
+/**
+ * 官方 + 社区一致的 12 个音色身份维度。表演类（情绪/语调/意图）不在这里。
+ * R36 · options 逐维候选值取自 ReaderVoice-Mobile 096b_personas.py 的字段取值域，
+ * 不再是「只能看说明、不能逐维调」；第一项恒为「不指定」，不强行凑满 12 项。
+ */
+enum class VoiceDimension(val label: String, val hint: String, val options: List<String>) {
+    GENDER("性别", "男声 / 女声 / 中性", listOf("不指定", "男声", "女声", "中性")),
+    AGE("年龄", "少年 / 青年 / 中年 / 老年", listOf("不指定", "少年", "青年", "中年", "老年")),
+    PITCH("音区", "高 / 中高 / 中 / 中低 / 低", listOf("不指定", "高", "中高", "中", "中低", "低")),
+    TIMBRE("音色质地", "清亮 / 温润 / 浑厚 / 沙哑 / 醇厚", listOf("不指定", "清亮", "温润", "浑厚", "沙哑", "醇厚", "磁性", "苍老")),
+    BRIGHTNESS("明暗", "明亮 / 中等 / 低沉 / 暗", listOf("不指定", "明亮", "中等", "低沉", "暗")),
+    ROUGHNESS("颗粒感", "光滑 / 微粗 / 粗糙", listOf("不指定", "光滑", "微粗", "粗糙")),
+    BREATH("气息", "低 / 中 / 高（气声）", listOf("不指定", "低", "中", "高（明显气声）")),
+    WEIGHT("分量与音量", "轻 / 中 / 重", listOf("不指定", "轻，音量柔和", "中，正常交谈音量", "重，音量充足")),
+    RATE("语速", "慢 / 中 / 快；只写稳定倾向", listOf("不指定", "慢", "适中", "偏快")),
+    CLARITY("吐字", "清晰标准 / 自然 / 略含混", listOf("不指定", "吐字清晰标准", "自然", "略含混")),
+    ACCENT("口音", "普通话 / 方言 / 无", listOf("不指定", "普通话", "略带江浙口音", "京腔", "川渝口音")),
+    PERSONA("气质", "儒雅 / 沉稳 / 活泼 / 威严（只做锚点）", listOf("不指定", "儒雅", "沉稳", "活泼", "威严", "内敛", "慵懒"))
 }
 
 /**
@@ -55,17 +59,25 @@ data class VoicePreset(
     val fields: Map<String, String>,
     val free: String
 ) {
-    /** 拼成 VoiceDesign 的 instruct 身份层。不写情绪、不写剧情、不写「此刻」。 */
-    fun render(): String = buildList {
-        listOf(
-            VoiceDimension.GENDER, VoiceDimension.AGE, VoiceDimension.PITCH,
-            VoiceDimension.TIMBRE, VoiceDimension.BRIGHTNESS, VoiceDimension.ROUGHNESS,
-            VoiceDimension.BREATH, VoiceDimension.WEIGHT, VoiceDimension.RATE,
-            VoiceDimension.CLARITY, VoiceDimension.ACCENT, VoiceDimension.PERSONA
-        ).forEach { d ->
-            fields[d.name]?.takeIf { it.isNotBlank() }?.let { add("${d.label}：${it}") }
+    /** 拼成 VoiceDesign 的 instruct 身份层。不写情绪、不写剧情、不写「此刻」。
+     *  R36 · 12 维可逐维编辑后 fields 可能为空，空 free 不再拼出多余句号。 */
+    fun render(): String {
+        val body = buildList {
+            listOf(
+                VoiceDimension.GENDER, VoiceDimension.AGE, VoiceDimension.PITCH,
+                VoiceDimension.TIMBRE, VoiceDimension.BRIGHTNESS, VoiceDimension.ROUGHNESS,
+                VoiceDimension.BREATH, VoiceDimension.WEIGHT, VoiceDimension.RATE,
+                VoiceDimension.CLARITY, VoiceDimension.ACCENT, VoiceDimension.PERSONA
+            ).forEach { d ->
+                fields[d.name]?.takeIf { it.isNotBlank() }?.let { add("${d.label}：${it}") }
+            }
+        }.joinToString("；")
+        val tail = free.trim().removeSuffix("。")
+        return buildString {
+            if (body.isNotBlank()) append(body).append("。")
+            if (tail.isNotBlank()) append(tail).append("。")
         }
-    }.joinToString("；") + "。" + free.trim().removeSuffix("。") + "。"
+    }
 
     /** 控制台里给用户看的一行摘要。 */
     fun chips(): String = listOf(
@@ -205,4 +217,32 @@ object Mixer {
 
     /** 采样链顺序（README:22），控制台顶部写给用户看，不参与计算。 */
     const val CHAIN = "repetition_penalty → temperature → top_k → top_p → 采样；副解码器独立一套"
+
+    /**
+     * R36 · 参数覆盖核对表：能控的、只读的、结构层不可控的，界面一张表画完。
+     * 第一列组名，第二列项名，第三列「可编辑 / 只读 / 结构」。
+     */
+    fun coverage(): List<Triple<String, String, String>> = buildList {
+        VoiceDimension.entries.forEach { add(Triple("音色身份 12 维", it.label, "可编辑")) }
+        listOf("seed", "max_new_tokens", "temperature", "top_k", "top_p",
+            "repetition_penalty", "subtalker_temperature", "subtalker_top_k", "subtalker_top_p")
+            .forEach { add(Triple("采样 9 项", it, "可编辑")) }
+        listOf("朗读档位", "语速倾向", "情绪强度", "段间静音", "失败重做")
+            .forEach { add(Triple("表演层 5 项", it, "可编辑")) }
+        listOf("拟声表达", "角色映射开关").forEach { add(Triple("音频开关", it, "可编辑")) }
+        listOf("角色预设（增删改）", "预设库（自定义加/删/覆盖）")
+            .forEach { add(Triple("预设", it, "可编辑")) }
+        listOf("lang=chinese", "max_batch=1", "codec 24s 分块", "24kHz/mono WAV", "段长上限")
+            .forEach { add(Triple("边界", it, "只读")) }
+        listOf("量化档 Q8_0", "权重模式", "speaker 表", "speed / pitch 数值字段", "行内标签")
+            .forEach { add(Triple("结构", it, "结构")) }
+    }
+
+    /** 预设的每次增删改都写完整配方，贴诊断摘要即可复盘。 */
+    fun logPreset(action: String, p: MixerPreset) {
+        EventLog.log(EventLog.Kind.ENGINE, "MIXER_PRESET",
+            "$action · id=${p.id} · name=${p.name} · voiceChars=${p.voice.length} · " +
+                "dims=${p.fields.size} · hash=${p.knobs.hash()} · perf=${p.perf.audioStamp()} · " +
+                "builtin=${p.builtin}")
+    }
 }
