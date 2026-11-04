@@ -205,7 +205,16 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     // 每次生成都是独立补全，必须从头开始，不需要跨调用保留上下文（跨块上下文由
     // Kotlin 侧把角色表/最近 3 条拼进 prompt 来带）。
     llama_memory_t mem = llama_get_memory(h->ctx);
-    if (mem) llama_memory_clear(mem, true);
+    if (mem) {
+        llama_memory_clear(mem, true);
+        // 清完立刻查序列最大位置：-1 才算真正归零。
+        // 若不是 -1，说明 llama_decode 的自动位置仍从上一段末尾累加，
+        // 第二块 prefill 就会撑爆窗口 —— 这正是「第二段接不上」的硬证据。
+        const llama_pos posMax = llama_memory_seq_pos_max(mem, 0);
+        char pb[64];
+        snprintf(pb, sizeof(pb), "kvCleared=1 posMax=%d", (int)posMax);
+        note(env, "NATIVE_KV_RESET", pb);
+    }
 
     const char * prompt = env->GetStringUTFChars(jPrompt, nullptr);
     const int plen = (int)strlen(prompt);
@@ -254,15 +263,28 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
         llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(42));
     }
 
-    // R6 · 一次 prefill。llama_batch_get_one 的 pos 为 NULL，位置由
-    // llama_decode 自动追踪；n_ubatch=512 让它在内部安全分片。
-    // 真机实测手工分两批反而更慢（70s + 115s），固定开销按次付。
+    // R15 · 显式 pos，抄 OfflineLLM 的 LLMInference.cpp（batchAdd 逐 token 设 pos）。
+    // llama.h 明确写 llama_batch_get_one 的位置「由 llama_decode 自动追踪」且「avoid using it」：
+    // 同一个 ctx 连续生成多块时，自动位置是否随 memory_clear 归零取决于内部状态，
+    // 这正是「第一块跑完、第二块 prefill 失败」最该排除的不确定性。
+    // 自己填 pos 后，每段补全一定从 0 开始，与上下文内部计数无关。
     {
         char buf[96];
-        snprintf(buf, sizeof(buf), "tokens=%zu nBatch=%u", toks.size(), nBatch);
+        snprintf(buf, sizeof(buf), "tokens=%zu nCtx=%u nBatch=%u avail=%d limit=%d",
+                 toks.size(), nCtx, nBatch, avail, limit);
         note(env, "NATIVE_PREFILL_BEGIN", buf);
-        llama_batch batch = llama_batch_get_one(toks.data(), (int32_t)toks.size());
-        if (llama_decode(h->ctx, batch) != 0) {
+        llama_batch batch = llama_batch_init((int32_t)toks.size(), 0, 1);
+        for (int j = 0; j < (int)toks.size(); ++j) {
+            batch.token[j]      = toks[(size_t)j];
+            batch.pos[j]        = (llama_pos)j;
+            batch.n_seq_id[j]   = 1;
+            batch.seq_id[j][0]  = 0;
+            batch.logits[j]     = (j == (int)toks.size() - 1) ? 1 : 0;
+        }
+        batch.n_tokens = (int32_t)toks.size();
+        const int rc = llama_decode(h->ctx, batch);
+        llama_batch_free(batch);
+        if (rc != 0) {
             if (g_cancel.load()) {
                 note(env, "NATIVE_PREFILL_ABORT", "用户停止，prefill 已中止");
                 return env->NewStringUTF("");
@@ -276,6 +298,11 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     note(env, "NATIVE_DECODE_BEGIN", "开始逐 token 生成");
 
     std::string out;
+    llama_batch next = llama_batch_init(1, 0, 1);
+    next.n_tokens = 1;
+    next.n_seq_id[0] = 1;
+    next.seq_id[0][0] = 0;
+    next.logits[0] = 1;
     for (int i = 0; i < limit; ++i) {
         if (g_cancel.load()) { LOGI("generate cancelled"); break; }
         llama_token id = llama_sampler_sample(h->smpl, h->ctx, -1);
@@ -285,7 +312,8 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
         int len = llama_token_to_piece(vocab, id, piece, sizeof(piece), 0, true);
         if (len > 0) out.append(piece, (size_t)len);
 
-        llama_batch next = llama_batch_get_one(&id, 1);
+        next.token[0] = id;
+        next.pos[0]   = (llama_pos)(toks.size() + i);
         if (llama_decode(h->ctx, next) != 0) {
             note(env, "NATIVE_DECODE_FAIL", "llama_decode 返回非 0");
             break;
@@ -297,6 +325,7 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
             note(env, "NATIVE_DECODE_STEP", buf);
         }
     }
+    llama_batch_free(next);
     {
         char buf[96];
         snprintf(buf, sizeof(buf), "outChars=%zu limit=%d", out.size(), limit);

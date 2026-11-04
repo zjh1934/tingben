@@ -67,6 +67,7 @@ object EventLog {
 
     fun clearCrash() { try { crashFile?.delete() } catch (_: Throwable) { } }
 
+    @Synchronized
     fun log(kind: Kind, action: String, detail: String = "") {
         if (kind == Kind.ENGINE) {
             lastEngineAction = action

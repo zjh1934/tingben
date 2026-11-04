@@ -6,8 +6,11 @@ import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -230,6 +233,9 @@ object ChapterSplitter {
 // ─────────────────────────── 标注（Alexandria，加逐字 gate） ───────────────────────────
 
 object Annotator {
+    /** 思考闭标签。写成常量，避免再出现 `contains("")` 那种恒真的空串判断。 */
+    const val THINK_CLOSE = "</think>"
+
     fun templates(c: Context): Pair<String, String> = try {
         val raw = c.assets.open("prompt_zh.txt").bufferedReader().use { it.readText() }
         val parts = raw.split("---SEPARATOR---", limit = 2)
@@ -254,7 +260,7 @@ object Annotator {
 
     /** 把模型「想了什么」抽出来，单独存；标注 JSON 仍由 parse() 从 </think> 之后取。 */
     fun extractThinking(raw: String): String {
-        val end = raw.lastIndexOf("</think>")
+        val end = raw.lastIndexOf(THINK_CLOSE)
         if (end < 0) return ""
         var s = raw.indexOf("<think>")
         if (s < 0) s = 0 else s += 7
@@ -264,8 +270,8 @@ object Annotator {
     /** 四级 JSON 修复，抄 Alexandria repair_json_array，但更克制。 */
     fun parse(rawIn: String): List<Ann>? {
         var raw = rawIn
-        val close = raw.lastIndexOf("</think>")
-        if (close >= 0) raw = raw.substring(close + 8)
+        val close = raw.lastIndexOf(THINK_CLOSE)
+        if (close >= 0) raw = raw.substring(close + THINK_CLOSE.length)
         raw = raw.replace(Regex("```(?:json)?", RegexOption.IGNORE_CASE), "").trim()
         val s = raw.indexOf('[')
         val e = raw.lastIndexOf(']')
@@ -681,12 +687,31 @@ object Producer {
                     var result = AnnCache.read(work, i)
                     if (result != null) {
                         resumed++
+                        EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
+                            "块 ${i + 1}/${chunks.size} 从磁盘续上 · 角色表 ${roster.size} · 近邻 ${recent.size}")
                     } else {
                         val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn)
                         // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
                         // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
                         val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
                                     else minOf(1024, chunk.text.length * 2 + 160)
+                        EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
+                            "块 ${i + 1}/${chunks.size} 原文 ${chunk.text.length} 字 · prompt ${prompt.length} 字" +
+                                " · 预算 $budget · nCtx $nCtx · 角色表 ${roster.size} · 近邻 ${recent.size}" +
+                                " · 思考 $thinkOn")
+                        // 手机 CPU 上一块要几分钟，prefill 单次 llama_decode 期间 native 没有任何事件，
+                        // 界面又只在块完成才更新 i+1/N —— 用户看起来就像「只跑第一段」。
+                        // 这条纯 Kotlin 心跳不碰状态机，只往事件流写「还活着、算到哪块」。
+                        val beat = scope.launch(Dispatchers.IO) {
+                            var sec = 0
+                            while (isActive) {
+                                delay(5000)
+                                sec += 5
+                                EventLog.log(EventLog.Kind.ENGINE, "ANN_WAIT",
+                                    "块 ${i + 1}/${chunks.size} 仍在算 · 已 ${sec}s（手机 CPU 慢，不是死机）")
+                            }
+                        }
+                        try {
                         for (attempt in 0..1) {
                             // R9 · 停止可能发生在 prefill 里，generate 返回后必须立刻查；
                             // 否则空结果会被当成「标注失败」再重试一次，停止就永远不生效。
@@ -712,9 +737,11 @@ object Producer {
                             if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
                             // 思考档常见：预算全花在推理上，JSON 被拦腰截断。
                             // 重试同样的 prompt 只会再来一次几分钟的空转，直接降级。
-                            if (thinkOn && raw.contains("<think") && !raw.contains("")) {
+                            // 旧写法是 !raw.contains("") —— 空串恒包含，这个分支永远进不来，
+                            // 于是思考被截断后照样重试一次、白烧几分钟。用常量杜绝再写空串。
+                            if (thinkOn && !raw.contains(Annotator.THINK_CLOSE)) {
                                 EventLog.log(EventLog.Kind.PIPELINE, "THINK_TRUNCATED",
-                                    "块 $i 思考没写完就被预算截断，跳过重试")
+                                    "块 $i 没有闭合思考标签，推理被预算截断，跳过重试")
                                 break
                             }
                             EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY", "块 $i 第 $attempt 次")
@@ -725,6 +752,11 @@ object Producer {
                             EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
                         }
                         AnnCache.write(work, i, result)
+                        } finally {
+                            beat.cancel()
+                            EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_END",
+                                "块 ${i + 1}/${chunks.size} 结束 · ${result?.size ?: 0} 条标注")
+                        }
                     }
                     val safe = result!!
                     safe.forEach { a ->

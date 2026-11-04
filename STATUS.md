@@ -533,3 +533,45 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 ### 真机待验（零证据，如实说）
 
 试合成一句 → 填一个全局音色听差别 → 角色页给某个角色写描述 → 跑一小块看 `VOICE_MODE` / `VOICE_INVALIDATE`。
+
+## R15 · 「只跑第一段 / 上下文分配」代码核查
+
+用户怀疑逐块喂模型时第二段接不上、上下文分配有问题。**逐行读代码后的结论**：循环本身没有「只跑第一段」的写法，但确实有 4 个会让人（和日志）看成接不上的真问题。
+
+### 循环本身（没问题，但说明清楚）
+
+`Producer.run()` 里 `for ((i, chunk) in chunks.withIndex())`：每块独立 `buildPrompt → llmGenerate → parse → gate → AnnCache.write → emit(i+1/N)`；`roster` / `recent` 逐块累积并拼进下一块 prompt；续跑时 `AnnCache.read(work, i)` 命中就直接读盘，照样喂上下文。**不是只跑第一段**。
+
+### 真问题 1 · prefill 期间零反馈（用户感知的根因）
+
+`llmGenerate` 的 prefill 是**单次 `llama_decode`**，真机实测 63~115 秒；这期间 native 只有 `NATIVE_PREFILL_BEGIN`，没有 DONE；Kotlin 又只在整块完成后才 `emit(i+1/N)`。所以界面长时间停在「已标注 1/N」或纹丝不动 → 看起来像卡在第一段。
+**修**：加纯 Kotlin 心跳 `ANN_WAIT`（每 5s 一条，只写事件流不碰状态机）、每块 `ANN_BLOCK_BEGIN / ANN_BLOCK_END`（带 i/N、原文/ prompt 字数、预算、nCtx、角色表、近邻数、是否续上）。以后日志一眼能看出第二块到底有没有开跑。
+
+### 真问题 2 · 思考截断保护是个永远进不去的分支
+
+`if (thinkOn && raw.contains("<think") && !raw.contains(""))` —— **`contains("")` 恒真**，取反恒假。思考被预算截断后仍会 `GATE_RETRY` 重跑同样 prompt，白烧几分钟。
+**修**：`Annotator.THINK_CLOSE = "</think>"` 常量，判断改为「没有闭标签 = 截断」。第一次写常量时又差点误写成空串，已用脚本断言 `THINK_CLOSE == "</think>"` 拦下。
+
+### 真问题 3 · 位置是否真的归零，原来靠猜（上下文分配的核心）
+
+`llmGenerate` 开头 `llama_memory_clear(mem, true)` 清 KV，但 prefill/decode 都用 `llama_batch_get_one` —— `llama.h` 明写它的位置「由 llama_decode 自动追踪」且标注 **avoid using it**。清 memory 是否连带重置内部位置计数，代码里无法保证；若不归零，第二块 prefill 的 pos 会从第一块末尾累加，直接撑爆 4096 窗口（+13 真机日志 `04:49:01 tokens=592 立刻 NATIVE_PREFILL_FAIL` 正是这个形态）。
+**修**：抄 OfflineLLM `LLMInference.cpp` 的 `batchAdd`（显式 `batch.pos[i] = pos`），prefill 每个 token 位置从 0 递增，decode 每 token 位置 = `promptTokens + i`，**完全不依赖内部状态**；并在 clear 后立刻 `llama_memory_seq_pos_max(mem, 0)` 写一条 `NATIVE_KV_RESET posMax=?`，让归零与否成为可查的硬证据（-1 才是真归零）。
+
+### 真问题 4 · 全选章节会开两套缓存桶
+
+「全选」传的是全量 `Set<Int>`，而「不勾选」传 `null`，`AnnCache.bucket` 因此算出 `0_1_2...` 和 `all` 两个桶 —— 同一本书整本跑过一次后点全选，读不到缓存，从 1/N 重跑，看起来又「接不上」。
+**修**：`selected.size == chapters.size` 一律归一化为 `null`（4 处：hasCached / 开始制作 / 直接朗读 / 缓存查询）。
+
+### 上下文分配：够用，但「接得薄」（设计取舍，不是 bug）
+
+- `n_ctx=4096`、`n_batch=n_ctx`、`n_ubatch=512`；native 每次算 `avail = nCtx - promptTokens - 8`，`limit = min(budget, avail)`，并把 `avail/limit` 写进 `NATIVE_PREFILL_BEGIN`。真机 prompt 约 600~700 token、快速档预算 ≤1024，合计约 1700，余量充足。
+- **但每次生成都清 KV，模型看不到前面任何一块的原文**。跨块只靠「角色名表 + 最近 3 条标注」拼进 prompt，而且这 3 条是**上一块末尾**的 3 句，不是 3 块各一条。所以角色归属跨长段容易漂 —— 这是 Alexandria 的分块取舍，不是崩溃；要补得改 prompt（如「最近 3 块各取首尾 + 别名表」），会改变 4B 输出，留到下一轮单独做，别和这次 native 改动混在一起验。
+- 4B 输出仍受字符级 gate 约束，逐字红线未动。
+
+### 顺手
+
+`EventLog.log` 加 `@Synchronized`：心跳协程与 JNI `nativeNote` 并发写同一个文件，原来 `appendText` 可能交错出半行。
+
+### 状态
+
+本地静态自检全绿（括号 / THINK_CLOSE 断言 / 11 个 Kotlin / JNI 符号 / 4 处归一化 / 逐字 gate / 无 INTERNET）；本轮改了 `tingben_native.cpp`，CI 会全量重编原生引擎。真机待验：跑两小块，看事件流里是否连续出现 `ANN_BLOCK_BEGIN 1/2 → ANN_BLOCK_END 1/2 → ANN_BLOCK_BEGIN 2/2`，以及 `NATIVE_KV_RESET posMax=-1`。

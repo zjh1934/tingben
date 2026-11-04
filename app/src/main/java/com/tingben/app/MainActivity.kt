@@ -593,7 +593,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     val thinkOn = remember(refresh) { Prefs.thinking(c) }
     val hasCached = remember(book, refresh, selected, cacheTick, thinkOn) {
         book?.let { Producer.hasProgress(c, it.id, false, thinkOn,
-            if (selected.isEmpty()) null else selected) } ?: false
+            if (selected.isEmpty() || selected.size == chapters.size) null else selected) } ?: false
     }
     if (book == null) {
         Column(Modifier.padding(16.dp)) { Text("这本书不在了"); TextButton(onClick = onBack) { Text("返回书架") } }
@@ -656,7 +656,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 
         Button(
             onClick = {
-                val sel = if (selected.isEmpty()) null else selected
+                val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
                 onStarted(sel)
                 Producer.start(c, book, sel)
                 onProgress()
@@ -668,7 +668,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         if (hasCached && !st.running) {
             TextButton(onClick = {
                 Producer.clearProgress(c, book.id, false, thinkOn,
-                    if (selected.isEmpty()) null else selected)
+                    if (selected.isEmpty() || selected.size == chapters.size) null else selected)
                 cacheTick++
             }, Modifier.fillMaxWidth()) { Text("从头重做（清掉已做的块）", fontSize = 12.sp) }
             Text("上次没跑完，直接点「继续制作」会从停下的地方接着跑，不重算已做好的块。",
@@ -677,7 +677,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 
         TextButton(
             onClick = {
-                val sel = if (selected.isEmpty()) null else selected
+                val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
                 onStarted(sel)
                 Producer.start(c, book, sel, directRead = true)
                 onProgress()
