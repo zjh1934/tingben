@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | **1.0.0+17 (117)** · 17,603,743 字节 · 已发布 |
-| APK | 17,487,576 字节 / 16.7MB / arm64-v8a |
+| 版本 | 见文末最新发布记录（R21 插队轮构建中） |
+| APK | 约 17.7MB / arm64-v8a / 固定 debug 签名 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | **run 17 全绿**（原生缓存命中、编到成品、APK 闸门、Release、raw 直链同步） |
+| CI | 以文末最新 run 为准 |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -841,3 +841,45 @@ Kotlin 侧本地静态自检已全绿；CI 复跑 + 拆包核对结果见下一�
 
 - **P1 剩**：② 前台服务 + `PARTIAL_WAKE_LOCK` + 通知；③ 段级「重做这一段」。仍各自独立一轮。
 - **P2 追加**：把本次预设「存为预设」（抄 index-tts-webui 的 Session 预设管理），目前预设只随单任务走、不能复用给下一本。
+
+## R21 · 插队：日志模块重设计 + 标注成品审计 + 双模型配合研究
+
+用户指令：开工读长期记忆 skill 的 playbook / environment-facts；把日志模块插队重做；
+下一个包要能看到「模型标注出来的东西、长度合不合适、规则有没有生效、别跑半天啥也没标」；
+上网研究两个模型怎么配合；交付「研究回来的想法 + 打包好的安装包」。
+
+### 研究（多源调研 + 官方回核）
+- VoiceDesign 是 `text + instruct` 互斥契约，不传 `speaker`；CustomVoice 才用 speaker，Base 才用参考音频。
+- `seed` 只保证同参数采样复现，不保证跨段锁定音色；官方未承诺 12Hz VoiceDesign 支持行内标签，
+  也没有 `speed`/`pitch` 字段。Qwen3 非思考档推荐 temp 0.7 / top_p 0.8，思考档禁贪心。
+- GBNF 只守 JSON 语法壳，不保证逐字回显；字符级 gate 仍是最终裁判。
+- **订正**：「小模型回显平行 JSON 会循环」是 Antioch 源码注释里的工程判断，
+  本次调研未找到第三方基准实测，以后只当风险假设，不当已证实结论。
+- 报告 `docs/双模型配合与日志可观测_调研.md`，判断 `docs/双模型配合_我的想法.md`。
+
+### 代码（6 个文件，native / 状态机 / 逐字契约一行未动）
+- `diag/EventLog.kt` 重写：主日志格式不变，新增诊断态详情（level + k=v）、200 行环形缓冲、
+  崩溃文件附最后 10 个块摘要；`nativeNote` 签名不变。
+- `diag/AuditLog.kt` 新增：每块一条 jsonl（条数 / 长度 / 差异偏移 / 9 条规则 / 失败码 /
+  产出开头结尾截取 / 状态），按 run 轮转只留最近 3 次。
+- `core/Pipeline.kt`：`parseWithMeta` + `ruleChecks` + `firstDiff`；标注循环埋
+  `AUDIT_RUN_BEGIN / ANN_RAW / ANN_PREVIEW / ANN_EMPTY / ANN_AUDIT / AUDIT_SUMMARY`；
+  续上的块记 `CACHED`，取消与直接朗读也都写汇总。
+- `core/VoiceProfile.kt` 加 `hasIdentityTerms` 纯查询；`MainActivity.kt` 高级诊断区重做
+  （审计汇总 / 逐块 / 规则 / 截取 / 两级复制，每 3 秒刷新）。
+- `scripts/check_structure.py`：修掉「字符串里 `*/*` 被误判成注释」的自检 bug，
+  新增 KDoc 提前闭合检查与 13 个审计符号断言。
+
+### 验证
+- 本地：结构自检 20 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名 / KDoc 坑 0 / 审计符号 13 项全过；
+  17 个 Kotlin 文件括号净值全 0；审计逻辑对拍 6 例（正常 9/9，围栏/改写/身份词各自命中，
+  纯废话与思考截断均 0 条 → 会触发 `ANN_EMPTY`）。
+- CI 真编译 + 拆包硬验：见下。
+- **真机零证据**：装新版跑试音短篇，设置页「高级」看 `AUDIT_SUMMARY`，贴诊断摘要给我。
+
+### 队列
+P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知**顺延到下一轮第一件**（本轮被插队）；
+之后按 `docs/R19_路线图与决策记录.md` 与 `docs/双模型配合_我的想法.md` 的 C→B 顺序。
+
+### 发布记录（R21）
+- 待 CI 完成后补：版本号 / 字节数 / run 号 / 拆包核验结论。

@@ -65,6 +65,9 @@ object VoiceProfile {
         return s.trim().removeSuffix("。").removeSuffix("，") to hits
     }
 
+    /** 给标注审计用：本段指令里是否混进了音色身份词（只查 4B 原始产出，不做剥离）。 */
+    fun hasIdentityTerms(s: String): Boolean = IDENTITY_TERMS.any { s.contains(it) }
+
     private fun occurrences(s: String, sub: String): Int {
         var n = 0
         var i = s.indexOf(sub)

@@ -272,6 +272,18 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <div class="warn" style="margin-top:14px"><b>明确不做：</b>无障碍保活、模拟点击、悬浮窗保活、为亮屏而亮屏、多实例并行合成、PDF/OCR、模型进包、界面暴露 .gguf / token 事件、改编剧本档（要换逐字契约，按用户要求搁置）。<br>
 六条决策与纪律详见 <b>docs/R19_路线图与决策记录.md</b>；后台保活依据见 <b>docs/后台保活与浮窗_调研.md</b>。</div>
 
+<div class="panel">
+<b>⑦ R21 插队 · 日志重设计 + 标注成品审计</b>
+<div class="tree" style="margin-top:8px">
+用户怀疑「跑半天啥也没标」→ 两级日志 events.log / events_detail.log + 每块 audit jsonl<br>
+9 条 prompt 规则逐条 PASS / VIOLATE · 失败码 · 产出开头结尾截取 · 崩溃前 200 行环形缓冲<br>
+设置页高级（诊断）：审计汇总 / 逐块明细 / 规则生效 / 产出截取 / 两级复制<br>
+双模型配合研究：VoiceDesign 只吃 text + instruct、不传 speaker；GBNF 只守语法壳；规则优先 + 小上下文 4B + 程序校验 + TTS 执行
+</div>
+<div class="redline" style="margin-top:10px"><b>顺延：</b>P1② 前台服务 + 唤醒锁 + 通知，下一轮第一件。<br>
+<b>没碰：</b>native / JNI 签名 / Producer.start / bucket / gate 表达式 / prompt v2 / 状态机 / 网络权限。</div>
+</div>
+
 <footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加</footer>
 </div>
 </body>

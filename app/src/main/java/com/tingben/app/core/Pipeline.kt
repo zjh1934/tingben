@@ -1,6 +1,8 @@
 package com.tingben.app.core
 
 import android.content.Context
+import com.tingben.app.diag.AuditLog
+import com.tingben.app.diag.BlockAudit
 import com.tingben.app.diag.EventLog
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.CoroutineScope
@@ -299,16 +301,32 @@ object Annotator {
         return raw.substring(s, end).trim()
     }
 
-    /** 四级 JSON 修复，抄 Alexandria repair_json_array，但更克制。 */
-    fun parse(rawIn: String): List<Ann>? {
+    /** R21 · 解析过程的可观测量：长度、思考、修复层级、截取片段。 */
+    data class ParseMeta(
+        val rawChars: Int, val thinkChars: Int, val bodyChars: Int,
+        val jsonStart: Int, val jsonEnd: Int, val repairLevel: Int,
+        val fenceRemoved: Boolean, val thinkClosed: Boolean, val trailingChars: Int,
+        val previewHead: String, val previewTail: String
+    )
+
+    /** 四级 JSON 修复，抄 Alexandria repair_json_array，但更克制；同时把过程记下来。 */
+    fun parseWithMeta(rawIn: String): Pair<List<Ann>?, ParseMeta> {
         var raw = rawIn
+        val rawChars = raw.length
         val close = raw.lastIndexOf(THINK_CLOSE)
+        val thinkClosed = close >= 0
+        val thinkChars = if (close >= 0) close else 0
         if (close >= 0) raw = raw.substring(close + THINK_CLOSE.length)
+        val fenceRemoved = raw.contains("```")
         raw = raw.replace(Regex("```(?:json)?", RegexOption.IGNORE_CASE), "").trim()
         val s = raw.indexOf('[')
         val e = raw.lastIndexOf(']')
-        if (s < 0) return null
-        val body = if (e > s) raw.substring(s, e + 1) else raw.substring(s) + "]"
+        val body = if (s < 0) "" else if (e > s) raw.substring(s, e + 1) else raw.substring(s) + "]"
+        val trailingChars = if (e >= 0) raw.substring(e + 1).trim().length else 0
+        val head = raw.take(160).replace('\n', '⏎')
+        val tail = raw.takeLast(80).replace('\n', '⏎')
+        fun meta(level: Int) = ParseMeta(rawChars, thinkChars, body.length, s, e, level,
+            fenceRemoved, thinkClosed, trailingChars, head, tail)
 
         val tries = mutableListOf(body)
         tries.add(body.replace(Regex("\\}\\s*\\{"), "},\n{"))
@@ -318,7 +336,7 @@ object Annotator {
         val last = body.lastIndexOf("},")
         if (last > 0) tries.add(body.substring(0, last + 1) + "]")
 
-        for (t in tries) {
+        for ((level, t) in tries.withIndex()) {
             try {
                 val a = JSONArray(t)
                 val out = mutableListOf<Ann>()
@@ -327,10 +345,50 @@ object Annotator {
                     out.add(Ann(o.optString("text", ""), o.optString("speaker", "旁白"),
                         o.optString("instruct", "平稳叙述")))
                 }
-                if (out.isNotEmpty() && out.all { it.text.isNotEmpty() }) return out
+                if (out.isNotEmpty() && out.all { it.text.isNotEmpty() }) return out to meta(level)
             } catch (_: Throwable) { }
         }
-        return null
+        return null to meta(-1)
+    }
+
+    fun parse(rawIn: String): List<Ann>? = parseWithMeta(rawIn).first
+
+    /** 首个差异偏移；全等返回 -1。gate 失败时写进日志，不用把整段原文贴出来。 */
+    fun firstDiff(a: String, b: String): Int {
+        val n = minOf(a.length, b.length)
+        for (i in 0 until n) if (a[i] != b[i]) return i
+        return if (a.length == b.length) -1 else n
+    }
+
+    /** 逐条检查 v2 提示词里的硬规则到底有没有生效（查 4B 原始产出，不是清理后的）。 */
+    fun ruleChecks(anns: List<Ann>, original: String, m: ParseMeta,
+                   roster: Set<String>): Map<String, Boolean> {
+        val joined = anns.joinToString("") { it.text }
+        var cursor = 0
+        var ordered = anns.isNotEmpty()
+        for (a in anns) {
+            if (a.text.isEmpty() || original.indexOf(a.text, cursor) != cursor) { ordered = false; break }
+            cursor += a.text.length
+        }
+        if (cursor != original.length) ordered = false
+        val bound = original.count { it in "。！？；.!?;" } + 2
+        val inlineTag = Regex("\\[[A-Za-z_]{2,}\\]")
+        val dependent = listOf("仍然", "依旧", "同上", "如前", "继续")
+        return linkedMapOf(
+            "VERBATIM" to (anns.isNotEmpty() && joined == original),
+            "ORDERED_SUBSTRING" to ordered,
+            "JSON_ONLY" to (m.jsonStart == 0 && m.jsonEnd > m.jsonStart && !m.fenceRemoved),
+            "NO_TRAILING_TEXT" to (m.trailingChars == 0),
+            "NO_INLINE_TAG" to anns.all { !inlineTag.containsMatchIn(it.instruct) },
+            "NO_IDENTITY" to anns.all { !VoiceProfile.hasIdentityTerms(it.instruct) },
+            "COUNT_BOUND" to (anns.isEmpty() || anns.size <= bound),
+            "SPEAKER_OK" to anns.all {
+                it.speaker.isNotBlank() && (roster.isEmpty() || it.speaker == "旁白" || it.speaker in roster)
+            },
+            "INSTRUCT_OK" to anns.all {
+                it.instruct.isNotBlank() && dependent.none { w -> it.instruct.contains(w) }
+            }
+        )
     }
 
     /** 字符级红线：所有 text 顺序拼接必须 == 本块原文。 */
@@ -705,8 +763,30 @@ object Producer {
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
             "think=$thinkOn nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}" +
                 " · 预设=" + config.summary())
+        // R21 · 本次 run 的所有块落进同一个 jsonl：跑半天到底标了几条、长度对不对、
+        // 哪条规则没生效，全部可查。直接朗读也登记，只是如实写「不过语言模型」。
+        AuditLog.beginRun(c, linkedMapOf(
+            "book" to book.title,
+            "mode" to (if (direct) "直接朗读" else "标注后合成"),
+            "think" to thinkOn.toString(), "nCtx" to nCtx.toString(),
+            "chunks" to chunks.size.toString(),
+            "prompt" to ("v2 sha=" + Integer.toHexString(sys.hashCode()))))
+        EventLog.log(EventLog.Kind.AUDIT, "AUDIT_RUN_BEGIN",
+            "run=${AuditLog.currentRun()} · ${chunks.size} 块 · " +
+                (if (direct) "不过语言模型" else "逐块标注"),
+            fields = mapOf("runId" to AuditLog.currentRun(), "book" to book.title,
+                "mode" to (if (direct) "直接朗读" else "标注后合成")))
         if (thinkOn) ThinkingStore.clear(c)
         EventLog.resetEngine()
+
+        // R21 · 无论正常跑完、点停止、还是直接朗读，都落一条可复制的审计汇总。
+        // 放在局部函数里，三条出口共用，避免某一分支悄悄不写。
+        fun writeAuditSummary() {
+            EventLog.log(EventLog.Kind.AUDIT, "AUDIT_SUMMARY",
+                AuditLog.summaryText(c).replace('\n', '｜'),
+                fields = mapOf("runId" to AuditLog.currentRun()))
+            AuditLog.endRun()
+        }
 
         val annotated: List<Ann>
         var gateFails = 0
@@ -717,6 +797,7 @@ object Producer {
             EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
                 "${chunks.size} 块跳过标注，切成 ${annotated.size} 段直接朗读")
             emit("正在生成声音", 0, annotated.size, 0, "直接朗读原文，不跑语言模型…")
+            writeAuditSummary()
         } else {
             // ── 标注阶段：只加载 LLM ──
             emit("正在理解文字", 0, chunks.size, 0, "语言模型正在逐块标注谁说的、怎么读…")
@@ -746,9 +827,28 @@ object Producer {
                     var result = AnnCache.read(work, i)
                     if (result != null) {
                         resumed++
+                        // 续上的块也要在审计里占一行，否则用户会以为「这一块没标」。
+                        AuditLog.write(c, BlockAudit(
+                            runId = AuditLog.currentRun(), block = i + 1, total = chunks.size,
+                            attempt = 0, origChars = chunk.text.length, rawChars = 0,
+                            thinkChars = 0, bodyChars = 0, annCount = result.size,
+                            textChars = result.sumOf { it.text.length },
+                            lenDelta = result.sumOf { it.text.length } - chunk.text.length,
+                            firstDiff = -1,
+                            speakers = result.map { it.speaker }.distinct().joinToString("、"),
+                            instructEmpty = result.count { it.instruct.isBlank() },
+                            status = AuditLog.CACHED, failCode = "-", rules = emptyMap(),
+                            previewHead = "（本块从磁盘续上，未重跑语言模型）", previewTail = "",
+                            elapsedMs = 0L, fromCache = true))
                         EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
                             "块 ${i + 1}/${chunks.size} 从磁盘续上 · 角色表 ${roster.size} · 近邻 ${recent.size}")
                     } else {
+                        var lastMeta: Annotator.ParseMeta? = null
+                        var lastChecks: Map<String, Boolean> = emptyMap()
+                        var lastFailCode = "-"
+                        var attemptCount = 0
+                        var usedFallback = false
+                        val blockStartAt = System.currentTimeMillis()
                         val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn,
                             // R16 · 上一块末尾 120 字作为「紧邻前因」。续跑读盘的块也照样传，
                             // 保证同一块无论重跑还是续跑，看到的上下文一致。
@@ -797,29 +897,97 @@ object Producer {
                                 val th = Annotator.extractThinking(raw)
                                 if (th.isNotBlank()) ThinkingStore.write(c, i, th)
                             }
-                            val parsed = Annotator.parse(raw)
-                            if (parsed != null && Annotator.gate(parsed, chunk.text)) { result = parsed; break }
+                            val (parsed, meta) = Annotator.parseWithMeta(raw)
+                            val checks = Annotator.ruleChecks(parsed ?: emptyList(), chunk.text, meta, roster)
+                            val pass = parsed != null && Annotator.gate(parsed, chunk.text)
+                            val failCode = when {
+                                parsed == null -> "EMPTY_ARRAY"
+                                !pass -> if (meta.repairLevel < 0) "JSON_SYNTAX_FAIL" else "CONCAT_LEN_MISMATCH"
+                                else -> "-"
+                            }
+                            lastMeta = meta; lastChecks = checks
+                            lastFailCode = failCode; attemptCount++
+                            EventLog.log(EventLog.Kind.AUDIT, "ANN_RAW",
+                                "块 ${i + 1} 第 $attempt 次 · 原始 ${meta.rawChars} 字 · 思考 ${meta.thinkChars} 字" +
+                                    " · JSON 候选 ${meta.bodyChars} 字 · 修复层级 ${meta.repairLevel}" +
+                                    " · 拆出 ${parsed?.size ?: 0} 条 · $failCode",
+                                fields = mapOf(
+                                    "block" to (i + 1).toString(), "attempt" to attempt.toString(),
+                                    "rawChars" to meta.rawChars.toString(), "thinkChars" to meta.thinkChars.toString(),
+                                    "bodyChars" to meta.bodyChars.toString(), "repair" to meta.repairLevel.toString(),
+                                    "annCount" to (parsed?.size ?: 0).toString(), "failCode" to failCode,
+                                    "thinkClosed" to meta.thinkClosed.toString()))
+                            // 产出截取只进诊断态日志，不进常态摘要；默认不把正文搬来搬去。
+                            EventLog.log(EventLog.Kind.AUDIT, "ANN_PREVIEW",
+                                "块 ${i + 1} 产出开头：${meta.previewHead} ｜ 结尾：${meta.previewTail}",
+                                level = EventLog.Level.TRACE)
+                            if (parsed == null) {
+                                EventLog.log(EventLog.Kind.AUDIT, "ANN_EMPTY",
+                                    "⚠ 块 ${i + 1} 跑完却没解析出任何标注条目（模型可能只吐了废话或推理）",
+                                    level = EventLog.Level.WARN,
+                                    fields = mapOf("block" to (i + 1).toString(),
+                                        "rawChars" to meta.rawChars.toString()))
+                            }
+                            if (pass) { result = parsed; break }
                             // 思考档常见：预算全花在推理上，JSON 被拦腰截断。
                             // 重试同样的 prompt 只会再来一次几分钟的空转，直接降级。
                             // 旧写法是 !raw.contains("") —— 空串恒包含，这个分支永远进不来，
                             // 于是思考被截断后照样重试一次、白烧几分钟。用常量杜绝再写空串。
                             if (thinkOn && !raw.contains(Annotator.THINK_CLOSE)) {
+                                lastFailCode = "THINK_TAIL_NOT_CLOSED"
                                 EventLog.log(EventLog.Kind.PIPELINE, "THINK_TRUNCATED",
                                     "块 $i 没有闭合思考标签，推理被预算截断，跳过重试")
                                 break
                             }
-                            EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY", "块 $i 第 $attempt 次")
+                            EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY",
+                                "块 $i 第 $attempt 次 · $failCode · 规则通过 ${checks.values.count { it }}/${checks.size}")
                         }
                         if (result == null) {
                             result = Annotator.fallback(chunk)
                             gateFails++
+                            usedFallback = true
                             EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
                         }
                         AnnCache.write(work, i, result)
+                        // R21 · 这一块的最终结论落盘：标了几条、text 多少字、差几个字、
+                        // 9 条规则过了几条、模型吐出来的开头结尾是什么。不是只写一句「完成」。
+                        val finalAnns = result ?: emptyList()
+                        val m = lastMeta
+                        val joinedLen = finalAnns.sumOf { it.text.length }
+                        AuditLog.write(c, BlockAudit(
+                            runId = AuditLog.currentRun(), block = i + 1, total = chunks.size,
+                            attempt = attemptCount, origChars = chunk.text.length,
+                            rawChars = m?.rawChars ?: 0, thinkChars = m?.thinkChars ?: 0,
+                            bodyChars = m?.bodyChars ?: 0, annCount = finalAnns.size,
+                            textChars = joinedLen, lenDelta = joinedLen - chunk.text.length,
+                            firstDiff = if (m != null)
+                                Annotator.firstDiff(finalAnns.joinToString("") { it.text }, chunk.text) else -1,
+                            speakers = finalAnns.map { it.speaker }.distinct().joinToString("、"),
+                            instructEmpty = finalAnns.count { it.instruct.isBlank() },
+                            status = if (usedFallback) AuditLog.FALLBACK else AuditLog.PASS,
+                            failCode = if (usedFallback) lastFailCode else "-",
+                            rules = lastChecks,
+                            previewHead = m?.previewHead ?: "", previewTail = m?.previewTail ?: "",
+                            elapsedMs = System.currentTimeMillis() - blockStartAt, fromCache = false))
+                        EventLog.log(EventLog.Kind.AUDIT, "ANN_AUDIT",
+                            "块 ${i + 1}/${chunks.size} ${if (usedFallback) "降级直读" else "通过"} · " +
+                                "标 ${finalAnns.size} 条 · text ${joinedLen} 字（原文 ${chunk.text.length}） · " +
+                                "规则 ${lastChecks.values.count { it }}/${lastChecks.size} · " +
+                                (if (usedFallback) lastFailCode else "-"),
+                            level = if (usedFallback) EventLog.Level.WARN else EventLog.Level.INFO,
+                            fields = mapOf(
+                                "block" to (i + 1).toString(),
+                                "status" to (if (usedFallback) AuditLog.FALLBACK else AuditLog.PASS),
+                                "annCount" to finalAnns.size.toString(),
+                                "lenDelta" to (joinedLen - chunk.text.length).toString(),
+                                "rulePass" to lastChecks.values.count { it }.toString(),
+                                "ruleTotal" to lastChecks.size.toString()))
                         } finally {
                             beat.cancel()
                             EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_END",
-                                "块 ${i + 1}/${chunks.size} 结束 · ${result?.size ?: 0} 条标注")
+                                "块 ${i + 1}/${chunks.size} 结束 · ${result?.size ?: 0} 条标注 · " +
+                                    (if (usedFallback) "降级直读" else "通过") +
+                                    " · 耗时 ${System.currentTimeMillis() - blockStartAt}ms")
                         }
                     }
                     val safe = result!!
@@ -837,6 +1005,7 @@ object Producer {
             } finally {
                 try { NativeEngine.llmFree(llmHandle) } catch (_: Throwable) { }
             }
+            writeAuditSummary()
             if (cancelRequested) { _state.value = halted(chunks.size, chunks.size, gateFails); return }
             annotated = collected
         }

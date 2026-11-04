@@ -50,6 +50,8 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 - **音频调试**：「试合成一句」不跑整本，只让声音模型读一句话并试听
 - **声音**：全局音色描述（留空用默认身份锚点）、9 个 TTS 采样参数（默认值逐字抄 `qwentts.cpp/sampling-defaults.h`）
 - **角色音色**：角色→音色映射表，`USER_LOCKED` 人工修正优先
+- **高级（诊断）**：静态快照、本次标注审计汇总、9 条规则生效统计、逐块明细、产出截取片段；
+  两级复制（摘要 / 完整日志）。跑完却没标出条目会直接告警
 
 ## 硬约束
 
@@ -95,7 +97,8 @@ app/src/main/java/com/tingben/app/
   core/NonVerbal.kt        哭笑叹气导演指令（只改 instruct，正文不动）
   core/Importer.kt         txt/md/epub 导入与分章
   engine/NativeEngine.kt   JNI 声明
-  diag/EventLog.kt         工程事件落盘（原生层也往这里写）
+  diag/EventLog.kt         两级日志：主事件流 + 诊断态详情 + 崩溃环形缓冲
+  diag/AuditLog.kt         逐块标注审计：条数/长度/规则/失败码/产出截取
 app/src/main/cpp/          tingben_native.cpp + CMakeLists + 上游公开头
 app/src/main/assets/       prompt_zh.txt (v2) + prompt_zh_v1.txt（可回滚）
 contracts/                 模型清单、中文 prompt、流水线规格
@@ -110,5 +113,8 @@ scripts/                    build_native.sh / check_structure.py / publish_apk.p
 - **真机已有一次完整链路证据**：`PRODUCE_DONE 5,802,284 字节`（约 121 秒 WAV）。但「每一段音色稳定、角色不飘、整本体验」**仍是零证据** —— 沙盒没有 NDK/kotlinc/真机，编译通过永远不等于好用。
 - **音色**：voicedesign 是**单音色**权重，一个声音演所有情绪；4B 标出的 `speaker` 目前只是文字标签，通过全局/角色描述影响 instruct，**不是按角色切声线**。R19 加了默认身份锚点 + 身份词剥离来收敛「逐段换声」，但权重每次重新采样的固有特性不能靠代码根治。
 - **非语言表达**：原文写到哭 / 笑 / 叹气 / 抽泣 / 咳嗽时自动加导演指令，正文一字不改，设置页可关。精确的行内标签（`[gasp]` 等）是下一代权重能力，本模型不解析。详见 `docs/NONVERBAL_RESEARCH.md`。
-- **后台**：任务跑着时前台屏幕常亮（`FLAG_KEEP_SCREEN_ON`，零权限）；**这不等于保活**。锁屏/切后台后靠逐块落盘恢复，前台服务 + 唤醒锁在队列 P1。详见 `docs/后台保活与浮窗_调研.md`。
+- **后台**：任务跑着时前台屏幕常亮（`FLAG_KEEP_SCREEN_ON`，零权限）；**这不等于保活**。锁屏/切后台后靠逐块落盘恢复，前台服务 + 唤醒锁顺延到下一轮。详见 `docs/后台保活与浮窗_调研.md`。
+- **标注可观测（R21）**：每块记模型原始产出长度、有效 JSON 长度、标出几条、拼回原文差几个字、
+  9 条提示词规则 PASS/VIOLATE、失败码与产出开头结尾截取；「跑半天啥也没标」会变成 `ANN_EMPTY` 告警。
+  双模型怎么配合见 `docs/双模型配合_我的想法.md`，日志设计见 `docs/日志重设计_标注审计.md`。
 - 本环境 `raw.githubusercontent.com` 被网关策略 403（不是文件坏），所以核验走 GitHub blob API；用户手机浏览器历轮可正常下载安装。

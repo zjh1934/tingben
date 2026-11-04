@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
+import com.tingben.app.diag.AuditLog
 import com.tingben.app.diag.EventLog
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.Dispatchers
@@ -1629,28 +1630,82 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 Text(if (advanced) "收起" else "展开", fontSize = 12.sp, color = Primary)
             }
             if (advanced) {
+                // R21 · 诊断分两级：常态只给结论，想深挖再展开。每 3 秒跟着任务刷新。
+                var showBlocks by remember { mutableStateOf(false) }
+                var showRules by remember { mutableStateOf(false) }
+                var showPreview by remember { mutableStateOf(false) }
+                var auditTick by remember { mutableStateOf(0) }
+                LaunchedEffect(Unit) {
+                    while (true) { delay(3000); auditTick++ }
+                }
+                val auditText = remember(auditTick) { AuditLog.summaryText(c) }
+                val rulesText = remember(auditTick) { AuditLog.ruleText(c) }
+                val blocksText = remember(auditTick) { AuditLog.blocksText(c, 12) }
+                val previewText = remember(auditTick) { AuditLog.previewText(c, 3) }
+                val hasEmpty = auditText.contains("零标注 ") && !auditText.contains("零标注 0")
+
+                fun buildDiag(full: Boolean): String = buildString {
+                    append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
+                    append("设备 ").append(android.os.Build.MODEL).append(" / Android ")
+                        .append(android.os.Build.VERSION.RELEASE).append(" / ")
+                        .append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "").append('\n')
+                    append("引擎 ").append(if (NativeEngine.isAvailable()) NativeEngine.version() else "未装载").append('\n')
+                    append("设置 ").append(Prefs.summary(c)).append('\n')
+                    append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
+                    append("\n=== 标注审计 ===\n").append(AuditLog.summaryText(c)).append('\n')
+                    append("\n=== 规则生效 ===\n").append(AuditLog.ruleText(c)).append('\n')
+                    append("\n=== 逐块明细（最近 12 块）===\n").append(AuditLog.blocksText(c, 12)).append('\n')
+                    val crash = EventLog.lastCrash()
+                    if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
+                    append("\n=== 最近事件（不含正文）===\n")
+                    append(EventLog.read().lines().takeLast(60).joinToString("\n"))
+                    if (full) {
+                        append("\n\n=== 产出截取（含原文片段，仅本机）===\n")
+                            .append(AuditLog.previewText(c, 6)).append('\n')
+                        append("\n=== 诊断态完整日志（含 TRACE，最近 300 行）===\n")
+                            .append(EventLog.readDetail().lines().takeLast(300).joinToString("\n"))
+                    }
+                }
+
                 Spacer(Modifier.height(10.dp))
+                Text("静态快照", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                 Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(10.dp))
+                Text("标注审计 · 这次到底标了没有", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(auditText, fontSize = 11.sp, color = if (hasEmpty) Warn else Sub)
+                if (hasEmpty) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("⚠ 有块跑完却没标出条目，展开「产出截取」看模型吐了什么",
+                        fontSize = 11.sp, color = Warn)
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { showBlocks = !showBlocks }) {
+                        Text(if (showBlocks) "收起逐块" else "逐块明细", fontSize = 11.5.sp)
+                    }
+                    TextButton(onClick = { showRules = !showRules }) {
+                        Text(if (showRules) "收起规则" else "规则生效", fontSize = 11.5.sp)
+                    }
+                    TextButton(onClick = { showPreview = !showPreview }) {
+                        Text(if (showPreview) "收起截取" else "产出截取", fontSize = 11.5.sp)
+                    }
+                }
+                if (showBlocks) Text(blocksText, fontSize = 10.5.sp, color = Sub)
+                if (showRules) Text(rulesText, fontSize = 10.5.sp, color = Sub)
+                if (showPreview) {
+                    Text("只存有限片段、按 run 轮转，不把整本正文写进日志", fontSize = 10.sp, color = Warn)
+                    Text(previewText, fontSize = 10.5.sp, color = Sub)
+                }
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = {
-                    val info = buildString {
-                        append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
-                        append("设备 ").append(android.os.Build.MODEL).append(" / Android ")
-                            .append(android.os.Build.VERSION.RELEASE).append(" / ")
-                            .append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "").append('\n')
-                        append("引擎 ").append(if (NativeEngine.isAvailable()) NativeEngine.version() else "未装载").append('\n')
-                        append("设置 ").append(Prefs.summary(c)).append('\n')
-                        append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
-                        val crash = EventLog.lastCrash()
-                        if (crash.isNotBlank()) {
-                            append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
-                        }
-                        append("最近事件（不含正文）：\n")
-                        append(EventLog.read().lines().takeLast(30).joinToString("\n"))
-                    }
-                    clipboard.setText(AnnotatedString(info))
-                    Toast.makeText(c, "已复制，直接贴给我即可", Toast.LENGTH_SHORT).show()
-                }, Modifier.fillMaxWidth()) { Text("复制诊断信息") }
+                    clipboard.setText(AnnotatedString(buildDiag(false)))
+                    Toast.makeText(c, "已复制诊断摘要，直接贴给我即可", Toast.LENGTH_SHORT).show()
+                }, Modifier.fillMaxWidth()) { Text("复制诊断信息（摘要）") }
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(buildDiag(true)))
+                    Toast.makeText(c, "已复制完整日志（含产出片段），仅本机保存", Toast.LENGTH_SHORT).show()
+                }, Modifier.fillMaxWidth()) { Text("复制完整日志（含产出片段）") }
             }
         }
     }
