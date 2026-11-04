@@ -263,8 +263,9 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <b>P1 · 各自独立一轮，不合并发版</b>
 <div class="tree" style="margin-top:8px">
 ① 制作准备页 → <b>R20 已完成</b>：先列 11 处联动表（docs/P1_制作准备页_联动表.md）再动签名；四组折叠、5 个真选项接进管线、预设随书签落盘、旧 WAV 双指纹作废
-② 前台服务 + PARTIAL_WAKE_LOCK + 通知（动 manifest / 权限 / 状态机）→ 下一轮
-③ 段级「重做这一段」（Workbench 只读 → 可写）→ 队列
+② 前台服务 + PARTIAL_WAKE_LOCK + 通知 → <b>R26 已落地</b>（12 处联动表）
+③ 段级「重做这一段」→ <b>R28 已落地</b>（同轮加「语言模型是否生效」判定条）
+④ 性能页（CPU/GPU/内存）→ <b>用户判定意义不大，删除、不排期</b>
 </div>
 <div class="redline" style="margin-top:10px"><b>P2：</b>WAV 流式追加、prompt hash + GBNF、角色映射全量接进合成、CustomVoice/Base 换权重、Media3/锁屏通知。</div>
 </div>
@@ -314,7 +315,19 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <b>下一轮：</b>按 <code>docs/本次测试_语言模型生效判定卡.md</code> 的回传结果定，不再预设功能。</div>
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33 订正，⑧ 由 R26 追加，⑨ 由 R28 追加</footer>
+<div class="panel" style="margin-top:14px">
+<b>⑩ R33~R36 落地与现行队列 · R37 维护追加</b>
+<div class="tree" style="margin-top:8px">
+<b>R33</b> 状态栏安全区 + 全局清注释式文案（大标题 / 刷新小字 / 教程说明）+ 粘贴框默认展开 + 书卡图标化 + 删除确认 + 删完刷新 + 常驻任务条上扒展开 / 下扒收起 + 调音台进 ☰ 一级入口<br>
+<b>R34/R35</b> 用户定型：☰ 左滑抽屉（3 Tab 收敛进去）、点书进目录（章名右「已合成 ✓」+ ▶）、章节点进看书、全局迷你播放条、调音台独立项；三页现成源码已扒（ensemble-reads / ReaderVoice / AlexExo，MIT / Apache-2.0 形状改写），系统 TTS 引擎现在不加<br>
+<b>R36</b> 调音台重设计（8 折叠组 / 自定义预设库 / 12 维逐维 / 9 项采样 / 表演层仅本次 / 4 角色卡 / A/B 不写回）→ <code>1.0.0+47</code>
+</div>
+<div class="redline" style="margin-top:10px"><b>方向订正：</b>4B <b>不撤</b>、想用就用、软件里保持现状；沙盒标注工厂只是可选第二输入。发力点在音频模型调参 + 控制台。<br>
+<b>现行队列（各轮单独发版，不夹带）：</b>① 真机验 <code>+47</code> → ② <b>V1 抽屉壳</b> → ③ V2 目录+绿勾 → ④ V2b 看书页 → ⑤ V3 迷你条 → ⑥ 标注工厂 JSON 导入通道 → ⑦ 调音台显示真实 <code>ProduceConfig</code> / 4B 设置沉页尾 / U2 顺延项。<br>
+<b>⑦~⑨ 面板里的「下一轮」均为当时口径</b>，仅留痕；以本段与 <b>STATUS.md 头部「下轮队列」</b>为准。</div>
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加</footer>
 </div>
 </body>
 </html>
