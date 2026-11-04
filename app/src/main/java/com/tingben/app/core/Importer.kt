@@ -48,8 +48,14 @@ object Importer {
         val name = nameOf(c, uri)
         val lower = name.lowercase()
         val mime = mimeHint ?: try { c.contentResolver.getType(uri) } catch (_: Throwable) { null }
-        val bytes = c.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalStateException("打不开这个文件")
+        // file:// 有时 contentResolver.openInputStream 不接，直接读文件兜底
+        val bytes = if (uri.scheme == "file") {
+            val p = uri.path ?: throw IllegalStateException("文件路径为空")
+            java.io.File(p).readBytes()
+        } else {
+            c.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: throw IllegalStateException("打不开这个文件")
+        }
         if (bytes.size < 4) throw IllegalStateException("这个文件是空的或读不完整")
 
         val isZip = bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()

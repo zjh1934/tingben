@@ -373,13 +373,24 @@ object AnnCache {
                 arr.put(JSONObject().put("text", a.text)
                     .put("speaker", a.speaker).put("instruct", a.instruct))
             }
-            File(work, "ann_%04d.json".format(i)).writeText(arr.toString())
+            // R11 · 原子落位：进程在写入途中被杀，半成品不能占着正式文件名，
+            // 否则重启后 read() 会把它当「已完成块」跳过，整段原文就丢了。
+            val dst = File(work, "ann_%04d.json".format(i))
+            val tmp = File(work, "ann_%04d.json.part".format(i))
+            tmp.writeText(arr.toString())
+            if (!tmp.renameTo(dst)) { dst.writeText(arr.toString()); tmp.delete() }
         } catch (_: Throwable) { }
     }
 
     fun count(work: File): Int = try {
         work.listFiles()?.count { it.isFile && it.name.startsWith("ann_") && it.name.endsWith(".json") } ?: 0
     } catch (_: Throwable) { 0 }
+
+    /** 每次开工前清掉上次被杀留下的半成品，避免被误当成完成块。 */
+    fun cleanup(work: File) {
+        try { work.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() } }
+        catch (_: Throwable) { }
+    }
 
     fun clear(work: File) {
         try { work.listFiles()?.forEach { it.delete() } } catch (_: Throwable) { }
@@ -481,15 +492,42 @@ object Producer {
     @Volatile private var busy = false
     @Volatile private var cancelRequested = false
 
+    // R11 · 进程死了以后唯一还活着的东西
+    @Volatile private var appCtx: Context? = null
+    @Volatile private var current: TaskInfo? = null
+    private val _resume = MutableStateFlow<TaskInfo?>(null)
+    val resume: StateFlow<TaskInfo?> = _resume
+
     fun reset() { if (!busy) _state.value = Progress() }
     fun isBusy() = busy
     fun isStopping() = cancelRequested
+
+    /** Application.onCreate 调一次：把上次被杀/退出的任务重新摆到界面上。 */
+    fun restore(c: Context) {
+        appCtx = c.applicationContext
+        val t = TaskResume.active(c) ?: return
+        // 写的是 running 但进程已经重启 ⇒ 它绝不可能还在跑，如实标成「中断」
+        val fixed = if (t.phase == "running") t.copy(phase = "interrupted") else t
+        TaskResume.save(c, fixed)
+        current = fixed
+        val real = TaskResume.realProgress(c, fixed)
+        _resume.value = fixed.copy(done = real)
+        _state.value = Progress(false, "上次中断", real, fixed.total, 0,
+            "上次做到《${fixed.title}》，已做好的块都留着。点「继续制作」从这接着跑，不用重算。")
+        EventLog.log(EventLog.Kind.PIPELINE, "TASK_RESTORE",
+            "book=${fixed.title} phase=${fixed.phase} real=$real/${fixed.total}")
+    }
 
     /** 停止：不杀进程、不删已做好的块， native 解码下一 token 会自己退，块边界收尾。 */
     fun stop() {
         if (!busy) return
         cancelRequested = true
         try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
+        appCtx?.let { c ->
+            current?.let { TaskResume.save(c, it.copy(phase = "stopped",
+                stage = _state.value.stage, done = _state.value.done,
+                updatedAt = System.currentTimeMillis())) }
+        }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_STOP", "用户点了停止")
     }
 
@@ -502,32 +540,75 @@ object Producer {
 
     fun clearProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) {
         AnnCache.clear(AnnCache.dirFor(c, bookId, direct, think, only))
+        // 「从头重做 / 放弃任务」必须把书签也清掉。
+        // 重启后 current 是 null，所以以磁盘记录为准，不能只判断内存里的 current。
+        val saved = TaskResume.load(c)
+        if (saved != null && saved.bookId == bookId) {
+            current = null; _resume.value = null; TaskResume.clear(c)
+        } else if (current?.bookId == bookId) {
+            current = null; _resume.value = null; TaskResume.clear(c)
+        }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_RESET", "清空这本书的进度，从头重做")
     }
 
-    fun start(c: Context, book: Book, onlyChapters: Set<Int>? = null, directRead: Boolean = false) {
+    fun start(c: Context, book: Book, onlyChapters: Set<Int>? = null,
+              directRead: Boolean = false, thinkOverride: Boolean? = null) {
         if (busy) return
         busy = true
         cancelRequested = false
+        appCtx = c.applicationContext
+        // 续跑必须沿用建任务时的思考档：bucket 里含 think，换了档会读到空缓存、全书重跑
+        val thinkOn = thinkOverride ?: Prefs.thinking(c)
+        current = TaskInfo(book.id, book.title, onlyChapters, directRead, thinkOn,
+            0, 0, "running", "正在准备", System.currentTimeMillis())
+        appCtx?.let { TaskResume.save(it, current!!) }
+        _resume.value = current
         // 上一次点过「停止」的话，native 的 g_cancel 还是 true；整次制作开始才复位。
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
+        AnnCache.cleanup(AnnCache.dirFor(c, book.id, directRead, thinkOn, onlyChapters))
         scope.launch {
             try {
-                run(c, book, onlyChapters, directRead)
+                run(c, book, onlyChapters, directRead, thinkOverride)
             } catch (t: Throwable) {
                 if (t !is kotlinx.coroutines.CancellationException) {
                     EventLog.log(EventLog.Kind.CRASH, "PRODUCE_EXCEPTION", t.message ?: "")
                     _state.value = Progress(false, "出错了", 0, 0, 0, "制作中断：" + (t.message ?: ""))
+                    markInterrupted("出错中断")
                 }
-            } finally { busy = false }
+            } finally {
+                busy = false
+                // 只要没走到 done，就如实落一条「中断」书签，进程被杀也有据可查
+                if (current?.phase == "running") markInterrupted("中断")
+            }
         }
+    }
+
+    private fun markInterrupted(stage: String) {
+        val c = appCtx ?: return
+        val t = current ?: return
+        val fixed = t.copy(phase = "interrupted", stage = stage,
+            done = _state.value.done, total = _state.value.total.coerceAtLeast(t.total),
+            updatedAt = System.currentTimeMillis())
+        current = fixed
+        TaskResume.save(c, fixed)
+        _resume.value = fixed.copy(done = TaskResume.realProgress(c, fixed))
     }
 
     private fun emit(stage: String, done: Int, total: Int, failed: Int, msg: String, out: String? = null) {
         _state.value = Progress(true, stage, done, total, failed, msg, out)
+        // 每完成一块就落一次书签：进程被杀时，最坏只丢当前这一块，前面全留着
+        val c = appCtx
+        val t = current
+        if (c != null && t != null && t.phase == "running") {
+            val up = t.copy(total = total, done = done, stage = stage,
+                updatedAt = System.currentTimeMillis())
+            current = up
+            TaskResume.save(c, up)
+        }
     }
 
-    private fun run(c: Context, book: Book, only: Set<Int>?, direct: Boolean) {
+    private fun run(c: Context, book: Book, only: Set<Int>?, direct: Boolean,
+                    thinkOverride: Boolean? = null) {
         if (!NativeEngine.isAvailable()) {
             _state.value = Progress(false, "没开始", 0, 0, 0, NativeEngine.shortReason())
             return
@@ -552,7 +633,7 @@ object Producer {
             return
         }
         val (sys, usr) = Annotator.templates(c)
-        val thinkOn = Prefs.thinking(c)
+        val thinkOn = thinkOverride ?: Prefs.thinking(c)
         val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
         val nCtx = Prefs.nCtx(c)
         val threads = Prefs.threads(c)
@@ -677,10 +758,19 @@ object Producer {
             return
         }
 
+        // R11 · 拟声表达：只在合成前增强 instruct，text 一字不动（逐字 gate 不受影响）
+        val nonVerbalOn = Prefs.nonVerbal(c)
+        val toSpeak = if (nonVerbalOn) annotated.map { NonVerbal.apply(it) } else annotated
+        if (nonVerbalOn) {
+            val hits = NonVerbal.count(annotated)
+            EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL",
+                "命中 $hits/${annotated.size} 段，只增强导演指令，正文未改")
+        }
+
         val wavs = mutableListOf<File>()
         var synthFails = 0
         try {
-            for ((i, a) in annotated.withIndex()) {
+            for ((i, a) in toSpeak.withIndex()) {
                 if (cancelRequested) {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
                     return
@@ -731,6 +821,17 @@ object Producer {
 
         _state.value = Progress(false, "完成", annotated.size, annotated.size,
             gateFails + synthFails, "做好了，可以去「我的音频」听", outFile.absolutePath)
+        // 任务中心要能显示「最近完成」，所以 done 也留一条记录（active() 会自动过滤掉它）
+        val c = appCtx
+        val t = current
+        if (c != null && t != null) {
+            val done = t.copy(phase = "done", stage = "完成",
+                total = annotated.size, done = annotated.size,
+                updatedAt = System.currentTimeMillis(), output = outFile.absolutePath)
+            current = done
+            TaskResume.save(c, done)
+            _resume.value = done
+        }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_DONE", "${outFile.length()} 字节")
     }
 }

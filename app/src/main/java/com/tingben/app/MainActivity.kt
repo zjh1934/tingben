@@ -13,13 +13,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,35 +40,72 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, AUDIO, SETTINGS, MODELS }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS }
 
-private val Bg = Color(0xFFF7F5FA)
+// R11 · 视觉现代化：冷灰底 + 靛蓝主色 + 明确的层级，去掉旧版淡紫调试台观感
+private val Bg = Color(0xFFF4F6FB)
 private val Card = Color(0xFFFFFFFF)
-private val Primary = Color(0xFF5B4B8A)
-private val Sub = Color(0xFF625D6E)
-private val Good = Color(0xFF1E6B4A)
+private val Primary = Color(0xFF4338CA)
+private val PrimarySoft = Color(0xFFEEF0FE)
+private val Sub = Color(0xFF6B7280)
+private val Good = Color(0xFF0E9F6E)
+private val Line = Color(0xFFE7EAF2)
+private val Warn = Color(0xFFB45309)
 
 class MainActivity : ComponentActivity() {
+    /**
+     * R11 · 外部「打开方式 / 分享」加不进书架的根因之一：
+     * App 已经在后台任务里时，MIUI / 多数文件管理器会把新 intent 投到 onNewIntent，
+     * 而不是 onCreate。旧代码只读 onCreate，于是点了「打开方式」什么都没发生、也没提示。
+     * 改成 Activity 持有一条流，onCreate / onNewIntent 都往里推，Compose 消费后置空。
+     */
+    private val incomingFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 外部「打开方式 / 分享」：把 Uri 或纯文字抽出来交给 Compose 处理一次。
-        // 只在 onCreate 读，避免重组时反复导入同一本书。
-        val incoming = when (intent?.action) {
-            android.content.Intent.ACTION_VIEW, android.content.Intent.ACTION_EDIT -> intent?.data?.toString()
-            android.content.Intent.ACTION_SEND -> {
-                (intent?.getParcelableExtra<android.os.Parcelable>(android.content.Intent.EXTRA_STREAM)
-                        as? android.net.Uri)?.toString()
-                    ?: intent?.getStringExtra(android.content.Intent.EXTRA_TEXT)
-                        ?.take(20000)?.let { "text:$it" }
-            }
+        pushIncoming(intent)
+        setContent {
+            val incoming by incomingFlow.collectAsState()
+            App(incoming = incoming, onConsumed = { incomingFlow.value = null })
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pushIncoming(intent)
+    }
+
+    private fun pushIncoming(i: android.content.Intent?) {
+        if (i == null) return
+        val raw = when (i.action) {
+            android.content.Intent.ACTION_VIEW, android.content.Intent.ACTION_EDIT -> uriFrom(i)
+            android.content.Intent.ACTION_SEND -> uriFrom(i)
+                ?: i.getStringExtra(android.content.Intent.EXTRA_TEXT)
+                    ?.take(20000)?.let { "text:$it" }
             else -> null
         }
-        setContent { App(incoming = incoming) }
+        EventLog.log(EventLog.Kind.MODEL, "EXTERNAL_INTENT",
+            "action=${i.action ?: "无"} uri=${raw?.take(90) ?: "无"}")
+        // 加时间戳：连续两次分享同一个文件，StateFlow 不会因为「值相同」而吞掉第二次
+        // 没抽到 Uri 也给个明确信号，让用户知道「听本收到了但没拿到文件」，而不是静默
+        incomingFlow.value = System.currentTimeMillis().toString() + "|" + (raw ?: "empty:")
+    }
+
+    /** 三种来源全兜：data / EXTRA_STREAM / clipData。微信、QQ 分享常常只给 clipData。 */
+    private fun uriFrom(i: android.content.Intent): String? {
+        i.data?.let { return it.toString() }
+        @Suppress("DEPRECATION")
+        (i.getParcelableExtra<android.os.Parcelable>(android.content.Intent.EXTRA_STREAM)
+                as? Uri)?.let { return it.toString() }
+        return try {
+            i.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri?.toString()
+        } catch (_: Throwable) { null }
     }
 }
 
 @Composable
-private fun App(incoming: String? = null) {
+private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var screen by remember { mutableStateOf(Screen.LIBRARY) }
@@ -80,58 +118,31 @@ private fun App(incoming: String? = null) {
     val importBytes by importBytesFlow.collectAsState()
     var importError by remember { mutableStateOf<String?>(null) }
     val st by Producer.state.collectAsState()
-
-    // ── 外部打开方式 / 分享：只处理一次，旋转屏幕也不会重复加书 ──
-    var pendingIncoming by rememberSaveable(incoming) { mutableStateOf(incoming) }
-    LaunchedEffect(pendingIncoming) {
-        val raw = pendingIncoming ?: return@LaunchedEffect
-        pendingIncoming = null
-        try {
-            if (raw.startsWith("text:")) {
-                val text = raw.removePrefix("text:")
-                if (text.isBlank()) return@LaunchedEffect
-                BookStore.add(ctx, "分享的文字", text)
-            } else {
-                val uri = android.net.Uri.parse(raw)
-                val result = withContext(Dispatchers.IO) { Importer.read(ctx, uri) }
-                BookStore.add(ctx, result.title, result.text)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(ctx, "已加入书架：${result.title}（${result.kind}）",
-                        Toast.LENGTH_LONG).show()
-                }
-            }
-            refresh++
-            screen = Screen.LIBRARY
-        } catch (t: Throwable) {
-            EventLog.log(EventLog.Kind.CRASH, "EXTERNAL_IMPORT_FAIL", t.message ?: "")
-            withContext(Dispatchers.Main) {
-                Toast.makeText(ctx, "没读进来：${t.message ?: "换个文件试试"}", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
+    val resumeTask by Producer.resume.collectAsState()
 
     // 系统返回键/手势统一回书架，而不是直接退出 App。
-    // 之前没接管：用户按一次返回进程就退了，重开又回到书架，正在跑的制作就"找不到"了。
     BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }
 
-    // R10 · 导入逻辑抽成局部函数，让主选择器与兜底选择器共用。
-    fun importBook(uri: Uri?) {
+    // R10/R11 · 导入逻辑抽成局部函数：主动选择器、兜底选择器、外部打开方式共用一条路。
+    fun importBook(uri: Uri?, tag: String = "PICKER") {
         if (uri == null) {
-            EventLog.log(EventLog.Kind.MODEL, "BOOK_PICKER_CANCEL", "系统文件选择器没返回文件")
-            Toast.makeText(ctx, "没选到文件", Toast.LENGTH_SHORT).show()
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_NONE", "$tag 没拿到文件")
+            Toast.makeText(ctx, "没拿到文件，换个方式再试", Toast.LENGTH_SHORT).show()
             return
         }
+        // 外部 content:// 授权是一次性的，不 take 会在真正读流时被系统拒掉
         try {
             ctx.contentResolver.takePersistableUriPermission(
                 uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Throwable) { }
+        EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_BEGIN", "$tag ${uri.toString().take(90)}")
         scope.launch(Dispatchers.IO) {
             val result = runCatching { Importer.read(ctx, uri) }
             withContext(Dispatchers.Main) {
                 val r = result.getOrNull()
                 if (r == null) {
                     EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL",
-                        result.exceptionOrNull()?.message ?: "")
+                        "$tag ${result.exceptionOrNull()?.message ?: ""}")
                     Toast.makeText(ctx, "这本书没读进来：${result.exceptionOrNull()?.message ?: "换个文件试试"}",
                         Toast.LENGTH_LONG).show()
                 } else {
@@ -144,20 +155,21 @@ private fun App(incoming: String? = null) {
     }
 
     val pickBook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importBook(uri)
+        importBook(uri, "PICKER")
     }
 
-    // 兜底：某些厂商（小米/MIUI 等）的 DocumentsUI 对 OpenDocument contract 会直接静默返回，
-    // 表现就是「导入按钮点不动」。改用显式 ACTION_OPEN_DOCUMENT Intent 再开一次。
+    // 兜底：某些厂商（小米/MIUI 等）的 DocumentsUI 对 OpenDocument contract 会直接静默返回。
     val fallbackPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()) { res ->
-        importBook(res.data?.data)
+        val picked = res.data?.data ?: try {
+            res.data?.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+        } catch (_: Throwable) { null }
+        importBook(picked, "FALLBACK")
     }
 
     fun openBookPicker() {
         EventLog.log(EventLog.Kind.MODEL, "BOOK_PICKER_LAUNCH", "点击导入一本书")
         try {
-            // 只传 "*/*"：之前混传 text/plain + */* 在部分文件管理器上会静默失败
             pickBook.launch(arrayOf("*/*"))
         } catch (t: Throwable) {
             EventLog.log(EventLog.Kind.CRASH, "BOOK_PICKER_FAIL", t.message ?: "")
@@ -170,6 +182,36 @@ private fun App(incoming: String? = null) {
                 })
             } catch (t2: Throwable) {
                 Toast.makeText(ctx, "系统文件选择器打不开：${t2.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // ── 外部打开方式 / 分享：onCreate 和 onNewIntent 都会推进来，只消费一次 ──
+    var pendingIncoming by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(incoming) { if (incoming != null) pendingIncoming = incoming }
+    LaunchedEffect(pendingIncoming) {
+        val full = pendingIncoming ?: return@LaunchedEffect
+        pendingIncoming = null
+        onConsumed()
+        val raw = full.substringAfter('|', full)
+        when {
+            raw == "empty:" -> {
+                EventLog.log(EventLog.Kind.CRASH, "EXTERNAL_IMPORT_EMPTY", "收到分享但没拿到 Uri/文字")
+                Toast.makeText(ctx, "听本收到打开了，但对方没给文件；试试先在文件管理器里长按分享",
+                    Toast.LENGTH_LONG).show()
+            }
+            raw.startsWith("text:") -> {
+                val text = raw.removePrefix("text:")
+                if (text.isNotBlank()) {
+                    BookStore.add(ctx, "分享的文字", text)
+                    refresh++
+                    screen = Screen.LIBRARY
+                    Toast.makeText(ctx, "分享的文字已加入书架", Toast.LENGTH_SHORT).show()
+                }
+            }
+            else -> {
+                importBook(android.net.Uri.parse(raw), "EXTERNAL")
+                screen = Screen.LIBRARY
             }
         }
     }
@@ -217,15 +259,26 @@ private fun App(incoming: String? = null) {
     }
 
     Column(Modifier.fillMaxSize().background(Bg)) {
-        // 顶栏：只有产品名 + 一个动作
+        // 顶栏：产品名 + 一句定位 + 一个主动作；刷新按钮常驻书架，下拉也能刷
         Row(
-            Modifier.fillMaxWidth().background(Card).padding(horizontal = 18.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().background(Card).padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("听本", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Primary)
-            Spacer(Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("听本", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Primary)
+                Text("把小说变成能听的音频", fontSize = 11.sp, color = Sub)
+            }
             if (screen == Screen.LIBRARY) {
-                TextButton(onClick = { openBookPicker() }) { Text("＋ 导入一本书") }
+                FilledTonalButton(
+                    onClick = { refresh++; Toast.makeText(ctx, "书架已刷新", Toast.LENGTH_SHORT).show() },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) { Text("⟳ 刷新", fontSize = 12.5.sp) }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = { openBookPicker() },
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) { Text("＋ 导入", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
         Box(Modifier.weight(1f)) {
@@ -236,7 +289,9 @@ private fun App(incoming: String? = null) {
                     onImportBook = { openBookPicker() },
                     onChanged = { refresh++ },
                     producing = st.running, progressText = if (st.total > 0) "${st.done}/${st.total} 块" else "",
-                    onProgress = { screen = Screen.PROGRESS })
+                    onProgress = { screen = Screen.PROGRESS },
+                    pendingTask = resumeTask?.takeIf { it.phase != "done" },
+                    onTasks = { screen = Screen.TASKS })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
@@ -245,8 +300,29 @@ private fun App(incoming: String? = null) {
                 Screen.PROGRESS -> ProgressScreen(ctx,
                     onBack = { screen = Screen.LIBRARY },
                     onResume = {
-                        val b = bookId?.let { BookStore.list(ctx).find { x -> x.id == it } }
-                        if (b != null) Producer.start(ctx, b, lastSelection)
+                        val t = resumeTask
+                        val b = if (t != null) BookStore.list(ctx).find { x -> x.id == t.bookId }
+                                else bookId?.let { BookStore.list(ctx).find { x -> x.id == it } }
+                        if (b != null) {
+                            val sel = t?.only ?: lastSelection
+                            bookId = b.id; lastSelection = sel
+                            Producer.start(ctx, b, sel, t?.direct ?: false,
+                                if (t != null) t.think else null)
+                        }
+                    })
+                Screen.TASKS -> TaskCenterScreen(ctx, refresh,
+                    onProgress = { screen = Screen.PROGRESS },
+                    onAudio = { screen = Screen.AUDIO; refresh++ },
+                    onLibrary = { screen = Screen.LIBRARY },
+                    onResume = { t ->
+                        val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
+                        if (b != null) {
+                            bookId = b.id; lastSelection = t.only
+                            Producer.start(ctx, b, t.only, t.direct, t.think)
+                            screen = Screen.PROGRESS
+                        } else {
+                            Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
+                        }
                     })
                 Screen.AUDIO -> AudioScreen(ctx, refresh)
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
@@ -261,35 +337,47 @@ private fun App(incoming: String? = null) {
             }
         }
 
-        // 跨页面常驻：只要做过/正在做，任何一屏都点得到，不靠用户记住「进度在哪」
-        val hasTask = st.running || st.output != null ||
-                (st.stage != "还没开始" && st.message.isNotBlank())
+        // 跨页面常驻：正在跑 / 进程重启后留下的未完成任务，任何一屏都点得到
+        val pendingTask = resumeTask?.takeIf { it.phase != "done" && !st.running }
+        val hasTask = st.running || st.output != null || pendingTask != null
         if (hasTask) {
             Row(
-                Modifier.fillMaxWidth().background(if (st.running) Color(0xFFEDE7F6) else Color(0xFFE7F4EC))
-                    .clickable { screen = if (st.output != null) Screen.AUDIO else Screen.PROGRESS }
+                Modifier.fillMaxWidth().background(
+                    if (st.running) PrimarySoft else if (pendingTask != null) Color(0xFFFFF3E0) else Color(0xFFE7F4EC))
+                    .clickable {
+                        screen = when {
+                            st.running -> Screen.PROGRESS
+                            pendingTask != null -> Screen.TASKS
+                            else -> Screen.AUDIO
+                        }
+                    }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(Modifier.size(7.dp).background(
-                    if (st.running) Primary else Good, RoundedCornerShape(50)))
+                    if (st.running) Primary else if (pendingTask != null) Warn else Good,
+                    RoundedCornerShape(50)))
                 Spacer(Modifier.width(9.dp))
                 Text(
-                    if (st.running) {
-                        if (st.total > 0) "正在制作 · ${st.done}/${st.total} 块" else "正在制作…"
-                    } else if (st.output != null) "做好了，点这里去听"
-                    else st.stage,
+                    when {
+                        st.running -> if (st.total > 0) "正在制作 · ${st.done}/${st.total} 块" else "正在制作…"
+                        pendingTask != null -> "《${pendingTask.title}》有没做完的任务 · 点这里继续"
+                        else -> "做好了，点这里去听"
+                    },
                     fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-                    color = if (st.running) Primary else Good,
+                    color = if (st.running) Primary else if (pendingTask != null) Warn else Good,
                     modifier = Modifier.weight(1f))
-                Text("查看 ›", fontSize = 12.5.sp, color = Primary)
+                Text(if (pendingTask != null) "去任务 ›" else "查看 ›",
+                    fontSize = 12.5.sp, color = Primary)
             }
         }
-        // 底栏 3 个 Tab：避开系统三键导航栏，别和返回键叠在一起
+        // 底栏 4 个 Tab：长任务有自己独立的区域，不再藏在书架/设置里
         Row(Modifier.fillMaxWidth().navigationBarsPadding().background(Card).padding(vertical = 6.dp)) {
-            TabButton("书架", screen == Screen.LIBRARY || screen == Screen.PRODUCE || screen == Screen.PROGRESS,
+            TabButton("书架", screen == Screen.LIBRARY || screen == Screen.PRODUCE,
                 Modifier.weight(1f)) { screen = Screen.LIBRARY }
-            TabButton("我的音频", screen == Screen.AUDIO, Modifier.weight(1f)) { screen = Screen.AUDIO; refresh++ }
+            TabButton("任务", screen == Screen.TASKS || screen == Screen.PROGRESS,
+                Modifier.weight(1f)) { screen = Screen.TASKS }
+            TabButton("音频", screen == Screen.AUDIO, Modifier.weight(1f)) { screen = Screen.AUDIO; refresh++ }
             TabButton("设置", screen == Screen.SETTINGS || screen == Screen.MODELS,
                 Modifier.weight(1f)) { screen = Screen.SETTINGS; refresh++ }
         }
@@ -307,19 +395,26 @@ private fun queryName(c: Context, uri: Uri): String {
 
 @Composable
 private fun TabButton(label: String, on: Boolean, mod: Modifier, click: () -> Unit) {
-    Column(mod.clickable { click() }.padding(vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-            color = if (on) Primary else Sub)
-        Spacer(Modifier.height(3.dp))
-        Box(Modifier.size(if (on) 5.dp else 0.dp).background(Primary, RoundedCornerShape(50)))
+    Column(mod.clickable { click() }.padding(vertical = 3.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.background(if (on) PrimarySoft else Color.Transparent, RoundedCornerShape(50))
+                .padding(horizontal = 13.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(label, fontSize = 13.sp,
+                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (on) Primary else Sub)
+        }
     }
 }
 
 @Composable
 private fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Card(mod.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Card),
-        shape = RoundedCornerShape(14.dp)) {
-        Column(Modifier.padding(15.dp), content = content)
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+        Column(Modifier.padding(18.dp), content = content)
     }
 }
 
@@ -328,7 +423,8 @@ private fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.(
 private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                            onModels: () -> Unit, onImportBook: () -> Unit,
                            onChanged: () -> Unit, producing: Boolean,
-                           progressText: String, onProgress: () -> Unit) {
+                           progressText: String, onProgress: () -> Unit,
+                           pendingTask: TaskInfo?, onTasks: () -> Unit) {
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
     val clipboard = LocalClipboardManager.current
@@ -336,7 +432,34 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     var pasteTitle by remember { mutableStateOf("") }
     var pasteText by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("把小说变成能听的音频", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        // R11 · 书架刷新：下拉手势 + 顶栏 ⟳ 按钮双保险。放在固定小条上，避免和列表滚动抢手势。
+        var pulled by remember { mutableStateOf(false) }
+        Box(
+            Modifier.fillMaxWidth().height(if (pulled) 42.dp else 30.dp)
+                .background(if (pulled) PrimarySoft else Color.Transparent, RoundedCornerShape(12.dp))
+                .pointerInput(Unit) {
+                    var acc = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { acc = 0f },
+                        onDragEnd = {
+                            if (acc > 55f) {
+                                onChanged()
+                                Toast.makeText(c, "书架已刷新", Toast.LENGTH_SHORT).show()
+                            }
+                            pulled = false; acc = 0f
+                        },
+                        onVerticalDrag = { _, dy ->
+                            if (dy > 0) { acc += dy; pulled = acc > 20f }
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(if (pulled) "松开即可刷新" else "下拉刷新 · 或点右上角 ⟳ 刷新",
+                fontSize = 11.5.sp, color = if (pulled) Primary else Sub)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("把小说变成能听的音频", fontSize = 21.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text("导入一本书，点一次开始，剩下的交给手机自己跑。", fontSize = 12.5.sp, color = Sub)
         Spacer(Modifier.height(14.dp))
@@ -349,6 +472,17 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(9.dp))
                 FilledTonalButton(onClick = onProgress, Modifier.fillMaxWidth()) { Text("查看进度") }
+            }
+        } else if (pendingTask != null) {
+            // 进程被杀 / 用户退出后回来：任务不是没了，是在「任务」页等着续跑
+            CardBox(Modifier.padding(bottom = 12.dp)) {
+                Text("有没做完的任务", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Warn)
+                Spacer(Modifier.height(4.dp))
+                Text("《${pendingTask.title}》上次没跑完，已做好的块都在。", fontSize = 12.sp, color = Sub)
+                Spacer(Modifier.height(9.dp))
+                Button(onClick = onTasks, Modifier.fillMaxWidth().height(44.dp)) {
+                    Text("去任务页继续")
+                }
             }
         }
         if (!ready) {
@@ -465,7 +599,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         TextButton(onClick = onBack) { Text("← 书架") }
-        Text(book.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(book.title, fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text("${chapters.size} 章 · ${book.chars} 字", fontSize = 12.5.sp, color = Sub)
         Spacer(Modifier.height(14.dp))
@@ -585,14 +719,48 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
         "$what$extra"
     }
 
+    // R11 · 下滑收敛 / 上滑展开：核心进度永远在，细节可以整块收起来
+    var expanded by remember { mutableStateOf(true) }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         TextButton(onClick = onBack) { Text("← 书架") }
-        Text("制作进度", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("制作进度", fontSize = 23.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f))
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(if (expanded) "收起 ↑" else "展开 ↓", fontSize = 12.5.sp, color = Primary)
+            }
+        }
+        // 手势条独立成一块，避免和页面滚动抢事件；也留了上面的按钮兜底
+        Box(
+            Modifier.fillMaxWidth().height(28.dp)
+                .background(PrimarySoft, RoundedCornerShape(12.dp))
+                .pointerInput(Unit) {
+                    var acc = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { acc = 0f },
+                        onDragEnd = {
+                            if (acc > 45f) expanded = false
+                            else if (acc < -45f) expanded = true
+                            acc = 0f
+                        },
+                        onVerticalDrag = { _, dy -> acc += dy }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(if (expanded) "下滑收起细节 · 上滑可再展开" else "上滑展开细节",
+                fontSize = 11.sp, color = Primary)
+        }
         Spacer(Modifier.height(14.dp))
         CardBox {
+            // 大号百分比：不用读小字也知道还剩多少
+            Text(if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
+                fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Primary)
+            Spacer(Modifier.height(4.dp))
             Text(st.stage, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(progress = { pct }, modifier = Modifier.fillMaxWidth().height(6.dp))
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(progress = { pct }, modifier = Modifier.fillMaxWidth().height(8.dp))
             Spacer(Modifier.height(8.dp))
             Text(
                 if (st.total > 0) "已完成 ${st.done}/${st.total} 块" + if (st.failed > 0) " · ${st.failed} 块改走直读" else ""
@@ -609,42 +777,44 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                 Text("算完一块才会往上走一格，中间不会一直跳数字。", fontSize = 11.sp, color = Sub)
             }
         }
-        Spacer(Modifier.height(14.dp))
-        val steps = listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")
-        steps.forEach { s ->
-            val active = when (s) {
-                "拆章" -> st.stage.contains("分章")
-                "理解文字" -> st.stage.contains("理解")
-                "生成声音" -> st.stage.contains("生成声音")
-                "整理音频" -> st.stage.contains("整理")
-                "完成" -> st.output != null || st.stage == "完成"
-                else -> false
-            }
-            val done = st.output != null
-            Row(Modifier.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).background(
-                    if (done || active) Primary else Color(0xFFD6D0E2), RoundedCornerShape(50)))
-                Spacer(Modifier.width(10.dp))
-                Text(s, fontSize = 13.sp, color = if (done || active) Primary else Sub)
-            }
-        }
-
-        // 思考外显：开关打开时，这里直接展开最近一块的推理全文
-        if (Prefs.thinking(c)) {
-            Spacer(Modifier.height(16.dp))
-            var showThink by remember { mutableStateOf(false) }
-            CardBox {
-                Row(Modifier.clickable { showThink = !showThink }, verticalAlignment = Alignment.CenterVertically) {
-                    Text("思考过程", fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                        modifier = Modifier.weight(1f))
-                    Text(if (showThink) "收起" else "展开", fontSize = 12.sp, color = Primary)
+        if (expanded) {
+            Spacer(Modifier.height(14.dp))
+            val steps = listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")
+            steps.forEach { s ->
+                val active = when (s) {
+                    "拆章" -> st.stage.contains("分章")
+                    "理解文字" -> st.stage.contains("理解")
+                    "生成声音" -> st.stage.contains("生成声音")
+                    "整理音频" -> st.stage.contains("整理")
+                    "完成" -> st.output != null || st.stage == "完成"
+                    else -> false
                 }
-                if (showThink) {
-                    val (idx, txt) = remember(tick) { ThinkingStore.latest(c) }
-                    Spacer(Modifier.height(9.dp))
-                    Text(if (txt.isBlank()) "还没有思考记录，跑起来后这里会逐块出现。"
-                         else "第 ${idx + 1} 块：\n$txt",
-                        fontSize = 11.5.sp, color = Sub, lineHeight = 17.sp)
+                val done = st.output != null
+                Row(Modifier.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).background(
+                        if (done || active) Primary else Line, RoundedCornerShape(50)))
+                    Spacer(Modifier.width(10.dp))
+                    Text(s, fontSize = 13.sp, color = if (done || active) Primary else Sub)
+                }
+            }
+
+            // 思考外显：开关打开时，这里直接展开最近一块的推理全文
+            if (Prefs.thinking(c)) {
+                Spacer(Modifier.height(16.dp))
+                var showThink by remember { mutableStateOf(false) }
+                CardBox {
+                    Row(Modifier.clickable { showThink = !showThink }, verticalAlignment = Alignment.CenterVertically) {
+                        Text("思考过程", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                            modifier = Modifier.weight(1f))
+                        Text(if (showThink) "收起" else "展开", fontSize = 12.sp, color = Primary)
+                    }
+                    if (showThink) {
+                        val (idx, txt) = remember(tick) { ThinkingStore.latest(c) }
+                        Spacer(Modifier.height(9.dp))
+                        Text(if (txt.isBlank()) "还没有思考记录，跑起来后这里会逐块出现。"
+                             else "第 ${idx + 1} 块：\n$txt",
+                            fontSize = 11.5.sp, color = Sub, lineHeight = 17.sp)
+                    }
                 }
             }
         }
@@ -675,6 +845,147 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     }
 }
 
+// ── ③b 任务中心：长任务单独一个区域管，不藏在书架或设置里 ──────────
+@Composable
+private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
+                             onAudio: () -> Unit, onLibrary: () -> Unit,
+                             onResume: (TaskInfo) -> Unit) {
+    val st by Producer.state.collectAsState()
+    val tick = remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { delay(1000); tick.value++ } }
+    // 每次进页面 / 每秒都从磁盘读，不依赖进程内存
+    val saved = remember(refresh, tick.value / 2) { TaskResume.load(c) }
+    val t = saved
+    val real = remember(t, refresh) { t?.let { TaskResume.realProgress(c, it) } ?: 0 }
+    val bookExists = remember(t, refresh) {
+        t?.let { BookStore.list(c).any { b -> b.id == it.bookId } } ?: false
+    }
+    val modeText = when {
+        t == null -> ""
+        t.direct -> "直接朗读"
+        t.think -> "标注 · 思考档"
+        else -> "标注 · 快速档"
+    }
+    val scopeText = t?.let {
+        if (it.only == null) "整本" else "选中 ${it.only!!.size} 章"
+    } ?: ""
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Text("任务", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text("长任务都放在这里。退出或被系统杀掉不会丢，回来点继续就行。",
+            fontSize = 12.5.sp, color = Sub)
+        Spacer(Modifier.height(14.dp))
+
+        if (t == null) {
+            CardBox {
+                Text("还没有任务", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Spacer(Modifier.height(5.dp))
+                Text("去书架选一本书点「开始制作」，这里就会出现它的进度、状态和续跑入口。",
+                    fontSize = 12.sp, color = Sub)
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = onLibrary, Modifier.fillMaxWidth()) { Text("去书架") }
+            }
+        } else {
+            CardBox {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(t.title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f))
+                    val badge = when {
+                        st.running -> "进行中"
+                        t.phase == "done" -> "已完成"
+                        t.phase == "stopped" -> "已停止"
+                        else -> "已中断"
+                    }
+                    Text(badge, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (st.running) Primary else if (t.phase == "done") Good else Warn)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("$modeText · $scopeText", fontSize = 12.sp, color = Sub)
+                val total = maxOf(t.total, real)
+                if (total > 0) {
+                    Spacer(Modifier.height(10.dp))
+                    LinearProgressIndicator(
+                        progress = { (if (st.running) st.done else real).toFloat() / total },
+                        modifier = Modifier.fillMaxWidth().height(7.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text("已做好 ${if (st.running) st.done else real}/$total 块",
+                        fontSize = 12.sp, color = Sub)
+                }
+                Spacer(Modifier.height(5.dp))
+                Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
+                    .format(java.util.Date(t.updatedAt)), fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.height(12.dp))
+
+                when {
+                    st.running -> {
+                        Button(onClick = onProgress, Modifier.fillMaxWidth().height(46.dp)) {
+                            Text("查看实时进度")
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text("现在正在算。可以切走、锁屏；若进程被系统回收，已做好的块仍在。",
+                            fontSize = 11.sp, color = Sub)
+                    }
+                    t.phase == "done" -> {
+                        Button(onClick = onAudio, Modifier.fillMaxWidth().height(46.dp)) {
+                            Text("去「我的音频」试听")
+                        }
+                    }
+                    !bookExists -> {
+                        Text("这本书已经从书架删掉了，任务没法续跑。", fontSize = 12.sp, color = Warn)
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = {
+                            Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                        }, Modifier.fillMaxWidth()) { Text("清除这条失效任务") }
+                    }
+                    else -> {
+                        Button(onClick = { onResume(t) }, Modifier.fillMaxWidth().height(48.dp)) {
+                            Text("继续制作（接着已做好的块跑）", fontSize = 15.sp)
+                        }
+                        Spacer(Modifier.height(7.dp))
+                        Row(Modifier.fillMaxWidth()) {
+                            TextButton(onClick = {
+                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                                val b = BookStore.list(c).find { x -> x.id == t.bookId }
+                                if (b != null) { Producer.start(c, b, t.only, t.direct, t.think); onProgress() }
+                            }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
+                            TextButton(onClick = {
+                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                            }, Modifier.weight(1f)) { Text("放弃任务", fontSize = 12.sp, color = Warn) }
+                        }
+                        Spacer(Modifier.height(5.dp))
+                        Text("续跑沿用原档位与选章，已标好的块和已生成的声音直接跳过，不重算。",
+                            fontSize = 11.sp, color = Sub)
+                    }
+                }
+            }
+
+            // 最近完成：给「做完了但忘了在哪听」一个落脚点
+            if (t.phase == "done" && t.output != null) {
+                Spacer(Modifier.height(12.dp))
+                CardBox {
+                    Text("最近完成", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(Modifier.height(5.dp))
+                    Text(t.title, fontSize = 12.sp, color = Sub)
+                    Spacer(Modifier.height(9.dp))
+                    TextButton(onClick = onAudio, Modifier.fillMaxWidth()) { Text("去试听 ›") }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        CardBox {
+            Text("关于后台运行", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(6.dp))
+            Text("手机系统不允许 App 在后台长时间占着 CPU 跑模型，锁屏或切出去久了进程会被回收，"
+                    + "这在 Android 上是系统行为，不是软件坏了。\n\n"
+                    + "听本的做法是：每完成一块就把结果写进手机，任务状态单独记一份。"
+                    + "回来后在这里点「继续制作」，从停下的那块接着算，前面几小时的活不会白干。",
+                fontSize = 11.5.sp, color = Sub, lineHeight = 17.sp)
+        }
+    }
+}
+
 // ── ④ 我的音频 ───────────────────────────────────────────────
 @Composable
 private fun AudioScreen(c: Context, refresh: Int) {
@@ -696,7 +1007,7 @@ private fun AudioScreen(c: Context, refresh: Int) {
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("我的音频", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("我的音频", fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text("做好的有声书都在这儿，点开就听。", fontSize = 12.5.sp, color = Sub)
         Spacer(Modifier.height(14.dp))
@@ -774,7 +1085,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
     val temp = remember(cfg) { Prefs.temperature(c) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("设置", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("设置", fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(14.dp))
 
         CardBox(Modifier.padding(bottom = 11.dp)) {
@@ -815,6 +1126,28 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
             }
         }
 
+        // R11 · 非语言表达：哭腔 / 笑 / 叹气 / 抽泣。只增强导演指令，正文一字不改。
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            val nv = remember(cfg) { Prefs.nonVerbal(c) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("哭声、笑声、叹气", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(Modifier.height(3.dp))
+                    Text(if (nv) "开着：原文写到哭 / 笑 / 叹气时，让声音带出哭腔、气声笑或叹息。"
+                         else "关着：一律平稳朗读。",
+                        fontSize = 11.5.sp, color = Sub)
+                }
+                Switch(checked = nv, onCheckedChange = {
+                    Prefs.setNonVerbal(c, it); cfg++
+                    EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL_MODE", if (it) "on" else "off")
+                })
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("不是插入音效，也不是 [laughter] 这类标签（本模型会把标签当字念）。"
+                 + "正文一个字不改，只给声音模型加一句导演指令；效果取决于模型，可能只是语气更贴近。",
+                fontSize = 11.sp, color = Sub)
+        }
+
         // 模型参数：只暴露三个真能改的
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Text("模型设置", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -834,56 +1167,74 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
             Text("8192 在部分手机上会因内存不足崩，不确定就别动。", fontSize = 11.sp, color = Sub)
         }
 
-        // 音频模型调试：真合成一句，不是 Toast 假按钮
+        // 音频模型调试：真合成，不是 Toast 假按钮；第二个按钮直接验哭/笑/叹气效果
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Text("音频调试", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(4.dp))
-            Text("不跑整本，只让声音模型读一句话，确认它能出声。", fontSize = 11.5.sp, color = Sub)
+            Text("不跑整本，只让声音模型读一句，确认能出声、能带情绪。", fontSize = 11.5.sp, color = Sub)
             Spacer(Modifier.height(9.dp))
-            Button(
-                onClick = {
-                    probing = true; probeResult = "正在合成…"
-                    probeScope.launch(Dispatchers.IO) {
-                        val res = runCatching {
-                            if (!NativeEngine.isAvailable()) throw IllegalStateException(
-                                NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
-                            val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
-                            val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
-                            val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
-                            if (h == 0L) throw IllegalStateException("声音模型打不开")
-                            try {
-                                val f = File(c.filesDir, "probe.wav")
-                                val code = NativeEngine.ttsSynthesize(h, "你好，这是一句试音。",
-                                    "平稳、清晰地叙述", null, "auto", f.absolutePath, 42L)
-                                if (code != 0 || !f.exists() || f.length() <= 44)
-                                    throw IllegalStateException("没生成声音，code=$code")
-                                f.absolutePath
-                            } finally { NativeEngine.ttsFree(h) }
-                        }
-                        withContext(Dispatchers.Main) {
-                            probing = false
-                            val path = res.getOrNull()
-                            probeResult = if (path != null)
-                                "出声了 ✓ ${File(path).length()} 字节，点右边试听"
-                            else "失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
-                            res.exceptionOrNull()?.let {
-                                EventLog.log(EventLog.Kind.ENGINE, "TTS_PROBE_FAIL", it.message ?: "")
-                            }
+            var probeFile by remember { mutableStateOf("") }
+            val enabled = !probing && !st.running && missing.isEmpty()
+
+            fun doProbe(text: String, instruct: String, outName: String) {
+                probing = true; probeResult = "正在合成…"; probeFile = ""
+                probeScope.launch(Dispatchers.IO) {
+                    val res = runCatching {
+                        if (!NativeEngine.isAvailable()) throw IllegalStateException(
+                            NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
+                        val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
+                        val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
+                        val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
+                        if (h == 0L) throw IllegalStateException("声音模型打不开")
+                        try {
+                            val f = File(c.filesDir, outName)
+                            val code = NativeEngine.ttsSynthesize(h, text, instruct, null, "auto",
+                                f.absolutePath, 42L)
+                            if (code != 0 || !f.exists() || f.length() <= 44)
+                                throw IllegalStateException("没生成声音，code=$code")
+                            f.absolutePath
+                        } finally { NativeEngine.ttsFree(h) }
+                    }
+                    withContext(Dispatchers.Main) {
+                        probing = false
+                        val path = res.getOrNull()
+                        probeFile = path ?: ""
+                        probeResult = if (path != null)
+                            "出声了 ✓ ${File(path).length()} 字节，点右边试听"
+                        else "失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
+                        res.exceptionOrNull()?.let {
+                            EventLog.log(EventLog.Kind.ENGINE, "TTS_PROBE_FAIL", it.message ?: "")
                         }
                     }
-                },
-                enabled = !probing && !st.running && missing.isEmpty(),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text(if (probing) "正在合成…" else "试合成一句") }
+                }
+            }
+
+            Row(Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { doProbe("你好，这是一句试音。", "平稳、清晰地叙述", "probe.wav") },
+                    enabled = enabled, modifier = Modifier.weight(1f)
+                ) { Text(if (probing) "…" else "试合成一句", fontSize = 12.sp) }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        doProbe(
+                            "她终于忍不住笑出声，又轻轻叹了口气，眼眶却红了。",
+                            "读到笑时带出一点轻声的笑，读到叹气时先有一口听得见的呼气，"
+                                + "结尾带压抑的哭腔、声音微颤，用气声，语气克制；不要另加字词",
+                            "probe_emote.wav")
+                    },
+                    enabled = enabled, modifier = Modifier.weight(1f)
+                ) { Text(if (probing) "…" else "试哭笑叹气", fontSize = 12.sp) }
+            }
             if (probeResult.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(probeResult, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
-                    if (probeResult.startsWith("出声了")) {
+                    if (probeResult.startsWith("出声了") && probeFile.isNotBlank()) {
                         TextButton(onClick = {
                             try {
                                 val mp = MediaPlayer()
-                                mp.setDataSource(File(c.filesDir, "probe.wav").absolutePath)
+                                mp.setDataSource(File(probeFile).absolutePath)
                                 mp.prepare(); mp.start()
                                 mp.setOnCompletionListener { it.release() }
                             } catch (_: Throwable) {
@@ -948,7 +1299,7 @@ private fun ModelScreen(c: Context, refresh: Int,
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         TextButton(onClick = onBack) { Text("← 返回") }
-        Text(if (allReady) "准备好了" else "准备模型", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(if (allReady) "准备好了" else "准备模型", fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(
             if (allReady) "三个模型都在手机里了，接下来导入一本书。"

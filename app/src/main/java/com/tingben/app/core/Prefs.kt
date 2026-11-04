@@ -25,11 +25,16 @@ object Prefs {
     fun temperature(c: Context) = sp(c).getFloat("temperature", 0f)
     fun setTemperature(c: Context, v: Float) = sp(c).edit().putFloat("temperature", v).apply()
 
+    // R11 · 非语言表达：哭腔 / 笑 / 叹气 / 抽泣等，默认开；只增强导演指令，不动原文
+    fun nonVerbal(c: Context) = sp(c).getBoolean("nonVerbal", true)
+    fun setNonVerbal(c: Context, v: Boolean) = sp(c).edit().putBoolean("nonVerbal", v).apply()
+
     fun summary(c: Context) = buildString {
         append(if (thinking(c)) "思考：开" else "思考：关")
         append(" · 上下文 ").append(nCtx(c))
         append(" · 线程 ").append(threads(c))
         // 思考模式禁用贪心，实际恒 0.6，别显示用户设的 0.0 让他以为生效了
         append(" · 温度 ").append(if (thinking(c)) 0.6f else temperature(c))
+        append(" · 拟声表达 ").append(if (nonVerbal(c)) "开" else "关")
     }
 }

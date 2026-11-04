@@ -80,6 +80,9 @@ scripts/                    build_native.sh / check_structure.py / publish_apk.p
 ## 如实说
 
 - **CI 全绿、APK 闸门全过**（无 INTERNET、无 .gguf、7 个 arm64 .so、CRC 全检、17MB）；但**真机出声还没人验过**——沙盒没有 NDK/kotlinc/真机，「编译通过」不等于「能用」。
+- **非语言表达**：原文写到哭 / 笑 / 叹气 / 抽泣 / 咳嗽时，自动给声音模型加导演指令，带出哭腔、气声笑或叹息；正文一字不改，设置页可关。详见 `docs/NONVERBAL_RESEARCH.md`。
+- **任务页**：长任务单独管理。退出 App 或被系统杀掉后，任务不会消失，重开后书架/常驻条/「任务」页都能看到，点「继续制作」从停下的那块接着跑，已做好的块不重算。详见 `STATUS.md` R12。
+- **外部导入**：在文件管理器、微信里对一本书点「打开方式 → 听本」直接加进书架；书架支持下拉刷新，进度页支持下滑收起 / 上滑展开。
 - 导入支持 txt / md / epub；**epub 按 OPF spine 结构化分章**，标题取 toc.ncx / nav.xhtml，UTF-8 / GB18030 / Big5 自适应，制作页可按章勾选。基础版不处理 DRM / 脚注 / 图片。PDF、OCR 明确不做。
 - `samples/解析测试.epub` 是故意混排 GBK + UTF-8、含「楔子 / Chapter 2 / 尾声」的回归样本，用来验证解析与分章。
 - `samples/试音短篇.txt`（545 字 / 2 块）建议先跑，验证出声；`samples/旧巷钟声.txt`（4430 字 / 6 章 / 15 块）验证按章与整本。
