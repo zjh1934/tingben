@@ -1,6 +1,7 @@
 package com.tingben.app.engine
 
 import com.tingben.app.core.TtsKnobs
+import com.tingben.app.diag.EventLog
 
 /**
  * 听本 · JNI 入口（移植自 OfflineLLM 的 llama.cpp Android 构建方式）。
@@ -51,9 +52,20 @@ object NativeEngine {
     fun ttsSynthesize(
         handle: Long, text: String, instruct: String?, speaker: String?,
         lang: String?, outWavPath: String, knobs: TtsKnobs
-    ): Int = ttsSynthesizeRaw(handle, text, instruct, speaker, lang, outWavPath,
-        knobs.seed, knobs.maxNewTokens, knobs.temperature, knobs.topK, knobs.topP,
-        knobs.repetitionPenalty, knobs.subTemperature, knobs.subTopK, knobs.subTopP)
+    ): Int {
+        // R38 · 触达证据：三条合成路径（主链 / 试音 / A/B）共用一个包装，
+        // 把「UI 改过的值实际传给引擎了什么」写进诊断日志，用户能逐项对照控制台。
+        EventLog.log(EventLog.Kind.ENGINE, "TTS_PARAMS",
+            "seed=${knobs.seed} max=${knobs.maxNewTokens} temp=${knobs.temperature} " +
+                "topK=${knobs.topK} topP=${knobs.topP} rep=${knobs.repetitionPenalty} " +
+                "subTemp=${knobs.subTemperature} subTopK=${knobs.subTopK} subTopP=${knobs.subTopP} " +
+                "lang=${lang ?: "auto"} instructChars=${instruct?.length ?: 0} " +
+                "speaker=${speaker ?: "null"} hash=${knobs.hash()}",
+            level = EventLog.Level.TRACE)
+        return ttsSynthesizeRaw(handle, text, instruct, speaker, lang, outWavPath,
+            knobs.seed, knobs.maxNewTokens, knobs.temperature, knobs.topK, knobs.topP,
+            knobs.repetitionPenalty, knobs.subTemperature, knobs.subTopK, knobs.subTopP)
+    }
 
     private external fun ttsSynthesizeRaw(
         handle: Long, text: String, instruct: String?, speaker: String?,

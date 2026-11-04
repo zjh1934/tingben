@@ -17,7 +17,9 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "app/src/main/java/com/tingben/app/diag/RawDump.kt",
  "docs/THIRD_PARTY_NOTICES.md",
  "scripts/build_native.sh", "scripts/check_structure.py", ".github/workflows/ci.yml", "keystore.jks",
- "contracts/model-manifest.json", "contracts/pipeline_spec.md"]
+ "contracts/model-manifest.json", "contracts/pipeline_spec.md",
+ "contracts/sampling-defaults.h", "scripts/r38_param_audit.py",
+ "app/src/main/java/com/tingben/app/core/ParamSpec.kt"]
 for f in REQUIRED:
     if not (ROOT / f).exists(): errs.append("缺少必备文件: " + f)
 
@@ -344,7 +346,7 @@ if "statusBarsPadding()" not in main_src:
 # ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 / 角色卡 ──
 R36_ALL = ["MixerSection(", "rememberSaveable(key)", "MixerPresetStore", "MixerPreset(",
            "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_PERF", "MIXER_DIM",
-           "MIXER_CAST", "当前生效配置", "预设库", "角色预设", "合成边界与覆盖核对",
+           "MIXER_CAST", "当前生效配置", "预设库", "角色预设", "参数触达矩阵与官方资料",
            "max_new_tokens（单次音频上限）", "下个任务起", "可增删改", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
@@ -362,6 +364,22 @@ if main_src.count("Screen.MIXER ->") != 1:
 bld = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8", errors="replace")
 for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
     if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
+
+# ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
+R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "保存并生效",
+           "参数触达矩阵与官方资料", "恢复官方默认", "精确值", "当前生效 · 全书固定",
+           "官方资料（按名称自行查", "采样参数 · 9 项（全部到引擎）"]
+for sym in R38_ALL:
+    if sym not in all_src: errs.append("缺少 R38 控制台符号: " + sym)
+cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
+if "TTS_PARAMS_APPLIED" not in cpp_src:
+    errs.append("R38 回退：JNI 缺引擎实收参数日志")
+if 'null, "auto"' in main_src:
+    errs.append("R38 回退：试音又用 auto，与主链 chinese 不一致")
+if 'MixerSection("音色身份"' in main_src:
+    errs.append("R38 回退：音色身份又藏进折叠组")
+if "ParamCatalog.SAMPLING.forEach" not in main_src:
+    errs.append("R38 回退：采样参数没有走单一目录")
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)

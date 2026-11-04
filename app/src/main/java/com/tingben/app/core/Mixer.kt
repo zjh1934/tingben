@@ -176,7 +176,8 @@ object Mixer {
             add(MixerRow("身份层", "音色描述（instruct ①）", voice))
             add(MixerRow("身份层", "角色映射", if (Prefs.castEnabled(c)) "开" else "关"))
             add(MixerRow("身份层", "拟声表达", if (Prefs.nonVerbal(c)) "开" else "关"))
-            add(MixerRow("表演层", "本次风格 / 语速 / 情绪", cfg.summary().substringBefore(" · 段间")))
+            // R38 · 这里读的是 ProduceConfig() 默认值，不是当前任务书签，别冒充「本次」。
+            add(MixerRow("表演层", "跨书默认风格（新任务）", cfg.summary().substringBefore(" · 段间")))
             add(MixerRow("表演层", "instruct 模板版本", "v$INSTRUCT_TEMPLATE_VERSION"))
             add(MixerRow("采样", "seed", if (k.seed < 0) "随机（每次不同）" else k.seed.toString()))
             add(MixerRow("采样", "temperature（主 talker）", k.temperature.toString()))
@@ -223,19 +224,15 @@ object Mixer {
      * 第一列组名，第二列项名，第三列「可编辑 / 只读 / 结构」。
      */
     fun coverage(): List<Triple<String, String, String>> = buildList {
-        VoiceDimension.entries.forEach { add(Triple("音色身份 12 维", it.label, "可编辑")) }
-        listOf("seed", "max_new_tokens", "temperature", "top_k", "top_p",
-            "repetition_penalty", "subtalker_temperature", "subtalker_top_k", "subtalker_top_p")
-            .forEach { add(Triple("采样 9 项", it, "可编辑")) }
-        listOf("朗读档位", "语速倾向", "情绪强度", "段间静音", "失败重做")
-            .forEach { add(Triple("表演层 5 项", it, "可编辑")) }
-        listOf("拟声表达", "角色映射开关").forEach { add(Triple("音频开关", it, "可编辑")) }
+        // R38 · 三态来自 ParamCatalog 单一定义，不再手写第二份清单。
+        ParamCatalog.SAMPLING.forEach { add(Triple("到引擎 · 9 项采样", it.official, "可编辑")) }
+        ParamCatalog.UPPER.filter { it.kind == ParamKind.ENGINE }
+            .forEach { add(Triple("到引擎 · 输入", it.official, "可编辑")) }
+        ParamCatalog.UPPER.filter { it.kind == ParamKind.UPPER }
+            .forEach { add(Triple("上层 · 不进模型 API", it.label, "上层")) }
+        ParamCatalog.LOCKED.forEach { add(Triple("结构 · 换模型才有", it.label, "结构")) }
         listOf("角色预设（增删改）", "预设库（自定义加/删/覆盖）")
             .forEach { add(Triple("预设", it, "可编辑")) }
-        listOf("lang=chinese", "max_batch=1", "codec 24s 分块", "24kHz/mono WAV", "段长上限")
-            .forEach { add(Triple("边界", it, "只读")) }
-        listOf("量化档 Q8_0", "权重模式", "speaker 表", "speed / pitch 数值字段", "行内标签")
-            .forEach { add(Triple("结构", it, "结构")) }
     }
 
     /** 预设的每次增删改都写完整配方，贴诊断摘要即可复盘。 */

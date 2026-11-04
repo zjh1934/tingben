@@ -25,6 +25,9 @@ jobs:
       - name: 结构自检
         run: python3 scripts/check_structure.py
 
+      - name: R38 参数触达矩阵与反向注入
+        run: python3 scripts/r38_param_audit.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

@@ -1,0 +1,159 @@
+package com.tingben.app.core
+
+/**
+ * R38 · 控制台参数目录：把界面上每一项与官方资料一一对应。
+ *
+ * 不手搓依据：
+ *  - 元数据形状（label / 默认值 / 范围 / 步长 / 说明）抄 PocketPal
+ *    src__utils__modelSettings.ts 的 COMPLETION_PARAMS_METADATA 与
+ *    CompletionSettings.tsx 的 renderServerDefault。
+ *  - 参数行「名称 + 一行说明 + 当前值 + 恢复默认」抄 OfflineLLM
+ *    SettingsScreen.kt 的 ParamSlider 形状（本项目用档位 + 精确输入，不引滑块依赖）。
+ *
+ * 官方字段名与默认值逐字来自随包 qwen.h 的 qt_tts_params（312-320 行）、
+ * reference/qwentts-cpp/src__sampling-defaults.h，以及 qwentts.cpp README
+ * 的采样链与可覆盖字段说明。出处编号见 docs/R38_调音台重做_联动表与参数触达矩阵.md §2。
+ *
+ * 边界：**只读目录，不是第二份配置真值源**。当前值一律从 Prefs.ttsKnobs 读，
+ * 写入一律走 Prefs.setTtsKnobs；本文件不持久化、不参与缓存指纹。
+ */
+
+enum class ParamKind(val label: String) {
+    ENGINE("到引擎"),
+    UPPER("上层"),
+    LOCKED("结构"),
+}
+
+data class ParamSpec(
+    val key: String,
+    val official: String,
+    val label: String,
+    val def: String,
+    val hint: String,
+    val source: String,
+    val options: List<String>,
+    val kind: ParamKind = ParamKind.ENGINE
+) {
+    val isDefault: (TtsKnobs) -> Boolean = { k ->
+        val a = read(k).toFloatOrNull()
+        val b = def.toFloatOrNull()
+        if (a != null && b != null) a == b else read(k) == def
+    }
+    fun read(k: TtsKnobs): String = when (key) {
+        "seed" -> k.seed.toString()
+        "maxNewTokens" -> k.maxNewTokens.toString()
+        "temperature" -> trimNum(k.temperature)
+        "topK" -> k.topK.toString()
+        "topP" -> trimNum(k.topP)
+        "repetitionPenalty" -> trimNum(k.repetitionPenalty)
+        "subTemperature" -> trimNum(k.subTemperature)
+        "subTopK" -> k.subTopK.toString()
+        "subTopP" -> trimNum(k.subTopP)
+        else -> ""
+    }
+
+    /** 按官方语义做范围校验；非法返回 null，界面给明确提示，不静默吞掉。 */
+    fun withValue(k: TtsKnobs, raw: String): TtsKnobs? {
+        val s = raw.trim()
+        return when (key) {
+            "seed" -> s.toLongOrNull()?.takeIf { it >= -1L }?.let { k.copy(seed = it) }
+            "maxNewTokens" -> s.toIntOrNull()?.takeIf { it in 256..8192 }?.let { k.copy(maxNewTokens = it) }
+            "temperature" -> s.toFloatOrNull()?.takeIf { it in 0f..2f }?.let { k.copy(temperature = it) }
+            "topK" -> s.toIntOrNull()?.takeIf { it in 0..1000 }?.let { k.copy(topK = it) }
+            "topP" -> s.toFloatOrNull()?.takeIf { it in 0f..1f }?.let { k.copy(topP = it) }
+            "repetitionPenalty" -> s.toFloatOrNull()?.takeIf { it in 1f..2f }
+                ?.let { k.copy(repetitionPenalty = it) }
+            "subTemperature" -> s.toFloatOrNull()?.takeIf { it in 0f..2f }
+                ?.let { k.copy(subTemperature = it) }
+            "subTopK" -> s.toIntOrNull()?.takeIf { it in 0..1000 }?.let { k.copy(subTopK = it) }
+            "subTopP" -> s.toFloatOrNull()?.takeIf { it in 0f..1f }?.let { k.copy(subTopP = it) }
+            else -> null
+        }
+    }
+
+    private fun trimNum(f: Float): String =
+        if (f == f.toLong().toFloat()) f.toLong().toString() else "%.3f".format(f).trimEnd('0').trimEnd('.')
+}
+
+object ParamCatalog {
+    /** 9 项采样参数：全部真到 qt_tts_params，逐字段经 JNI 覆盖。 */
+    val SAMPLING: List<ParamSpec> = listOf(
+        ParamSpec("seed", "qt_tts_params.seed", "seed（随机种子）", "42",
+            "固定可复现；-1 = 引擎硬件随机（O5:308-310）", "O4/O5",
+            listOf("42", "1234", "随机")),
+        ParamSpec("maxNewTokens", "qt_tts_params.max_new_tokens", "max_new_tokens（单次音频上限）", "2048",
+            "12.5Hz → 单次约 164 秒音频；官方评测也用 2048（O1:465）", "O1/O4/O6",
+            listOf("1024", "2048", "3072")),
+        ParamSpec("temperature", "qt_tts_params.temperature", "主 temperature", "0.9",
+            "talker 抽语义码 c0；0 = argmax（O5:307）", "O4/O5/O6",
+            listOf("0", "0.4", "0.6", "0.9", "1.1")),
+        ParamSpec("topK", "qt_tts_params.top_k", "主 top_k", "50",
+            "候选集；<=0 关闭截断（O5:308）", "O4/O5/O6",
+            listOf("0", "20", "50")),
+        ParamSpec("topP", "qt_tts_params.top_p", "主 top_p", "1.0",
+            "核采样；>=1 关闭截断（O5:308）", "O1/O4/O5/O6",
+            listOf("0.8", "0.95", "1.0")),
+        ParamSpec("repetitionPenalty", "qt_tts_params.repetition_penalty", "repetition_penalty", "1.05",
+            "采样链第一环：rep → temp → topK → topP（O4:22-23）", "O4/O5/O6",
+            listOf("1.0", "1.05", "1.1", "1.2")),
+        ParamSpec("subTemperature", "qt_tts_params.subtalker_temperature", "副 temperature", "0.9",
+            "副解码器抽声学码，独立一套采样（O5:303-307）", "O4/O5/O6",
+            listOf("0", "0.4", "0.6", "0.9", "1.1")),
+        ParamSpec("subTopK", "qt_tts_params.subtalker_top_k", "副 top_k", "50",
+            "声学层候选集（O5:319）", "O5/O6",
+            listOf("0", "20", "50")),
+        ParamSpec("subTopP", "qt_tts_params.subtalker_top_p", "副 top_p", "1.0",
+            "声学层核采样（O5:320）", "O5/O6",
+            listOf("0.8", "0.95", "1.0"))
+    )
+
+    /** 上层项：不是模型 API 字段，只影响 App 自己的文本/合并/流程。 */
+    val UPPER: List<ParamSpec> = listOf(
+        ParamSpec("voice", "qt_tts_params.instruct", "音色身份描述", "（必填）",
+            "自由文本属性指令，VoiceDesign 的必需输入（O1:201-223 / O4:121-129）", "O1/O3/O4",
+            emptyList(), ParamKind.ENGINE),
+        ParamSpec("lang", "qt_tts_params.lang", "lang（语言）", "chinese",
+            "目标语言已知时显式传，别用 auto（O1:167）", "O1/O5",
+            emptyList(), ParamKind.ENGINE),
+        ParamSpec("speaker", "qt_tts_params.speaker", "speaker", "null",
+            "voicedesign 必须 null；speaker 只属 custom_voice（O5:285-288）", "O1/O5",
+            emptyList(), ParamKind.ENGINE),
+        ParamSpec("dims", "无（instruct 文本拼装器）", "12 维音色网格", "无",
+            "帮你写 instruct 的模板，不是模型字段（ReaderVoice 096b_personas.py）", "O1/O4",
+            emptyList(), ParamKind.UPPER),
+        ParamSpec("perf", "无（styleInstruct）", "朗读档位 / 语速 / 情绪强度", "叙事 / 正常 / 标准",
+            "拼进 instruct 第二层，只影响下一次新建任务", "本项目",
+            emptyList(), ParamKind.UPPER),
+        ParamSpec("gap", "无（WAV 合并）", "段间静音", "300ms",
+            "合并时插 48B/ms，不进模型", "本项目",
+            emptyList(), ParamKind.UPPER),
+        ParamSpec("nonVerbal", "无（合成前改 instruct）", "拟声表达", "开",
+            "命中哭笑叹气只加导演指令，正文不改", "本项目",
+            emptyList(), ParamKind.UPPER)
+    )
+
+    /** 结构上不可控：qt_tts_params 里物理不存在，或属 context 级。 */
+    val LOCKED: List<ParamSpec> = listOf(
+        ParamSpec("max_batch", "context 级", "合成并发", "1（CPU 单 worker）",
+            "不在每次请求参数里", "O5", emptyList(), ParamKind.LOCKED),
+        ParamSpec("codec", "context 级", "codec 24s 分块 / 24kHz mono", "固定",
+            "引擎内部固定", "O5", emptyList(), ParamKind.LOCKED),
+        ParamSpec("speed", "不存在", "speed / pitch 数值字段", "无",
+            "qt_tts_params 里没有；播放端倍速 ≠ 合成端", "O5", emptyList(), ParamKind.LOCKED),
+        ParamSpec("speakers", "qt_n_speakers", "speaker 表", "voicedesign 返回 0",
+            "换 CustomVoice 权重才有 9 个音色", "O1/O5", emptyList(), ParamKind.LOCKED)
+    )
+
+    /** 官方资料索引：App 内只列名称与章节，URL 写在交付文档里（App 无 INTERNET 权限）。 */
+    val DOCS: List<Pair<String, String>> = listOf(
+        "O1 官方仓库 README" to "QwenLM/Qwen3-TTS · §Voice Design(201-239)、§146 generate kwargs、§167 language、§465 评测 2048",
+        "O2 官方模型卡" to "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign · 模型能力与 10 语言",
+        "O3 Qwen 官方博客" to "qwen.ai/blog?id=qwen3tts-0115 · 模型列表与指令控制",
+        "O4 qwentts.cpp README" to "ServeurpersoCom/qwentts.cpp · §14/§22-23 采样链、§121-129 voice design、§153-156 可覆盖字段",
+        "O5 随包 qwen.h" to "app/src/main/cpp/qwen.h:277-356 · qt_tts_params 全字段与模式规则",
+        "O6 采样默认值" to "src/sampling-defaults.h · 9 个默认值逐字",
+        "O7 CLI 采样表" to "Qwen3 TTS Sampling：--temperature 0.9 / --top-k 50 / --top-p 1.0 / --repetition-penalty 1.05"
+    )
+
+    fun find(key: String): ParamSpec? = SAMPLING.find { it.key == key }
+}

@@ -456,6 +456,15 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     tp.subtalker_top_k       = (int)subTopK;
     tp.subtalker_top_p       = (float)subTopP;
 
+    // R38 · 触达证据：打印 qt_tts_params 的实收值，与 Kotlin 侧 TTS_PARAMS 事件逐项对照。
+    // 只截 instruct 前 40 字符，不把长正文写进 logcat。
+    LOGI("TTS_PARAMS_APPLIED seed=%lld max=%d temp=%.3f top_k=%d top_p=%.3f rep=%.3f "
+         "subTemp=%.3f subTopK=%d subTopP=%.3f lang=%s instruct=%.40s",
+         (long long)tp.seed, tp.max_new_tokens, tp.temperature, tp.top_k, tp.top_p,
+         tp.repetition_penalty, tp.subtalker_temperature, tp.subtalker_top_k,
+         tp.subtalker_top_p, tp.lang ? tp.lang : "auto",
+         tp.instruct ? tp.instruct : "(null)");
+
     tp.cancel   = ttsCancelCb;      // 设计系统 §11：长任务必须有可取消入口
     tp.on_chunk = nullptr;          // buffered 模式，一次拿全量 PCM
 
