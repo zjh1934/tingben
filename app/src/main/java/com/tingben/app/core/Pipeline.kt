@@ -747,6 +747,29 @@ object Producer {
 
         // ── 合成阶段：先释放再加载 TTS，绝不同时常驻 ──
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
+
+        // R14 · 声音指纹：音色描述 / 角色表 / 采样 / instruct 模板 任一变化，
+        // 旧 WAV 必须作废，否则「续跑」会跳过旧块、听起来还是旧声音，界面还假装续上了。
+        // 只删 WAV，标注结果（跑了几分钟的 4B 产物）留着不重算。
+        // 第一次写指纹时不删（默认配置下 instruct 与旧版完全一致，旧 WAV 仍有效）。
+        val knobs = Prefs.ttsKnobs(c)
+        val globalVoice = Prefs.voiceDescription(c)
+        val castOn = Prefs.castEnabled(c)
+        val cast = if (castOn) VoiceCast.reconcile(c) else emptyList()
+        val voiceStamp = Prefs.voiceStamp(c)
+        val stampFile = File(work, "voice_stamp.txt")
+        try {
+            if (stampFile.exists() && stampFile.readText().trim() != voiceStamp) {
+                val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
+                killed.forEach { it.delete() }
+                EventLog.log(EventLog.Kind.PIPELINE, "VOICE_INVALIDATE",
+                    "声音配置变了，作废 ${killed.size} 段旧音频，标注保留")
+            }
+            stampFile.writeText(voiceStamp)
+        } catch (_: Throwable) { }
+        EventLog.log(EventLog.Kind.ENGINE, "VOICE_MODE",
+            "voice_design · 指纹=$voiceStamp · 角色=${cast.size} · seed=${knobs.seed} · temp=${knobs.temperature}")
+
         val ttsHandle = try {
             NativeEngine.ttsLoad(tk!!.absolutePath, tok!!.absolutePath, null)
         } catch (t: Throwable) {
@@ -760,12 +783,24 @@ object Producer {
 
         // R11 · 拟声表达：只在合成前增强 instruct，text 一字不动（逐字 gate 不受影响）
         val nonVerbalOn = Prefs.nonVerbal(c)
-        val toSpeak = if (nonVerbalOn) annotated.map { NonVerbal.apply(it) } else annotated
+        var unmapped = 0
+        val toSpeak = annotated.map { ann ->
+            val base = if (nonVerbalOn) NonVerbal.apply(ann) else ann
+            // R14 · 身份层（角色专属 > 全局）由用户/角色表固定，4B 只负责本段情绪。
+            // 不暂停长任务：未映射的角色沿用全局音色，并如实记一条，角色页里能看见待确认。
+            val role = if (castOn) VoiceCast.resolve(c, ann.speaker) else null
+            if (castOn && !VoiceCast.isNarrator(ann.speaker) && role == null) unmapped++
+            val identity = role?.description?.takeIf { it.isNotBlank() } ?: globalVoice
+            val instruct = VoiceProfile.build(identity, null, base.instruct)
+            Ann(base.text, base.speaker, instruct)
+        }
         if (nonVerbalOn) {
             val hits = NonVerbal.count(annotated)
             EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL",
                 "命中 $hits/${annotated.size} 段，只增强导演指令，正文未改")
         }
+        if (unmapped > 0) EventLog.log(EventLog.Kind.PIPELINE, "VOICE_UNMAPPED",
+            "$unmapped 段角色还没指定音色，暂用全局音色；去设置页「角色音色」确认")
 
         val wavs = mutableListOf<File>()
         var synthFails = 0
@@ -781,7 +816,7 @@ object Producer {
                 } else {
                     val code = try {
                         NativeEngine.ttsSynthesize(ttsHandle, a.text, a.instruct, null, "auto",
-                            wav.absolutePath, 42L)
+                            wav.absolutePath, knobs)
                     } catch (t: Throwable) {
                         EventLog.log(EventLog.Kind.ENGINE, "TTS_ERROR", t.message ?: "")
                         -99

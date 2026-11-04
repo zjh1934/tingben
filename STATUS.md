@@ -484,3 +484,39 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 
 按移植清单 5 步走：配置中心 → JNI 扩参 → 固定音色描述 → 角色表 → 两步克隆只登记。
 每步跑 8 项联动检查（缓存 key 失效、断点分桶不动、模式非法编译期挡住、JNI 三处签名同步、逐字 gate、诊断日志、APK 闸门、USER_LOCKED）。
+
+## R14 · 音色模块落地（照抄现成件，非手搓）+ 后台保活调研
+
+### 本轮代码（5 步清单里的 1~4 步）
+
+| 步 | 抄谁 | 落地 |
+|---|---|---|
+| 1 配置中心 | OfflineLLM `SettingsRepository.kt` + qwentts.cpp `sampling-defaults.h` + PocketPal 版本化 | `Prefs.kt` 重写：`TtsKnobs` 9 参数、常量集中、`SCHEMA_VERSION=2` 宽容迁移、`voiceStamp()` |
+| 2 JNI 扩参 | 上游 `qt_tts_default_params → 逐字段覆盖` + ReaderVoice `VoiceDesignEngine.kt` 封装形状 | `NativeEngine.ttsSynthesize(handle,…,knobs)` 包装 → `ttsSynthesizeRaw`；`tingben_native.cpp` 覆盖 9 字段 |
+| 3 instruct 分层 | Qwen3-TTS 官方 `voice_design.py` / `examples/tts.sh` | 新增 `VoiceProfile.kt`（身份层 + 本段情绪层）、`prompt_zh.txt` 禁止 4B 写音色身份 |
+| 4 角色表 | ReaderVoice `CharacterProfileStore.kt`（USER_LOCKED）+ `CosyVoiceVoiceProfile`（hash）+ Alexandria `generate_personas.py`（别名） | 新增 `VoiceCast.kt`、`CastScreen`；canonical/alias/锁定/合并/自动别名检测 |
+| 5 两步克隆 | Qwen3-TTS README | **只登记不实现**（要同时持 VoiceDesign + Base 两套权重） |
+
+### 8 项联动检查（本地静态全绿）
+
+- **缓存 key 失效**：不改 `AnnCache.bucket` 签名（避免牵动 TaskResume / realProgress），改用 `work/voice_stamp.txt`：`voiceDesc + castHash + knobsHash + templateVersion` 变了就删旧 WAV、保留标注。第一次写指纹不删（默认配置下 instruct 与旧版完全一致，续跑不白费）。
+- 断点分桶 / `TaskInfo` / `Producer.start(thinkOverride)` **一行没动**
+- 模式非法：voice_design 恒传 `speaker=null`（传了会被 `QT_STATUS_MODE_INVALID` 拒）
+- JNI 三处签名同步：Kotlin external 15 参 ↔ C++ 17 参（含 env/obj）已脚本核对
+- 逐字 gate 未动：`anns.joinToString("") { it.text } == original`
+- 诊断：新增 `VOICE_MODE / VOICE_INVALIDATE / VOICE_UNMAPPED / VOICE_DESC / VOICE_CAST / VOICE_ALIAS`
+- 无 INTERNET / 无 .gguf / 闸门照旧；结构自检 18 项通过
+- USER_LOCKED：角色页「保存并锁定」后 `reconcile()` 不覆盖
+
+### 有意偏离清单（如实登记）
+
+清单写「未映射角色暂停并提示确认」。实装改为**不暂停长任务**：未映射角色沿用全局音色，记 `VOICE_UNMAPPED` 并在角色页可确认。理由：暂停会牵动 Producer 状态机、任务书签、断点恢复三处，风险大于收益；「不静默」由事件日志 + 角色页保证。
+
+### 后台保活 / 浮窗（只调研，未写一行功能代码）
+
+`docs/后台保活与浮窗_调研.md`。**总判断：两个想法都不成立**——无障碍不是保活 API（官方仅用于辅助残障用户，非辅助用途有 Play 下架与 Android 13+ 受限设置风险）；`SYSTEM_ALERT_WINDOW` 浮窗不提升 `oom_adj`、不免 Doze、不替代 FGS 通知。
+正确路线：FGS（`dataSync`，Android 15 起约 6h 超时）+ 可见通知 + 分块 `PARTIAL_WAKE_LOCK` + 电池优化白名单引导 + 既有逐块落盘/原子书签。浮窗只能做「用户主动打开的观察面板」：能拿 App 内存、整机 CPU、温度；**GPU 利用率无稳定公开 API**。小米 24117RK2CC/HyperOS 具体冻结行为标「待核」，需真机实验。
+
+### 状态
+
+本机静态自检全绿；代码推 `main` 后由 CI 编译（改了 `tingben_native.cpp`，原生缓存 key 会 miss，本轮会全量重编一次，之后稳定）。固定地址在新 run 绿之前仍是 `1.0.0+17`。

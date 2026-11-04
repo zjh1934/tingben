@@ -356,10 +356,17 @@ Java_com_tingben_app_engine_NativeEngine_ttsLoad(
     return (jlong)(intptr_t)q;
 }
 
+// R14 · 采样参数全部由 Kotlin 侧 TtsKnobs 传入，默认值来自
+// qwentts.cpp/src/sampling-defaults.h，不再硬编码在 JNI 里。
+// 顺序：seed, maxNewTokens, temperature, topK, topP, repetitionPenalty,
+//       subTemperature, subTopK, subTopP —— 与 NativeEngine.ttsSynthesizeRaw 一一对应。
 JNIEXPORT jint JNICALL
-Java_com_tingben_app_engine_NativeEngine_ttsSynthesize(
+Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
         JNIEnv * env, jobject, jlong handle, jstring jText, jstring jInstruct,
-        jstring jSpeaker, jstring jLang, jstring jOutWav, jlong seed) {
+        jstring jSpeaker, jstring jLang, jstring jOutWav,
+        jlong seed, jint maxNewTokens,
+        jfloat temperature, jint topK, jfloat topP, jfloat repetitionPenalty,
+        jfloat subTemperature, jint subTopK, jfloat subTopP) {
     auto * q = (qt_context *)(intptr_t)handle;
     if (!q) { throwJava(env, "TTS 未加载"); return -1; }
     g_cancel.store(false);
@@ -371,14 +378,24 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesize(
     const char * outPath  = env->GetStringUTFChars(jOutWav, nullptr);
 
     qt_tts_params tp;
-    qt_tts_default_params(&tp);
+    qt_tts_default_params(&tp);   // 先拿上游完整默认，再逐字段覆盖，不手搓字段顺序
     tp.text     = text;
     tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;
     tp.lang     = (lang && lang[0]) ? lang : "auto";
     // R23 · A4/E2：custom_voice 靠 speaker 真换声；voicedesign 只吃 instruct。
     // 上游 qt_synthesize 会按 model_type 校验，传错模式返回 QT_STATUS_MODE_INVALID。
     tp.speaker  = (speaker && speaker[0]) ? speaker : nullptr;
-    tp.seed     = (int64_t)seed;
+
+    tp.seed                = (int64_t)seed;
+    tp.max_new_tokens      = (int)maxNewTokens;
+    tp.temperature         = (float)temperature;
+    tp.top_k               = (int)topK;
+    tp.top_p               = (float)topP;
+    tp.repetition_penalty  = (float)repetitionPenalty;
+    tp.subtalker_temperature = (float)subTemperature;
+    tp.subtalker_top_k       = (int)subTopK;
+    tp.subtalker_top_p       = (float)subTopP;
+
     tp.cancel   = ttsCancelCb;      // 设计系统 §11：长任务必须有可取消入口
     tp.on_chunk = nullptr;          // buffered 模式，一次拿全量 PCM
 

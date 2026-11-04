@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST }
 
 // R11 · 视觉现代化：冷灰底 + 靛蓝主色 + 明确的层级，去掉旧版淡紫调试台观感
 private val Bg = Color(0xFFF4F6FB)
@@ -327,7 +327,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.AUDIO -> AudioScreen(ctx, refresh)
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
-                    onLibrary = { screen = Screen.LIBRARY })
+                    onLibrary = { screen = Screen.LIBRARY },
+                    onCast = { screen = Screen.CAST })
+                Screen.CAST -> CastScreen(ctx, onBack = { screen = Screen.SETTINGS })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },
@@ -1068,7 +1070,8 @@ private fun SettingOption(label: String, options: List<String>, current: Int, on
 }
 
 @Composable
-private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLibrary: () -> Unit) {
+private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
+                            onLibrary: () -> Unit, onCast: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val missing = remember(refresh) { ModelStore.missing(c) }
     val st by Producer.state.collectAsState()
@@ -1148,6 +1151,95 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
                 fontSize = 11.sp, color = Sub)
         }
 
+        // R14 · 声音：固定音色层 + 角色映射 + 9 个采样参数（默认值来自 qwentts.cpp，非手搓）
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            val knobs = remember(cfg) { Prefs.ttsKnobs(c) }
+            val castOn = remember(cfg) { Prefs.castEnabled(c) }
+            var descDraft by remember(cfg) { mutableStateOf(Prefs.voiceDescription(c)) }
+            var samplingOpen by remember { mutableStateOf(false) }
+            fun putKnobs(k: TtsKnobs) { Prefs.setTtsKnobs(c, k); cfg++ }
+
+            Text("声音", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(5.dp))
+            Text("给整本书定一个固定的嗓子，角色不再每块自己变声。留空 = 沿用原来的默认声音。",
+                fontSize = 11.5.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = descDraft,
+                onValueChange = { descDraft = it },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2, maxLines = 3,
+                placeholder = { Text("例如：沉稳的青年男声，中低音，语速适中，吐字清晰", fontSize = 12.sp) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = {
+                    Prefs.setVoiceDescription(c, descDraft); cfg++
+                    EventLog.log(EventLog.Kind.ENGINE, "VOICE_DESC",
+                        if (descDraft.isBlank()) "清空，回默认音色" else "已更新")
+                }) { Text("保存音色", fontSize = 12.sp) }
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = onCast) { Text("角色音色 →", fontSize = 12.sp) }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("角色映射", fontSize = 12.sp, color = Sub, modifier = Modifier.weight(1f))
+                Switch(checked = castOn, onCheckedChange = {
+                    Prefs.setCastEnabled(c, it); cfg++
+                })
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.clickable { samplingOpen = !samplingOpen }, verticalAlignment = Alignment.CenterVertically) {
+                Text("声音采样（进阶）", fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f))
+                Text(if (samplingOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
+            }
+            if (samplingOpen) {
+                Spacer(Modifier.height(5.dp))
+                Text("默认值逐字取自 qwentts.cpp，改了之后已生成的旧音频会自动作废重做。",
+                    fontSize = 11.sp, color = Sub)
+                SettingOption("随机种子 seed（固定可复现）", listOf("42", "1234", "随机"),
+                    listOf(42L, 1234L, -1L).indexOf(knobs.seed).coerceAtLeast(0)) { i ->
+                    putKnobs(knobs.copy(seed = listOf(42L, 1234L, -1L)[i]))
+                }
+                SettingOption("温度 temperature", listOf("0.6", "0.9", "1.1"),
+                    listOf(0.6f, 0.9f, 1.1f).indexOf(knobs.temperature).coerceAtLeast(0)) { i ->
+                    putKnobs(knobs.copy(temperature = listOf(0.6f, 0.9f, 1.1f)[i]))
+                }
+                SettingOption("top_k（0 = 不限）", listOf("0", "20", "50"),
+                    listOf(0, 20, 50).indexOf(knobs.topK).coerceAtLeast(0)) { i ->
+                    putKnobs(knobs.copy(topK = listOf(0, 20, 50)[i]))
+                }
+                SettingOption("top_p", listOf("0.8", "0.95", "1.0"),
+                    listOf(0.8f, 0.95f, 1.0f).indexOf(knobs.topP).coerceAtLeast(0)) { i ->
+                    putKnobs(knobs.copy(topP = listOf(0.8f, 0.95f, 1.0f)[i]))
+                }
+                SettingOption("重复惩罚", listOf("1.0", "1.05", "1.2"),
+                    listOf(1.0f, 1.05f, 1.2f).indexOf(knobs.repetitionPenalty).coerceAtLeast(0)) { i ->
+                    putKnobs(knobs.copy(repetitionPenalty = listOf(1.0f, 1.05f, 1.2f)[i]))
+                }
+                SettingOption("单次最长 token", listOf("1024", "2048", "3072"),
+                    listOf(1024, 2048, 3072).indexOf(knobs.maxNewTokens).coerceAtLeast(0)) { i ->
+                    putKnobs(knobs.copy(maxNewTokens = listOf(1024, 2048, 3072)[i]))
+                }
+                SettingOption("副解码器温度", listOf("0.6", "0.9", "1.1"),
+                    listOf(0.6f, 0.9f, 1.1f).indexOf(knobs.subTemperature).coerceAtLeast(0)) { i ->
+                    putKnobs(knobs.copy(subTemperature = listOf(0.6f, 0.9f, 1.1f)[i]))
+                }
+                SettingOption("副解码器 top_k / top_p", listOf("50/1.0", "20/0.95", "0/1.0"),
+                    when { knobs.subTopK == 50 && knobs.subTopP == 1.0f -> 0
+                           knobs.subTopK == 20 && knobs.subTopP == 0.95f -> 1
+                           else -> 2 }) { i ->
+                    val (k, p) = when (i) { 0 -> 50 to 1.0f; 1 -> 20 to 0.95f; else -> 0 to 1.0f }
+                    putKnobs(knobs.copy(subTopK = k, subTopP = p))
+                }
+                TextButton(onClick = { Prefs.resetTtsKnobs(c); cfg++ }) {
+                    Text("恢复上游默认值", fontSize = 12.sp)
+                }
+            }
+        }
+
         // 模型参数：只暴露三个真能改的
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Text("模型设置", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -1189,7 +1281,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit, onLib
                         try {
                             val f = File(c.filesDir, outName)
                             val code = NativeEngine.ttsSynthesize(h, text, instruct, null, "auto",
-                                f.absolutePath, 42L)
+                                f.absolutePath, Prefs.ttsKnobs(c))
                             if (code != 0 || !f.exists() || f.length() <= 44)
                                 throw IllegalStateException("没生成声音，code=$code")
                             f.absolutePath
@@ -1380,6 +1472,97 @@ private fun ModelScreen(c: Context, refresh: Int,
         if (files.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
+        }
+    }
+}
+
+// ── ⑤b 角色音色：字段抄 ReaderVoice CharacterManagerActivity / CharacterProfileStore，
+//      别名检测抄 novel-voice-studio/generate_personas.py ──────────────────────
+@Composable
+private fun CastScreen(c: Context, onBack: () -> Unit) {
+    var ver by remember { mutableStateOf(0) }
+    // 每次进来扫一遍已落盘的标注，自动把「李寻欢 / 小李探花」并成同一角色
+    val entries = remember(ver) { VoiceCast.reconcile(c) }
+    val global = remember(ver) { Prefs.voiceDescription(c) }
+    val observedCount = remember(ver) { VoiceCast.collect(c).size }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("角色音色", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClick = onBack) { Text("返回设置", fontSize = 12.sp) }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("给每个角色写一句声音描述，全书都用这个嗓子，不再每块重新变声。"
+                + "留空的角色沿用设置页里的全局音色。改过之后，已生成的旧音频会自动作废重做。",
+            fontSize = 12.sp, color = Sub)
+        Spacer(Modifier.height(6.dp))
+        Text("当前模型是 VoiceDesign：靠文字描述造声，没有预置音色表，也不需要重新下载模型。"
+                + "识别到 $observedCount 种说话人标签，归成 ${entries.size} 个角色。",
+            fontSize = 11.sp, color = Sub)
+        Spacer(Modifier.height(12.dp))
+
+        if (entries.isEmpty()) {
+            CardBox {
+                Text("还没有可分配的角色", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(5.dp))
+                Text("先跑一次「开始制作」并让语言模型标完几块，这里会自动列出书里出现的人物。"
+                        + "也可以先在设置页填一个全局音色，整本立刻生效。",
+                    fontSize = 12.sp, color = Sub)
+            }
+        }
+
+        entries.forEach { e ->
+            var draft by remember(e.id, ver) { mutableStateOf(e.description) }
+            var mergeOpen by remember(e.id) { mutableStateOf(false) }
+            CardBox(Modifier.padding(bottom = 11.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(e.canonical, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                        modifier = Modifier.weight(1f))
+                    if (e.locked) Text("已锁定", fontSize = 11.sp, color = Good)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("出场约 ${e.count} 段" +
+                        if (e.aliases.isEmpty()) "" else " · 别名：" + e.aliases.joinToString("、"),
+                    fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = draft, onValueChange = { draft = it },
+                    modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3,
+                    placeholder = { Text("例如：清亮的少女声，语速偏快，尾音上扬", fontSize = 12.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
+                )
+                Spacer(Modifier.height(6.dp))
+                Text("实际生效：" + VoiceProfile.identity(
+                    if (draft.isBlank()) global else draft, null),
+                    fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = {
+                        VoiceCast.setOverride(c, e.id, draft, true); ver++
+                        EventLog.log(EventLog.Kind.ENGINE, "VOICE_CAST", "${e.canonical} 已保存并锁定")
+                    }) { Text("保存并锁定", fontSize = 12.sp) }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { mergeOpen = !mergeOpen }) { Text("并入其他角色", fontSize = 12.sp) }
+                }
+                if (mergeOpen) {
+                    Spacer(Modifier.height(5.dp))
+                    Text("同一个人的不同称呼点这里合并，合并后共用同一份音色描述（别名链）。",
+                        fontSize = 11.sp, color = Sub)
+                    entries.filter { it.id != e.id }.forEach { t ->
+                        TextButton(onClick = {
+                            VoiceCast.merge(c, e.id, t.id); mergeOpen = false; ver++
+                            EventLog.log(EventLog.Kind.ENGINE, "VOICE_ALIAS", "${e.canonical} → ${t.canonical}")
+                        }) { Text("并入「${t.canonical}」", fontSize = 12.sp, color = Primary) }
+                    }
+                }
+            }
+        }
+
+        if (entries.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = { VoiceCast.clear(c); ver++ }) {
+                Text("清空角色表（不影响已导入的模型和书）", fontSize = 12.sp, color = Warn)
+            }
         }
     }
 }

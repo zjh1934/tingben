@@ -1,5 +1,7 @@
 package com.tingben.app.engine
 
+import com.tingben.app.core.TtsKnobs
+
 /**
  * 听本 · JNI 入口（移植自 OfflineLLM 的 llama.cpp Android 构建方式）。
  * libllama.so / libqwen.so 由 scripts/build_native.sh 在 CI 交叉编译，
@@ -40,10 +42,26 @@ object NativeEngine {
     external fun llmFree(handle: Long)
 
     external fun ttsLoad(talkerPath: String, codecPath: String, device: String?): Long
-    external fun ttsSynthesize(
+
+    /**
+     * R14 · 采样参数不再硬编码在 JNI。用 data class 一次传，避免加 8 个裸参数
+     * 导致字段顺序漂移（抄 qwentts.cpp 的 qt_tts_default_params → 逐字段覆盖模式）。
+     * 名字保持 ttsSynthesize，调用点只把最后的 seed 换成 knobs。
+     */
+    fun ttsSynthesize(
         handle: Long, text: String, instruct: String?, speaker: String?,
-        lang: String?, outWavPath: String, seed: Long
+        lang: String?, outWavPath: String, knobs: TtsKnobs
+    ): Int = ttsSynthesizeRaw(handle, text, instruct, speaker, lang, outWavPath,
+        knobs.seed, knobs.maxNewTokens, knobs.temperature, knobs.topK, knobs.topP,
+        knobs.repetitionPenalty, knobs.subTemperature, knobs.subTopK, knobs.subTopP)
+
+    private external fun ttsSynthesizeRaw(
+        handle: Long, text: String, instruct: String?, speaker: String?,
+        lang: String?, outWavPath: String, seed: Long, maxNewTokens: Int,
+        temperature: Float, topK: Int, topP: Float, repetitionPenalty: Float,
+        subTemperature: Float, subTopK: Int, subTopP: Float
     ): Int
+
     external fun ttsSpeakers(handle: Long): String
     external fun ttsFree(handle: Long)
 }
