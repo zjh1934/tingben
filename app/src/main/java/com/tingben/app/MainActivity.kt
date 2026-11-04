@@ -42,6 +42,9 @@ import java.io.File
 
 private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST }
 
+/** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
+private enum class ProduceMode { ANNOTATE, DIRECT }
+
 // R11 · 视觉现代化：冷灰底 + 靛蓝主色 + 明确的层级，去掉旧版淡紫调试台观感
 private val Bg = Color(0xFFF4F6FB)
 private val Card = Color(0xFFFFFFFF)
@@ -591,8 +594,18 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
     val thinkOn = remember(refresh) { Prefs.thinking(c) }
-    val hasCached = remember(book, refresh, selected, cacheTick, thinkOn) {
-        book?.let { Producer.hasProgress(c, it.id, false, thinkOn,
+    // R17 · 进页面时对齐已有任务：书正以「直接朗读」跑着，别把高亮停在标注档，
+    // 否则用户看到的模式和任务页/断点续跑用的不是同一套。
+    var mode by remember(book, refresh) {
+        val t = TaskResume.load(c)
+        mutableStateOf(if (t != null && t.bookId == id && t.direct)
+            ProduceMode.DIRECT else ProduceMode.ANNOTATE)
+    }
+    val directMode = mode == ProduceMode.DIRECT
+    // 两种模式的缓存分桶不同，hasCached 必须跟着 mode 走，
+    // 不然切到直接朗读还会显示「继续制作」，点的却是标注档的旧缓存。
+    val hasCached = remember(book, refresh, selected, cacheTick, thinkOn, mode) {
+        book?.let { Producer.hasProgress(c, it.id, directMode, thinkOn,
             if (selected.isEmpty() || selected.size == chapters.size) null else selected) } ?: false
     }
     if (book == null) {
@@ -613,6 +626,38 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 Text(st.message, fontSize = 12.5.sp, color = Sub)
                 Spacer(Modifier.height(10.dp))
                 Button(onClick = onDone, Modifier.fillMaxWidth()) { Text("去听") }
+            }
+        }
+
+        CardBox(Modifier.padding(bottom = 12.dp)) {
+            Text("制作方式", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(10.dp))
+            ProduceMode.values().forEach { m ->
+                val on = mode == m
+                Row(
+                    Modifier.fillMaxWidth()
+                        .background(if (on) PrimarySoft else Color.Transparent,
+                            RoundedCornerShape(14.dp))
+                        .clickable { mode = m }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = on, onClick = { mode = m })
+                    Spacer(Modifier.width(4.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if (m == ProduceMode.DIRECT) "直接朗读" else "标注后合成",
+                            fontSize = 14.sp,
+                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
+                        Text(
+                            if (m == ProduceMode.DIRECT)
+                                "原文照读，不过语言模型；不分角色、不加语气，几分钟就能出声"
+                            else
+                                "先逐块判断谁说的、怎么读，再合成；手机会慢不少，但更有戏",
+                            fontSize = 11.5.sp, color = Sub
+                        )
+                    }
+                }
+                if (m != ProduceMode.DIRECT) Spacer(Modifier.height(6.dp))
             }
         }
 
@@ -658,35 +703,31 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             onClick = {
                 val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
                 onStarted(sel)
-                Producer.start(c, book, sel)
+                Producer.start(c, book, sel, directRead = directMode)
                 onProgress()
             },
             enabled = !st.running,
             modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) { Text(if (st.running) "正在制作…" else if (hasCached) "继续制作" else "开始制作", fontSize = 16.sp) }
+        ) {
+            Text(
+                if (st.running) "正在制作…"
+                else if (hasCached) "继续制作"
+                else if (directMode) "开始直接朗读"
+                else "开始制作",
+                fontSize = 16.sp
+            )
+        }
 
         if (hasCached && !st.running) {
             TextButton(onClick = {
-                Producer.clearProgress(c, book.id, false, thinkOn,
+                // 清的是当前模式的那一桶，不能切到直接朗读却还去清标注缓存。
+                Producer.clearProgress(c, book.id, directMode, thinkOn,
                     if (selected.isEmpty() || selected.size == chapters.size) null else selected)
                 cacheTick++
             }, Modifier.fillMaxWidth()) { Text("从头重做（清掉已做的块）", fontSize = 12.sp) }
             Text("上次没跑完，直接点「继续制作」会从停下的地方接着跑，不重算已做好的块。",
                 fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 6.dp))
         }
-
-        TextButton(
-            onClick = {
-                val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
-                onStarted(sel)
-                Producer.start(c, book, sel, directRead = true)
-                onProgress()
-            },
-            enabled = !st.running,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("只想先听声音？直接朗读（跳过标注）", fontSize = 12.5.sp) }
-        Text("直接朗读不分角色、不加语气，但几分钟就能出声；适合先确认整条链路能跑。",
-            fontSize = 11.sp, color = Sub, modifier = Modifier.padding(horizontal = 6.dp))
 
         if (st.message.isNotBlank()) {
             Spacer(Modifier.height(10.dp))

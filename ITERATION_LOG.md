@@ -139,3 +139,9 @@
 这轮先派研究、再读本地一手源码（Alexandria `default_prompts.txt` / Antioch `annotator.rs` / ReaderVoice `DirectorPrompt.kt` / `llama.h` grammar 声明），才动笔写模板。
 两个自我修正：① 委托报告称「未找到 Alexandria 一手实现」，是检索范围所限，本地 reference 里就有原文，已在归档文件头部补正；② v2 初稿 system 写到 1246 字（净增 512），按端侧 prefill 成本主动压到 968 字（净增 173），没有把「写得全」当成「写得好」。
 改完先跑模拟装配与 Kotlin 静态检查，再上 CI —— 改 prompt 最哑巴的错是新增占位符忘了在装配里替换，已用 `PROMPT_PLACEHOLDER_LEAK` 兜住。
+
+## R17 · 把「直接朗读」从捷径升成选项，顺手修三处联动
+
+没有新写链路：`directRead=true` 时 `run()` 连 LLM 都不加载、分桶独立、任务页已有模式文案，能力早就在。这轮动的只是「用户能不能看见、能不能选、选了之后旁边几处会不会跟错」。
+最险的是 `hasCached` 里那个写死的 `false`：不跟着模式走，切到直接朗读还会显示「继续制作」，一点就进标注档的旧缓存。这类哑巴联动正是前几轮被骂的地方，所以这轮先把 6 个联动点列成表逐个过，再上 CI。
+逐字保真按用户要求搁置：gate 表达式、prompt v2、native 全部未动；第三档「改编剧本」只留在设计文档，不塞进界面。

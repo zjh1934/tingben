@@ -582,6 +582,12 @@ object Producer {
         // 上一次点过「停止」的话，native 的 g_cancel 还是 true；整次制作开始才复位。
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         AnnCache.cleanup(AnnCache.dirFor(c, book.id, directRead, thinkOn, onlyChapters))
+        // R17 · 制作方式从 UI 小按钮升成正式选择后，所有入口（制作页 / 任务页 / 进度页续跑）
+        // 都汇到 start，在这里记一条，诊断里能直接看出这一本是过了语言模型还是没过。
+        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_MODE",
+            (if (directRead) "直接朗读（不过语言模型）" else "标注后合成") +
+                " · think=" + thinkOn +
+                " · " + (onlyChapters?.let { "选中 ${it.size} 章" } ?: "整本"))
         scope.launch {
             try {
                 run(c, book, onlyChapters, directRead, thinkOverride)
