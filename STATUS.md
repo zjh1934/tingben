@@ -621,3 +621,14 @@ C++ 未改，「交叉编译两个推理引擎」被跳过 → 这轮没有重�
 - **CI run 21 全绿**，`v1.0.0-21` / 17,655,812 字节。
 - **拆包硬验证**：`assets/` 里 `prompt_zh.txt`(v2) 与 `prompt_zh_v1.txt`(旧版，可回滚) 都在；v2 内含 WRONG/RIGHT/示例/硬契约，v1 旧铁律完整；dex 含 `PROMPT_VERSION` / `PROMPT_PLACEHOLDER_LEAK` / `CONTEXT_BEFORE` / `v2 sha=`；7 个 arm64 .so、无权重、无 INTERNET。
 - 真机待验（零证据）：事件流应出现 `PROMPT_VERSION v2 sha=…` 且 `PROMPT_PLACEHOLDER_LEAK` 为 0；对照 v1/v2 各跑一次试音短篇，只比 JSON 一次通过率、gate 通过率、平均 decode token 数、prefill 秒数。
+
+### R16 追加 · 用户提出的产品点（登记，未动代码）
+
+**制作方式应做成正式三档选择，而不是一个 12.5sp 的调试式小按钮。**
+现状核查：`Producer.start(directRead=…)` 与 `MainActivity:687` 的「只想先听声音？直接朗读（跳过标注）」**已有**，`run()` 在 `direct=true` 时连 LLM 都不加载（`Pipeline.kt:636` 只在 `!direct` 时检查语言模型），天然 100% 保真、零 4B 时间；分桶也独立（`direct/`）。缺的是**产品形态**：它藏在「开始制作」下面，措辞像"先验链路"，不像一个可选制作方式。
+
+下轮队列：制作页顶部做显式三档 ——
+① **直接朗读**（原文切短句 → TTS，最快、纯保真）／② **标注后合成**（过 4B，保真 + 情绪）／③ **改编剧本**（二期，允许改写/拟声/删归属语，表现力优先，**换契约**）。
+三档必须共用同一套任务页 / 断点续跑 / 进度呈现，不能各开一条路径。
+
+**逐字保真的定位**：它是①和②的契约，**不是全产品的天条**。③若做，必须同步改 gate（改成 check_text_loss 防漏句）、缓存主键、作废规则与评测集 —— 见 `docs/PROMPT_REDESIGN.md` §3/§5。最危险的是"允许一点点偏差"这种没有客观边界的中间态：文本能 diff，音频不能。
