@@ -882,4 +882,9 @@ P1② 前台服务 + PARTIAL_WAKE_LOCK + 通知**顺延到下一轮第一件**�
 之后按 `docs/R19_路线图与决策记录.md` 与 `docs/双模型配合_我的想法.md` 的 C→B 顺序。
 
 ### 发布记录（R21）
-- 待 CI 完成后补：版本号 / 字节数 / run 号 / 拆包核验结论。
+- `1.0.0+29` · **17,754,112 字节** · **run 29 全绿**（C++ 未改，原生缓存命中，没重复 4~7 分钟交叉编译）
+- 固定地址 `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`，签名不变，**直接覆盖安装**，模型与已做好的音频都保留
+- 拆包硬验：`PK` 头 / CRC 全过 / 154 条目 / 7 个 arm64 .so / 无 .gguf / 无 INTERNET（CI 闸门）；
+  dex 内 `AUDIT_RUN_BEGIN` `ANN_RAW` `ANN_PREVIEW` `ANN_EMPTY` `ANN_AUDIT` `AUDIT_SUMMARY`
+  `parseWithMeta` `ruleChecks` `BlockAudit` `readDetail` 全命中；`assets/` 里 v2 与 v1 回滚版都在
+- **真机仍是零证据**：跑试音短篇 → 设置页「高级」看 `AUDIT_SUMMARY`，贴诊断摘要给我
