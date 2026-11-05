@@ -44,8 +44,9 @@ def run_asserts(text, errs):
     check("ParamRow(" in text and "onReset = {" in text, "缺 ParamRow 单项恢复官方默认", errs)
     check("恢复本组官方默认（待提交）" in text, "缺组尾恢复本组官方默认", errs)
     check("全部恢复上游默认（待提交）" in text, "缺全部恢复上游默认", errs)
+    # R42：表演层 5 项与 12 维统一走 ChipRow（标签在上、chip 换行），旧 SettingOption 断言同步形态。
     for s in ["朗读档位", "语速倾向", "情绪强度", "段间静音", "失败重做"]:
-        check('SettingOption("' + s + '"' in text, "表演层缺项 " + s, errs)
+        check('ChipRow("' + s + '"' in text, "表演层缺项 " + s, errs)
     # R41a · A/B 对比换成草稿 / 已生效两态一步试听，日志事件同步改名。
     for s in ["MIXER_DIM", "MIXER_DIM_DRAFT", "MIXER_CAST",
               "MIXER_TRIAL", "试听未提交参数", "试听已生效参数", "12 维",
@@ -96,6 +97,7 @@ INJECT = [
     ("删 9 项采样表", lambda t: t.replace("keys.mapNotNull { ParamCatalog.find(it) }",
                                           "emptyList<String>().mapNotNull { null }")),
     ("删三组分组", lambda t: t.replace("主采样（5 项）", "主采样")),
+    ("表演层回退SettingOption", lambda t: t.replace('ChipRow("朗读档位"', 'SettingOption("朗读档位"')),
     ("删删除确认", lambda t: t.replace("MixerPresetStore.delete(c, confirmDeletePresetId)", "true")),
     ("删角色 seed", lambda t: t.replace("CastPresets.seedIfEmpty(c)", "false")),
     ("试听写回默认", lambda t: t.replace('trialText, instruct, null, "chinese"',

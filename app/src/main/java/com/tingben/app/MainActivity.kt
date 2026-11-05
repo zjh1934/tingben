@@ -19,7 +19,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
@@ -1906,27 +1908,170 @@ private fun MixerSection(
     anchor: ((Int) -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val mod = Modifier.padding(bottom = 10.dp).then(
+    // R42 · 细分割线 + 留白替代嵌套阴影；分区标题与展开动作改中性色。
+    val mod = Modifier.padding(bottom = 4.dp).then(
         if (anchor != null) Modifier.onGloballyPositioned { anchor(it.positionInParent().y.toInt()) }
         else Modifier
     )
-    CardBox(mod) {
+    Column(mod.fillMaxWidth()) {
+        HorizontalDivider(color = Line)
+        Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth().clickable { onToggle(!open) },
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                 modifier = Modifier.weight(1f))
             if (badge.isNotEmpty()) {
-                Text(badge, fontSize = 10.sp, color = Primary,
+                Text(badge, fontSize = 10.sp, color = Sub,
                     modifier = Modifier.padding(end = 8.dp))
             }
-            Text(if (open) "收起" else "展开", fontSize = 11.5.sp, color = Primary)
+            Text(if (open) "收起" else "展开", fontSize = 11.5.sp, color = Sub)
         }
         if (open) {
             Spacer(Modifier.height(7.dp))
             content()
         }
+        Spacer(Modifier.height(6.dp))
     }
 }
+
+/** R42 · help 说明：默认只留一个图标 + 标题，点开才看正文（评审 16）。 */
+@Composable
+private fun HelpNote(title: String, body: String) {
+    var open by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().clickable { open = !open },
+        verticalAlignment = Alignment.CenterVertically) {
+        Text("ⓘ", fontSize = 12.sp, color = Sub)
+        Spacer(Modifier.width(5.dp))
+        Text(title, fontSize = 10.sp, color = Sub, modifier = Modifier.weight(1f))
+        Text(if (open) "收起" else "查看", fontSize = 10.sp, color = Sub)
+    }
+    if (open) {
+        Text(body, fontSize = 10.sp, color = Sub,
+            modifier = Modifier.padding(start = 17.dp, bottom = 3.dp))
+    }
+}
+
+/**
+ * R42 · 标签在上、选项 chip 自动换行：官方 FlowRow + FilterChip，不是手搓的横向 Row。
+ * 375px 下长选项（如「高（明显气声）」「略带江浙口音」）整块换到下一行，不挤成竖排碎字。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChipRow(
+    label: String,
+    hint: String,
+    options: List<String>,
+    current: String,
+    onPick: (String) -> Unit
+) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        HelpNote("可选值", hint)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            options.forEach { o ->
+                FilterChip(
+                    selected = o == current,
+                    onClick = { onPick(o) },
+                    label = { Text(o, fontSize = 10.5.sp) }
+                )
+            }
+        }
+        HorizontalDivider(color = Line)
+    }
+}
+
+/** R42 · 375px 窄屏证据：只画两条最长选项的 chip 行，不引新依赖。 */
+@Preview(widthDp = 375, showBackground = true)
+@Composable
+private fun ChipRowNarrowPreview() {
+    Column(Modifier.padding(8.dp)) {
+        ChipRow("气息", "低 / 中 / 高（气声）",
+            VoiceDimension.BREATH.options, "不指定") {}
+        ChipRow("口音", "普通话 / 方言 / 无",
+            VoiceDimension.ACCENT.options, "不指定") {}
+    }
+}
+
+/** R42 · 开关统一带「开 / 关」文字与 info（评审 15）。 */
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, timing: String,
+                      onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 12.sp)
+            HelpNote("什么时候生效", timing)
+        }
+        Text(if (checked) "开" else "关", fontSize = 11.sp,
+            color = if (checked) Good else Sub)
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+/**
+ * R42 · 开发者资料：默认收起。字段名 / 文档坐标 / 指纹只在展开态出现（评审 13）。
+ * 内容全是只读展示，不写任何生效态，不影响 MixerDraft / commit。
+ */
+@Composable
+private fun AdvancedDrawer(rows: List<MixerRow>, stamp: String) {
+    var open by remember { mutableStateOf(false) }
+    HorizontalDivider(Modifier.padding(vertical = 6.dp), color = Line)
+    Row(Modifier.fillMaxWidth().clickable { open = !open },
+        verticalAlignment = Alignment.CenterVertically) {
+        Text("高级 · 开发者资料", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f))
+        Text(if (open) "收起" else "展开", fontSize = 11.sp, color = Sub)
+    }
+    if (open) {
+        Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            var last = ""
+            Mixer.coverage().forEach { (g, item, kind) ->
+                if (g != last) {
+                    last = g
+                    Text(g, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        color = Sub, modifier = Modifier.padding(top = 5.dp))
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+                    Text(item, fontSize = 10.5.sp, color = Sub, modifier = Modifier.weight(1f))
+                    Text(kind, fontSize = 10.5.sp,
+                        color = when (kind) { "可编辑" -> Good; "上层" -> Warn; else -> Sub })
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("触达链路", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+            Text("UI → Prefs.ttsKnobs → NativeEngine.ttsSynthesize → JNI → qt_tts_params → qt_synthesize",
+                fontSize = 10.sp, color = Sub)
+            Text("日志核对：TTS_PARAMS（界面传出） / TTS_PARAMS_APPLIED（引擎实收）",
+                fontSize = 10.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
+            Text("官方资料（按名称自行查；App 无联网权限，不摆假链接）",
+                fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+            ParamCatalog.DOCS.forEach { (name, where) ->
+                Spacer(Modifier.height(4.dp))
+                Text(name, fontSize = 10.5.sp, color = Sub)
+                Text(where, fontSize = 10.sp, color = Sub)
+            }
+            Spacer(Modifier.height(8.dp))
+            rows.filter { it.group == "边界" }.forEach { r ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+                    Text(r.label, fontSize = 10.5.sp, color = Sub, modifier = Modifier.weight(1f))
+                    Text(r.value, fontSize = 10.5.sp, modifier = Modifier.weight(1.2f))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("分区元信息：采样 9 项可编辑 / 表演层与开关属上层 / 触达矩阵与官方索引只读",
+                fontSize = 10.sp, color = Sub)
+            Spacer(Modifier.height(6.dp))
+            Text("导出与诊断", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+            Text("已生效 v$INSTRUCT_TEMPLATE_VERSION · 指纹 $stamp · 合成并发 1 · 语言 chinese · 24kHz 单声道 WAV",
+                fontSize = 10.sp, color = Sub)
+        }
+    }
+}
+// R42_ADVANCED_END
 
 /** R40 · 时机提示统一组件（评审第 17 条：别每处各写一种说法）。 */
 @Composable
@@ -1941,7 +2086,7 @@ private fun AnchorBar(items: List<Pair<String, String>>, onJump: (String) -> Uni
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         items.forEach { (key, label) ->
             TextButton(onClick = { onJump(key) }, modifier = Modifier.padding(end = 2.dp)) {
-                Text(label, fontSize = 11.sp, color = Primary)
+                Text(label, fontSize = 11.sp, color = Sub)
             }
         }
     }
@@ -1965,7 +2110,7 @@ private fun ParamRow(
                 modifier = Modifier.weight(1f))
             Text("范围 ${spec.rangeLabel}${spec.unit}", fontSize = 9.5.sp, color = Sub)
         }
-        Text("${spec.hint} · 官方默认 ${spec.def}", fontSize = 9.5.sp, color = Sub)
+        HelpNote("参数说明", "${spec.hint} · 官方默认 ${spec.def}")
         Row(verticalAlignment = Alignment.CenterVertically) {
             spec.options.forEach { o ->
                 val target = if (o == "随机") "-1" else o
@@ -1977,7 +2122,7 @@ private fun ParamRow(
                 }
             }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onReset) { Text("默认", fontSize = 10.sp, color = Primary) }
+            TextButton(onClick = onReset) { Text("默认", fontSize = 10.sp, color = Sub) }
         }
         OutlinedTextField(
             value = input, onValueChange = onInput,
@@ -2033,7 +2178,7 @@ private fun VoicePicker(
                     fontWeight = if (p.id == selectedId) FontWeight.Bold else FontWeight.Normal)
                 Text(p.chips(), fontSize = 10.sp, color = Sub)
             }
-            Text(if (p.id == selectedId) "已选" else "选用", fontSize = 10.5.sp, color = Primary)
+            Text(if (p.id == selectedId) "已选" else "选用", fontSize = 10.5.sp)
         }
     }
     if (list.isEmpty()) Text("没有匹配的音色", fontSize = 10.5.sp, color = Warn)
@@ -2108,7 +2253,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         draft = active.copy(dims = draft.dims, dimText = draft.dimText)
         paramDrafts = emptyMap(); paramErr = emptyMap()
         tick++
-        msg = "已提交 $n 项变更 · 指纹 ${after.take(8)}"
+        msg = "已提交 $n 项变更"
     }
     fun discardAll() {
         draft = active.copy(dims = draft.dims, dimText = draft.dimText)
@@ -2207,7 +2352,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     Text("‹ 返回", fontSize = 12.sp)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("已生效 v$INSTRUCT_TEMPLATE_VERSION · 指纹 ${stamp.take(8)}",
+                    Text("已生效 v$INSTRUCT_TEMPLATE_VERSION",
                         fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text(if (dirty) "未提交变更 ${changes.size} 项" else "无待提交变更",
                         fontSize = 11.sp, color = if (dirty) Warn else Good)
@@ -2266,8 +2411,10 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             Spacer(Modifier.height(4.dp))
 
             // ── 固定首屏：已生效全文（只读） vs 草稿（可编辑）+ diff 高亮 ────
-            CardBox(Modifier.padding(bottom = 10.dp)
+            Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)
                 .onGloballyPositioned { anchors["identity"] = it.positionInParent().y.toInt() }) {
+                HorizontalDivider(color = Line)
+                Spacer(Modifier.height(8.dp))
                 Text("音色身份", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Text("当前生效 · 全书固定（只读）", fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.height(4.dp))
@@ -2299,7 +2446,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             MixerSection("采样参数 · 9 项到引擎", "sampling",
                 openMap.contains("sampling"), { toggleSection("sampling", it) },
                 anchor = { anchors["sampling"] = it }) {
-                Text(Mixer.CHAIN, fontSize = 10.5.sp, color = Sub)
+                HelpNote("采样顺序", Mixer.CHAIN)
                 Spacer(Modifier.height(4.dp))
                 val groups = listOf(
                     "主采样（5 项）" to listOf("temperature", "topK", "topP", "repetitionPenalty", "maxNewTokens"),
@@ -2307,7 +2454,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     "确定性（1 项）" to listOf("seed")
                 )
                 groups.forEach { (gname, keys) ->
-                    Text(gname, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Primary,
+                    Text(gname, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 6.dp))
                     keys.mapNotNull { ParamCatalog.find(it) }.forEach { spec ->
                         val cur = spec.read(draft.knobs)
@@ -2359,13 +2506,11 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             // ── 音色身份生成器：只有一种语义（生成 → 可编辑预览 → 填入草稿）──
             MixerSection("音色身份生成器", "identity",
                 openMap.contains("identity"), { toggleSection("identity", it) }) {
-                Text("12 维是帮你写 instruct 的拼装模板，不是模型字段（ReaderVoice 096b_personas.py，MIT）。",
-                    fontSize = 10.5.sp, color = Sub)
+                HelpNote("12 维是什么", "按维度挑一挑，自动拼成音色描述；只是帮你写字，不是模型字段。")
                 Spacer(Modifier.height(5.dp))
                 VoiceDimension.entries.forEach { d ->
-                    SettingOption(d.label, d.options,
-                        d.options.indexOf(draft.dims[d.name] ?: "不指定").coerceAtLeast(0)) { i ->
-                        val v = d.options[i]
+                    ChipRow(d.label, d.hint, d.options,
+                        draft.dims[d.name] ?: "不指定") { v ->
                         draft = draft.copy(dims = if (v == "不指定") draft.dims - d.name
                         else draft.dims + (d.name to v))
                         if (!dimEdited) draft = draft.copy(dimText = "")
@@ -2397,7 +2542,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     }) { Text("清空 12 维", fontSize = 11.sp) }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 6.dp), color = Line)
-                Text("现成音色（选用后填入草稿，不会自己生效）",
+                Text("现成音色",
                     fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                 VoicePicker(voiceQuery, { voiceQuery = it }, recentVoices, "") { p ->
                     draft = draft.copy(voice = p.render(), dims = emptyMap(), dimText = p.render())
@@ -2413,25 +2558,35 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             // ── 表演层：只写 draft.perf，提交后对所有新任务生效 ─────────────
             MixerSection("表演层", "perf", openMap.contains("perf"), { toggleSection("perf", it) },
                 anchor = { anchors["perf"] = it }) {
-                SettingOption("朗读档位", ReadingStyle.entries.map { it.label },
-                    ReadingStyle.entries.indexOf(draft.perf.style).coerceAtLeast(0)) { i ->
-                    draft = draft.copy(perf = draft.perf.copy(style = ReadingStyle.entries[i]))
+                ChipRow("朗读档位", "叙事 / 对白 / 广播剧",
+                    ReadingStyle.entries.map { it.label }, draft.perf.style.label) { v ->
+                    ReadingStyle.entries.firstOrNull { it.label == v }?.let {
+                        draft = draft.copy(perf = draft.perf.copy(style = it))
+                    }
                 }
-                SettingOption("语速倾向", Pace.entries.map { it.label },
-                    Pace.entries.indexOf(draft.perf.pace).coerceAtLeast(0)) { i ->
-                    draft = draft.copy(perf = draft.perf.copy(pace = Pace.entries[i]))
+                ChipRow("语速倾向", "慢 / 正常 / 快，只写稳定倾向",
+                    Pace.entries.map { it.label }, draft.perf.pace.label) { v ->
+                    Pace.entries.firstOrNull { it.label == v }?.let {
+                        draft = draft.copy(perf = draft.perf.copy(pace = it))
+                    }
                 }
-                SettingOption("情绪强度", Intensity.entries.map { it.label },
-                    Intensity.entries.indexOf(draft.perf.intensity).coerceAtLeast(0)) { i ->
-                    draft = draft.copy(perf = draft.perf.copy(intensity = Intensity.entries[i]))
+                ChipRow("情绪强度", "克制 / 标准 / 饱满",
+                    Intensity.entries.map { it.label }, draft.perf.intensity.label) { v ->
+                    Intensity.entries.firstOrNull { it.label == v }?.let {
+                        draft = draft.copy(perf = draft.perf.copy(intensity = it))
+                    }
                 }
-                SettingOption("段间静音", ProduceConfig.GAP_OPTIONS.map { "${it}ms" },
-                    ProduceConfig.GAP_OPTIONS.indexOf(draft.perf.gapMs).coerceAtLeast(0)) { i ->
-                    draft = draft.copy(perf = draft.perf.copy(gapMs = ProduceConfig.GAP_OPTIONS[i]))
+                ChipRow("段间静音", "合并时插入空白，不改正文",
+                    ProduceConfig.GAP_OPTIONS.map { "${it}ms" }, "${draft.perf.gapMs}ms") { v ->
+                    v.removeSuffix("ms").toIntOrNull()?.let {
+                        draft = draft.copy(perf = draft.perf.copy(gapMs = it))
+                    }
                 }
-                SettingOption("失败重做", ProduceConfig.RETRY_OPTIONS.map { "${it} 次" },
-                    ProduceConfig.RETRY_OPTIONS.indexOf(draft.perf.gateRetries).coerceAtLeast(0)) { i ->
-                    draft = draft.copy(perf = draft.perf.copy(gateRetries = ProduceConfig.RETRY_OPTIONS[i]))
+                ChipRow("失败重做", "标注不通过时重试次数",
+                    ProduceConfig.RETRY_OPTIONS.map { "${it} 次" }, "${draft.perf.gateRetries} 次") { v ->
+                    v.removeSuffix(" 次").toIntOrNull()?.let {
+                        draft = draft.copy(perf = draft.perf.copy(gateRetries = it))
+                    }
                 }
                 TimingHint(TIMING_NEXT)
             }
@@ -2439,17 +2594,11 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             // ── 音频开关：只写 draft，角色未绑定给可见提示 ───────────────────
             MixerSection("音频开关", "switches", openMap.contains("switches"),
                 { toggleSection("switches", it) }, anchor = { anchors["switches"] = it }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("拟声表达", fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    Text(if (draft.nonVerbal) "开" else "关", fontSize = 11.sp, color = Sub)
-                    Switch(checked = draft.nonVerbal,
-                        onCheckedChange = { draft = draft.copy(nonVerbal = it) })
+                SwitchRow("拟声表达", draft.nonVerbal, TIMING_NOW) {
+                    draft = draft.copy(nonVerbal = it)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("角色映射", fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    Text(if (draft.castEnabled) "开" else "关", fontSize = 11.sp, color = Sub)
-                    Switch(checked = draft.castEnabled,
-                        onCheckedChange = { draft = draft.copy(castEnabled = it) })
+                SwitchRow("角色映射", draft.castEnabled, TIMING_NOW) {
+                    draft = draft.copy(castEnabled = it)
                 }
                 if (draft.castEnabled && unbound > 0) {
                     Spacer(Modifier.height(4.dp))
@@ -2514,6 +2663,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "扫描标注角色，表内 ${list.size} 人")
                     }) { Text("扫描标注里的角色", fontSize = 11.sp) }
                 }
+                TimingHint(TIMING_NOW)
             }
 
             // ── 预设库：载入只写 draft；保存的是已生效配置，空名禁存 ─────────
@@ -2574,56 +2724,20 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         msg = "9 项已回到上游默认（待提交）"
                     }) { Text("恢复上游默认（待提交）", fontSize = 11.sp) }
                 }
+                TimingHint(TIMING_NOW)
             }
 
-            // ── 参数触达与官方资料（一一对应，用户自己去看）──────────────────
+            // ── 资料与诊断：普通视图只留人话；字段名 / 文档坐标 / 指纹全收进「高级」 ──
             MixerSection("参数触达与官方资料", "trace", openMap.contains("trace"),
                 { toggleSection("trace", it) }, anchor = { anchors["trace"] = it }) {
-                var last = ""
-                Mixer.coverage().forEach { (g, item, kind) ->
-                    if (g != last) {
-                        last = g
-                        Text(g, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Primary,
-                            modifier = Modifier.padding(top = 5.dp))
-                    }
-                    Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
-                        Text(item, fontSize = 10.5.sp, color = Sub, modifier = Modifier.weight(1f))
-                        Text(kind, fontSize = 10.5.sp,
-                            color = when (kind) { "可编辑" -> Good; "上层" -> Warn; else -> Sub })
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("触达链路", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                Text("UI → Prefs.ttsKnobs → NativeEngine.ttsSynthesize → JNI → qt_tts_params → qt_synthesize",
-                    fontSize = 10.sp, color = Sub)
-                Text("日志核对：TTS_PARAMS（Kotlin 传出） / TTS_PARAMS_APPLIED（引擎实收）",
-                    fontSize = 10.sp, color = Sub)
-                Spacer(Modifier.height(8.dp))
-                Text("官方资料（按名称自行查；App 无联网权限，不摆假链接）",
-                    fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                ParamCatalog.DOCS.forEach { (name, where) ->
-                    Spacer(Modifier.height(4.dp))
-                    Text(name, fontSize = 10.5.sp, color = Primary)
-                    Text(where, fontSize = 10.sp, color = Sub)
-                }
-                Spacer(Modifier.height(8.dp))
-                rows.filter { it.group == "边界" }.forEach { r ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
-                        Text(r.label, fontSize = 10.5.sp, color = Sub, modifier = Modifier.weight(1f))
-                        Text(r.value, fontSize = 10.5.sp, modifier = Modifier.weight(1.2f))
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("分区元信息：采样 9 项可编辑 / 表演层与开关属上层 / 触达矩阵与官方索引只读",
-                    fontSize = 10.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
-                Text("导出与诊断", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                Text("已生效 v$INSTRUCT_TEMPLATE_VERSION · 指纹 $stamp · 合成并发 1 · 语言 chinese · 24kHz 单声道 WAV",
-                    fontSize = 10.sp, color = Sub)
+                HelpNote("怎么用这份控制台",
+                    "改完点顶部「提交变更」；正在跑的任务不受影响。想复盘就点下面「复制进诊断日志」。")
                 TextButton(onClick = {
                     Mixer.logProfile(c, "手动导出当前配置到日志")
                     Toast.makeText(c, "已写进诊断日志，复制诊断信息即可贴出", Toast.LENGTH_SHORT).show()
                 }) { Text("复制进诊断日志", fontSize = 12.sp) }
+                AdvancedDrawer(rows, stamp)
+                TimingHint(TIMING_NOW)
             }
 
             // R41a · 试听已移进吸顶状态条那一块（草稿 / 已生效各一个按钮，一步合成并播放）。
@@ -2651,9 +2765,10 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
                         color = if (dirty) Warn else Good)
                     changes.forEach { ch ->
-                        CardBox(Modifier.padding(vertical = 3.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                            HorizontalDivider(color = Line)
                             Text(ch.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text("${ch.old} → ${ch.new}", fontSize = 11.sp, color = Primary)
+                            Text("${ch.old} → ${ch.new}", fontSize = 11.sp)
                             Text(ch.timing, fontSize = 10.sp, color = Sub)
                         }
                     }
@@ -2758,9 +2873,10 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     Text(if (pdiff.isEmpty()) "与当前生效一致，没有差异" else "共 ${pdiff.size} 项差异",
                         fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     pdiff.forEach { ch ->
-                        CardBox(Modifier.padding(vertical = 3.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                            HorizontalDivider(color = Line)
                             Text(ch.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text("${ch.old} → ${ch.new}", fontSize = 11.sp, color = Primary)
+                            Text("${ch.old} → ${ch.new}", fontSize = 11.sp)
                         }
                     }
                 }

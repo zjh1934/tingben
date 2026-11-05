@@ -37,6 +37,9 @@ jobs:
       - name: R41 P1 信息架构验证（正向 / 36 例范围对拍 / 反向注入 / 守恒）
         run: python3 scripts/r41_verify.py
 
+      - name: R42 P2 文案/响应式/视觉验证（可见性 / 375px / 反向注入 / 守恒）
+        run: python3 scripts/r42_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:
