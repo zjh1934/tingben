@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from r45_common import strip_r45, canon
 """R41 · 调音台 P1 验证：正向符号 / 参数范围对拍 / 反向注入 / 语义守恒。
 
 只依赖标准库。CI 里挂成独立 step；本地可直接 `python3 scripts/r41_verify.py`。
@@ -29,8 +32,8 @@ POS = {
                  'jumpTo(it)', 'scroll.animateScrollTo(anchors[k] ?: 0)',
                  'onGloballyPositioned', 'positionInParent()'],
     "7 展开态持久化": ["Prefs.mixerOpenSections(c)", "Prefs.setMixerOpenSections(c, next)",
-                   "setMixerOpenSections", '?: "identity"'],
-    "8 编号统一": ["MixerSection(\"采样参数 · 9 项到引擎\"", "MixerSection(\"表演层\"",
+                   "setMixerOpenSections", '?: ""'],
+    "8 编号统一": ["MixerSection(\"采样参数 · 9 项真到模型\"", "MixerSection(\"表演层\"",
                "MixerSection(\"预设库\"", "分区元信息：采样 9 项可编辑"],
     "9 九项紧凑表": ["fun ParamRow(", "主采样（5 项）", "副采样（3 项）", "确定性（1 项）",
                  "ParamCatalog.find(it)", "恢复本组官方默认（待提交）"],
@@ -128,7 +131,7 @@ def baseline(srcmap):
 def inject(case):
     ui, pf, ps = MAIN, PREFS, PRESETS
     if case == "drop_commit": ui = ui.replace("MixerCommit.commit(c, draft, n)", "0L")
-    elif case == "restore_circle": ui = ui.replace("采样参数 · 9 项到引擎", "① 采样参数 · 9 项到引擎")
+    elif case == "restore_circle": ui = ui.replace("采样参数 · 9 项真到模型", "① 采样参数 · 9 项真到模型")
     elif case == "nine_cards": ui = ui.replace("ParamCatalog.find(it)", "ParamCatalog.SAMPLING.forEach")
     elif case == "empty_input": ui = ui.replace("paramDrafts[spec.key] ?: cur", 'paramDrafts[spec.key] ?: ""')
     elif case == "preset_no_diff": ui = ui.replace("showPresetDiff?.let", "null?.let")
@@ -192,9 +195,9 @@ else:
         chk(old is not None and read(p) == old, "守恒文件被改动: " + p)
     old_main = head("app/src/main/java/com/tingben/app/MainActivity.kt")
     no_imports = lambda ls: [x for x in ls if not x.startswith("import ")]
-    cut = lambda t: no_imports(t.split("// ── ⑥ 调音台")[0].splitlines())
+    cut = lambda t: canon(t.split("// ── ⑥ 调音台")[0])
     chk(old_main is not None and cut(MAIN) == cut(old_main),
-        "调音台区块之前的业务代码被改动（R41 只允许新增 import）")
+        "调音台区块之前的业务代码被改动（R45 只允许新增设置页固定音色入口）")
 
 # ── 5) 结果 ────────────────────────────────────────────────────────────
 if errs:

@@ -416,10 +416,14 @@ for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应
         errs.append("R40 回退：又出现旧生效动词 " + banned)
 # 默认展开（R41）：身份生成器开、采样组收；展开态由 Prefs 持久化，不再靠字面 true/false
 prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text(encoding="utf-8", errors="replace")
-if '?: "identity"' not in prefs_src:
-    errs.append("R41 回退：展开态默认值不是只展开身份生成器")
-if 'MixerSection("采样参数 · 9 项到引擎", "sampling",\n                openMap.contains("sampling")' not in main_src:
-    errs.append("R41 回退：采样组没走受控 openMap（可能又默认展开了）")
+if '?: ""' not in prefs_src:
+    errs.append("R45 回退：展开态默认值不是全部折叠")
+if 'MixerSection("采样参数 · 9 项真到模型", "sampling",\n                openMap.contains("sampling")' not in main_src:
+    errs.append("R45 回退：采样组没走受控 openMap")
+if 'MixerSection("固定音色 · 官方模式说明", "fixedVoice",' not in main_src:
+    errs.append("R45 回退：固定音色官方说明折叠区缺失")
+if 'MixerSection("哪些能改 · 和模型一一对齐", "mapping",' not in main_src:
+    errs.append("R45 回退：参数对齐只读折叠区缺失")
 if 'MixerSection("音色身份生成器", "identity",\n                openMap.contains("identity")' not in main_src:
     errs.append("R41 回退：身份生成器没走受控 openMap")
 

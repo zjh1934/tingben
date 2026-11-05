@@ -128,9 +128,9 @@ def check(src):
         errs.append("R40 回退：又出现第二个生效动词")
     if 'MixerSection("音色身份"' in src["ui"]:
         errs.append("音色身份又被塞进折叠组了")
-    if 'MixerSection("采样参数 · 9 项到引擎", "sampling",' not in src["ui"] or \
+    if 'MixerSection("采样参数 · 9 项真到模型", "sampling",' not in src["ui"] or \
        'openMap.contains("sampling")' not in src["ui"]:
-        errs.append("R41 回退：采样组没走受控 openMap")
+        errs.append("R45 回退：采样组没走受控 openMap")
     if 'MixerSection("音色身份生成器", "identity",' not in src["ui"] or \
        'openMap.contains("identity")' not in src["ui"]:
         errs.append("R41 回退：身份生成器没走受控 openMap")

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from r45_common import strip_r45, canon
 """R40 · 调音台「统一提交」验证（纯标准库，不依赖 Android SDK）。
 
 跑三类：
@@ -154,9 +157,9 @@ def main():
     # R41 只在文件头加了 7 行 Compose import；调音台区块之前的业务代码不许动。
     # 按区块标记切，而不是固定行数（新增 import 会让行号整体偏移）。
     no_imports = lambda ls: [x for x in ls if not x.startswith("import ")]
-    head = no_imports(m.split("// ── ⑥ 调音台")[0].splitlines())
+    head = canon(m.split("// ── ⑥ 调音台")[0])
     try:
-        old = no_imports(git_head(MAIN).decode("utf-8").split("// ── ⑥ 调音台")[0].splitlines())
+        old = canon(git_head(MAIN).decode("utf-8").split("// ── ⑥ 调音台")[0])
         same = head == old
         print("  MainActivity 前 1880 行:", "一致" if same else "被改动")
         if not same: ok = False

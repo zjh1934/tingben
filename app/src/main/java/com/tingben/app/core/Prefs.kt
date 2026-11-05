@@ -164,9 +164,10 @@ object Prefs {
     fun setCastSeeded(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_CAST_SEEDED, v).apply()
 
     // ── R41 · 调音台 UI 偏好（纯界面，不参与声音指纹）──
-    /** 默认只展开「身份生成器」；离开页面重进仍保留上次展开的分区。 */
+    /** R45 · 默认全部折叠；首屏身份卡常驻不折叠。只有用户主动展开过才落盘，
+     *  所以改默认值对老用户也立即生效，不覆盖手动记住的展开态。 */
     fun mixerOpenSections(c: Context): Set<String> =
-        (sp(c).getString(KEY_MIXER_OPEN, null) ?: "identity")
+        (sp(c).getString(KEY_MIXER_OPEN, null) ?: "")
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
     fun setMixerOpenSections(c: Context, keys: Set<String>) =

@@ -1412,6 +1412,23 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
+        // R45_FIXED_VOICE_ENTRY_BEGIN
+        // R45 · 固定音色入口：只把对应折叠区记成展开，再进调音台；不新增页面、不改签名。
+        CardBox(Modifier.padding(bottom = 11.dp)) {
+            Row(Modifier.fillMaxWidth().clickable {
+                val s = Prefs.mixerOpenSections(c) + "fixedVoice"
+                Prefs.setMixerOpenSections(c, s)
+                onMixer()
+            }, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("固定音色", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("官方三模式说明 · 当前权重能固定哪三样", fontSize = 11.sp, color = Sub)
+                }
+                Text("›", fontSize = 20.sp, color = Primary)
+            }
+        }
+        // R45_FIXED_VOICE_ENTRY_END
+
 
         CardBox(Modifier.padding(bottom = 11.dp)) {
             Text("模型文件（两个模型共用）", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -1962,6 +1979,9 @@ private fun ChipRow(
     hint: String,
     options: List<String>,
     current: String,
+    allowCustom: Boolean = false,
+    customValue: String = "",
+    onCustom: (String) -> Unit = {},
     onPick: (String) -> Unit
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -1979,6 +1999,14 @@ private fun ChipRow(
                     label = { Text(o, fontSize = 10.5.sp) }
                 )
             }
+        }
+        if (allowCustom) {
+            OutlinedTextField(
+                value = customValue, onValueChange = onCustom,
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("自己填（可选）", fontSize = 9.5.sp) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
+            )
         }
         HorizontalDivider(color = Line)
     }
@@ -2102,7 +2130,8 @@ private fun ParamRow(
     onInput: (String) -> Unit,
     onDone: () -> Unit,
     onPick: (String) -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onRoll: (() -> Unit)? = null
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2122,7 +2151,10 @@ private fun ParamRow(
                 }
             }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onReset) { Text("默认", fontSize = 10.sp, color = Sub) }
+            TextButton(onClick = onReset) { Text("⟳ 默认", fontSize = 10.sp, color = Sub) }
+            onRoll?.let { roll ->
+                TextButton(onClick = roll) { Text("⟳ 换一个", fontSize = 10.sp, color = Primary) }
+            }
         }
         OutlinedTextField(
             value = input, onValueChange = onInput,
@@ -2404,7 +2436,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
         AnchorBar(listOf(
             "identity" to "身份", "sampling" to "采样", "perf" to "表演",
-            "switches" to "开关", "casts" to "角色", "presets" to "预设", "trace" to "资料"
+            "switches" to "开关", "casts" to "角色", "presets" to "预设",
+            "fixedVoice" to "固定音色", "mapping" to "对齐", "trace" to "资料"
         )) { jumpTo(it) }
         Spacer(Modifier.height(4.dp))
         Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp)) {
@@ -2439,13 +2472,18 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         Text("清空回默认（待提交）", fontSize = 11.sp)
                     }
                 }
+                Text("固定音色 = 这段描述 + 种子 + 9 项采样全书不变。", fontSize = 10.sp, color = Sub)
+                TextButton(onClick = {
+                    toggleSection("fixedVoice", true)
+                    scope.launch { scroll.animateScrollTo(anchors["fixedVoice"] ?: 0) }
+                }) { Text("固定音色是什么？ ›", fontSize = 10.5.sp, color = Primary) }
                 TimingHint(TIMING_NOW)
             }
 
             // ── 采样参数：三组紧凑表，改动只进 draft，生效权仍归顶部状态条 ──
-            MixerSection("采样参数 · 9 项到引擎", "sampling",
+            MixerSection("采样参数 · 9 项真到模型", "sampling",
                 openMap.contains("sampling"), { toggleSection("sampling", it) },
-                anchor = { anchors["sampling"] = it }) {
+                badge = "✅ 可调", anchor = { anchors["sampling"] = it }) {
                 HelpNote("采样顺序", Mixer.CHAIN)
                 Spacer(Modifier.height(4.dp))
                 val groups = listOf(
@@ -2481,7 +2519,16 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                                 spec.withValue(draft.knobs, spec.def)?.let { draft = draft.copy(knobs = it) }
                                 paramDrafts = paramDrafts - spec.key
                                 paramErr = paramErr - spec.key
-                            }
+                            },
+                            onRoll = if (spec.key == "seed") ({
+                                val n = java.util.concurrent.ThreadLocalRandom.current()
+                                    .nextLong(1L, 2_000_000_000L)
+                                draft = draft.copy(knobs = draft.knobs.copy(seed = n))
+                                paramDrafts = paramDrafts - "seed"
+                                paramErr = paramErr - "seed"
+                                EventLog.log(EventLog.Kind.ENGINE, "MIXER_SEED",
+                                    "换一个固定种子 $n · 仅草稿，不直接生效")
+                            }) else null
                         )
                     }
                     TextButton(onClick = {
@@ -2509,8 +2556,15 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 HelpNote("12 维是什么", "按维度挑一挑，自动拼成音色描述；只是帮你写字，不是模型字段。")
                 Spacer(Modifier.height(5.dp))
                 VoiceDimension.entries.forEach { d ->
-                    ChipRow(d.label, d.hint, d.options,
-                        draft.dims[d.name] ?: "不指定") { v ->
+                    val curDim = draft.dims[d.name] ?: "不指定"
+                    ChipRow(d.label, d.hint, d.options, curDim,
+                        allowCustom = true,
+                        customValue = if (curDim in d.options) "" else curDim,
+                        onCustom = { v ->
+                            draft = draft.copy(dims = if (v.isBlank()) draft.dims - d.name
+                            else draft.dims + (d.name to v.trim()))
+                            if (!dimEdited) draft = draft.copy(dimText = "")
+                        }) { v ->
                         draft = draft.copy(dims = if (v == "不指定") draft.dims - d.name
                         else draft.dims + (d.name to v))
                         if (!dimEdited) draft = draft.copy(dimText = "")
@@ -2727,6 +2781,71 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 TimingHint(TIMING_NOW)
             }
 
+            // ── R45 · 固定音色：官方三模式只读说明，不画开关（后程折叠）──────
+            MixerSection("固定音色 · 官方模式说明", "fixedVoice",
+                openMap.contains("fixedVoice"), { toggleSection("fixedVoice", it) },
+                badge = "只读", anchor = { anchors["fixedVoice"] = it }) {
+                Text("一句话：官方说的「固定音色」是另一份模型权重；我们现在这份没有音色编号，也没有音色锁。",
+                    fontSize = 11.5.sp)
+                Spacer(Modifier.height(7.dp))
+                Text("官方三种模式（三份权重，不是三个开关）", fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(3.dp))
+                Text("声音设计（当前）：写一段描述生成声音；不需要编号，也不吃参考音频。",
+                    fontSize = 11.sp)
+                Text("预置音色：用音色编号选固定说话人，官方列了 9 个；换权重才能用。",
+                    fontSize = 11.sp)
+                Text("声音克隆：给 3 秒参考音频提取说话人身份；换权重才能用。",
+                    fontSize = 11.sp)
+                Spacer(Modifier.height(6.dp))
+                HelpNote("官方 9 个编号",
+                    "Vivian / Serena / Uncle_Fu / Dylan / Eric / Ryan / Aiden / Ono_Anna / Sohee。"
+                        + "只属预置音色模式，本软件不提供选择，也不画开关。")
+                Spacer(Modifier.height(6.dp))
+                Text("当前能固定的三样", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                Text("身份描述全文 + 随机种子 + 9 项采样，全书不变。上面首屏就能改。",
+                    fontSize = 11.sp)
+                Spacer(Modifier.height(5.dp))
+                Text("这是收敛每段音色漂移，不等于官方承诺的跨段完全一致；种子固定只保证同参数可复现。",
+                    fontSize = 10.5.sp, color = Warn)
+                Spacer(Modifier.height(4.dp))
+                Text("已决定不换模型，所以编号、参考音频、音色锁在这里都不是可选项，界面不画开关。",
+                    fontSize = 10.5.sp, color = Sub)
+                TimingHint(TIMING_NOW)
+            }
+
+            // ── R45 · 参数与模型一一对应：可调 / 上层 / 不可调，只读不画开关 ──
+            MixerSection("哪些能改 · 和模型一一对齐", "mapping",
+                openMap.contains("mapping"), { toggleSection("mapping", it) },
+                badge = "只读", anchor = { anchors["mapping"] = it }) {
+                Text("✅ 真到声音模型（能调）", fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold, color = Good)
+                Text("音色描述全文、9 项采样、语言 chinese、音色编号为空。9 项逐字段送进引擎，改完提交即可。",
+                    fontSize = 11.sp)
+                HelpNote("9 项逐项核对",
+                    ParamCatalog.SAMPLING.joinToString("\n") {
+                        "${it.label}：官方默认 ${it.def}，可填 ${it.rangeLabel}${it.unit}"
+                    })
+                Spacer(Modifier.height(7.dp))
+                Text("⚠️ 上层（能改，但模型只看到文字或 App 流程）", fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold, color = Warn)
+                Text("12 维生成器只是帮你写描述；朗读档位、语速倾向、情绪强度拼进描述；"
+                    + "段间静音是 WAV 合并；角色映射与预设是 App 自己的配置。",
+                    fontSize = 11.sp)
+                Spacer(Modifier.height(7.dp))
+                Text("🔒 结构上没有（不画开关）", fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold, color = Sub)
+                ParamCatalog.LOCKED.forEach { r ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Text(r.label, fontSize = 10.5.sp, color = Sub,
+                            modifier = Modifier.weight(1f))
+                        Text("无", fontSize = 10.5.sp, color = Sub)
+                    }
+                }
+                Text("字段名、文档坐标、触达链路收在下面「高级 · 开发者资料」，普通视图不显示。",
+                    fontSize = 10.sp, color = Sub)
+            }
+
             // ── 资料与诊断：普通视图只留人话；字段名 / 文档坐标 / 指纹全收进「高级」 ──
             MixerSection("参数触达与官方资料", "trace", openMap.contains("trace"),
                 { toggleSection("trace", it) }, anchor = { anchors["trace"] = it }) {
@@ -2741,7 +2860,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             }
 
             // R41a · 试听已移进吸顶状态条那一块（草稿 / 已生效各一个按钮，一步合成并播放）。
-            Spacer(Modifier.height(18.dp))
+            // R45 · 末尾留白：滚动到底时最后一块不压住系统手势白条 / 三键区。
+            Spacer(Modifier.height(40.dp))
         }
     }
 
@@ -2752,6 +2872,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             title = { Text("当前生效 / 待提交差异", fontSize = 14.sp) },
             text = {
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text("提交不依赖试听：改完直接点「提交变更」即可生效。", fontSize = 10.5.sp, color = Sub)
+                    Spacer(Modifier.height(6.dp))
                     Text("当前生效全貌", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                     rows.forEach { r ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {

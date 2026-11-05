@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from r45_common import strip_r45, canon
 """R41a 两态试听验证：正向 / 两态对拍 / 反向注入 / 守恒。纯标准库。"""
 import pathlib, subprocess, sys, os, re
 
@@ -123,10 +126,10 @@ def main():
                 return None
         # R41 只在文件头加了 7 行 Compose import；按区块标记切，避开行号偏移。
         no_imports = lambda ls: [x for x in ls if not x.startswith("import ")]
-        cur = no_imports(m.split("// ── ⑥ 调音台")[0].splitlines())
+        cur = canon(m.split("// ── ⑥ 调音台")[0])
         old = head(MAIN)
-        same = old is not None and cur == no_imports(
-            old.decode("utf-8").split("// ── ⑥ 调音台")[0].splitlines())
+        same = old is not None and cur == canon(
+            old.decode("utf-8").split("// ── ⑥ 调音台")[0])
         print("  MainActivity 前 1880 行:", "一致" if same else "被改动")
         if not same: ok = False
         for p in CONSERVE:

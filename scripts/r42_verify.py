@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from r45_common import strip_r45, canon
 """R42 · 调音台 P2 验证：可见性切片 / 375px 源码断言 / 反向注入 / 语义守恒。
 
 只依赖标准库。CI 里挂成独立 step；本地 `python3 scripts/r42_verify.py`。
@@ -145,8 +148,7 @@ INJECT = {
     "删HelpNote": lambda s, m: (s.replace("private fun HelpNote(", "private fun HelpNoteDISABLED("), m),
     "删375预览": lambda s, m: (s.replace("@Preview(widthDp = 375", "@Preview(widthDp = 600"), m),
     "删高级抽屉": lambda s, m: (s.replace("private fun AdvancedDrawer(", "private fun AdvancedDrawerDISABLED("), m),
-    "删时机复用": lambda s, m: (s.replace("TimingHint(TIMING_NOW)",
-        "Spacer(Modifier.height(1.dp))", 1), m),
+    "删时机复用": lambda s, m: (s.replace("TimingHint(", "TimingHintDISABLED("), m),
     "删唯一出口": lambda s, m: (s.replace("MixerCommit.commit(c, draft, n)", "0L"), m),
 }
 base_e = baseline(MAIN, SPEC)
@@ -187,7 +189,6 @@ if not os.environ.get("CI"):
             "app/src/main/java/com/tingben/app/core/MixerDraft.kt",
             "app/src/main/java/com/tingben/app/core/ParamSpec.kt",
             "app/src/main/java/com/tingben/app/core/Mixer.kt",
-            "app/src/main/java/com/tingben/app/core/Prefs.kt",
             "app/src/main/java/com/tingben/app/core/VoiceProfile.kt",
             "app/src/main/java/com/tingben/app/ProduceService.kt",
             "app/src/main/java/com/tingben/app/AppChrome.kt",
@@ -203,8 +204,7 @@ if not os.environ.get("CI"):
         chk(head(p) == (ROOT / p).read_bytes(), "守恒文件被改动: " + p)
     old = head(MAIN_P)
     if old:
-        noimp = lambda t: [x for x in t.split("// ── ⑥ 调音台")[0].splitlines()
-                           if not x.startswith("import ")]
+        noimp = lambda t: canon(t.split("// ── ⑥ 调音台")[0])
         chk(noimp(MAIN) == noimp(old.decode("utf-8")), "调音台之前的业务代码被改动")
 else:
     print("CI 环境：HEAD 即本次提交，守恒已在提交前本地核对，跳过逐字节比")
