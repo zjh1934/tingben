@@ -30,7 +30,8 @@ CHROME_POS = [
     "if (acc > 55f) onRefresh()",
 ]
 MAIN_POS = [
-    "ModalNavigationDrawer(",
+    # R51 · 覆盖式 → 联动式；其余抽屉行为（手势 / 返回键 / 7 目的地）守恒不变
+    "DismissibleNavigationDrawer(",
     "drawerState = drawerState",
     "gesturesEnabled = true",
     "drawerContent = {",
@@ -48,7 +49,7 @@ MAIN_POS = [
     "var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }",
 ]
 OLD_SHELL = ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS", "AppTab(",
-             "onMenu = { idx ->"]
+             "onMenu = { idx ->", "ModalNavigationDrawer("]
 
 # 守恒：Screen 枚举 9 值 / when 分发 9 分支 / chromeOf 9 映射 / 外部导入落地
 def enum_count(s):

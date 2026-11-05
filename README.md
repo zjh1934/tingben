@@ -5,9 +5,9 @@
 ## 下载安装
 
 ```
-https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
+https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ```
-备用（Release 页）：`https://github.com/zjh1934/ting-ben/releases/latest`
+备用（Release 页）：`https://github.com/zjh1934/tingben-android/releases/latest`
 
 - **方向（R31 定，R33 订正）**：App 发力点转到音频模型调参；换模型不做。
   **端侧 4B 标注不撤、不替换、保持现状**——想用就用、不想用就不用，只是把 4B 的调整沉到后面。
@@ -19,7 +19,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
   看台上方有「语言模型是否生效」判定条，不用贴日志就能判（见 `docs/本次测试_语言模型生效判定卡.md`）
 - 浏览器直接打开即可下载；包名 `com.tingben.app`，与旧墨听不同，**可同时安装、不用卸载**
 - 固定签名，后续新版直接覆盖安装，模型和已做好的音频都保留
-- 源码：`https://github.com/zjh1934/ting-ben`（公开）
+- 源码：`https://github.com/zjh1934/tingben-android`（公开）
 
 ## 用起来就四步
 

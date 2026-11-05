@@ -82,7 +82,8 @@ def checks(src):
     ck("diff 仍逐字段", "MixerCommit" in draft or "fun diff(" in draft)
 
     # ④ 滚动 → 锚点高亮反向联动
-    ck("snapshotFlow 存在", "snapshotFlow { scroll.value to anchors.toMap() }" in m)
+    # R51 · 锚点流只订阅 scroll.value，表在 collect 里现读（不再每帧复制 map）
+    ck("滚动联动存在", "snapshotFlow { scroll.value }" in m and "anchors.toMap()" in m)
     ck("跳转锁", "var jumpLock by remember { mutableStateOf(false) }" in m)
     ck("锁在 finally 释放", "finally { jumpLock = false }" in m)
     ck("锚点可见集合", "val anchorShown = listOf(" in m)
@@ -190,8 +191,8 @@ def variants(src):
     e = dict(src); e["cfg"] = e["cfg"].replace("if (g in GAP_RANGE) g else DEFAULT_GAP_MS",
                                               "if (g in GAP_OPTIONS) g else DEFAULT_GAP_MS", 1)
     v.append(("恢复白名单重置", e))
-    f = dict(src); f["main"] = f["main"].replace("snapshotFlow { scroll.value to anchors.toMap() }",
-                                                "snapshotFlow { scroll.value }", 1)
+    f = dict(src); f["main"] = f["main"].replace("snapshotFlow { scroll.value }",
+                                                "snapshotFlow { 0 }", 1)
     v.append(("删滚动联动", f))
     g = dict(src); g["main"] = g["main"].replace("finally { jumpLock = false }", "", 1)
     v.append(("删跳转锁释放", g))

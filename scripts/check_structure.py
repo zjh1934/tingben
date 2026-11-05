@@ -384,13 +384,16 @@ for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
     if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
 
 # ── R46 · V1 抽屉壳：一整页抽屉 / 返回键优先 / 底部安全区 / 旧壳零残留 ──
-for sym in ["ModalNavigationDrawer(", "drawerState = drawerState",
+for sym in ["DismissibleNavigationDrawer(", "drawerState = drawerState",
             "gesturesEnabled = true", "drawerContent = {",
             "AppDrawerSheet(", "rememberDrawerState(DrawerValue.Closed)",
             "BackHandler(enabled = drawerState.isOpen)",
             "scope.launch { drawerState.close() }",
             ".navigationBarsPadding()", "drawerReturn"]:
-    if sym not in main_src: errs.append("R46 缺 V1 抽屉符号: " + sym)
+    if sym not in main_src: errs.append("R46/R51 缺 V1 抽屉符号: " + sym)
+# R51 · 覆盖式抽屉必须真的换掉（注释里提到名字不带 "("，不算命中）
+if "ModalNavigationDrawer(" in main_src:
+    errs.append("R51 回退：又用回覆盖式 ModalNavigationDrawer(")
 # 后注册的 callback 优先：抽屉 BackHandler 必须紧跟在原 BackHandler 之后
 i_old = main_src.find("BackHandler(enabled = screen != Screen.LIBRARY)")
 i_new = main_src.find("BackHandler(enabled = drawerState.isOpen)")

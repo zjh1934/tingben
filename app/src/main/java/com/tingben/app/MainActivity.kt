@@ -125,6 +125,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val ctx = LocalContext.current
@@ -138,8 +139,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val importBytesFlow = remember { MutableStateFlow(0L) }
     val importBytes by importBytesFlow.collectAsState()
     var importError by remember { mutableStateOf<String?>(null) }
-    val st by Producer.state.collectAsState()
-    val resumeTask by Producer.resume.collectAsState()
+    // R51 · 高频引擎状态不再在 App() 顶层订阅。旧版为了给书架页传 5 个根本没被使用的
+    // 参数，把 Producer.state / Producer.resume 挂在整棵页面树的根上：制作时每次块更新
+    // 都会重组 when(screen) 下全部 9 个页面。现在收进 KeepScreenOn() / TaskBar() 两个
+    // 叶子 composable（官方「状态读在树的最低处」），回调里只读 .value，不订阅。
 
     // V1 · 抽屉状态：☰ 与从左边缘右滑都开它；drawerReturn 记「从哪一页进的二级页」。
     // 形状抄 reference/OfflineLLM/ChatScreen.kt:99,151-160（Apache-2.0），不自写横向手势。
@@ -153,15 +156,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         scope.launch { drawerState.close() }
     }
 
-    // R19 · 长任务在跑时保持屏幕常亮：只加前台窗口 flag，零权限、零 WakeLock。
-    // ⚠️ 这不等于保活：锁屏/切后台后 CPU 仍会睡、进程仍可能被回收。
-    // 后台续跑要走前台服务 + PARTIAL_WAKE_LOCK + 电池白名单，单列下一轮，不混在这轮验。
-    val act = ctx as? android.app.Activity
-    DisposableEffect(st.running) {
-        val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        if (st.running) act?.window?.addFlags(flag) else act?.window?.clearFlags(flag)
-        onDispose { act?.window?.clearFlags(flag) }
-    }
+    // R19 · 长任务在跑时保持屏幕常亮：零权限、零 WakeLock；不等于保活。
+    // R51 · 下沉到叶子 composable，避免 App() 为它订阅高频引擎状态。
+    KeepScreenOn()
 
     // R10/R11 · 导入逻辑抽成局部函数：主动选择器、兜底选择器、外部打开方式共用一条路。
     fun importBook(uri: Uri?, tag: String = "PICKER") {
@@ -315,7 +312,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Screen.MODELS -> NAV_MODELS
         Screen.CAST -> NAV_CAST
     }
-    ModalNavigationDrawer(
+    // R51 · 联动抽屉：官方 DismissibleNavigationDrawer 展开时把右侧工作页一起推走，
+    // 不再是 ModalNavigationDrawer 那种「抽屉盖在内容上 + 全屏遮罩」的覆盖式。
+    // ☰ / 从左边缘右滑 / 返回键优先收抽屉三个行为一行未改。
+    DismissibleNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
         drawerContent = {
@@ -361,15 +361,13 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         )
         Box(Modifier.weight(1f)) {
             when (screen) {
+                // R51 · producing / progressText / onProgress / pendingTask / onTasks
+                // 五个参数在 LibraryScreen 函数体里从未被读取，白挂了一路高频订阅。
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
                     onOpen = { bookId = it; screen = Screen.PRODUCE },
                     onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
                     onImportBook = { openBookPicker() },
-                    onChanged = { refresh++ },
-                    producing = st.running, progressText = if (st.total > 0) "${st.done}/${st.total} 块" else "",
-                    onProgress = { screen = Screen.PROGRESS },
-                    pendingTask = resumeTask?.takeIf { it.phase != "done" },
-                    onTasks = { screen = Screen.TASKS })
+                    onChanged = { refresh++ })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
@@ -379,7 +377,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.PROGRESS -> ProgressScreen(ctx,
                     onBack = { screen = Screen.LIBRARY },
                     onResume = {
-                        val t = resumeTask
+                        val t = Producer.resume.value
                         val b = if (t != null) BookStore.list(ctx).find { x -> x.id == t.bookId }
                                 else bookId?.let { BookStore.list(ctx).find { x -> x.id == it } }
                         if (b != null) {
@@ -421,78 +419,108 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             }
         }
 
-        // 跨页面常驻任务条：上扒展开 / 下扒收起，点整卡不再跳页
-        val pendingTask = resumeTask?.takeIf { it.phase != "done" && !st.running }
-        val hasTask = st.running || st.output != null || pendingTask != null
-        var taskExpanded by remember { mutableStateOf(false) }
-        if (hasTask) {
-            val barBg = if (st.running) PrimarySoft
-                else if (pendingTask != null) Color(0xFFFFF3E0) else Color(0xFFE7F4EC)
-            Column(
-                Modifier.fillMaxWidth().background(barBg)
-                    .pointerInput(Unit) {
-                        var acc = 0f
-                        detectVerticalDragGestures(
-                            onDragStart = { acc = 0f },
-                            onDragEnd = {
-                                if (acc < -24f) taskExpanded = true
-                                else if (acc > 24f) taskExpanded = false
-                                acc = 0f
-                            },
-                            onVerticalDrag = { _, dy -> acc += dy }
-                        )
-                    }
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().clickable { taskExpanded = !taskExpanded }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.size(7.dp).background(
-                        if (st.running) Primary else if (pendingTask != null) Warn else Good,
-                        RoundedCornerShape(50)))
-                    Spacer(Modifier.width(9.dp))
-                    Text(
-                        when {
-                            st.running -> if (st.total > 0) "正在制作 · ${st.done}/${st.total} 块" else "正在制作…"
-                            pendingTask != null -> "《${pendingTask.title}》有没做完的任务"
-                            else -> "做好了"
-                        },
-                        fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-                        color = if (st.running) Primary else if (pendingTask != null) Warn else Good,
-                        modifier = Modifier.weight(1f))
-                    Text(if (taskExpanded) "收起 ↑" else "展开 ↓",
-                        fontSize = 12.5.sp, color = Primary)
-                }
-                if (taskExpanded) {
-                    Column(Modifier.padding(start = 32.dp, end = 16.dp, bottom = 10.dp)) {
-                        Text(
-                            when {
-                                st.running -> "${st.stage} · 已完成 ${st.done}/${st.total} 块"
-                                pendingTask != null -> "《${pendingTask.title}》· 已中断，回来点继续"
-                                else -> "成品已生成"
-                            },
-                            fontSize = 11.5.sp, color = Sub)
-                        Spacer(Modifier.height(6.dp))
-                        TextButton(onClick = {
-                            screen = when {
-                                st.running -> Screen.PROGRESS
-                                pendingTask != null -> Screen.TASKS
-                                else -> Screen.AUDIO
-                            }
-                            if (screen == Screen.AUDIO) refresh++
-                        }) {
-                            Text(if (st.running) "查看进度 ›"
-                                else if (pendingTask != null) "去任务页 ›" else "去试听 ›",
-                                fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-        }
+        // R51 · 任务条抽成叶子 composable：自己订阅引擎状态，
+        // App() 不再为它重组整棵 when(screen) 页面树。
+        TaskBar(onNavigate = { target, isAudio ->
+            screen = target
+            if (isAudio) refresh++
+        })
         // V1 · 3 个顶层 Tab 已收进左侧抽屉；底部安全区由外层 Column 的 navigationBarsPadding() 负责。
         // 任务条保持原位置与「上扒展开 / 下扒收起」手势，本轮不动。
     }
+    }
+}
+
+
+/**
+ * R51 · 屏幕常亮下沉到叶子：以前 DisposableEffect(st.running) 写在 App() 里，
+ * 等于让整棵页面树订阅引擎高频状态。这里单独订阅，本函数不产生任何 UI。
+ */
+@Composable
+private fun KeepScreenOn() {
+    val st by Producer.state.collectAsState()
+    val act = LocalContext.current as? android.app.Activity
+    DisposableEffect(st.running) {
+        val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        if (st.running) act?.window?.addFlags(flag) else act?.window?.clearFlags(flag)
+        onDispose { act?.window?.clearFlags(flag) }
+    }
+}
+
+/**
+ * R51 · 跨页面常驻任务条：上扒展开 / 下扒收起，点整卡不跳页。
+ * 从 App() 抽出来自己订阅 Producer.state / Producer.resume：制作时每次块更新
+ * 只重组这一条，不再把 9 个页面全部重组合一遍。手势与文案一行未改。
+ */
+@Composable
+private fun TaskBar(onNavigate: (Screen, Boolean) -> Unit) {
+    val st by Producer.state.collectAsState()
+    val resumeTask by Producer.resume.collectAsState()
+    val pendingTask = resumeTask?.takeIf { it.phase != "done" && !st.running }
+    val hasTask = st.running || st.output != null || pendingTask != null
+    var taskExpanded by remember { mutableStateOf(false) }
+    if (!hasTask) return
+    val barBg = if (st.running) PrimarySoft
+        else if (pendingTask != null) Color(0xFFFFF3E0) else Color(0xFFE7F4EC)
+    Column(
+        Modifier.fillMaxWidth().background(barBg)
+            .pointerInput(Unit) {
+                var acc = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { acc = 0f },
+                    onDragEnd = {
+                        if (acc < -24f) taskExpanded = true
+                        else if (acc > 24f) taskExpanded = false
+                        acc = 0f
+                    },
+                    onVerticalDrag = { _, dy -> acc += dy }
+                )
+            }
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { taskExpanded = !taskExpanded }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(7.dp).background(
+                if (st.running) Primary else if (pendingTask != null) Warn else Good,
+                RoundedCornerShape(50)))
+            Spacer(Modifier.width(9.dp))
+            Text(
+                when {
+                    st.running -> if (st.total > 0) "正在制作 · ${st.done}/${st.total} 块" else "正在制作…"
+                    pendingTask != null -> "《${pendingTask.title}》有没做完的任务"
+                    else -> "做好了"
+                },
+                fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+                color = if (st.running) Primary else if (pendingTask != null) Warn else Good,
+                modifier = Modifier.weight(1f))
+            Text(if (taskExpanded) "收起 ↑" else "展开 ↓",
+                fontSize = 12.5.sp, color = Primary)
+        }
+        if (taskExpanded) {
+            Column(Modifier.padding(start = 32.dp, end = 16.dp, bottom = 10.dp)) {
+                Text(
+                    when {
+                        st.running -> "${st.stage} · 已完成 ${st.done}/${st.total} 块"
+                        pendingTask != null -> "《${pendingTask.title}》· 已中断，回来点继续"
+                        else -> "成品已生成"
+                    },
+                    fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = {
+                    when {
+                        st.running -> onNavigate(Screen.PROGRESS, false)
+                        pendingTask != null -> onNavigate(Screen.TASKS, false)
+                        else -> onNavigate(Screen.AUDIO, true)
+                    }
+                }) {
+                    Text(if (st.running) "查看进度 ›"
+                        else if (pendingTask != null) "去任务页 ›" else "去试听 ›",
+                        fontSize = 12.sp)
+                }
+            }
+        }
     }
 }
 
@@ -535,9 +563,7 @@ private fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.(
 @Composable
 private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                            onModels: () -> Unit, onImportBook: () -> Unit,
-                           onChanged: () -> Unit, producing: Boolean,
-                           progressText: String, onProgress: () -> Unit,
-                           pendingTask: TaskInfo?, onTasks: () -> Unit) {
+                           onChanged: () -> Unit) {
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
     val clipboard = LocalClipboardManager.current
@@ -850,7 +876,11 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     val st by Producer.state.collectAsState()
     val pct = if (st.total > 0) st.done.toFloat() / st.total else 0f
     var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(1000); tick++ } }
+    // R51 · 没在制作时不需要心跳，停掉无谓的每秒整页重组。
+    LaunchedEffect(st.running) {
+        if (!st.running) return@LaunchedEffect
+        while (true) { delay(1000); tick++ }
+    }
 
     // 每秒读一次最近一条引擎事件：prefill 一批在手机上要 70 秒，
     // 期间没有块完成，块进度条纹丝不动，必须给「还在算」的心跳。
@@ -1141,10 +1171,11 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                              onAudio: () -> Unit, onLibrary: () -> Unit,
                              onResume: (TaskInfo) -> Unit) {
     val st by Producer.state.collectAsState()
-    val tick = remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(1000); tick.value++ } }
-    // 每次进页面 / 每秒都从磁盘读，不依赖进程内存
-    val saved = remember(refresh, tick.value / 2) { TaskResume.load(c) }
+    // R51 · 旧版每秒 tick 一次（整页重组 1 次/秒），tick/2 每 2 秒同步读磁盘。
+    // 合成一次 2 秒信号：重组次数减半，磁盘读频率不变。
+    var loadTick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { delay(2000); loadTick++ } }
+    val saved = remember(refresh, loadTick) { TaskResume.load(c) }
     val t = saved
     val real = remember(t, refresh) { t?.let { TaskResume.realProgress(c, it) } ?: 0 }
     val bookExists = remember(t, refresh) {
@@ -1275,7 +1306,12 @@ private fun AudioScreen(c: Context, refresh: Int) {
     LaunchedEffect(items) {
         PlayQueue.setTracks(items.map { Track(it.file, "${it.title} · ${it.scope}") })
     }
-    LaunchedEffect(Unit) { while (true) { delay(300); PlayQueue.tick() } }
+    // R51 · 旧版无条件每 300ms tick，即使没播放也把整页重组 3.3 次/秒。
+    // 只在播放时刷新进度，500ms 足够人眼读进度条。
+    LaunchedEffect(pq.isPlaying) {
+        if (!pq.isPlaying) return@LaunchedEffect
+        while (true) { delay(500); PlayQueue.tick() }
+    }
     val isPlaying = pq.isPlaying
     val posMs = pq.positionMs
     val durMs = pq.durationMs
@@ -2404,10 +2440,13 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         }
     }
     LaunchedEffect(Unit) {
-        snapshotFlow { scroll.value to anchors.toMap() }.collect { (v, pos) ->
+        // R51 · 只把 scroll.value 放进流；旧版每帧 anchors.toMap() 复制整张表，
+        // 滚动一帧分配一次 map。锚点表改在 collect 里按当前值读取，语义不变。
+        snapshotFlow { scroll.value }.collect { v ->
             if (jumpLock) return@collect
             val top = v + 24
             var best = "identity"
+            val pos = anchors.toMap()
             for ((k, y) in pos.entries.sortedBy { it.value }) {
                 if (y > top) break
                 if (k in anchorShown) best = k
