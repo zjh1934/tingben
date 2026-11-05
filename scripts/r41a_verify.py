@@ -95,7 +95,6 @@ def main():
         print("  %-12s %s" % (name, "不同 ✓" if not same else "相同 ✗"))
         if same: ok = False
 
-    print("=== 3) 反向注入（6 例）===")
     inj = {
         "删草稿试听": lambda s: s.replace('trial("未提交参数", draft', 'trial("未提交参数", active'),
         "两态同参": lambda s: s.replace('trial("已生效参数", active', 'trial("已生效参数", draft'),
@@ -106,6 +105,7 @@ def main():
                                             'Prefs.setTtsKnobs(c, src.knobs); trialText, instruct, null, "chinese"'),
         "模板漏花括号": lambda s: s.replace('"正在用${label}合成', '"正在用$label合成'),
     }
+    print("=== 3) 反向注入（%d 例）===" % len(inj))
     for name, fn in inj.items():
         e = check_sources(fn(m))
         print("  %-16s %s" % (name, "拦下 ✓" if e else "漏过 ✗"))

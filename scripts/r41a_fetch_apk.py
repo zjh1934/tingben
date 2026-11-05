@@ -20,11 +20,16 @@ def git_sha(b):
     return hashlib.sha1(b"blob " + str(len(b)).encode() + b"\0" + b).hexdigest()
 
 
-run = get("/actions/runs/41953405355")
-print("run 50:", run["status"], run["conclusion"])
+runs = get("/actions/runs?per_page=6")["workflow_runs"]
+target = next((r for r in runs if r["run_number"] == 51), None)
+if target is None:
+    sys.exit("没找到 run 51")
+rid = target["id"]
+run = get("/actions/runs/%s" % rid)
+print("run 51:", run["status"], run["conclusion"])
 if run["conclusion"] != "success":
     sys.exit("CI 未成功，停止取包")
-jobs = get("/actions/runs/41953405355/jobs")["jobs"][0]
+jobs = get("/actions/runs/%s/jobs" % rid)["jobs"][0]
 bad = [s["name"] for s in jobs["steps"]
        if s["conclusion"] not in ("success", "skipped", None) and s["number"] <= 20]
 print("失败 step:", bad or "无")
@@ -46,4 +51,3 @@ if raw[:2] != b"PK":
     sys.exit("不是 APK")
 OUT.write_bytes(raw)
 print("已写入", OUT, OUT.stat().st_size, "字节")
-PY

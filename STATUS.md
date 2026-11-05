@@ -1,13 +1,13 @@
 # 听本 · 当前状态
 
-**2026-11-05 · R41a 已发（CI run 50）· 调音台试听改版：两态一步试听 / 返回常驻 / 旧 A/B 清零**
+**2026-11-05 · R41a 已发（CI run 51，run 50 编译失败已复盘修复）· 调音台试听改版：两态一步试听 / 返回常驻 / 旧 A/B 清零**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+50`（精确字节数 / 直链 blob 见文末 R41a 落地记录） |
-| APK | 见文末 R38 发布记录 / arm64-v8a / 固定 debug 签名 |
+| 版本 | `1.0.0+51`（17,935,474 字节；直链 blob `68e6b159dd63…` 与本地逐字节一致） |
+| APK | 17,935,474 字节 / arm64-v8a / 固定 debug 签名 / 发布详情见 `docs/R41a_试听改版_落地.md` |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | run 50 `completed success`（新增 R41a 两态试听验证 step） |
+| CI | **run 50 `completed failure`**（Kotlin 两处编译错，日志回写定位）→ **run 51 `completed success`**（含 R41a 验证 step） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -80,7 +80,7 @@
 
 ## 下轮队列（R41a 插队后）
 
-1. **真机验**：`+50` 装到 24117RK2CC —— ① 首屏吸顶那一块能否看到两个试听按钮、点一下是否自动出声；
+1. **真机验**：`+51` 装到 24117RK2CC —— ① 首屏吸顶那一块能否看到两个试听按钮、点一下是否自动出声；
    ② 改了音色但未提交，两个按钮听感是否真不同（`MIXER_TRIAL` 里两套 hash / voiceChars 可对照）；
    ③ 全页是否再无 A/B 字样；④「‹ 返回」常驻、有未提交仍先问丢弃。
 2. **R41 · P1**（评审 7~12）：锚点导航 + 记住展开态、编号统一、九项紧凑表、精确值 min/max/越界、
