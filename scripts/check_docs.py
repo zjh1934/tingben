@@ -9,7 +9,9 @@ import os, re, sys, pathlib, zipfile, tempfile, shutil
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = ROOT / 'docs'
 BAD_WORDS = ['换模型不做', '4B 撤主路', '下轮队列', '下一轮第一件']
-CURRENT_VER = '1.0.0+66'
+# R61 · 版本不再写死：从 STATUS.md 表格读当前版本，避免每轮发版都要改自检脚本
+_m = re.search(r'\| 版本 \| `([^`]+)`', (ROOT / 'STATUS.md').read_text(encoding='utf-8'))
+CURRENT_VER = _m.group(1) if _m else '1.0.0+0'
 
 
 def read(p):

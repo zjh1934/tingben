@@ -9,7 +9,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.0.0+66`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.0.0+68`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
 - 仓库已改名：源码仓 `tingben-android→tingben`，APK 仓 `tingben-apk→ting-ben-apk`，旧地址自动跳转
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
@@ -29,13 +29,13 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 
 ## 三个模型（后导入、不进包）
 
-| 槽位 | 线上 `+66` 用的文件 | 国内地址 |
+| 槽位 | 线上 `+68` 用的文件 | 国内地址 |
 |---|---|---|
 | 语言模型 | `huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf` | `https://hf-mirror.com/kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF/resolve/main/huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf` |
 | 声音主文件 | `qwen-talker-1.7b-voicedesign-Q8_0.gguf` | `https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf` |
 | 声音配套 | `qwen-tokenizer-12hz-Q8_0.gguf` | `https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf` |
 
-**代码路径已切换（R60 / `+66`），GGUF 仍要手动导入**：语言模型文件是
+**代码路径已切换（R60 / `+68`），GGUF 仍要手动导入**：语言模型文件是
 `huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf`（国内地址见上表）。
 它是**仅非思考**权重，代码里的「思考过程」开关、`/no_think`、思考档温度 0.6、两套缓存分桶已删；旧文件名保留为导入白名单兜旧数据。
 依据 `docs/R57_换模型联动表.md` 的 11 处联动、落地报告 `docs/R60_P0换模型与双页拆分_落地.md`。
@@ -44,7 +44,9 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 
 ## 设置页与调音台
 
-- **设置页（R60 / `+66` 起）**：只管软件 —— 外观、数据与日志、后台、关于，加一行「语言模型设置 ›」；
+- **目录页（R61 / `+68` 起）**：点一本书进四列横滑目录（原始 / 标注 / 合成 / 可播）；勾选章后底部小条批量制作，
+  点章名看原文，成品从软件内悬浮条播放，不做独立播放器页。
+- **设置页（R60 / `+68` 起）**：只管软件 —— 外观、数据与日志、后台、关于，加一行「语言模型设置 ›」；
   夜间模式 / 字号在代码里**没有**，界面标「待新增」，不画假开关。
 - **语言模型设置页**（抽屉独立目的地）：只读模型卡 + 已移除项说明 + 主层三项 + 高级只读五项 + 诊断评测；
   `MODEL_ID` / `AbGate` 写进诊断摘要。思考开关、`top_k` / `min_p` / YaRN / GPU 层数等物理不存在的项一个都不画。

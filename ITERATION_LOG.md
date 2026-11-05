@@ -773,3 +773,32 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   四项 A/B gate 全不劣于基线才替换线上，否则回退官方 2507 Q4_K_M 基线。真机仍是零证据。
 - **队列**（`ROADMAP.md` 唯一真源）：真机验 → P1 V2 目录页 + 按章绿勾 → P2 看书页 → P3 迷你条 →
   P4 标注导入 → P5 性能二期 → P6 软件设置补齐；P0 代码侧已落地，剩余是用户侧导入与 A/B。
+
+
+## R61 · 目录页四列与悬浮条（1.0.0+68 / run 68）
+
+- **用户指令**：「很不错，说明你是听懂了，咱这一页就这么做吧」= 批准 v9 全 8 屏预览。此前用户把四列、
+  勾选框、底部三条、半透明进度条、悬浮条逐条想完，并让我把「没想好的五处」补齐（直接合成章落第三列、
+  悬浮条目录弹层、第四列三控制、顶部标签、标注结果页只读）—— 全部按 `docs/R61_目录页四列与悬浮条_补齐决策.md` 落。
+- **硬前提先解决**：`AudioItem` 只有 `scope` 文字，章节索引在 `register()` 当场丢掉；`.chapters.json` 侧车是全书章名。
+  本轮给 `index.json` 加 `chapterIndices` + `chaptersKnown`，旧「整本 / 选中 N 章 / 旧版」一律 `known=false` 不点亮单章。
+  阶段 A 6 组往返对拍全过，才进界面层，不与界面混做。
+- **13 处联动**：新 `ChapterHub.kt`（四列 / 勾选 / 小条 / 看书页 / 标注结果页 / 悬浮条）、`AudioLibrary` 四个查询入口、
+  `Pipeline` register 调用点带 `chapters.size`、`Screen` 只加 `CHAPTERS` 一个值、`chromeOf` / `drawerSelected` / `when` 各一条、
+  点书 `PRODUCE → CHAPTERS`、CI 挂 `r61_verify.py`、项目文件回填。
+- **诚实差额**：引擎只有 DIRECT / ANNOTATE 两档，`去标注` 与 `标注并合成音频` 落同一档，界面明写「这一档跑完会一并出音频」，
+  **没有伪造第三条管线**；进行中进度只标「整本进度」，不做逐章假拆分；旧成品不点亮单章；阅读位置持久化未做。
+- **守恒**：prompt v2、逐字 gate、两条制作路径、native 采样链、调音台唯一提交与两态试听、4B 设置、
+  `DismissibleNavigationDrawer`、240dp 抽屉、`TaskBar`、`PlayQueue.kt`、Manifest、Gradle 依赖一行未动。
+- **验证**：本地 16 套 `CI=true` 全绿；`r61_verify.py` 阶段 A 9 组对拍 / 阶段 B 38 条正向 + 7 条零残留 + 6 个守恒 /
+  反向注入 10/10 拦下。**订正两个旧验证脚本**：`check_structure.py` / `r46_verify.py` 把 Screen 写死 10 值，
+  新增 `CHAPTERS` 后假红，改为白名单推算并加「chromeOf 集合与枚举相等」的实质检查，比原来更严。
+- **CI**：run 67 失败 —— 前一次同步把 `ci.yml`（已挂 R61 step）传上去却没带 `r61_verify.py`，CI 找不到脚本；
+  补传后 **run 68 `completed success`**（真 Kotlin 编译）。版本号跟 run 号走，故为 `+68`。
+- **发布**：远端 API 提交 `7d13d5bf66` 触发 run 68；从直链仓 `git/blobs` 取回 **18,099,324 字节 /
+  blob `bc568bb74a979…`** 与本地逐字节一致。`r61_apk_audit.py`：CRC / 7 个 arm64 .so / 权重 0 /
+  无 INTERNET / `1.0.0+68` / 25 个新符号 / 5 条旧形态零残留 / `TTS_PARAMS_APPLIED` 在，`--selftest` 正确拦下。
+- ⚠️ **真机仍是零证据**：四列滑动、左边缘手势与抽屉抢不抢、悬浮条叠放、375px 溢出都要装一次点过。
+  新语言模型权重仍在 App 外，四项 A/B gate 未测。
+- **队列**（`ROADMAP.md` 唯一真源）：真机验 → 只标注管线 / 逐章进度 / 阅读位置 → 设置页 v7 → 性能二期 →
+  P4 标注导入 → P6 软件设置补齐。
