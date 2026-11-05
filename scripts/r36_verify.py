@@ -26,19 +26,22 @@ def run_asserts(text, errs):
     check("rememberSaveable(key)" in text, "折叠状态没用 rememberSaveable", errs)
     # 预设 CRUD 必须有真实调用点
     for call in ["MixerPresetStore.save(c, p)", "MixerPresetStore.delete(c, p.id)",
-                 "MixerPresetStore.list(c)", "MixerPresetStore.find(c, bPresetId)"]:
+                 "MixerPresetStore.list(c)", "MixerPresetStore.safeName(presetName)"]:
         check(call in text, "缺预设调用点 " + call, errs)
     # 12 维 / 9 采样 / 5 表演 / 角色 / 日志，逐项核对「能控的通通都要控」
     check("VoiceDimension.entries.forEach" in text, "12 维不是逐维可编辑", errs)
-    for s in ["seed", "max_new_tokens（单次音频上限）", "主 temperature", "主 top_k",
-              "主 top_p", "repetition_penalty", "副 temperature", "副 top_k", "副 top_p"]:
-        check('SettingOption("' + s + '"' in text, "采样缺项 " + s, errs)
+    # R38/R40 起 9 项采样从 9 个 SettingOption 改成 ParamCatalog.SAMPLING 表格逐行渲染；
+    # MIXER_PERF 并入 MixerDraft 统一提交。R41a 同步历史断言，避免脚本假红。
+    check("ParamCatalog.SAMPLING.forEach" in text, "9 项采样没用官方字段表逐行渲染", errs)
+    check("恢复官方默认 ${spec.def}" in text, "缺单项恢复官方默认", errs)
+    check("全部恢复上游默认（待提交）" in text, "缺全部恢复上游默认", errs)
     for s in ["朗读档位", "语速倾向", "情绪强度", "段间静音", "失败重做"]:
         check('SettingOption("' + s + '"' in text, "表演层缺项 " + s, errs)
-    for s in ["MIXER_PERF", "MIXER_DIM", "MIXER_CAST",
-              "MIXER_AB", "当前生效配置", "A/B 试听", "12 维",
-              "恢复上游默认值", "复制进诊断日志", "预设库", "角色预设"]:
-        check(s in text, "缺 R36 符号 " + s, errs)
+    # R41a · A/B 对比换成草稿 / 已生效两态一步试听，日志事件同步改名。
+    for s in ["MIXER_DIM", "MIXER_DIM_DRAFT", "MIXER_CAST",
+              "MIXER_TRIAL", "试听未提交参数", "试听已生效参数", "12 维",
+              "当前生效全貌", "复制进诊断日志", "预设库", "角色预设"]:
+        check(s in text, "缺符号 " + s, errs)
     for call in ["CastPresets.seedIfEmpty(c)", "CastPresets.add(c, newCastName, newCastGrid)",
                  "CastPresets.applyGrid(c, gridTargetId, p.id)", "VoiceCast.setOverride(c, editCastId"]:
         check(call in text, "缺角色预设调用 " + call, errs)
@@ -52,9 +55,9 @@ def run_asserts(text, errs):
     check("声音采样（进阶）" not in text, "设置页又画了第二遍 9 项采样", errs)
     check("putKnobs(" not in text, "设置页还留着第二套写入口", errs)
     check("var knobs" not in all_src, "出现第二份 TtsKnobs 真值源", errs)
-    # A/B 不许写回长期默认
-    ab = text[text.find("fun synth("):text.find("fun play(")]
-    check("Prefs.setTtsKnobs" not in ab, "A/B 试听污染了长期默认", errs)
+    # R41a · 两态试听不许写回长期默认（读 draft / active，绝不 set Prefs）
+    ab = text[text.find("fun trial("):text.find("fun play(")]
+    check("Prefs.setTtsKnobs" not in ab, "试听污染了长期默认", errs)
 
 errs = []
 run_asserts(main, errs)
@@ -78,11 +81,11 @@ INJECT = [
     ("删状态保持", lambda t: t.replace("rememberSaveable(key)", "remember(key)")),
     ("删预设保存", lambda t: t.replace("MixerPresetStore.save(c, p)", "true")),
     ("恢复第二套采样", lambda t: t.replace("音频模型 · 全部参数", "声音采样（进阶）")),
-    ("删 max_new_tokens", lambda t: t.replace('SettingOption("max_new_tokens（单次音频上限）"',
-                                              'SettingOption("gone"')),
+    ("删 9 项采样表", lambda t: t.replace("ParamCatalog.SAMPLING.forEach",
+                                          "emptyList<String>().forEach")),
     ("删角色 seed", lambda t: t.replace("CastPresets.seedIfEmpty(c)", "false")),
-    ("A/B 写回默认", lambda t: t.replace('abText, instruct, null, "chinese"',
-                                          'Prefs.setTtsKnobs(c, k); abText, instruct, null, "chinese"')),
+    ("试听写回默认", lambda t: t.replace('trialText, instruct, null, "chinese"',
+                                          'Prefs.setTtsKnobs(c, src.knobs); trialText, instruct, null, "chinese"')),
 ]
 script = pathlib.Path(__file__).resolve()
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="r36_"))

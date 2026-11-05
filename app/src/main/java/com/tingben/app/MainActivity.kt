@@ -1953,15 +1953,13 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var gridTargetId by remember { mutableStateOf("") }
     var confirmDeleteId by remember { mutableStateOf("") }
 
-    var abText by remember {
+    // R41a · 试听只看两态：草稿（未提交）/ 已生效。不再有 A/B、预设对比、合成/播放两步。
+    var trialText by remember {
         mutableStateOf("雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。")
     }
-    var bPresetId by remember { mutableStateOf("builtin_stable") }
-    var busyA by remember { mutableStateOf(false) }
-    var busyB by remember { mutableStateOf(false) }
-    var fileA by remember { mutableStateOf("") }
-    var fileB by remember { mutableStateOf("") }
-    var abMsg by remember { mutableStateOf("") }
+    var busyDraftTrial by remember { mutableStateOf(false) }
+    var busyActiveTrial by remember { mutableStateOf(false) }
+    var trialMsg by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         if (CastPresets.seedIfEmpty(c)) {
@@ -2001,9 +1999,15 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         Mixer.logPreset("载入预设为待提交", p)
         msg = "已把「${p.name}」载入待提交，按顶部「提交变更」生效"
     }
-    fun synth(side: String, k: TtsKnobs, out: String, busy: (Boolean) -> Unit, done: (String) -> Unit) {
+    /**
+     * R41a · 一步试听：合成完自动播放。整套配置来自传入的「已生效」或「草稿」，
+     * 身份层 / 风格层 / 采样 9 项全跟着走，不写 Prefs、不进 draft、不改 voiceStamp。
+     * instruct 复用主链同一个 VoiceProfile.build()，不复制第二份拼串逻辑。
+     */
+    fun trial(label: String, src: MixerDraft, out: String, busy: (Boolean) -> Unit) {
         busy(true)
-        abMsg = "正在合成 $side …（手机 CPU 慢，约 1~3 分钟）"
+        val tag = if (label == "未提交参数" && !dirty) "未提交参数（与已生效一致）" else label
+        trialMsg = "正在用$label合成…（手机 CPU 慢，约 1~3 分钟）"
         scope.launch(Dispatchers.IO) {
             val res = runCatching {
                 if (!NativeEngine.isAvailable()) throw IllegalStateException("本地引擎没装载，请重启 App")
@@ -2012,39 +2016,42 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
                 if (h == 0L) throw IllegalStateException("声音模型打不开")
                 try {
-                    val identity = Prefs.voiceDescription(c).trim().ifBlank { DEFAULT_IDENTITY }
-                    val instruct = "$identity。平稳、清晰地叙述，句间自然停顿。"
+                    val identity = src.voice.trim().ifBlank { DEFAULT_IDENTITY }
+                    val instruct = VoiceProfile.build(
+                        identity, src.perf.styleInstruct(), "平稳、清晰地叙述，句间自然停顿。")
                     val f = File(c.filesDir, out)
-                    val code = NativeEngine.ttsSynthesize(h, abText, instruct, null, "chinese",
-                        f.absolutePath, k)
+                    val code = NativeEngine.ttsSynthesize(h, trialText, instruct, null, "chinese",
+                        f.absolutePath, src.knobs)
                     if (code != 0 || !f.exists() || f.length() <= 44)
                         throw IllegalStateException("没生成声音，code=$code")
-                    EventLog.log(EventLog.Kind.ENGINE, "MIXER_AB",
-                        "side=$side · textChars=${abText.length} · seed=${k.seed} · temp=${k.temperature} · " +
-                            "subTemp=${k.subTemperature} · rep=${k.repetitionPenalty} · topK=${k.topK} · " +
-                            "topP=${k.topP} · subTopK=${k.subTopK} · subTopP=${k.subTopP} · " +
-                            "max=${k.maxNewTokens} · hash=${k.hash()} · bytes=${f.length()} · instruct=$instruct")
+                    EventLog.log(EventLog.Kind.ENGINE, "MIXER_TRIAL",
+                        "来源=$tag · textChars=${trialText.length} · seed=${src.knobs.seed} · temp=${src.knobs.temperature} · " +
+                            "subTemp=${src.knobs.subTemperature} · rep=${src.knobs.repetitionPenalty} · topK=${src.knobs.topK} · " +
+                            "topP=${src.knobs.topP} · subTopK=${src.knobs.subTopK} · subTopP=${src.knobs.subTopP} · " +
+                            "max=${src.knobs.maxNewTokens} · hash=${src.knobs.hash()} · " +
+                            "voiceChars=${identity.length} · styleChars=${src.perf.styleInstruct().length} · " +
+                            "bytes=${f.length()} · instruct=$instruct")
                     f.absolutePath
                 } finally { NativeEngine.ttsFree(h) }
             }
             withContext(Dispatchers.Main) {
                 busy(false)
                 val p = res.getOrNull()
-                done(p ?: "")
-                abMsg = if (p != null) "$side 出声了 ✓ ${File(p).length()} 字节，点右边试听"
-                        else "$side 失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
+                if (!p.isNullOrBlank()) play(p)
+                trialMsg = if (p != null) "$label 出声了 ✓ ${File(p).length()} 字节，已自动播放"
+                           else "$label 失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
                 res.exceptionOrNull()?.let {
-                    EventLog.log(EventLog.Kind.CRASH, "MIXER_AB_FAIL", it.message ?: "")
+                    EventLog.log(EventLog.Kind.CRASH, "MIXER_TRIAL_FAIL", it.message ?: "")
                 }
             }
         }
     }
+    /** 复用 R18 的全局播放内核，不在这里手搓第二套 MediaPlayer。 */
     fun play(path: String) {
-        try {
-            val mp = MediaPlayer()
-            mp.setDataSource(path); mp.prepare(); mp.start()
-            mp.setOnCompletionListener { it.release() }
-        } catch (_: Throwable) { Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show() }
+        val f = File(path)
+        if (!f.isFile) { Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show(); return }
+        PlayQueue.setTracks(listOf(Track(f, "调音台试听")))
+        PlayQueue.playFrom(0)
     }
 
     val autoText = VoicePreset("edit", "自定义",
@@ -2057,9 +2064,12 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     BackHandler(enabled = dirty) { showLeave = true }
 
     Column(Modifier.fillMaxSize()) {
-        // ── 吸顶状态条：三段式，常驻不随内容滚走（评审 P0-1 / 骨架）────────
+        // ── 吸顶状态条：R40 三段式 + R41a 返回 / 两个试听按钮，同一模块常驻 ──
         CardBox(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { if (dirty) showLeave = true else onBack() }) {
+                    Text("‹ 返回", fontSize = 12.sp)
+                }
                 Column(Modifier.weight(1f)) {
                     Text("已生效 v$INSTRUCT_TEMPLATE_VERSION · 指纹 ${stamp.take(8)}",
                         fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -2081,16 +2091,38 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     Text("丢弃全部待提交", fontSize = 10.5.sp, color = Warn)
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            val canTrial = missing.isEmpty() && !busyDraftTrial && !busyActiveTrial
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = {
+                    trial("未提交参数", draft, "mixer_trial_draft.wav") { busyDraftTrial = it }
+                }, enabled = canTrial, modifier = Modifier.weight(1f)) {
+                    Text(if (busyDraftTrial) "合成中…" else "试听未提交参数", fontSize = 11.5.sp)
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    trial("已生效参数", active, "mixer_trial_active.wav") { busyActiveTrial = it }
+                }, enabled = canTrial, modifier = Modifier.weight(1f)) {
+                    Text(if (busyActiveTrial) "合成中…" else "试听已生效参数", fontSize = 11.5.sp)
+                }
+            }
+            OutlinedTextField(
+                value = trialText, onValueChange = { trialText = it },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("试听文本", fontSize = 10.sp) },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
+            )
+            if (trialMsg.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(trialMsg, fontSize = 10.5.sp, color = Sub)
+            }
+            if (missing.isNotEmpty()) {
+                Text("还缺模型文件，先去设置页导入。", fontSize = 10.5.sp, color = Warn)
+            }
         }
 
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { if (dirty) showLeave = true else onBack() }) {
-                    Text("‹ 返回", fontSize = 13.sp)
-                }
-                Spacer(Modifier.weight(1f))
-            }
             Spacer(Modifier.height(4.dp))
 
             // ── 固定首屏：已生效全文（只读） vs 草稿（可编辑）+ diff 高亮 ────
@@ -2451,55 +2483,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 }
             }
 
-            // ── ⑨ A/B 试听：读已生效值，不改全局、不进 draft ───────────────
-            MixerSection("⑨ A/B 试听", "ab", false, "不改全局") {
-                Text("两边用同一句文本、同一个 instruct，只换采样参数；诊断日志里可逐项核对 TTS_PARAMS。",
-                    fontSize = 10.5.sp, color = Sub)
-                Spacer(Modifier.height(5.dp))
-                OutlinedTextField(
-                    value = abText, onValueChange = { abText = it },
-                    modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3,
-                    label = { Text("对比用文本", fontSize = 11.sp) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
-                )
-                SettingOption("B 用哪组预设", presets.map { it.name },
-                    presets.indexOfFirst { it.id == bPresetId }.coerceAtLeast(0)) { i ->
-                    bPresetId = presets[i].id
-                }
-                val enabled = missing.isEmpty() && !busyA && !busyB
-                val bKnobs = MixerPresetStore.find(c, bPresetId)?.knobs ?: TtsKnobs()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { synth("A（当前）", active.knobs,
-                                "mixer_a.wav", { busyA = it }, { fileA = it }) },
-                        enabled = enabled, modifier = Modifier.weight(1f)) {
-                        Text(if (busyA) "…" else "合成 A", fontSize = 12.sp)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = { synth("B（预设）", bKnobs,
-                                "mixer_b.wav", { busyB = it }, { fileB = it }) },
-                        enabled = enabled, modifier = Modifier.weight(1f)) {
-                        Text(if (busyB) "…" else "合成 B", fontSize = 12.sp)
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { if (fileA.isNotBlank()) play(fileA) }, enabled = fileA.isNotBlank()) {
-                        Text("▶ 听 A", fontSize = 12.sp)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    TextButton(onClick = { if (fileB.isNotBlank()) play(fileB) }, enabled = fileB.isNotBlank()) {
-                        Text("▶ 听 B", fontSize = 12.sp)
-                    }
-                }
-                if (abMsg.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(abMsg, fontSize = 11.sp, color = Sub)
-                }
-                if (missing.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("还缺模型文件，先去设置页导入。", fontSize = 11.sp, color = Warn)
-                }
-            }
+            // R41a · 试听已移进吸顶状态条那一块（草稿 / 已生效各一个按钮，一步合成并播放）。
             Spacer(Modifier.height(18.dp))
         }
     }

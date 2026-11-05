@@ -31,6 +31,9 @@ jobs:
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 
+      - name: R41a 两态试听验证（正向 / 两态对拍 / 反向注入 / 守恒）
+        run: python3 scripts/r41a_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

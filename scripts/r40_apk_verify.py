@@ -26,7 +26,8 @@ NEW = [
     "提交变更", "丢弃全部待提交", "载入为待提交", "当前生效全貌", "导出与诊断",
     "有未提交变更", "填入草稿", "未绑定音色", "TimingHint", "TIMING_NOW", "TIMING_NEXT",
     # 既有能力没被改坏
-    "MIXER_PROFILE", "MIXER_AB", "MIXER_CAST", "预设库", "A/B 试听",
+    "MIXER_PROFILE", "MIXER_TRIAL", "MIXER_CAST", "预设库",
+    "试听未提交参数", "试听已生效参数", "试听文本",
     "参数触达矩阵与官方资料", "qt_tts_params", "TTS_PARAMS", "PROMPT_VERSION",
     "ANN_CONTENT", "LLM_VERDICT", "chinese", "FGS_BEGIN",
 ]
@@ -35,6 +36,8 @@ OLD = [
     "保存并生效", "直接保存生效", "套用", "应用预设", "点一条直接保存生效",
     "设定", "把小说变成能听的音频", "书架只放原书", "松开即可刷新", "已刷新",
     "⟳ 刷新", "补充描述", "声音采样（进阶）",
+    # R41a · 旧 A/B 对比界面与事件名不许再进包
+    "A/B 试听", "合成 A", "▶ 听 A", "MIXER_AB", "对比用文本", "B 用哪组预设",
 ]
 print("--- dex 新符号 ---")
 new_bad = [s for s in NEW if s.encode() not in dex]

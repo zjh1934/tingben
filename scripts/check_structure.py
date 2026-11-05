@@ -188,10 +188,11 @@ if "s.src == \"MODEL\"" not in main_src:
 # R31 · 调音台：12 维网格 / 4 组采样预设 / 生效快照 / A/B 日志必须真在源码里。
 # 反向断言：不许把参数埋回折叠里当唯一入口、不许出现第二份 TtsKnobs 真值源。
 mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
+# R41a · A/B 对比换成「草稿 / 已生效」两态一步试听；日志事件同步改名。
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
-           "MIXER_PROFILE", "MIXER_AB", "Mixer.CHAIN", "调音台", "🎛 调音台",
-           "Anatomy-First", "12 维", "A/B 试听", "MixerScreen", "Screen.MIXER",
-           "导出与诊断", "恢复上游默认"]
+           "MIXER_PROFILE", "MIXER_TRIAL", "Mixer.CHAIN", "调音台", "🎛 调音台",
+           "Anatomy-First", "12 维", "试听未提交参数", "试听已生效参数",
+           "MixerScreen", "Screen.MIXER", "导出与诊断", "恢复上游默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
 for sym in ["GENDER", "PITCH", "TIMBRE", "BREATH", "PERSONA",
@@ -208,8 +209,11 @@ if "onMixer = { screen = Screen.MIXER }" not in main_src:
 # 调音台只读汇总，不许自己存一份 TtsKnobs 副本
 if "private val knobs" in mixer_src or "var knobs" in mixer_src:
     errs.append("R31 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
-if "MIXER_AB" not in main_src:
-    errs.append("R31 回退：A/B 试听没把完整参数写进日志")
+if "MIXER_TRIAL" not in main_src:
+    errs.append("R41a 回退：两态试听没把完整参数写进日志")
+for s in ["A/B 试听", "合成 A", "▶ 听 A", "MIXER_AB", "bPresetId", "对比用文本",
+          "B 用哪组预设", "fileA", "abMsg"]:
+    if s in main_src: errs.append("R41a 回退：旧 A/B 试听残留 " + s)
 
 notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 for who in ["Finrandojin", "Xydane", "MIT License", "ensemblereads", "ReaderVoice-Mobile"]:
