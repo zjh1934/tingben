@@ -606,3 +606,23 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **验证脚本自身订正 3 处**：`check_structure.py` 的 U1/R33/R36 旧壳断言同步到 V1 形态、`when(screen)` 分发块改带上下文锚点
   （新增的两个 when 曾让分支计数误报 7）；`r45_common.canon()` 剔除 App() 壳区域；`r45_verify.py` Prefs 守恒 marker 笔误（HEAD 里找不到旧注释，切片恒空）。
 - ⚠️ **真机仍零证据**。队列：真机验 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 导入通道 → U2。
+
+
+## R47 · 抽屉收窄 + v4 预览 ⑥ 落地（run 57 / 1.0.0+57）
+
+- **用户两条批评**：抽屉 7 个三五字标签占满宽；上几轮渲染的调音台预览「一点都不落地」。
+- **实查坐实**：`AppChrome.kt` 用无宽度 `ModalDrawerSheet` → M3 `DrawerDefaults.MaximumDrawerWidth` 默认 320dp；
+  `docs/R45_调音台v4_落地.md` 自己白纸黑字写「v4 预览 ⑥ 画过滑块+小数字框双模，本轮未引 Slider」，
+  且 `ParamSpec.SAMPLING` 的 9 个 label 仍是 `主 temperature / 副 top_k` 等英文 → 预览与装上的包确实不是一回事。
+- **落地**：① 抽屉 `requiredWidth(240.dp)` + 条目 13sp / padding 10·0 / 分隔线 14·6；
+  ② `ParamRow` 补 `Slider`，与精确值框共用 `onInput`，`valueRange` 取 `ParamSpec` 唯一范围来源，整数/浮点分别格式化，`coerceIn` 防越界崩；
+  ③ 9 个 label 改人话，官方字段名进 ⓘ `HelpNote`。不改真值源、不新增 Gradle 依赖、不改 4B / prompt v2 / native。
+- **仍存差额（如实）**：v4 ② 设置页语言模型组沉底、v4 ⑥ 三组标题改人话、⑫⑬ 底部三层分区专图 —— 后两项现有等价形态（40dp 留白 + 全局 navigationBarsPadding），
+  前一项动 `SettingsScreen` 守恒段，单列下一轮，不夹带。
+- **不手搓**：抽屉宽度覆写用官方 `requiredWidth` 形态（社区 250dp / M2 上限 280dp 之间取值）；滑块用项目已有 M3 `Slider`（BOM 2024.12.01，音频页进度条早就在用）。
+- **验证**：本地 9 套脚本 + `CI=true` 复现全绿；R47 正向 22 符号 / 反向注入 6 例全拦下 / ParamRow 逐行对拍 / ParamSpec 逐字段对拍 / 11 文件守恒；
+  CI **run 57 `completed success`**（30 步，新增 R47 step）；拆包 4 套 PASS（CRC / 7 .so / 权重 0 / 无 INTERNET / `1.0.0+57` / 新符号全在 / 旧壳零残留 / `TTS_PARAMS_APPLIED` 在）；
+  直链 blob `eb7eee71…` 与本地 17,984,635 字节逐字节一致。
+- **验证脚本自身订正 6 处（不是放水）**：`check_structure` 旧英文 label、`r42_verify` 守恒清单移除 ParamSpec（改由 R47 字段对拍）、
+  `r38_apk_verify` 8 个 R38 旧符号换成现行等价符号、`r46_verify` 抽屉形态字面量、`r45_verify` KEEP 清单、`r45_common.canon` 剔除 ParamRow 段。
+- ⚠️ **真机仍零证据**。队列：真机验 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页语言模型沉底 → 导入通道 → U2。

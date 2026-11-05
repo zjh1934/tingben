@@ -443,7 +443,20 @@ CI <b>run 56 全绿</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / <code>
 <b>真机仍零证据</b>；队列：真机验 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 导入通道 → U2。
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加</footer>
+
+<div class="card" style="margin-top:14px">
+<div class="h">⑱ R47 · 抽屉收窄 + v4 预览 ⑥ 落地（1.0.0+57 / run 57）</div>
+<b>输入：</b>用户「抽屉选项卡平均三五个字做那么宽干嘛」「上几轮渲染的调音台一点都不落地」。<br>
+<b>实查：</b><code>ModalDrawerSheet</code> 无宽度 → M3 默认 320dp；R45 报告自己承认 v4 ⑥ 的滑块双模没做，9 个参数名仍是英文。<br>
+<b>落地：</b>抽屉 <code>requiredWidth(240.dp)</code> + 条目 13sp 紧凑；<code>ParamRow</code> 补滑块与精确值框共值（范围取 <code>ParamSpec</code> 唯一来源）；
+9 个显示名改人话、官方字段进 ⓘ。真值源 / native / 4B / prompt v2 / Gradle 一行未动。<br>
+<b>仍存差额：</b>设置页语言模型沉底、分组标题人话、底部三层分区专图（现有等价留白），单列下一轮。<br>
+<b>验证：</b>本地 9 套 + <code>CI=true</code> 全绿 · 反向注入 6/6 · ParamRow/ParamSpec 对拍 · CI <b>run 57 全绿（30 步）</b> ·
+拆包 4 套 PASS · 直链 blob <code>eb7eee71…</code> 与本地 17,984,635 字节逐字节一致。<br>
+<b>真机仍零证据</b>；队列：真机验 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页沉底 → 导入通道 → U2。
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加</footer>
 </div>
 </body>
 </html>
