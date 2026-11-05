@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER, LLM }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER, LLM, CHAPTERS }
 
 /** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
 private enum class ProduceMode { ANNOTATE, DIRECT }
@@ -132,6 +132,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var screen by remember { mutableStateOf(Screen.LIBRARY) }
     var bookId by remember { mutableStateOf<String?>(null) }
+    // R61 · 悬浮条记住「最近播放的是哪本书」，目录弹层与去书页都用它。
+    var miniBook by remember { mutableStateOf<String?>(null) }
     var lastSelection by remember { mutableStateOf<Set<Int>?>(null) }
     var refresh by remember { mutableStateOf(0) }
     var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }
@@ -304,7 +306,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val chrome = chromeOf(screen)
     // V1 · 抽屉选中态：顶层沿用 chrome.activeTab 的下标，二级页一一对应。
     val drawerSelected = when (screen) {
-        Screen.LIBRARY, Screen.PRODUCE -> NAV_LIBRARY
+        Screen.LIBRARY, Screen.PRODUCE, Screen.CHAPTERS -> NAV_LIBRARY
         Screen.PROGRESS, Screen.TASKS -> NAV_TASKS
         Screen.AUDIO -> NAV_AUDIO
         Screen.SETTINGS -> NAV_SETTINGS
@@ -366,10 +368,15 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 // R51 · producing / progressText / onProgress / pendingTask / onTasks
                 // 五个参数在 LibraryScreen 函数体里从未被读取，白挂了一路高频订阅。
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
-                    onOpen = { bookId = it; screen = Screen.PRODUCE },
+                    onOpen = { bookId = it; screen = Screen.CHAPTERS },
                     onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
                     onImportBook = { openBookPicker() },
                     onChanged = { refresh++ })
+                // R61 · 一本书点进去 = 四列目录；制作准备页仍在任务/进度链路可达。
+                Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
+                    onBack = { screen = Screen.LIBRARY },
+                    onProgress = { screen = Screen.PROGRESS },
+                    onPlayBook = { miniBook = it })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
@@ -426,6 +433,11 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
 
         // R51 · 任务条抽成叶子 composable：自己订阅引擎状态，
         // App() 不再为它重组整棵 when(screen) 页面树。
+        // R61 · 软件内悬浮条：跨页常驻，目录弹层只列第四列亮章。
+        MiniPlayBar(ctx, miniBook, onGoBook = { id ->
+            bookId = id
+            screen = Screen.CHAPTERS
+        })
         TaskBar(onNavigate = { target, isAudio ->
             screen = target
             if (isAudio) refresh++
@@ -546,6 +558,7 @@ private fun queryName(c: Context, uri: Uri): String {
 private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.LIBRARY  -> ChromeSpec("书架", TAB_LIBRARY, showImport = true)
     Screen.PRODUCE  -> ChromeSpec("制作", TAB_LIBRARY)
+    Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY)
     Screen.PROGRESS -> ChromeSpec("进度", TAB_TASKS)
     Screen.TASKS    -> ChromeSpec("任务", TAB_TASKS)
     Screen.AUDIO    -> ChromeSpec("我的音频", TAB_AUDIO)

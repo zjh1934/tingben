@@ -1426,7 +1426,8 @@ object Producer {
                 gateFails + synthFails, "没能生成音频，请点设置页复制诊断信息发我")
             return
         }
-        val item = AudioLibrary.register(c, book.id, book.title, only, direct, outFile)
+        // R61 · 把全书章数带进去：整本成品要展开成 0..n-1，第四列才亮。
+        val item = AudioLibrary.register(c, book.id, book.title, only, direct, outFile, chapters.size)
         EventLog.log(EventLog.Kind.PIPELINE, "AUDIO_REGISTER",
             "${item.title} · ${item.scope} · ${item.mode} · ${item.bytes} 字节")
         // 章节信息跟着成品 id 走，不再被下一次制作覆盖
