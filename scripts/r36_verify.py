@@ -56,7 +56,10 @@ def run_asserts(text, errs):
     check("putKnobs(" not in text, "设置页还留着第二套写入口", errs)
     check("var knobs" not in all_src, "出现第二份 TtsKnobs 真值源", errs)
     # R41a · 两态试听不许写回长期默认（读 draft / active，绝不 set Prefs）
-    ab = text[text.find("fun trial("):text.find("fun play(")]
+    # play 定义在 trial 之前（Kotlin 局部函数不许前向引用），切片到 autoText 为止。
+    k = text.find("fun trial(")
+    e = text.find("    val autoText = VoicePreset", k)
+    ab = text[k:e] if k >= 0 and e > k else ""
     check("Prefs.setTtsKnobs" not in ab, "试听污染了长期默认", errs)
 
 errs = []

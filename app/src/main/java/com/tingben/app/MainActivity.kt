@@ -1999,6 +1999,14 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         Mixer.logPreset("载入预设为待提交", p)
         msg = "已把「${p.name}」载入待提交，按顶部「提交变更」生效"
     }
+    /** 复用 R18 的全局播放内核，不在这里手搓第二套 MediaPlayer。
+     *  R41a：必须定义在 trial 之前 —— Kotlin 局部函数不允许前向引用（CI run 50 实测）。 */
+    fun play(path: String) {
+        val f = File(path)
+        if (!f.isFile) { Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show(); return }
+        PlayQueue.setTracks(listOf(Track(f, "调音台试听")))
+        PlayQueue.playFrom(0)
+    }
     /**
      * R41a · 一步试听：合成完自动播放。整套配置来自传入的「已生效」或「草稿」，
      * 身份层 / 风格层 / 采样 9 项全跟着走，不写 Prefs、不进 draft、不改 voiceStamp。
@@ -2007,7 +2015,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     fun trial(label: String, src: MixerDraft, out: String, busy: (Boolean) -> Unit) {
         busy(true)
         val tag = if (label == "未提交参数" && !dirty) "未提交参数（与已生效一致）" else label
-        trialMsg = "正在用$label合成…（手机 CPU 慢，约 1~3 分钟）"
+        // 字符串模板的变量名后若紧跟中文，必须用花括号包住，否则 Kotlin 会连成一个标识符（CI run 50 实测）。
+        trialMsg = "正在用${label}合成…（手机 CPU 慢，约 1~3 分钟）"
         scope.launch(Dispatchers.IO) {
             val res = runCatching {
                 if (!NativeEngine.isAvailable()) throw IllegalStateException("本地引擎没装载，请重启 App")
@@ -2038,20 +2047,13 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 busy(false)
                 val p = res.getOrNull()
                 if (!p.isNullOrBlank()) play(p)
-                trialMsg = if (p != null) "$label 出声了 ✓ ${File(p).length()} 字节，已自动播放"
-                           else "$label 失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
+                trialMsg = if (p != null) "${label} 出声了 ✓ ${File(p).length()} 字节，已自动播放"
+                           else "${label} 失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
                 res.exceptionOrNull()?.let {
                     EventLog.log(EventLog.Kind.CRASH, "MIXER_TRIAL_FAIL", it.message ?: "")
                 }
             }
         }
-    }
-    /** 复用 R18 的全局播放内核，不在这里手搓第二套 MediaPlayer。 */
-    fun play(path: String) {
-        val f = File(path)
-        if (!f.isFile) { Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show(); return }
-        PlayQueue.setTracks(listOf(Track(f, "调音台试听")))
-        PlayQueue.playFrom(0)
     }
 
     val autoText = VoicePreset("edit", "自定义",

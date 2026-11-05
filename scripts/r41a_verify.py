@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """R41a 两态试听验证：正向 / 两态对拍 / 反向注入 / 守恒。纯标准库。"""
-import pathlib, subprocess, sys, os
+import pathlib, subprocess, sys, os, re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MAIN = "app/src/main/java/com/tingben/app/MainActivity.kt"
@@ -44,10 +44,17 @@ def check_sources(m):
         if s not in bar: e.append("不在同一吸顶模块: " + s)
     # 试听不许写回长期默认 / 不许出现第二个生效动词
     k = m.find("fun trial(")
-    p = m.find("fun play(", k)
+    p = m.find("    val autoText = VoicePreset", k)
     trial = m[k:p] if k >= 0 and p > k else ""
     for s in ["Prefs.setTtsKnobs", "Prefs.setVoiceDescription", "MixerCommit.commit"]:
         if s in trial: e.append("试听越过唯一出口: " + s)
+    # CI run 50 真编译抓到、静态自检没抓到的两类错误，补成硬断言
+    # 纯注释行先屏蔽：注释里举例说明这个坑时，不该把自己拦下（playbook 已踩过）。
+    code = "\n".join("" if ln.lstrip().startswith("//") else ln for ln in m.splitlines())
+    if re.search(r"\$[A-Za-z_][A-Za-z0-9_]*[\u4e00-\u9fff]", code):
+        e.append("字符串模板 $变量 后紧跟中文，Kotlin 会当成标识符")
+    if not (0 <= m.find("fun play(") < m.find("fun trial(")):
+        e.append("play 必须定义在 trial 之前（局部函数不许前向引用）")
     # 全页唯一生效动词仍是提交变更（旧动词不许回来）
     for s in ["保存并生效", "直接保存生效", "套用", "应用预设", 'Text("设定"']:
         if s in m: e.append("旧生效动词残留: " + s)
@@ -97,6 +104,7 @@ def main():
         "删试听日志": lambda s: s.replace('"MIXER_TRIAL",', '"NO_LOG",'),
         "试听写回默认": lambda s: s.replace('trialText, instruct, null, "chinese"',
                                             'Prefs.setTtsKnobs(c, src.knobs); trialText, instruct, null, "chinese"'),
+        "模板漏花括号": lambda s: s.replace('"正在用${label}合成', '"正在用$label合成'),
     }
     for name, fn in inj.items():
         e = check_sources(fn(m))
