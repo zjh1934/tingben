@@ -36,20 +36,22 @@ need("Producer.resume.collectAsState()" not in app, "App() 仍订阅 Producer.re
 need(len(re.findall(r'\bst\.', app)) == 0, "App() 仍读 st.")
 need("resumeTask" not in app, "App() 仍读 resumeTask")
 need("KeepScreenOn()" in app, "屏幕常亮没下沉成 KeepScreenOn()")
-need(re.search(r'^        TaskBar\(onNavigate', app, re.M) is not None,
-     "任务条没下沉成 TaskBar()")
+# R65 · 贴底任务卡整条删除；R51 的「订阅下沉」改由进度页叶子承担。
+need("TaskBar(" not in app, "R65 任务条不该再挂在 App() 上")
+need("private fun TaskBar(" not in s, "R65 任务条函数应已删除")
+need("Producer.resume.collectAsState()" not in s, "任务条删了但 resume 订阅还在")
 need("Producer.resume.value" in app, "续跑回调没改成读 .value")
 
 # 叶子各自订阅
-for name in ["private fun KeepScreenOn()", "private fun TaskBar(onNavigate"]:
+for name in ["private fun KeepScreenOn()", "private fun ProgressScreen("]:
     need(name in s, "缺叶子 composable " + name)
 k = s.index("private fun KeepScreenOn()")
-t = s.index("private fun TaskBar(onNavigate")
-e = s.index("\nprivate fun queryName", t)
-need("Producer.state.collectAsState()" in s[k:t], "KeepScreenOn 没自己订阅 state")
-need("Producer.state.collectAsState()" in s[t:e], "TaskBar 没自己订阅 state")
-need("Producer.resume.collectAsState()" in s[t:e], "TaskBar 没自己订阅 resume")
-need("detectVerticalDragGestures(" in s[t:e], "任务条手势丢了")
+e = s.index("private fun queryName", k)
+need("Producer.state.collectAsState()" in s[k:e], "叶子没自己订阅 state")
+pa = s.index("private fun ProgressScreen(")
+pb = s.index("// ── ③b 任务中心", pa)
+need("Producer.state.collectAsState()" in s[pa:pb], "进度页没自己订阅 state")
+need("LaunchedEffect(st.running) {" in s[pa:pb], "进度页心跳没按 running 门控")
 
 # 书架页 5 个未使用参数清零
 a2 = s.index("private fun LibraryScreen")
@@ -90,9 +92,10 @@ def blocked(mut, label, probe):
 
 blocked(lambda x: x.replace("DismissibleNavigationDrawer(", "ModalNavigationDrawer("),
         "换回覆盖式抽屉", lambda m: "DismissibleNavigationDrawer(" in m and "ModalNavigationDrawer(" not in m)
-blocked(lambda x: x.replace("        TaskBar(onNavigate", "        // TaskBar(onNavigate"),
-        "任务条不再下沉",
-        lambda m: re.search(r'^        TaskBar\(onNavigate', app_body(m), re.M) is not None)
+blocked(lambda x: x.replace("        MiniPlayBar(ctx, miniBook",
+                             "        TaskBar(onNavigate = { _, _ -> })\n        MiniPlayBar(ctx, miniBook"),
+        "任务条回潮",
+        lambda m: "TaskBar(" not in app_body(m))
 def inject_root(x):
     a = x.index("private fun App(incoming")
     k = x.index("/**\n * R51 · 屏幕常亮", a)

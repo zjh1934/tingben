@@ -67,6 +67,9 @@ jobs:
       - name: R61 目录页四列与悬浮条验证（index 往返对拍 / 三态真值 / 守恒 / 反向注入）
         run: python3 scripts/r61_verify.py
 
+      - name: R65 进度页 v12 验证（小块原貌 / 任务卡删除 / 差一对拍 / 反向注入 / 守恒）
+        run: python3 scripts/r65_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

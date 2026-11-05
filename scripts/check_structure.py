@@ -183,7 +183,7 @@ if "if (i < kept) \"MODEL\"" in pipe_src:
     errs.append("R27 回退：逐条来源又按「前 kept 条」猜")
 if '"已标注 ${i + 1}/${chunks.size} 块"' in pipe_src:
     errs.append("R27 回退：进度又按跑完块数写「已标注」")
-if "s.src == \"MODEL\"" not in main_src:
+if not re.search(r'\b\w+\.src == "MODEL"', main_src):
     errs.append("R27 回退：看台没有按真实来源着色")
 
 # R31 · 调音台：12 维网格 / 4 组采样预设 / 生效快照 / A/B 日志必须真在源码里。
@@ -345,10 +345,12 @@ def ui_literals(src):
     """只取字符串字面量；注释里提到「下拉刷新」是说明，不算 UI 文案。"""
     return re.findall(r'"((?:\\.|[^"\\])*)"', src)
 
-R33_MUST = ["statusBarsPadding()", "taskExpanded", "confirmDelete",
+# R65 · 贴底任务卡整条删除，taskExpanded 两个符号随之消失；
+# 换成仍存活的 R61 悬浮条与新进度页入口，断言强度不降。
+R33_MUST = ["statusBarsPadding()", "MiniPlayBar(ctx, miniBook", "confirmDelete",
             "AlertDialog(", "onMenu = { scope.launch { drawerState.open() } }",
             "BookStore.delete(c, id); confirmDelete = null; onChanged()",
-            ".clickable { taskExpanded = !taskExpanded }"]
+            "private fun ProgressScreen("]
 for sym in R33_MUST:
     if sym not in main_src: errs.append("R33 缺新壳层符号: " + sym)
 for sym in ["ModalDrawerSheet(", "NavigationDrawerItem(", "width(if (pulled)"]:

@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
@@ -143,8 +145,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var importError by remember { mutableStateOf<String?>(null) }
     // R51 · 高频引擎状态不再在 App() 顶层订阅。旧版为了给书架页传 5 个根本没被使用的
     // 参数，把 Producer.state / Producer.resume 挂在整棵页面树的根上：制作时每次块更新
-    // 都会重组 when(screen) 下全部 9 个页面。现在收进 KeepScreenOn() / TaskBar() 两个
+    // 都会重组 when(screen) 下全部 9 个页面。现在收进 KeepScreenOn() / 进度页两个
     // 叶子 composable（官方「状态读在树的最低处」），回调里只读 .value，不订阅。
+    // R65 · 贴底任务卡已整条删除，不再有第三个高频状态订阅点。
 
     // V1 · 抽屉状态：☰ 与从左边缘右滑都开它；drawerReturn 记「从哪一页进的二级页」。
     // 形状抄 reference/OfflineLLM/ChatScreen.kt:99,151-160（Apache-2.0），不自写横向手势。
@@ -438,12 +441,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             bookId = id
             screen = Screen.CHAPTERS
         })
-        TaskBar(onNavigate = { target, isAudio ->
-            screen = target
-            if (isAudio) refresh++
-        })
+        // R65 · 贴底任务卡整条删除（自带上扒/下扒折叠那张）；
+        // 「去任务页 / 去试听」由抽屉既有的「任务 / 我的音频」承接，不新建入口。
         // V1 · 3 个顶层 Tab 已收进左侧抽屉；底部安全区由外层 Column 的 navigationBarsPadding() 负责。
-        // 任务条保持原位置与「上扒展开 / 下扒收起」手势，本轮不动。
     }
     }
 }
@@ -461,83 +461,6 @@ private fun KeepScreenOn() {
         val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         if (st.running) act?.window?.addFlags(flag) else act?.window?.clearFlags(flag)
         onDispose { act?.window?.clearFlags(flag) }
-    }
-}
-
-/**
- * R51 · 跨页面常驻任务条：上扒展开 / 下扒收起，点整卡不跳页。
- * 从 App() 抽出来自己订阅 Producer.state / Producer.resume：制作时每次块更新
- * 只重组这一条，不再把 9 个页面全部重组合一遍。手势与文案一行未改。
- */
-@Composable
-private fun TaskBar(onNavigate: (Screen, Boolean) -> Unit) {
-    val st by Producer.state.collectAsState()
-    val resumeTask by Producer.resume.collectAsState()
-    val pendingTask = resumeTask?.takeIf { it.phase != "done" && !st.running }
-    val hasTask = st.running || st.output != null || pendingTask != null
-    var taskExpanded by remember { mutableStateOf(false) }
-    if (!hasTask) return
-    val barBg = if (st.running) PrimarySoft
-        else if (pendingTask != null) Color(0xFFFFF3E0) else Color(0xFFE7F4EC)
-    Column(
-        Modifier.fillMaxWidth().background(barBg)
-            .pointerInput(Unit) {
-                var acc = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { acc = 0f },
-                    onDragEnd = {
-                        if (acc < -24f) taskExpanded = true
-                        else if (acc > 24f) taskExpanded = false
-                        acc = 0f
-                    },
-                    onVerticalDrag = { _, dy -> acc += dy }
-                )
-            }
-    ) {
-        Row(
-            Modifier.fillMaxWidth().clickable { taskExpanded = !taskExpanded }
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.size(7.dp).background(
-                if (st.running) Primary else if (pendingTask != null) Warn else Good,
-                RoundedCornerShape(50)))
-            Spacer(Modifier.width(9.dp))
-            Text(
-                when {
-                    st.running -> if (st.total > 0) "正在制作 · ${st.done}/${st.total} 块" else "正在制作…"
-                    pendingTask != null -> "《${pendingTask.title}》有没做完的任务"
-                    else -> "做好了"
-                },
-                fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-                color = if (st.running) Primary else if (pendingTask != null) Warn else Good,
-                modifier = Modifier.weight(1f))
-            Text(if (taskExpanded) "收起 ↑" else "展开 ↓",
-                fontSize = 12.5.sp, color = Primary)
-        }
-        if (taskExpanded) {
-            Column(Modifier.padding(start = 32.dp, end = 16.dp, bottom = 10.dp)) {
-                Text(
-                    when {
-                        st.running -> "${st.stage} · 已完成 ${st.done}/${st.total} 块"
-                        pendingTask != null -> "《${pendingTask.title}》· 已中断，回来点继续"
-                        else -> "成品已生成"
-                    },
-                    fontSize = 11.5.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
-                TextButton(onClick = {
-                    when {
-                        st.running -> onNavigate(Screen.PROGRESS, false)
-                        pendingTask != null -> onNavigate(Screen.TASKS, false)
-                        else -> onNavigate(Screen.AUDIO, true)
-                    }
-                }) {
-                    Text(if (st.running) "查看进度 ›"
-                        else if (pendingTask != null) "去任务页 ›" else "去试听 ›",
-                        fontSize = 12.sp)
-                }
-            }
-        }
     }
 }
 
@@ -888,7 +811,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     }
 }
 
-// ── ③ 进度：只给人话，但必须让人看得出「它还活着」 ──────────────
+// ── ③ 进度 · R65 v12：空间重分配 + 看台「小块 → 模型原貌」 ──────────────
 @Composable
 private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit) {
     val st by Producer.state.collectAsState()
@@ -900,8 +823,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
         while (true) { delay(1000); tick++ }
     }
 
-    // 每秒读一次最近一条引擎事件：prefill 一批在手机上要 70 秒，
-    // 期间没有块完成，块进度条纹丝不动，必须给「还在算」的心跳。
     val heartbeat = remember(tick) {
         val (act, _) = EventLog.lastEngine()
         val age = (EventLog.lastEngineAgeMs() / 1000).coerceAtLeast(0)
@@ -916,221 +837,284 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
         "$what$extra"
     }
 
-    // R11 · 下滑收敛 / 上滑展开：核心进度永远在，细节可以整块收起来
-    var expanded by remember { mutableStateOf(true) }
+    val seenTask = remember(tick) { TaskResume.load(c) }
+    var redoNonce by remember { mutableStateOf(0) }
+    val segs = remember(tick, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
+    val rest = remember(tick, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
+    val verdict = remember(tick, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
+    var segSel by remember { mutableStateOf<Int?>(null) }
+    var showCompare by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
+    var lmOpen by remember { mutableStateOf(false) }
+    val pqSeg by PlayQueue.state.collectAsState()
+    var stopping by remember { mutableStateOf(false) }
+    LaunchedEffect(st.running) { if (!st.running) stopping = false }
 
+    // 底部系统手势区 24dp / 三键 48dp 由外层 navigationBarsPadding() 负责，本页不再自画。
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("← 书架") }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "收起 ↑" else "展开 ↓", fontSize = 12.5.sp, color = Primary)
-            }
-        }
-        // 手势条：上扒展开 / 下扒收起，零文案
-        Box(
-            Modifier.fillMaxWidth().height(22.dp)
-                .background(PrimarySoft, RoundedCornerShape(12.dp))
-                .pointerInput(Unit) {
-                    var acc = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { acc = 0f },
-                        onDragEnd = {
-                            if (acc > 45f) expanded = false
-                            else if (acc < -45f) expanded = true
-                            acc = 0f
-                        },
-                        onVerticalDrag = { _, dy -> acc += dy }
-                    )
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(Modifier.width(34.dp).height(3.dp)
-                .background(Primary, RoundedCornerShape(50)))
-        }
-        Spacer(Modifier.height(14.dp))
-        CardBox {
-            // 大号百分比：不用读小字也知道还剩多少
-            Text(if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
-                fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Primary)
-            Spacer(Modifier.height(4.dp))
-            Text(st.stage, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Spacer(Modifier.height(10.dp))
-            LinearProgressIndicator(progress = { pct }, modifier = Modifier.fillMaxWidth().height(8.dp))
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (st.total > 0) "已完成 ${st.done}/${st.total} 块" + if (st.failed > 0) " · ${st.failed} 块改走直读" else ""
-                else st.message.ifBlank { "还没开始" },
-                fontSize = 12.5.sp, color = Sub)
-            Spacer(Modifier.height(6.dp))
-            Text(st.message, fontSize = 12.sp, color = Sub)
-            if (st.running) {
-                Spacer(Modifier.height(12.dp))
-                Text(heartbeat, fontSize = 12.sp, color = Primary)
-                Spacer(Modifier.height(7.dp))
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(3.dp))
-                Spacer(Modifier.height(5.dp))
-            }
-        }
-        if (expanded) {
-            Spacer(Modifier.height(14.dp))
-            val steps = listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")
-            steps.forEach { s ->
-                val active = when (s) {
-                    "拆章" -> st.stage.contains("分章")
-                    "理解文字" -> st.stage.contains("理解")
-                    "生成声音" -> st.stage.contains("生成声音")
-                    "整理音频" -> st.stage.contains("整理")
-                    "完成" -> st.output != null || st.stage == "完成"
-                    else -> false
-                }
-                val done = st.output != null
-                Row(Modifier.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).background(
-                        if (done || active) Primary else Line, RoundedCornerShape(50)))
-                    Spacer(Modifier.width(10.dp))
-                    Text(s, fontSize = 13.sp, color = if (done || active) Primary else Sub)
-                }
-            }
 
-            // R18 · 工作看台：分段折叠小模块。
-            // 结构改写自 SimformSolutionsPvtLtd/SSComposeExpandableListView（MIT）的
-            // header/child 折叠模型，分列方式参照 ensemble-reads/ChaptersScreen；
-            // 用 Compose 原生实现，不引 JitPack 库。数据来自 Workbench 扫 work 目录。
-            Spacer(Modifier.height(16.dp))
-            val seenTask = remember(tick) { TaskResume.load(c) }
-            // R28 · 点「重做」后靠这个 nonce 重扫磁盘，不靠猜状态。
-            var redoNonce by remember { mutableStateOf(0) }
-            val segs = remember(tick, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
-            val rest = remember(tick, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
-            val verdict = remember(tick, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
-            var segOpen by remember { mutableStateOf(false) }
-            var segSel by remember { mutableStateOf<Int?>(null) }
-            // 与音频页共用 PlayQueue：不再有第二套 MediaPlayer 抢音频焦点。
-            val pqSeg by PlayQueue.state.collectAsState()
-            // R28 · 「语言模型到底有没有起作用」不用贴日志给我，App 里一眼判。
-            // 四种口径分开：直接朗读 / 还没数据 / 模型生效 / 全是直读。
-            CardBox {
-                Text("语言模型是否生效", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Spacer(Modifier.height(4.dp))
-                val vText = when {
-                    seenTask?.direct == true -> "本次是「直接朗读」，没有使用语言模型"
-                    verdict == null -> "还没落盘段映射；跑一次「标注后合成」后这里给出结论"
-                    else -> verdict.label
+        // ① 细状态条：一个纯图标 + 进度条 + 11sp 百分比 + 一行状态，无大字、无返回、无收起
+        CardBox {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val canStop = st.running
+                val canResume = !st.running && st.stage == "已停止"
+                if (canStop || canResume) {
+                    Box(
+                        Modifier.size(42.dp, 34.dp)
+                            .background(if (canStop) PrimarySoft else Primary,
+                                RoundedCornerShape(8.dp))
+                            .clickable(enabled = !stopping) {
+                                if (canStop) { stopping = true; Producer.stop() } else onResume()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(if (canStop) "⏸" else "▶", fontSize = 15.sp,
+                            color = if (canStop) Primary else Card)
+                    }
+                    Spacer(Modifier.width(10.dp))
                 }
-                Text(vText, fontSize = 12.sp, color = when {
+                Column(Modifier.weight(1f)) {
+                    LinearProgressIndicator(progress = { pct },
+                        modifier = Modifier.fillMaxWidth().height(6.dp))
+                    Spacer(Modifier.height(5.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(st.stage, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            maxLines = 1, modifier = Modifier.weight(1f))
+                        Text(if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
+                            fontSize = 11.sp, color = Primary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (st.total > 0) "已完成 ${st.done}/${st.total} 块" +
+                        if (st.failed > 0) " · ${st.failed} 块改走直读" else ""
+                else st.message.ifBlank { "还没开始" },
+                fontSize = 11.5.sp, color = Sub)
+            if (st.running) {
+                Spacer(Modifier.height(6.dp))
+                Text(heartbeat, fontSize = 11.sp, color = Primary)
+            }
+        }
+
+        // ② 五步横排：做过的下面 3dp 色块，正在做只加粗，没做的没有色块
+        Spacer(Modifier.height(10.dp))
+        val steps = listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")
+        val curStep = when {
+            st.output != null -> 5
+            st.stage.contains("分章") -> 0
+            st.stage.contains("理解") -> 1
+            st.stage.contains("生成声音") -> 2
+            st.stage.contains("整理") -> 3
+            st.stage == "完成" -> 4
+            else -> -1
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            steps.forEachIndexed { i, stepName ->
+                val doneStep = curStep > i
+                val nowStep = curStep == i
+                Column(Modifier.weight(1f)) {
+                    Text(stepName, fontSize = 10.sp, maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        fontWeight = if (nowStep || doneStep) FontWeight.Bold else FontWeight.Normal,
+                        color = if (nowStep || doneStep) Primary else Sub,
+                        modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(3.dp))
+                    Box(Modifier.fillMaxWidth().height(3.dp).background(
+                        if (doneStep) Primary else Color.Transparent, RoundedCornerShape(50)))
+                }
+            }
+        }
+
+        // ③ 语言模型：整卡折成一行，结论仍读 Workbench.verdict，不删数据、不画假开关
+        Spacer(Modifier.height(10.dp))
+        CardBox {
+            val vText = when {
+                seenTask?.direct == true -> "本次是「直接朗读」，没有使用语言模型"
+                verdict == null -> "还没落盘段映射"
+                else -> verdict.label
+            }
+            Row(Modifier.clickable { lmOpen = !lmOpen },
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("语言模型是否生效", fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                    modifier = Modifier.weight(1f))
+                Text(if (lmOpen) "⌃" else "⌄", fontSize = 12.sp, color = Sub)
+            }
+            Text(vText, fontSize = 11.sp, maxLines = if (lmOpen) Int.MAX_VALUE else 1,
+                color = when {
                     seenTask?.direct == true -> Sub
                     verdict == null -> Sub
                     verdict.effective -> Good
                     else -> Warn
                 })
-            }
-            Spacer(Modifier.height(8.dp))
-            CardBox {
-                Row(Modifier.clickable { segOpen = !segOpen }, verticalAlignment = Alignment.CenterVertically) {
-                    Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Text(if (segOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
-                }
-                Text("绿=声音 · 蓝=模型标 · 黄=直读 · 灰=未记",
+            if (lmOpen && verdict != null)
+                Text("其余段走直接朗读或来源未记，可在分段看台逐格查看。",
                     fontSize = 10.5.sp, color = Sub)
-                if (segOpen) {
-                    Spacer(Modifier.height(10.dp))
-                    if (segs.isEmpty()) {
-                    } else segs.chunked(8).forEach { row ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            row.forEach { s ->
-                                val base = when {
-                                    s.hasAudio -> Good
-                                    s.src == "MODEL" -> Primary
-                                    s.src == "FILL" -> Warn
-                                    else -> Line
-                                }
-                                Box(
-                                    Modifier.size(30.dp)
-                                        .background(
-                                            if (segSel == s.index) PrimarySoft else base.copy(alpha = 0.18f),
-                                            RoundedCornerShape(8.dp))
-                                        .clickable { segSel = if (segSel == s.index) null else s.index },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("${s.index + 1}", fontSize = 10.sp,
-                                        color = if (segSel == s.index) Primary else base)
+        }
+
+        // ④ 分段看台：板块常驻不折叠，8 个一小块；点格子展开「模型吐出来的原貌」
+        Spacer(Modifier.height(10.dp))
+        CardBox {
+            Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text("绿=声音 · 蓝=模型标 · 黄=直读 · 灰=未记 · 点格子看模型原貌",
+                fontSize = 10.sp, color = Sub)
+            if (segs.isEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text("这次还没落盘段映射；跑一次制作后这里才有点。", fontSize = 11.sp, color = Sub)
+            } else {
+                Spacer(Modifier.height(9.dp))
+                segs.chunked(8).forEach { row ->
+                    Row(Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        row.forEach { sg ->
+                            val base = when {
+                                sg.hasAudio -> Good
+                                sg.src == "MODEL" -> Primary
+                                sg.src == "FILL" -> Warn
+                                else -> Line
+                            }
+                            Box(
+                                Modifier.size(30.dp)
+                                    .background(
+                                        if (segSel == sg.index) PrimarySoft else base.copy(alpha = 0.18f),
+                                        RoundedCornerShape(8.dp))
+                                    .clickable { segSel = if (segSel == sg.index) null else sg.index },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("${sg.index + 1}", fontSize = 10.sp,
+                                    color = if (segSel == sg.index) Primary else base)
+                                if (sg.hasAudio)
+                                    Text("▶", fontSize = 6.sp, color = Good,
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(5.dp))
+                }
+                if (rest > 0)
+                    Text("后面还有约 $rest 段待处理", fontSize = 10.5.sp, color = Sub)
+
+                segSel?.let { sel ->
+                    val sg = segs.find { it.index == sel }
+                    if (sg != null) {
+                        // segmap.block 是 0-based，RawDump 文件名是 1-based（Pipeline 写 i + 1）。
+                        val raws = remember(sg.block, tick, redoNonce) {
+                            RawDump.forBlock(c, sg.block + 1)
+                        }
+                        var attemptSel by remember(sg.index) { mutableStateOf(-1) }
+                        val rawIdx = if (attemptSel in raws.indices) attemptSel
+                                     else raws.lastIndex.coerceAtLeast(0)
+                        val label = "第 ${sg.index + 1} 段"
+                        val onThis = pqSeg.label == label
+                        val playing = onThis && pqSeg.isPlaying
+
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("第 ${sg.index + 1} 段 · 第 ${sg.block + 1} 块 · 模型原始产出",
+                                fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f))
+                            // 纯图标两态：点一下播、再点一下停；没声音不画假按钮
+                            if (sg.wav != null) {
+                                Box(Modifier.size(32.dp)
+                                    .background(if (playing) Primary else PrimarySoft,
+                                        RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        if (playing) PlayQueue.pause()
+                                        else if (onThis) PlayQueue.resume()
+                                        else {
+                                            PlayQueue.setTracks(listOf(Track(sg.wav!!, label)))
+                                            PlayQueue.playFrom(0)
+                                        }
+                                    }, contentAlignment = Alignment.Center) {
+                                    Text(if (playing) "⏸" else "▶", fontSize = 13.sp,
+                                        color = if (playing) Card else Primary)
                                 }
                             }
                         }
-                        Spacer(Modifier.height(5.dp))
-                    }
-                    if (rest > 0) Text("后面还有约 $rest 段待处理", fontSize = 11.sp, color = Sub)
-                    segSel?.let { sel ->
-                        val s = segs.find { it.index == sel }
-                        if (s != null) {
-                            // R28 · 这里显示的是「最终进 TTS 的那一条」，不是模型原始产出。
-                            // 逐段标来源，不按「前 N 条」猜（R27 的缺口补齐会插在中间）。
-                            val srcText = when (s.fromModel) {
-                                true -> "模型真标注"
-                                false -> "模型产出没被采纳，按原文直读"
-                                null -> "旧缓存，没记来源"
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Text("第 ${s.index + 1} 段 · 第 ${s.block + 1} 块第 ${s.ann + 1} 条 · " +
-                                    srcText + if (s.hasAudio) " · 已合成" else " · 还没声音",
-                                fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                                color = if (s.fromModel == true) Good else if (s.fromModel == false) Warn else Sub)
-                            if (s.pendingRedo)
-                                Text("已标记待重做，去任务页点「继续制作」", fontSize = 11.sp, color = Warn)
-                            Spacer(Modifier.height(5.dp))
-                            Text(if (s.text.isBlank()) "（这一格没有落盘文字，可能是旧缓存）" else s.text,
-                                fontSize = 11.5.sp, color = Sub, lineHeight = 17.sp)
-                            if (s.instruct.isNotBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text("${s.speaker}｜${s.instruct}", fontSize = 11.sp, color = Primary)
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row {
-                                if (s.wav != null) {
-                                    val label = "第 ${s.index + 1} 段"
-                                    val onThis = pqSeg.label == label
-                                    Button(onClick = {
-                                        PlayQueue.setTracks(listOf(Track(s.wav, label)))
-                                        PlayQueue.playFrom(0)
-                                    }) {
-                                        Text(if (onThis && pqSeg.isPlaying) "重播这一段" else "试听这一段",
-                                            fontSize = 12.sp)
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                    TextButton(onClick = { PlayQueue.release() }) {
-                                        Text("关掉预览", fontSize = 11.5.sp, color = Sub)
-                                    }
-                                } else {
-                                    Text("这一段还没生成声音", fontSize = 11.5.sp, color = Sub)
+
+                        if (raws.size > 1) {
+                            Spacer(Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                raws.forEachIndexed { k, pair ->
+                                    Text("第 ${pair.first} 次", fontSize = 10.sp,
+                                        color = if (k == rawIdx) Card else Sub,
+                                        modifier = Modifier
+                                            .background(if (k == rawIdx) Primary else PrimarySoft,
+                                                RoundedCornerShape(12.dp))
+                                            .clickable { attemptSel = k }
+                                            .padding(horizontal = 8.dp, vertical = 3.dp))
                                 }
                             }
-                            // R28 · 段级重做：语义等同 ReaderVoice Scheduler.invalidate(unitIds)，
-                            // 只把目标单元标脏，禁整章 / 整本清缓存。
-                            if (seenTask?.direct != true && s.wavName.isNotBlank()) {
-                                Spacer(Modifier.height(6.dp))
+                        }
+
+                        val pair = raws.getOrNull(rawIdx)
+                        Spacer(Modifier.height(7.dp))
+                        if (pair == null) {
+                            Text(
+                                if (seenTask?.direct == true)
+                                    "这次是直接朗读，没有模型原始产出。"
+                                else "这一块的原始产出已被清理（只保留最近 3 次运行）。",
+                                fontSize = 11.sp, color = Sub)
+                        } else {
+                            Text("来自 block_%04d_attempt%d.txt · 未经清洗，原样显示"
+                                .format(sg.block + 1, pair.first),
+                                fontSize = 10.sp, color = Sub)
+                            Spacer(Modifier.height(5.dp))
+                            Text(pair.second, fontSize = 11.sp, lineHeight = 16.sp,
+                                fontFamily = FontFamily.Monospace, color = Color(0xFF20242E))
+                        }
+
+                        // s.text 降级为默认收起的「对照」，不再冒充模型原貌
+                        Spacer(Modifier.height(8.dp))
+                        Text("对照：实际送去合成的这句 ›", fontSize = 11.sp, color = Primary,
+                            modifier = Modifier.clickable { showCompare = !showCompare })
+                        if (showCompare) {
+                            Text(if (sg.text.isBlank()) "（这一格没有落盘文字）" else sg.text,
+                                fontSize = 11.sp, color = Sub, lineHeight = 17.sp)
+                            if (sg.instruct.isNotBlank())
+                                Text("${sg.speaker}｜${sg.instruct}", fontSize = 10.5.sp,
+                                    color = Primary)
+                        }
+
+                        // 段级重做 / 关掉预览一个不丢，收进「更多操作」
+                        Spacer(Modifier.height(6.dp))
+                        Text("更多操作 ›", fontSize = 11.sp, color = Sub,
+                            modifier = Modifier.clickable { showMore = !showMore })
+                        if (showMore) {
+                            if (sg.pendingRedo)
+                                Text("已标记待重做，去任务页点「继续制作」",
+                                    fontSize = 10.5.sp, color = Warn)
+                            Row {
+                                if (sg.wav != null)
+                                    TextButton(onClick = { PlayQueue.release() }) {
+                                        Text("关掉预览", fontSize = 11.sp, color = Sub)
+                                    }
+                            }
+                            if (seenTask?.direct != true && sg.wavName.isNotBlank()) {
                                 Row {
                                     TextButton(onClick = {
                                         val w = Workbench.workDir(c, seenTask)
-                                        val ok = w?.let { SegPlan.redoSynthesize(it,
-                                            SegMeta(s.index, s.block, s.ann, s.fromModel,
-                                                s.text, s.speaker, s.instruct, s.wavName)) } ?: false
+                                        val ok = w?.let {
+                                            SegPlan.redoSynthesize(it,
+                                                SegMeta(sg.index, sg.block, sg.ann,
+                                                    sg.fromModel, sg.text, sg.speaker,
+                                                    sg.instruct, sg.wavName))
+                                        } ?: false
                                         Toast.makeText(c,
-                                            if (ok) "已删这段声音，去任务页点「继续制作」重合成" else "没找到这段文件",
-                                            Toast.LENGTH_SHORT).show()
+                                            if (ok) "已删这段声音，去任务页点「继续制作」重合成"
+                                            else "没找到这段文件", Toast.LENGTH_SHORT).show()
                                         redoNonce++
-                                    }) { Text("重合成这一段", fontSize = 11.5.sp, color = Primary) }
+                                    }) { Text("重合成这一段", fontSize = 11.sp, color = Primary) }
                                     Spacer(Modifier.width(6.dp))
                                     TextButton(onClick = {
                                         val w = Workbench.workDir(c, seenTask)
                                         val all = w?.let { SegPlan.readMap(it) } ?: emptyList()
-                                        val killed = w?.let { SegPlan.redoBlock(it, s.block, all) } ?: 0
+                                        val killed = w?.let { SegPlan.redoBlock(it, sg.block, all) } ?: 0
                                         Toast.makeText(c,
-                                            "已清第 ${s.block + 1} 块标注和 $killed 段声音，点「继续制作」重跑语言模型",
+                                            "已清第 ${sg.block + 1} 块标注和 $killed 段声音，点「继续制作」重跑语言模型",
                                             Toast.LENGTH_LONG).show()
                                         redoNonce++
-                                    }) { Text("重新标注本块", fontSize = 11.5.sp, color = Warn) }
+                                    }) { Text("重新标注本块", fontSize = 11.sp, color = Warn) }
                                 }
                             }
                         }
@@ -1139,27 +1123,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             }
         }
         Spacer(Modifier.height(18.dp))
-        // 点一次就锁住按钮：真机上用户狂点 10 次「停止」反而说明它没生效，
-        // 现在按钮立刻变「正在停止…」，等 native 退出再解锁。
-        var stopping by remember { mutableStateOf(false) }
-        LaunchedEffect(st.running) { if (!st.running) stopping = false }
-        if (st.running) {
-            Button(
-                onClick = { stopping = true; Producer.stop() },
-                enabled = !stopping,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8A4A4A)),
-                modifier = Modifier.fillMaxWidth().height(46.dp)
-            ) { Text(if (stopping) "正在停止…" else "停止") }
-            Spacer(Modifier.height(7.dp))
-        } else {
-            if (st.stage == "已停止") {
-                Button(onClick = onResume, Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("继续制作（从停下的地方接着跑）")
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-            TextButton(onClick = onBack, Modifier.fillMaxWidth()) {  }
-        }
     }
 }
 

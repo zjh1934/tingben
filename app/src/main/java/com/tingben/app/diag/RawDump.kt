@@ -61,6 +61,28 @@ object RawDump {
         if (f != null) f.readText() else ""
     } catch (_: Throwable) { "" }
 
+    /**
+     * R65 · 分段看台按块读「语言模型吐出来的原貌」。
+     *
+     * segmap 里的 block 是 0-based（SegPlan / Pipeline 的 i），而落盘文件名
+     * 用的是 i + 1（1-based）。调用方必须传 block + 1，否则会取到上一块。
+     * 一块常切成好几段，多段共享同一份原文是正常的；多次 attempt 会有多份，
+     * 按 attempt 升序返回，由界面决定默认展示哪一份，不在这里替用户挑。
+     * 只留最近 3 次 run，读不到就返回空列表，由界面给空态，不伪造内容。
+     */
+    fun forBlock(c: Context, block: Int): List<Pair<Int, String>> = try {
+        val d = File(dir(c), "run-$runId")
+        val prefix = "block_%04d_attempt".format(block)
+        d.listFiles()
+            ?.filter { it.isFile && it.name.startsWith(prefix) && it.name.endsWith(".txt") }
+            ?.mapNotNull { f ->
+                val a = f.name.removePrefix(prefix).removeSuffix(".txt").toIntOrNull()
+                if (a == null) null else a to f.readText()
+            }
+            ?.sortedBy { it.first }
+            .orEmpty()
+    } catch (_: Throwable) { emptyList() }
+
     fun runDir(c: Context): String = try {
         File(dir(c), "run-$runId").absolutePath
     } catch (_: Throwable) { "" }
