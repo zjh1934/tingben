@@ -537,3 +537,16 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **run 51 `completed success`**（20 步，native 缓存命中）；APK `17,935,474` 字节，直链 blob `68e6b159dd63…` 与本地逐字节一致。
 - 拆包硬验：CRC / 7 个 arm64 .so / 权重 0 / 无 INTERNET / `1.0.0+51` / 新符号全在 / 旧 A/B 字面量零残留 /
   `.so` 里 `TTS_PARAMS_APPLIED` 仍在。
+
+
+## R41b · P1 收尾（run 52 / 1.0.0+52）
+
+- **补齐上一轮三处未完**：CI 挂 `r41_verify.py`（联动表第 80 条）、项目文件头部刷到 `+52`、APK 取回核验。
+  本轮零业务代码改动，`MainActivity.kt` 与 run 52 构建产物一致。
+- **验证脚本自身订正**（不是放水）：`r36_verify.py` 4 条过期字面量换成 R41 等价断言 + 反向注入 9/9；
+  `r40_apk_verify.py` 资料区标题订正、补 12 新符号 / 7 条旧编号零残留 + 反向注入 2/2。
+  新增按 run 号参数化的 `r41b_fetch_apk.py`，每轮交付前核直链 blob，不再写死版本号。
+- **CI run 52 `completed success`**（26 步，native 缓存命中）；拆包 CRC / 7 .so / 权重 0 / 无 INTERNET /
+  `1.0.0+52` / 新符号全在 / 旧编号零残留 / `TTS_PARAMS_APPLIED` 在；直链 blob `e32c2e90…` 与本地
+  17,968,245 字节逐字节一致。
+- 队列：真机验 → R42(P2) → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。

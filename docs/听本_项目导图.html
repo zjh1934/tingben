@@ -371,7 +371,27 @@ r36+r40 验证脚本 / 项目文件），守恒 13 项与基线逐字节一致�
 <b>真机仍零证据</b>；试听期间离开页面可能只写 wav 不自动播放（协程取消），已在联动表写明。
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加</footer>
+
+
+<div class="card" style="margin-top:14px">
+<div class="h">⑭ R41 P1 · 调音台信息架构（1.0.0+52 / run 52）</div>
+<b>输入：</b>《调音台 · 界面/交互评审意见》P1 六条（7~12），R40 统一提交 / R41a 两态试听是本轮地基，一行未动。<br>
+<b>六条：</b>锚点 chip 条 + 展开态持久化到 <code>Prefs</code>（旧 <code>rememberSaveable</code> 只跨旋转）；
+圈码与元信息收进资料区；9 项改主 5 / 副 3 / 确定性 1 三组紧凑表 + 共用 <code>ParamRow</code>；
+精确值默认带出当前值、min/max/单位/越界红字/回车规范化（<code>ParamSpec</code> 唯一范围来源，抄 PocketPal <code>validateNumericField</code>）；
+预设「对比并载入」逐项 diff + 空名禁存 + 重命名 + 删除确认；两处音色控件合并成带搜索 / 最近使用的 <code>VoicePicker</code>。<br>
+<b>不手搓：</b>PocketPal 元数据校验 / OfflineLLM <code>rememberLazyListState</code> 锚点 / IndexTTS <code>.part</code> 原子落盘 /
+ProAndroidDev 折叠分区，均只读形状；GPL 与未核实许可证仓库不复制源码行。<br>
+<b>验证：</b>本地 6 套脚本全绿（R41 正向 46 符号 / 36 例范围对拍 / 9 例反向注入 / 29 项守恒）·
+CI <b>run 52 全绿</b>（26 步，新增 R41 验证 step）· 拆包 CRC / 7 .so / 权重 0 / 无 INTERNET /
+<code>+52</code> / 12 个 R41 新符号 / 旧编号零残留 / <code>TTS_PARAMS_APPLIED</code> 仍在 ·
+直链 blob <code>e32c2e90…</code> 与本地 17,968,245 字节逐字节一致。<br>
+<b>收尾订正：</b><code>r36_verify.py</code> 4 条过期断言同步到 R41 形态（反向 9/9 真拦下），
+<code>r40_apk_verify.py</code> 补新符号与旧编号断言（反向 2/2）；新增按 run 号参数化取包脚本，防直链滞留旧版。<br>
+<b>真机仍零证据</b>；队列：真机验 → R42(P2) → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加</footer>
 </div>
 </body>
 </html>
