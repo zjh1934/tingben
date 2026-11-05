@@ -39,12 +39,18 @@ def check_sources(m):
         if s not in m: e.append("缺新符号: " + s)
     for s in OLD:
         if s in m: e.append("旧 A/B 残留: " + s)
-    # 两个按钮必须都在吸顶状态条那一张 CardBox 内（返回也在其中）
+    # R49 · v5：细状态条只留返回 / 状态 / 查看差异 / 提交；
+    # 两态试听移进默认折叠的「试听」区，提交不依赖试听。
     i = m.find("吸顶状态条")
     j = m.find("Column(Modifier.weight(1f).verticalScroll", i)
     bar = m[i:j] if i >= 0 and j > i else ""
-    for s in ["‹ 返回", "提交变更", "试听未提交参数", "试听已生效参数"]:
-        if s not in bar: e.append("不在同一吸顶模块: " + s)
+    for s in ["‹ 返回", "提交变更", "查看差异"]:
+        if s not in bar: e.append("不在细状态条: " + s)
+    t = m.find('MixerSection("试听", "trial"')
+    u = m.find("// ── 音色身份生成器", t)
+    trial_card = m[t:u] if t >= 0 and u > t else ""
+    for s in ["试听未提交参数", "试听已生效参数", "试听文本", "改完直接提交，不必先试听。"]:
+        if s not in trial_card: e.append("两态试听折叠区缺: " + s)
     # 试听不许写回长期默认 / 不许出现第二个生效动词
     k = m.find("fun trial(")
     p = m.find("    val autoText = VoicePreset", k)

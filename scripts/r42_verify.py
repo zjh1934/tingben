@@ -92,7 +92,8 @@ chk("CardBox(" not in MAIN[MAIN.find("查看差异："):] if "查看差异：" i
     "差异弹层仍有阴影卡")
 chk("CardBox(Modifier.padding(vertical = 3.dp))" not in MAIN, "逐项对比卡片没换分割线")
 # 吸顶条唯一一张卡是强调区，允许保留
-chk(MAIN.count("CardBox(Modifier.padding(horizontal = 16.dp") == 1, "吸顶状态条卡片异常")
+chk(MAIN.count("CardBox(Modifier.padding(horizontal = 16.dp") == 0,
+    "R49 回退：吸顶大卡没换成细状态条")
 
 # ── 4) 对拍：12 维与表演层都走同一 ChipRow，长选项确实存在 ──────────────
 dim_block = MIXER[MIXER.index("enum class VoiceDimension"):MIXER.index("/**\n * 一条「解剖学优先」")]

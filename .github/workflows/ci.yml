@@ -49,6 +49,9 @@ jobs:
       - name: R47 抽屉收窄与预览落地验证（正向 / 反向注入 / 守恒）
         run: python3 scripts/r47_verify.py
 
+      - name: R49 调音台 v5 重设计验证（细状态条 / 锚点换行 / 紧凑行 / 反向注入 / 守恒）
+        run: python3 scripts/r49_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

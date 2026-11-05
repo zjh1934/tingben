@@ -2140,19 +2140,40 @@ private fun TimingHint(timing: String) {
         fontSize = 10.sp, color = Sub)
 }
 
-/** R41 · 锚点导航：抄 OfflineLLM ChatScreen 的列表滚动思路，本页用 ScrollState，不引 LazyColumn。 */
+/**
+ * R49 · v5 第 2 条：锚点自动换行 + 当前区高亮。
+ * R48 真机截图里 7 个标签被横向裁成「固…」；改用官方 FlowRow + FilterChip，
+ * 不再用 horizontalScroll 藏选项。当前区由 MixerScreen 传入，不从滚动位置猜。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AnchorBar(items: List<Pair<String, String>>, onJump: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+private fun AnchorBar(
+    items: List<Pair<String, String>>,
+    current: String,
+    onJump: (String) -> Unit
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
         items.forEach { (key, label) ->
-            TextButton(onClick = { onJump(key) }, modifier = Modifier.padding(end = 2.dp)) {
-                Text(label, fontSize = 11.sp, color = Sub)
-            }
+            FilterChip(
+                selected = key == current,
+                onClick = { onJump(key) },
+                label = { Text(label, fontSize = 11.sp) }
+            )
         }
     }
 }
 
-/** R41 · 九项紧凑行：抄 PocketPal CompletionSettings 的 TextInput + 官方默认回填形状。 */
+/**
+ * R49 · v5 第 4 条：一行一项（中文名 · 滑块 · 小数字框 · ⟳）。
+ * 常用值、人话说明、官方字段收进该行展开的 ⓘ；数字框就是精确值输入，
+ * 不再画第二个框。R47 的滑块双模逐行保留：滑块与数字框共用 onInput，
+ * 范围只认 ParamSpec 唯一来源。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ParamRow(
     spec: ParamSpec,
@@ -2165,57 +2186,70 @@ private fun ParamRow(
     onReset: () -> Unit,
     onRoll: (() -> Unit)? = null
 ) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(spec.label, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f))
-            Text("范围 ${spec.rangeLabel}${spec.unit}", fontSize = 9.5.sp, color = Sub)
+            Text(spec.label, fontSize = 10.5.sp, modifier = Modifier.width(84.dp))
+            // R47 · v4 预览 ⑥ 落地：滑块与精确值框是同一个值，改动只进草稿。
+            // 滑块只覆盖常用区间（seed 无上界时取 2000）；任意合法值仍可直接在框里填。
+            val sliderLo = (spec.min ?: 0.0).toFloat()
+            val sliderHi = (spec.max ?: if (spec.key == "seed") 2000.0 else 1000.0).toFloat()
+            val intLike = spec.key == "seed" || spec.key == "maxNewTokens" ||
+                spec.key == "topK" || spec.key == "subTopK"
+            val sliderVal = (input.toFloatOrNull() ?: cur.toFloatOrNull() ?: sliderLo)
+                .coerceIn(sliderLo, sliderHi)
+            Slider(
+                value = sliderVal,
+                onValueChange = { v ->
+                    val s = if (intLike) v.toLong().toString()
+                    else "%.2f".format(v).trimEnd('0').trimEnd('.')
+                    onInput(s)
+                },
+                valueRange = sliderLo..sliderHi,
+                modifier = Modifier.weight(1f).height(30.dp)
+            )
+            OutlinedTextField(
+                value = input, onValueChange = onInput,
+                modifier = Modifier.width(74.dp), singleLine = true,
+                label = { Text("精确值", fontSize = 8.sp) },
+                isError = err.isNotBlank(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onDone() }),
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
+            )
+            TextButton(onClick = onReset, modifier = Modifier.width(28.dp)) {
+                Text("⟳", fontSize = 12.sp, color = Sub)
+            }
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.width(26.dp)) {
+                Text(if (expanded) "▴" else "▾", fontSize = 11.sp, color = Sub)
+            }
         }
-        HelpNote("参数说明", "${spec.hint} · 官方默认 ${spec.def} · 字段 ${spec.official}")
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            spec.options.forEach { o ->
-                val target = if (o == "随机") "-1" else o
-                val on = cur == target || (o == "随机" && (cur.toLongOrNull() ?: 0L) < 0L)
-                TextButton(onClick = { onPick(target) }) {
-                    Text(o, fontSize = 10.5.sp,
-                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                        color = if (on) Primary else Sub)
+        if (err.isNotBlank()) Text(err, fontSize = 10.sp, color = Warn)
+        if (expanded) {
+            HelpNote("参数说明",
+                "${spec.hint} · 官方默认 ${spec.def} · 字段 ${spec.official} · 范围 ${spec.rangeLabel}${spec.unit}")
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                spec.options.forEach { o ->
+                    val target = if (o == "随机") "-1" else o
+                    val on = cur == target || (o == "随机" && (cur.toLongOrNull() ?: 0L) < 0L)
+                    FilterChip(
+                        selected = on,
+                        onClick = { onPick(target) },
+                        label = { Text(o, fontSize = 10.sp) }
+                    )
                 }
             }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onReset) { Text("⟳ 默认", fontSize = 10.sp, color = Sub) }
             onRoll?.let { roll ->
-                TextButton(onClick = roll) { Text("⟳ 换一个", fontSize = 10.sp, color = Primary) }
+                TextButton(onClick = roll) {
+                    Text("⟳ 换一个", fontSize = 10.5.sp, color = Primary)
+                }
             }
+            TextButton(onClick = onReset) { Text("⟳ 单项恢复默认", fontSize = 10.5.sp, color = Sub) }
         }
-        // R47 · v4 预览 ⑥ 落地：滑块与精确值框是同一个值，改动只进草稿。
-        // 滑块只覆盖常用区间（seed 无上界时取 2000）；任意合法值仍可直接在框里填。
-        val sliderLo = (spec.min ?: 0.0).toFloat()
-        val sliderHi = (spec.max ?: if (spec.key == "seed") 2000.0 else 1000.0).toFloat()
-        val intLike = spec.key == "seed" || spec.key == "maxNewTokens" ||
-            spec.key == "topK" || spec.key == "subTopK"
-        val sliderVal = (input.toFloatOrNull() ?: cur.toFloatOrNull() ?: sliderLo)
-            .coerceIn(sliderLo, sliderHi)
-        Slider(
-            value = sliderVal,
-            onValueChange = { v ->
-                val s = if (intLike) v.toLong().toString()
-                else "%.2f".format(v).trimEnd('0').trimEnd('.')
-                onInput(s)
-            },
-            valueRange = sliderLo..sliderHi,
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = input, onValueChange = onInput,
-            modifier = Modifier.fillMaxWidth(), singleLine = true,
-            label = { Text("精确值 ${spec.rangeLabel}${spec.unit}", fontSize = 9.5.sp) },
-            isError = err.isNotBlank(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onDone() }),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
-        )
-        if (err.isNotBlank()) Text(err, fontSize = 10.sp, color = Warn)
         HorizontalDivider(color = Line)
     }
 }
@@ -2281,6 +2315,10 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     val missing = remember(tick) { ModelStore.missing(c) }
 
     var showDiff by remember { mutableStateOf(false) }
+    // R49 · v5：锚点当前区、身份全文/编辑两个展开态（纯界面态，不写生效态）
+    var activeAnchor by remember { mutableStateOf("identity") }
+    var showVoiceFull by remember { mutableStateOf(false) }
+    var showVoiceEdit by remember { mutableStateOf(true) }
     var showLeave by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     var paramDrafts by remember { mutableStateOf(emptyMap<String, String>()) }
@@ -2310,7 +2348,12 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         openMap = next
         Prefs.setMixerOpenSections(c, next)
     }
-    fun jumpTo(k: String) { scope.launch { scroll.animateScrollTo(anchors[k] ?: 0) } }
+    fun jumpTo(k: String) {
+        activeAnchor = k
+        // R49 · v5 第 6 条：锚点点击先展开目标折叠区，再滚过去
+        if (k !in openMap) toggleSection(k, true)
+        scope.launch { scroll.animateScrollTo(anchors[k] ?: 0) }
+    }
 
     // R41a · 试听只看两态：草稿（未提交）/ 已生效。不再有 A/B、预设对比、合成/播放两步。
     var trialText by remember {
@@ -2325,6 +2368,20 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "内置角色卡已写入 4 张")
             castTick++
         }
+    }
+
+    /** R49 · 身份描述逐维差异：按「；」拆段比不同项，只给界面高亮，不参与提交判定。 */
+    fun voiceFieldDiff(old: String, new: String): List<Pair<String, String>> {
+        fun parts(x: String) = x.split("；", ";").map { it.trim() }.filter { it.isNotEmpty() }
+        val a = parts(old)
+        val b = parts(new)
+        val out = mutableListOf<Pair<String, String>>()
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrNull(i) ?: "（空）"
+            val y = b.getOrNull(i) ?: "（空）"
+            if (x != y) out.add(x to y)
+        }
+        return out
     }
 
     /** 全页唯一生效动作。写完重读真值源，保留生成器工作区（dims/dimText）。 */
@@ -2427,104 +2484,108 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     BackHandler(enabled = dirty) { showLeave = true }
 
     Column(Modifier.fillMaxSize()) {
-        // ── 吸顶状态条：R40 三段式 + R41a 返回 / 两个试听按钮，同一模块常驻 ──
-        CardBox(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { if (dirty) showLeave = true else onBack() }) {
-                    Text("‹ 返回", fontSize = 12.sp)
-                }
-                Column(Modifier.weight(1f)) {
-                    Text("已生效 v$INSTRUCT_TEMPLATE_VERSION",
-                        fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(if (dirty) "未提交变更 ${changes.size} 项" else "无待提交变更",
-                        fontSize = 11.sp, color = if (dirty) Warn else Good)
-                }
-                TextButton(onClick = { showDiff = true }) { Text("查看差异", fontSize = 11.5.sp) }
-                Button(onClick = { commitAll() }, enabled = dirty) {
-                    Text("提交变更", fontSize = 11.5.sp)
-                }
+        // ── 吸顶状态条（R49 · v5 第 1 条：只留返回 / 状态 / 查看差异 / 提交）──
+        // 试听与试听文本已移进默认折叠的「试听」区，不再占首屏 40%。
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { if (dirty) showLeave = true else onBack() }) {
+                Text("‹ 返回", fontSize = 11.5.sp)
             }
-            if (msg.isNotBlank()) {
-                Spacer(Modifier.height(5.dp))
-                Text(msg, fontSize = 10.5.sp, color = Sub)
+            Column(Modifier.weight(1f)) {
+                Text("已生效 v$INSTRUCT_TEMPLATE_VERSION",
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(if (dirty) "未提交 ${changes.size} 项" else "无待提交变更",
+                    fontSize = 10.5.sp, color = if (dirty) Warn else Good)
             }
-            if (dirty) {
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = { discardAll() }) {
-                    Text("丢弃全部待提交", fontSize = 10.5.sp, color = Warn)
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            val canTrial = missing.isEmpty() && !busyDraftTrial && !busyActiveTrial
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = {
-                    trial("未提交参数", draft, "mixer_trial_draft.wav") { busyDraftTrial = it }
-                }, enabled = canTrial, modifier = Modifier.weight(1f)) {
-                    Text(if (busyDraftTrial) "合成中…" else "试听未提交参数", fontSize = 11.5.sp)
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = {
-                    trial("已生效参数", active, "mixer_trial_active.wav") { busyActiveTrial = it }
-                }, enabled = canTrial, modifier = Modifier.weight(1f)) {
-                    Text(if (busyActiveTrial) "合成中…" else "试听已生效参数", fontSize = 11.5.sp)
-                }
-            }
-            OutlinedTextField(
-                value = trialText, onValueChange = { trialText = it },
-                modifier = Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("试听文本", fontSize = 10.sp) },
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
-            )
-            if (trialMsg.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(trialMsg, fontSize = 10.5.sp, color = Sub)
-            }
-            if (missing.isNotEmpty()) {
-                Text("还缺模型文件，先去设置页导入。", fontSize = 10.5.sp, color = Warn)
+            TextButton(onClick = { showDiff = true }) { Text("查看差异", fontSize = 11.sp) }
+            Button(onClick = { commitAll() }, enabled = dirty) {
+                Text("提交变更", fontSize = 11.sp)
             }
         }
+        if (msg.isNotBlank() || dirty) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (msg.isNotBlank()) Text(msg, fontSize = 10.sp, color = Sub)
+                if (dirty) {
+                    Spacer(Modifier.width(10.dp))
+                    TextButton(onClick = { discardAll() }) {
+                        Text("丢弃全部待提交", fontSize = 10.sp, color = Warn)
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = Line)
 
         AnchorBar(listOf(
             "identity" to "身份", "sampling" to "采样", "perf" to "表演",
-            "switches" to "开关", "casts" to "角色", "presets" to "预设",
-            "fixedVoice" to "固定音色", "mapping" to "对齐", "trace" to "资料"
-        )) { jumpTo(it) }
+            "casts" to "角色", "presets" to "预设",
+            "fixedVoice" to "固定音色", "mapping" to "高级"
+        ), activeAnchor) { jumpTo(it) }
         Spacer(Modifier.height(4.dp))
         Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(4.dp))
 
-            // ── 固定首屏：已生效全文（只读） vs 草稿（可编辑）+ diff 高亮 ────
-            Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)
+            // ── R49 · v5 第 3 条：默认摘要，全文与编辑按需展开，只显改动 ──
+            Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)
                 .onGloballyPositioned { anchors["identity"] = it.positionInParent().y.toInt() }) {
                 HorizontalDivider(color = Line)
                 Spacer(Modifier.height(8.dp))
-                Text("音色身份", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Text("当前生效 · 全书固定（只读）", fontSize = 11.sp, color = Sub)
-                Spacer(Modifier.height(4.dp))
-                Text(active.voice.trim().ifBlank { DEFAULT_IDENTITY },
-                    fontSize = 12.5.sp, modifier = Modifier.background(PrimarySoft))
-                Spacer(Modifier.height(7.dp))
-                if (voiceChange != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("音色身份", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Text("可调 · 全书固定", fontSize = 10.sp, color = Sub)
+                    Spacer(Modifier.weight(1f))
+                    if (dirty) Text("未提交 ${changes.size} 项", fontSize = 10.sp, color = Warn)
+                }
+                Spacer(Modifier.height(5.dp))
+                Text("当前生效 · 全书固定（只读）", fontSize = 10.5.sp, color = Sub)
+                val activeVoice = active.voice.trim().ifBlank { DEFAULT_IDENTITY }
+                Text(
+                    if (showVoiceFull) activeVoice
+                    else activeVoice.take(38) + "…（共 ${activeVoice.length} 字）",
+                    fontSize = 11.5.sp, modifier = Modifier.background(PrimarySoft)
+                )
+                TextButton(onClick = { showVoiceFull = !showVoiceFull }) {
+                    Text(if (showVoiceFull) "收起全文" else "展开全文 ›", fontSize = 10.5.sp)
+                }
+                val vdiff = voiceFieldDiff(activeVoice, draft.voice.trim().ifBlank { DEFAULT_IDENTITY })
+                if (vdiff.isNotEmpty()) {
+                    Text("改动 ${vdiff.size} 处", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    vdiff.take(4).forEach { (x, y) ->
+                        Text("$x → $y", fontSize = 10.5.sp, color = Warn)
+                    }
+                } else if (voiceChange != null) {
                     Text("已改：${voiceChange.old.take(32)} → ${voiceChange.new.take(32)}",
                         fontSize = 10.5.sp, color = Warn)
-                    Spacer(Modifier.height(5.dp))
                 }
-                OutlinedTextField(
-                    value = draft.voice, onValueChange = { draft = draft.copy(voice = it) },
-                    modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
-                    label = { Text("编辑音色描述（草稿）", fontSize = 11.sp) },
-                    placeholder = { Text("例如：温和的中年女声，音区偏低，吐字清晰，语速偏慢，无明显口音", fontSize = 11.sp) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { showVoiceEdit = !showVoiceEdit }) {
+                    Text(if (showVoiceEdit) "收起编辑" else "编辑描述 ›",
+                        fontSize = 10.5.sp, color = Primary)
+                }
+                if (showVoiceEdit) {
+                    OutlinedTextField(
+                        value = draft.voice, onValueChange = { draft = draft.copy(voice = it) },
+                        modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
+                        label = { Text("编辑音色描述（草稿）", fontSize = 11.sp) },
+                        placeholder = { Text("例如：温和的中年女声，音区偏低，吐字清晰，语速偏慢，无明显口音", fontSize = 11.sp) },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
+                    )
+                    Spacer(Modifier.height(5.dp))
                     TextButton(onClick = { draft = draft.copy(voice = "") }) {
                         Text("清空回默认（待提交）", fontSize = 11.sp)
                     }
+                } else {
+                    Text(draft.voice.trim().ifBlank { DEFAULT_IDENTITY }.take(38) + "…（草稿）",
+                        fontSize = 10.5.sp, color = Sub)
                 }
                 Text("固定音色 = 这段描述 + 种子 + 9 项采样全书不变。", fontSize = 10.sp, color = Sub)
                 TextButton(onClick = {
                     toggleSection("fixedVoice", true)
+                    activeAnchor = "fixedVoice"
                     scope.launch { scroll.animateScrollTo(anchors["fixedVoice"] ?: 0) }
                 }) { Text("固定音色是什么？ ›", fontSize = 10.5.sp, color = Primary) }
                 TimingHint(TIMING_NOW)
@@ -2600,9 +2661,49 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 TimingHint(TIMING_NOW)
             }
 
+            // ── R49 · 试听：默认折叠的两态卡，提交不依赖试听 ──────────────
+            MixerSection("试听", "trial",
+                openMap.contains("trial"), { toggleSection("trial", it) },
+                badge = "两态", anchor = { anchors["trial"] = it }) {
+                Text("改完直接提交，不必先试听。", fontSize = 10.5.sp, color = Sub)
+                Spacer(Modifier.height(6.dp))
+                val canTrial = missing.isEmpty() && !busyDraftTrial && !busyActiveTrial
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = {
+                        trial("未提交参数", draft, "mixer_trial_draft.wav") { busyDraftTrial = it }
+                    }, enabled = canTrial, modifier = Modifier.weight(1f)) {
+                        Text(if (busyDraftTrial) "合成中…" else "试听未提交参数", fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = {
+                        trial("已生效参数", active, "mixer_trial_active.wav") { busyActiveTrial = it }
+                    }, enabled = canTrial, modifier = Modifier.weight(1f)) {
+                        Text(if (busyActiveTrial) "合成中…" else "试听已生效参数", fontSize = 11.sp)
+                    }
+                }
+                OutlinedTextField(
+                    value = trialText, onValueChange = { trialText = it },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("试听文本", fontSize = 10.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
+                )
+                if (trialMsg.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(trialMsg, fontSize = 10.5.sp, color = Sub)
+                }
+                if (missing.isNotEmpty()) {
+                    Text("还缺模型文件，先去设置页导入。", fontSize = 10.5.sp, color = Warn)
+                }
+            }
+
+            // ── R49 · 三态分区：上层项统一挂徽标，默认折叠 ────────────────
+            Text("辅助设置 · 上层（能改，但不是模型字段）", fontSize = 10.5.sp, color = Sub,
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
+
             // ── 音色身份生成器：只有一种语义（生成 → 可编辑预览 → 填入草稿）──
             MixerSection("音色身份生成器", "identity",
-                openMap.contains("identity"), { toggleSection("identity", it) }) {
+                openMap.contains("identity"), { toggleSection("identity", it) },
+                badge = "上层") {
                 HelpNote("12 维是什么", "按维度挑一挑，自动拼成音色描述；只是帮你写字，不是模型字段。")
                 Spacer(Modifier.height(5.dp))
                 VoiceDimension.entries.forEach { d ->
@@ -2661,7 +2762,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
             // ── 表演层：只写 draft.perf，提交后对所有新任务生效 ─────────────
             MixerSection("表演层", "perf", openMap.contains("perf"), { toggleSection("perf", it) },
-                anchor = { anchors["perf"] = it }) {
+                badge = "上层", anchor = { anchors["perf"] = it }) {
                 ChipRow("朗读档位", "叙事 / 对白 / 广播剧",
                     ReadingStyle.entries.map { it.label }, draft.perf.style.label) { v ->
                     ReadingStyle.entries.firstOrNull { it.label == v }?.let {
@@ -2697,7 +2798,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
             // ── 音频开关：只写 draft，角色未绑定给可见提示 ───────────────────
             MixerSection("音频开关", "switches", openMap.contains("switches"),
-                { toggleSection("switches", it) }, anchor = { anchors["switches"] = it }) {
+                { toggleSection("switches", it) }, badge = "上层", anchor = { anchors["switches"] = it }) {
                 SwitchRow("拟声表达", draft.nonVerbal, TIMING_NOW) {
                     draft = draft.copy(nonVerbal = it)
                 }
@@ -2714,7 +2815,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
             // ── 角色预设：补音色 chip / 未绑定 / 删除二次确认 ─────────────────
             MixerSection("角色预设", "casts", openMap.contains("casts"), { toggleSection("casts", it) },
-                anchor = { anchors["casts"] = it }) {
+                badge = "配置", anchor = { anchors["casts"] = it }) {
                 if (casts.isEmpty()) Text("暂无角色卡", fontSize = 11.sp, color = Sub)
                 casts.forEach { e ->
                     val bound = VoicePresets.ALL.firstOrNull { it.render() == e.description }
@@ -2772,7 +2873,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
             // ── 预设库：载入只写 draft；保存的是已生效配置，空名禁存 ─────────
             MixerSection("预设库", "presets", openMap.contains("presets"), { toggleSection("presets", it) },
-                anchor = { anchors["presets"] = it }) {
+                badge = "配置", anchor = { anchors["presets"] = it }) {
                 presets.forEach { p ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -2898,7 +2999,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
             // ── 资料与诊断：普通视图只留人话；字段名 / 文档坐标 / 指纹全收进「高级」 ──
             MixerSection("参数触达与官方资料", "trace", openMap.contains("trace"),
-                { toggleSection("trace", it) }, anchor = { anchors["trace"] = it }) {
+                { toggleSection("trace", it) }, badge = "只读", anchor = { anchors["trace"] = it }) {
                 HelpNote("怎么用这份控制台",
                     "改完点顶部「提交变更」；正在跑的任务不受影响。想复盘就点下面「复制进诊断日志」。")
                 TextButton(onClick = {
@@ -2912,6 +3013,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             // R41a · 试听已移进吸顶状态条那一块（草稿 / 已生效各一个按钮，一步合成并播放）。
             // R45 · 末尾留白：滚动到底时最后一块不压住系统手势白条 / 三键区。
             Spacer(Modifier.height(40.dp))
+            // R49 · v5 第 7 条：补 8dp 覆盖三键 48dp / 手势白条 24dp
+            Spacer(Modifier.height(8.dp))
         }
     }
 

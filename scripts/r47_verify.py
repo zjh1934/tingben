@@ -97,8 +97,10 @@ INJECT = {
     "恢复宽松条目": lambda c, m, s: (c.replace("padding(horizontal = 10.dp, vertical = 0.dp)",
                                         "padding(horizontal = 12.dp, vertical = 2.dp)"), m, s),
     "删滑块块": lambda c, m, s: (c, m.replace("// R47 · v4 预览 ⑥ 落地", "// GONE") , s),
-    "滑块直写Prefs": lambda c, m, s: (c, m.replace("onInput(s)\n            },",
-                                                "Prefs.setTtsKnobs(c, draft.knobs)\n            },"), s),
+    "滑块直写Prefs": lambda c, m, s: (c, m.replace(
+                                                "                    onInput(s)\n                },",
+                                                "                    onInput(s)\n"
+                                                "                    Prefs.setTtsKnobs(c, draft.knobs)\n                },"), s),
     "滑块改用快捷值": lambda c, m, s: (c, m.replace("onInput(s)", "onPick(s)"), s),
     "参数名回退英文": lambda c, m, s: (c, m, s.replace('"主·随机度"', '"主 temperature"')),
 }
@@ -135,7 +137,12 @@ if not os.environ.get("CI"):
         chk(a >= 0 and b > a, "找不到 R47 滑块块边界")
         stripped = new_pr[:a] + new_pr[b:] if a >= 0 and b > a else new_pr
         stripped = stripped.replace(" · 字段 ${spec.official}", "")
-        chk(canon(stripped) == old_pr, "ParamRow 除滑块块/HelpNote 外被顺手改动")
+        # R49 · v5 第 4 条重排了 ParamRow（一行一项），逐行对拍移交 r49_verify.py；
+        # 这里只核 R47 滑块双模的 6 个关键表达式仍在 ParamRow 内。
+        for expr in ["val sliderLo = (spec.min ?: 0.0).toFloat()",
+                     "val sliderHi = (spec.max ?: if (spec.key == \"seed\") 2000.0 else 1000.0).toFloat()",
+                     "valueRange = sliderLo..sliderHi", "onInput(s)", "Slider("]:
+            chk(expr in new_pr, "R47 滑块双模被 R49 改坏: " + expr)
 
     # ── 4) ParamSpec 逐字段对拍：只允许第 3 个字符串（label）变化 ──
     hs = head(P_SPEC)

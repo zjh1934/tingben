@@ -20,6 +20,12 @@ def canon(t):
     AppChrome.kt 整文件允许改，由 r46_verify.py 做形态断言与旧壳零残留检查。
     """
     t = strip_r45(t)
+    # R49 · v5 重排了整个调音台区块（含其前的 KDoc 注释）。统一口径：
+    # 只比「// ── ⑥ 调音台」之前的业务代码，与 r40/r41/r42 的守恒切片一致；
+    # 调音台形态由 r49_verify.py 逐项断言 + 反向注入负责。
+    a = t.find("// ── ⑥ 调音台")
+    if a >= 0:
+        t = t[:a]
     a = t.find("private fun App(")
     b = t.find("private fun queryName(", a + 1)
     if a >= 0 and b > a:
@@ -30,5 +36,14 @@ def canon(t):
     b = t.find("/** R41 · 共用音色选择器", a + 1)
     if a >= 0 and b > a:
         t = t[:a] + t[b:]
+    # R49 · v5 重排 AnchorBar 与整个 MixerScreen（细状态条 / 身份卡 / 试听折叠区）。
+    # 形态由 r49_verify.py 逐项断言；这里剔除调音台整段，其余业务代码仍逐行守恒。
+    a = t.find("private fun AnchorBar(")
+    b = t.find("/** R41 · 共用音色选择器", a + 1)
+    if a >= 0 and b > a:
+        t = t[:a] + t[b:]
+    a = t.find("private fun MixerScreen(")
+    if a >= 0:
+        t = t[:a]
     return [x.rstrip() for x in t.splitlines()
             if x.strip() and not x.startswith("import ")]
