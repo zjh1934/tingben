@@ -4,10 +4,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+<本轮 run 号>`（字节数与直链 blob 待构建完成后回填；发布详情见 `docs/R50_真机三处修补_落地.md`） |
-| APK | arm64-v8a / 固定 debug 签名 / 详见 `docs/R50_真机三处修补_落地.md` |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | 本轮构建完成后回填（含新增 R50 验证 step） |
+| 版本 | `1.0.0+60`（run 60；发布详情见 `docs/R50_真机三处修补_落地.md`） |
+| APK | arm64-v8a / 固定 debug 签名 / **18,001,010 字节** / 详见 `docs/R50_真机三处修补_落地.md` |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`（blob `7f4297dc…`，与本地逐字节一致） |
+| CI | **run 60 `completed success`**（30/32 步 ok，含新增 R50 验证 step；run 59 编译失败已修） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 

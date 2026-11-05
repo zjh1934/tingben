@@ -476,7 +476,7 @@ CI <b>run 58 全绿（31 步）</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTER
 
 
 <div class="card" style="margin-top:14px">
-<div class="h">⑳ R50 · 调音台真机三处修补（1.0.0+<run> / 本轮）</div>
+<div class="h">⑳ R50 · 调音台真机三处修补（1.0.0+60 / run 60）</div>
 <b>输入：</b>用户贴 <code>+58</code> 真机两张截图，三条意见：采样行滑块/输入框要调整、表演层应有自定义输入块、
 「把设置页往下扒的时候，标签页为什么不跟着变」。<br>
 <b>实查第 3 问：</b><code>activeAnchor</code> 只在点 chip / 点「固定音色是什么」时赋值，
@@ -491,8 +491,11 @@ CI <b>run 58 全绿（31 步）</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTER
 / <code>diff</code> / JSON schema 2 宽容迁移；两枚数值框写 <code>gapMs</code>/<code>gateRetries</code>，
 <b>修掉旧 <code>fromJson</code> 白名单静默重置自定义值</b>的真 bug。<br>
 <b>守恒：</b>唯一提交出口 / 两态试听 / 9 项参数表 / 4B / prompt v2 / 主链 / native / Screen / 抽屉 / Gradle 全不动。<br>
-<b>验证：</b>本地 11 套 <code>CI=true</code> 全绿 · R50 正向 49 + 数据对拍 11 + 反向注入 9/9 ·
+<b>验证：</b>本地 11 套 <code>CI=true</code> 全绿 · R50 正向 50 + 数据对拍 11 + 反向注入 10/10 全拦下 ·
 首轮抓到 5 处旧脚本断言按上一版形态写死，逐一定位订正（不是放水）。<br>
+<b>run 59 真编译失败已修</b>（M3 <code>OutlinedTextField</code> 无 <code>contentPadding</code> 参数），
+<b>run 60 全绿（30/32 步）</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / <code>1.0.0+60</code> /
+33 个新符号 / 15 条旧形态零残留 · <b>18,001,010 字节</b> / 直链 blob <code>7f4297dc…</code> 与本地逐字节一致。<br>
 <b>真机仍零证据</b>；队列：真机验 R50 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页沉底 → 导入通道 → U2。
 </div>
 

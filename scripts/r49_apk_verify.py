@@ -31,7 +31,7 @@ NEW = [
     "两态".encode(), "上层".encode(), "配置".encode(), "只读".encode(),
     "当前生效 · 全书固定（只读）".encode(),
     "固定音色是什么？ ›".encode(), "⟳ 换一个".encode(),
-    "精确值".encode(), "收起全文".encode(), "收起编辑".encode(),
+    "收起全文".encode(), "收起编辑".encode(),
     # 既有能力一个都不能被改坏
     b"MixerCommit", b"MIXER_COMMIT", "提交变更".encode(), "查看差异".encode(),
     "试听未提交参数".encode(), "试听已生效参数".encode(), b"MIXER_TRIAL",
@@ -48,6 +48,8 @@ OLD = [
     "松开即可刷新".encode(), "已刷新".encode(), "⟳ 刷新".encode(),
     b"MIXER_AB", "A/B 试听".encode(), "保存并生效".encode(),
     "先试听再提交变更才能生效。".encode(),
+    # R50 起数字框去掉 label（72×38dp 小框），「精确值」变成旧形态
+    "精确值".encode(),
 ]
 
 new_bad = [s for s in NEW if s not in dex]
