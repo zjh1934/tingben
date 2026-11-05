@@ -60,6 +60,8 @@ internal const val NAV_SETTINGS = 3
 internal const val NAV_MIXER = 4
 internal const val NAV_MODELS = 5
 internal const val NAV_CAST = 6
+/** P0 · 语言模型设置独立目的地。旧 7 项下标一个不改，只追加。 */
+internal const val NAV_LLM = 7
 
 /**
  * 一屏的「壳」描述。由 App() 里的 chromeOf(Screen) 生成，本层只消费。
@@ -79,6 +81,7 @@ private val DRAWER_TOP = listOf(
 
 private val DRAWER_MORE = listOf(
     NAV_SETTINGS to "设置",
+    NAV_LLM to "语言模型",
     NAV_MIXER to "调音台",
     NAV_MODELS to "模型",
     NAV_CAST to "角色音色",

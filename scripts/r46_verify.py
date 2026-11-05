@@ -30,7 +30,7 @@ CHROME_POS = [
     "if (acc > 55f) onRefresh()",
 ]
 MAIN_POS = [
-    # R51 · 覆盖式 → 联动式；其余抽屉行为（手势 / 返回键 / 7 目的地）守恒不变
+    # R51 · 覆盖式 → 联动式；其余抽屉行为（手势 / 返回键 / 8 目的地）守恒不变
     "DismissibleNavigationDrawer(",
     "drawerState = drawerState",
     "gesturesEnabled = true",
@@ -51,7 +51,7 @@ MAIN_POS = [
 OLD_SHELL = ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS", "AppTab(",
              "onMenu = { idx ->", "ModalNavigationDrawer("]
 
-# 守恒：Screen 枚举 9 值 / when 分发 9 分支 / chromeOf 9 映射 / 外部导入落地
+# 守恒：Screen 枚举 10 值 / when 分发 10 分支 / chromeOf 10 映射 / 外部导入落地
 def enum_count(s):
     m = re.search(r"private enum class Screen \{([^}]*)\}", s)
     return len(set(re.findall(r"\b[A-Z_]+\b", m.group(1)))) if m else -1
@@ -88,9 +88,9 @@ def check(main, chrome, tag):
     a = main.find("BackHandler(enabled = screen != Screen.LIBRARY)")
     b = main.find("BackHandler(enabled = drawerState.isOpen)")
     ck(a >= 0 and b > a, "抽屉 BackHandler 没排在原 BackHandler 之后")
-    ck(enum_count(main) == 9, "Screen 枚举不是 9 值")
-    ck(dispatch_count(main) == 9, "when(screen) 分发不是 9 分支")
-    ck(chrome_count(main) == 9, "chromeOf 没覆盖 9 个目的地")
+    ck(enum_count(main) == 10, "Screen 枚举不是 10 值")
+    ck(dispatch_count(main) == 10, "when(screen) 分发不是 10 分支")
+    ck(chrome_count(main) == 10, "chromeOf 没覆盖 10 个目的地")
     for s in ["fun importBook(uri: Uri?", "incoming: String?", "EXTERNAL_INTENT",
               "ProduceService", "screen = Screen.LIBRARY"]:
         ck(s in main, "外部导入/通知回跳落地丢失: " + s)

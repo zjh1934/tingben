@@ -86,9 +86,9 @@ def baseline(chrome, main, spec):
     pr = paramrow(main)
     ck("Slider(" in pr and "onInput(s)" in pr, "滑块双模被破坏")
     ck(not re.findall(r"Prefs\.set\w+\(", pr), "ParamRow 内出现直接写生效态")
-    # R54 · 设置页改四分区；声音区仍须排在语言模型区之前（作用域主次不倒）。
-    ck(main.find('SettingsSection("声音"') <
-       main.find('SettingsSection("语言模型"'), "设置页分区顺序被顺手挪动")
+    # P0 · 设置页改 v8 双页；外观与显示须排在「更多」之前（入口不倒置）。
+    ck(main.find('SettingsSection("外观与显示"') <
+       main.find('SettingsSection("更多"'), "设置页分区顺序被顺手挪动")
     return e
 
 

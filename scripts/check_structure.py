@@ -121,7 +121,7 @@ for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
 # R54 · 设置页重设计后不再有圈码分组标题，改验四分区组件与作用域文案。
 R25_MAIN = ["private fun GroupLabel(", "private fun SettingsSection(",
-            "SettingsSection(\"声音\", \"长期默认\"", "仅本次", "作用域",
+            "SettingsSection(\"外观与显示\", \"软件\"", "仅本次", "作用域",
             "ACTION_MAIN 也被当成", "ProduceMode.DIRECT", "标注后合成（实验性）"]
 for sym in R25_MAIN:
     if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
@@ -271,7 +271,7 @@ enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
 if enum_m:
     got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))
     want = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-            "SETTINGS", "MODELS", "CAST", "MIXER"}
+            "SETTINGS", "MODELS", "CAST", "MIXER", "LLM"}
     if got != want: errs.append("U1 回退：Screen 枚举被改 " + str(got ^ want))
 else:
     errs.append("U1 回退：找不到 Screen 枚举")
@@ -294,18 +294,18 @@ if start >= 0:
                 break
     block = main_src[open_i:(end + 1)] if end else ""
     n = len(re.findall(r"Screen\.[A-Z_]+\s*->", block))
-    if n != 9: errs.append("U1 回退：when(screen) 分发分支 %d 个，应为 9" % n)
+    if n != 10: errs.append("U1 回退：when(screen) 分发分支 %d 个，应为 10" % n)
 else:
     errs.append("U1 回退：找不到 when(screen) 分发")
-# chromeOf 必须覆盖全部 9 个目的地（漏一个 = 那一页顶栏标题为空、Tab 不高亮）
+# chromeOf 必须覆盖全部 10 个目的地（漏一个 = 那一页顶栏标题为空、Tab 不高亮）
 co_m = re.search(r"private fun chromeOf\(s: Screen\): ChromeSpec = when \(s\) \{(.*?)\n\}",
                  main_src, re.S)
 if co_m:
     covered = set(re.findall(r"Screen\.([A-Z_]+)\s*->", co_m.group(1)))
-    if len(covered) != 9: errs.append("U1 回退：chromeOf 只覆盖 %d/9 个目的地" % len(covered))
+    if len(covered) != 10: errs.append("U1 回退：chromeOf 只覆盖 %d/10 个目的地" % len(covered))
 else:
     errs.append("U1 回退：找不到 chromeOf 映射")
-# V1 · 抽屉一列：顶层 3 个（不含设置）+ 设置域 4 个（调音台必须是独立项）
+# V1 · 抽屉一列：顶层 3 个（不含设置）+ 设置域 5 个（调音台 / 语言模型必须是独立项）
 tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 if tabs_m:
@@ -316,8 +316,8 @@ else:
     errs.append("U1 回退：找不到 DRAWER_TOP")
 if more_m:
     body2 = more_m.group(1)
-    if body2.count(" to ") != 4 or "调音台" not in body2:
-        errs.append("U1 回退：抽屉设置域不是 4 项或调音台不是独立项")
+    if body2.count(" to ") != 5 or "调音台" not in body2 or "语言模型" not in body2:
+        errs.append("U1 回退：抽屉设置域不是 5 项或调音台/语言模型不是独立项")
 else:
     errs.append("U1 回退：找不到 DRAWER_MORE")
 # 下拉刷新机制保留、阈值不变（必须查代码行，注释里也写了 55f，会被字符串包含骗过）

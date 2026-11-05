@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER, LLM }
 
 /** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
 private enum class ProduceMode { ANNOTATE, DIRECT }
@@ -311,6 +311,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Screen.MIXER -> NAV_MIXER
         Screen.MODELS -> NAV_MODELS
         Screen.CAST -> NAV_CAST
+        Screen.LLM -> NAV_LLM
     }
     // R51 · 联动抽屉：官方 DismissibleNavigationDrawer 展开时把右侧工作页一起推走，
     // 不再是 ModalNavigationDrawer 那种「抽屉盖在内容上 + 全屏遮罩」的覆盖式。
@@ -337,6 +338,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         NAV_MIXER -> Screen.MIXER
                         NAV_MODELS -> Screen.MODELS
                         NAV_CAST -> Screen.CAST
+                        NAV_LLM -> Screen.LLM
                         else -> Screen.LIBRARY
                     }
                     // 原菜单 / 底栏的刷新副作用迁到这里，语义不变
@@ -407,7 +409,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
                     onLibrary = { screen = Screen.LIBRARY },
                     onCast = { drawerReturn = Screen.SETTINGS; screen = Screen.CAST },
-                    onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER })
+                    onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER },
+                    onLlm = { drawerReturn = Screen.SETTINGS; screen = Screen.LLM })
+                Screen.LLM -> LlmSettingsScreen(ctx, refresh,
+                    onModels = { modelsFrom = Screen.LLM; screen = Screen.MODELS })
                 Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })
                 Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
@@ -548,6 +553,7 @@ private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.MODELS   -> ChromeSpec("模型")
     Screen.CAST     -> ChromeSpec("角色音色")
     Screen.MIXER    -> ChromeSpec("调音台")
+    Screen.LLM      -> ChromeSpec("语言模型设置")
 }
 
 @Composable
@@ -812,8 +818,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 ProduceConfig.RETRY_OPTIONS.map { it to "${it}次" }, cfg.gateRetries) { cfg = cfg.copy(gateRetries = it) }
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Text("思考过程", fontSize = 12.sp, modifier = Modifier.weight(1f))
-                Text(if (directMode) "不适用" else if (thinkOn) "开（会明显变慢）" else "关（推荐）",
-                    fontSize = 12.sp, color = Sub)
+                Text("不适用 · 新权重仅非思考", fontSize = 12.sp, color = Sub)
             }
         }
 
@@ -821,7 +826,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             listOf(
                 "上下文窗口" to "${Prefs.nCtx(c)} token",
                 "推理线程" to "${Prefs.threads(c)} 线程",
-                "随机度" to "${if (thinkOn) 0.6f else Prefs.temperature(c)}"
+                "随机度" to "${Prefs.temperature(c)}"
             ).forEach { (k, v) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                     Text(k, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
@@ -972,26 +977,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         if (done || active) Primary else Line, RoundedCornerShape(50)))
                     Spacer(Modifier.width(10.dp))
                     Text(s, fontSize = 13.sp, color = if (done || active) Primary else Sub)
-                }
-            }
-
-            // 思考外显：开关打开时，这里直接展开最近一块的推理全文
-            if (Prefs.thinking(c)) {
-                Spacer(Modifier.height(16.dp))
-                var showThink by remember { mutableStateOf(false) }
-                CardBox {
-                    Row(Modifier.clickable { showThink = !showThink }, verticalAlignment = Alignment.CenterVertically) {
-                        Text("思考过程", fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                            modifier = Modifier.weight(1f))
-                        Text(if (showThink) "收起" else "展开", fontSize = 12.sp, color = Primary)
-                    }
-                    if (showThink) {
-                        val (idx, txt) = remember(tick) { ThinkingStore.latest(c) }
-                        Spacer(Modifier.height(9.dp))
-                        Text(if (txt.isBlank()) ""
-                             else "第 ${idx + 1} 块：\n$txt",
-                            fontSize = 11.5.sp, color = Sub, lineHeight = 17.sp)
-                    }
                 }
             }
 
@@ -1419,7 +1404,7 @@ private fun AudioScreen(c: Context, refresh: Int) {
     }
 }
 
-// ── ⑤ 设置：四分区折叠，首屏一屏装完（R54 / v7 预览） ───────────────
+// ── ⑤ 设置（只管软件） / ⑤a 语言模型设置（两件事、两个页，v8 预览通过） ──
 /** R25 · 历史分组小标题组件，R54 起不再调用，保留定义避免动别处引用。 */
 @Composable
 private fun GroupLabel(title: String, sub: String) {
@@ -1483,156 +1468,77 @@ private fun SettingSwitchRow(label: String, checked: Boolean, onChange: (Boolean
     }
 }
 
+/** P0 · 只读信息行：徽标区分「现有 / 待新增 / 只读 / 需确认」，不画假开关。 */
+@Composable
+private fun SettingInfoRow(label: String, badge: String, value: String, note: String = "") {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 13.sp)
+            if (note.isNotBlank()) Text(note, fontSize = 10.5.sp, color = Sub)
+        }
+        Text(badge, fontSize = 10.sp, color = Sub,
+            modifier = Modifier.padding(end = 8.dp))
+        Text(value, fontSize = 11.5.sp, color = Primary)
+    }
+}
+
+/**
+ * P0 · 设置页只管软件：外观、数据与日志、后台与关于、一行语言模型入口。
+ * 三套作用域守恒：设置页拨动即写 Prefs（长期默认），无草稿、无差异、无提交按钮；
+ * 调音台是草稿 → 唯一 commitAll()，制作准备页是「仅本次」。
+ */
 @Composable
 @Suppress("UNUSED_PARAMETER")
 private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
-                            onLibrary: () -> Unit, onCast: () -> Unit,
-                            onMixer: () -> Unit) {
-    // R54 · onLibrary / onCast / onMixer 保留签名但零调用：抽屉 7 项已有书架 / 角色音色 /
-    // 调音台独立目的地，设置页不再画第二遍跳转卡。App() 第 406 行分发一行未动。
-    // 三套作用域：设置页拨动即写 Prefs（长期默认），无草稿、无差异、无提交按钮；
-    // 调音台是草稿→提交，制作准备页是仅本次任务。
-    val clipboard = LocalClipboardManager.current
+                           onLibrary: () -> Unit, onCast: () -> Unit,
+                           onMixer: () -> Unit, onLlm: () -> Unit) {
+    // R54 · onLibrary / onCast / onMixer 保留签名但零调用：抽屉已有独立目的地，
+    // 设置页不再画第二遍跳转卡。
     val missing = remember(refresh) { ModelStore.missing(c) }
-    val st by Producer.state.collectAsState()
-    var soundOpen by rememberSaveable { mutableStateOf(true) }
-    var llmOpen by rememberSaveable { mutableStateOf(false) }
-    var toolsOpen by rememberSaveable { mutableStateOf(false) }
-    var diagOpen by rememberSaveable { mutableStateOf(false) }
-    var cfg by remember { mutableStateOf(0) }
-    var probing by remember { mutableStateOf(false) }
-    var probeResult by remember { mutableStateOf("") }
-    val probeScope = rememberCoroutineScope()
-
-    val thinkOn = remember(cfg) { Prefs.thinking(c) }
-    val nCtx = remember(cfg) { Prefs.nCtx(c) }
-    val threads = remember(cfg) { Prefs.threads(c) }
-    val temp = remember(cfg) { Prefs.temperature(c) }
-    val nv = remember(cfg) { Prefs.nonVerbal(c) }
-    val castOn = remember(cfg) { Prefs.castEnabled(c) }
+    var lookOpen by rememberSaveable { mutableStateOf(false) }
+    var dataOpen by rememberSaveable { mutableStateOf(false) }
+    var backOpen by rememberSaveable { mutableStateOf(false) }
+    var moreOpen by rememberSaveable { mutableStateOf(true) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        // 一行状态 + 文字链接，不画跨页大按钮（v7 首屏）
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (missing.isEmpty()) "3 个模型文件都准备好了"
                  else "还差：" + missing.joinToString("、"),
                 fontSize = 12.5.sp, color = if (missing.isEmpty()) Good else Warn,
                 modifier = Modifier.weight(1f))
-            TextButton(onClick = onModels) { Text("导入 / 查看 ›", fontSize = 12.sp) }
+            TextButton(onClick = onModels) { Text("查看 ›", fontSize = 12.sp) }
+        }
+        Text("软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME +
+             " · 本机 Android " + android.os.Build.VERSION.RELEASE +
+             " / " + (android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: ""),
+            fontSize = 10.5.sp, color = Sub)
+
+        SettingsSection("外观与显示", "软件", lookOpen, { lookOpen = it }) {
+            // 主题 / 字号在 themes.xml 里目前只有单一主题，代码没有切换逻辑：
+            // 标「待新增」只读行，不画一个拨了没反应的假开关（P6 再实现）。
+            SettingInfoRow("主题", "待新增", "跟随系统", "深色模式尚未实现")
+            SettingInfoRow("字号", "待新增", "标准", "大字号尚未实现")
+            SettingInfoRow("状态栏安全区", "现有", "已处理", "顶栏已与系统通知栏错开")
         }
 
-        SettingsSection("声音", "长期默认", soundOpen, { soundOpen = it }) {
-            SettingSwitchRow("拟声表达", nv) {
-                Prefs.setNonVerbal(c, it); cfg++
-                EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL_MODE", if (it) "on" else "off")
-            }
-            SettingSwitchRow("角色映射", castOn) {
-                Prefs.setCastEnabled(c, it); cfg++
-            }
-            // 统一时机提示：全页只此一句（v7 评审 17）
-            Text("改动立即保存 · 正在跑的任务不受影响", fontSize = 11.sp, color = Sub)
+        SettingsSection("数据与日志", "本机", dataOpen, { dataOpen = it }) {
+            SettingInfoRow("诊断全文", "现有", "复制全文", "事件、审计、TTS 参数、设备信息")
+            SettingInfoRow("原始产出", "现有", "按 run 分目录", "每次标注一块落一份全文")
+            SettingInfoRow("清理音频缓存", "需确认", "二次确认后清理",
+                "只删制作过程的分段 WAV，不碰原书与模型")
+            DiagnosticsBlock(c, refresh)
+            SoundProbeBlock(c, refresh)
         }
 
-        SettingsSection("语言模型", "想用就用", llmOpen, { llmOpen = it }) {
-            // 4B 设置一行不改：想用就用、不想用直接朗读，只是沉到后半段默认折叠。
-            SettingSwitchRow("思考过程", thinkOn) {
-                Prefs.setThinking(c, it); cfg++
-                EventLog.log(EventLog.Kind.ENGINE, "THINK_MODE", if (it) "on" else "off")
-            }
-            SettingOption("上下文窗口", listOf("4096", "6144", "8192"),
-                listOf(4096, 6144, 8192).indexOf(nCtx).coerceAtLeast(0)) { i ->
-                Prefs.setNCtx(c, listOf(4096, 6144, 8192)[i]); cfg++
-            }
-            SettingOption("运算线程", listOf("2", "4", "6", "8"),
-                listOf(2, 4, 6, 8).indexOf(threads).coerceAtLeast(0)) { i ->
-                Prefs.setThreads(c, listOf(2, 4, 6, 8)[i]); cfg++
-            }
-            SettingOption("随机度", listOf("0 稳", "0.3", "0.6"),
-                listOf(0f, 0.3f, 0.6f).indexOf(temp).coerceAtLeast(0)) { i ->
-                Prefs.setTemperature(c, listOf(0f, 0.3f, 0.6f)[i]); cfg++
-            }
-        }
-
-        SettingsSection("工具", "按需", toolsOpen, { toolsOpen = it }) {
-            // 试音：真合成，不是 Toast 假按钮；第二个按钮直接验哭/笑/叹气效果。
-            // doProbe 局部函数先定义后调用（run 50 踩过前向引用）。
-            var probeFile by remember { mutableStateOf("") }
-            val enabled = !probing && !st.running && missing.isEmpty()
-
-            fun doProbe(text: String, instruct: String, outName: String) {
-                probing = true; probeResult = "正在合成…"; probeFile = ""
-                probeScope.launch(Dispatchers.IO) {
-                    val res = runCatching {
-                        if (!NativeEngine.isAvailable()) throw IllegalStateException(
-                            NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
-                        val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
-                        val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
-                        val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
-                        if (h == 0L) throw IllegalStateException("声音模型打不开")
-                        try {
-                            val f = File(c.filesDir, outName)
-                            // R38 · 官方 README §167：目标语言已知时显式传，别用 auto。
-                            // 主链与两态试听都是 chinese，试音口径统一。
-                            val code = NativeEngine.ttsSynthesize(h, text, instruct, null, "chinese",
-                                f.absolutePath, Prefs.ttsKnobs(c))
-                            if (code != 0 || !f.exists() || f.length() <= 44)
-                                throw IllegalStateException("没生成声音，code=$code")
-                            f.absolutePath
-                        } finally { NativeEngine.ttsFree(h) }
-                    }
-                    withContext(Dispatchers.Main) {
-                        probing = false
-                        val path = res.getOrNull()
-                        probeFile = path ?: ""
-                        probeResult = if (path != null)
-                            "出声了 ✓ ${File(path).length()} 字节，点右边试听"
-                        else "失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
-                        res.exceptionOrNull()?.let {
-                            EventLog.log(EventLog.Kind.ENGINE, "TTS_PROBE_FAIL", it.message ?: "")
-                        }
-                    }
-                }
-            }
-
-            Row(Modifier.fillMaxWidth()) {
-                OutlinedButton(
-                    onClick = { doProbe("你好，这是一句试音。", "平稳、清晰地叙述", "probe.wav") },
-                    enabled = enabled, modifier = Modifier.weight(1f)
-                ) { Text(if (probing) "…" else "试合成一句", fontSize = 12.sp) }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        doProbe(
-                            "她终于忍不住笑出声，又轻轻叹了口气，眼眶却红了。",
-                            "读到笑时带出一点轻声的笑，读到叹气时先有一口听得见的呼气，"
-                                + "结尾带压抑的哭腔、声音微颤，用气声，语气克制；不要另加字词",
-                            "probe_emote.wav")
-                    },
-                    enabled = enabled, modifier = Modifier.weight(1f)
-                ) { Text(if (probing) "…" else "试哭笑叹气", fontSize = 12.sp) }
-            }
-            if (probeResult.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(probeResult, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
-                    if (probeResult.startsWith("出声了") && probeFile.isNotBlank()) {
-                        TextButton(onClick = {
-                            try {
-                                val mp = MediaPlayer()
-                                mp.setDataSource(File(probeFile).absolutePath)
-                                mp.prepare(); mp.start()
-                                mp.setOnCompletionListener { it.release() }
-                            } catch (_: Throwable) {
-                                Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show()
-                            }
-                        }) { Text("试听") }
-                    }
-                }
-            }
-            if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 11.sp, color = Sub)
-
-            Spacer(Modifier.height(6.dp))
-            // R26 · 只引导用户去系统设置，不申请新权限、不反射厂商 Activity、不假装豁免。
+        SettingsSection("后台与关于", "系统", backOpen, { backOpen = it }) {
+            SettingInfoRow("电池优化", "现有", "去系统设置", "让制作时不被锁屏杀掉")
+            SettingInfoRow("前台服务", "只读",
+                if (ProduceService.status().contains("运行")) "运行中" else "未运行", "只显示状态")
+            SettingInfoRow("第三方许可", "现有", "查看 ›", "MIT / Apache-2.0 清单")
+            SettingInfoRow("设备与引擎", "只读",
+                android.os.Build.MODEL,
+                if (NativeEngine.isAvailable()) NativeEngine.version() else "引擎未装载")
             TextButton(onClick = {
                 try {
                     c.startActivity(android.content.Intent(
@@ -1646,123 +1552,357 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }, Modifier.fillMaxWidth()) { Text("后台运行设置（系统电池优化）", fontSize = 12.sp) }
         }
 
-        SettingsSection("诊断", "给排查用", diagOpen, { diagOpen = it }) {
-            // R21 · 诊断分两级：常态只给结论，想深挖再展开。每 3 秒跟着任务刷新。
-            // 整块内容原样搬入折叠区，只去掉旧 CardBox 头与 advanced 包裹。
-            var showBlocks by remember { mutableStateOf(false) }
-            var showRules by remember { mutableStateOf(false) }
-            var showPreview by remember { mutableStateOf(false) }
-            var showContent by remember { mutableStateOf(false) }
-            var showRaw by remember { mutableStateOf(false) }
-            var auditTick by remember { mutableStateOf(0) }
-            LaunchedEffect(Unit) {
-                while (true) { delay(3000); auditTick++ }
+        SettingsSection("更多", "独立页", moreOpen, { moreOpen = it }) {
+            TextButton(onClick = onLlm, Modifier.fillMaxWidth()) {
+                Text("语言模型设置 ›", fontSize = 13.sp, color = Primary)
             }
-            val auditText = remember(auditTick) { AuditLog.summaryText(c) }
-            val rulesText = remember(auditTick) { AuditLog.ruleText(c) }
-            val blocksText = remember(auditTick) { AuditLog.blocksText(c, 12) }
-            val previewText = remember(auditTick) { AuditLog.previewText(c, 3) }
-            val contentText = remember(auditTick) { AuditLog.contentText(c, 6) }
-            val rawText = remember(auditTick) { RawDump.latest(c) }
-            val hasEmpty = auditText.contains("零标注 ") && !auditText.contains("零标注 0")
-
-            fun buildDiag(full: Boolean): String = buildString {
-                append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
-                append("设备 ").append(android.os.Build.MODEL).append(" / Android ")
-                    .append(android.os.Build.VERSION.RELEASE).append(" / ")
-                    .append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "").append('\n')
-                append("引擎 ").append(if (NativeEngine.isAvailable()) NativeEngine.version() else "未装载").append('\n')
-                append("前台服务 ").append(ProduceService.status()).append('\n')
-                append("设置 ").append(Prefs.summary(c)).append('\n')
-                append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
-                append("\n=== 标注审计 ===\n").append(AuditLog.summaryText(c)).append('\n')
-                // R22 · 摘要也要能直接看到「标了什么」，不用用户再点一次展开。
-                append("\n=== 标注结果（最近 3 块 · 逐条 text/speaker/instruct）===\n")
-                    .append(AuditLog.contentText(c, 3)).append('\n')
-                append("\n=== 规则生效 ===\n").append(AuditLog.ruleText(c)).append('\n')
-                append("\n=== 模型原始产出（未经清洗，最近一块）===\n")
-                if (rawText.isBlank()) append("（暂无；标注后合成才有）\n")
-                else append(if (full) rawText else rawText.take(400)).append('\n')
-                append("原始产出全文目录：").append(RawDump.runDir(c)).append('\n')
-                append("\n=== 逐块明细（最近 12 块）===\n").append(AuditLog.blocksText(c, 12)).append('\n')
-                val crash = EventLog.lastCrash()
-                if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
-                append("\n=== 最近事件（不含正文）===\n")
-                append(EventLog.read().lines().takeLast(60).joinToString("\n"))
-                if (full) {
-                    append("\n\n=== 产出截取（含原文片段，仅本机）===\n")
-                        .append(AuditLog.previewText(c, 6)).append('\n')
-                    append("\n=== 诊断态完整日志（含 TRACE，最近 300 行）===\n")
-                        .append(EventLog.readDetail().lines().takeLast(300).joinToString("\n"))
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-            Text("静态快照", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-            Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
-            Spacer(Modifier.height(10.dp))
-            Text("标注审计 · 这次到底标了没有", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-            Spacer(Modifier.height(4.dp))
-            Text(auditText, fontSize = 11.sp, color = if (hasEmpty) Warn else Sub)
-            if (hasEmpty) {
-                Spacer(Modifier.height(4.dp))
-                Text("⚠ 有块跑完却没标出条目，展开「产出截取」看模型吐了什么",
-                    fontSize = 11.sp, color = Warn)
-            }
-            Spacer(Modifier.height(6.dp))
-            TextButton(onClick = { showContent = !showContent }, Modifier.fillMaxWidth()) {
-                Text(if (showContent) "收起标注内容" else "查看标注内容（每条 text / speaker / instruct）",
-                    fontSize = 12.sp, color = Primary)
-            }
-            if (showContent) {
-                Text("〈模型标注〉= 语言模型真标出来的；〈程序补齐〉= 没标完的尾部由程序补成旁白。",
-                    fontSize = 10.sp, color = Warn)
-                Text(contentText, fontSize = 10.5.sp, color = Sub)
-                TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(AuditLog.contentText(c, 20)))
-                    Toast.makeText(c, "已复制标注全文（最近 20 块），仅本机保存", Toast.LENGTH_SHORT).show()
-                }, Modifier.fillMaxWidth()) { Text("复制标注全文（最近 20 块）", fontSize = 11.5.sp) }
-            }
-            // R24 · 未经任何清洗的模型原始产出：能直接自证「真标还是假标」。
-            TextButton(onClick = { showRaw = !showRaw }, Modifier.fillMaxWidth()) {
-                Text(if (showRaw) "收起模型原始产出" else "查看模型原始产出（未经清洗，最近一块）",
-                    fontSize = 11.5.sp, color = Primary)
-            }
-            if (showRaw) Text(rawText.ifBlank { "（暂无；标注后合成才有）" },
-                fontSize = 10.sp, color = Sub)
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth()) {
-                TextButton(onClick = { showBlocks = !showBlocks }) {
-                    Text(if (showBlocks) "收起逐块" else "逐块明细", fontSize = 11.5.sp)
-                }
-                TextButton(onClick = { showRules = !showRules }) {
-                    Text(if (showRules) "收起规则" else "规则生效", fontSize = 11.5.sp)
-                }
-                TextButton(onClick = { showPreview = !showPreview }) {
-                    Text(if (showPreview) "收起截取" else "产出截取", fontSize = 11.5.sp)
-                }
-            }
-            if (showBlocks) Text(blocksText, fontSize = 10.5.sp, color = Sub)
-            if (showRules) Text(rulesText, fontSize = 10.5.sp, color = Sub)
-            if (showPreview) {
-                Text(previewText, fontSize = 10.5.sp, color = Sub)
-            }
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(rawText.ifBlank { "（暂无模型原始产出）" }))
-                Toast.makeText(c, "已复制最近一块模型原始产出全文，仅本机保存", Toast.LENGTH_SHORT).show()
-            }, Modifier.fillMaxWidth()) { Text("复制最近一块模型原始产出（全文）", fontSize = 11.5.sp) }
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(buildDiag(false)))
-                Toast.makeText(c, "已复制诊断摘要，直接贴给我即可", Toast.LENGTH_SHORT).show()
-            }, Modifier.fillMaxWidth()) { Text("复制诊断信息（摘要）") }
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(buildDiag(true)))
-                Toast.makeText(c, "已复制完整日志（含产出片段），仅本机保存", Toast.LENGTH_SHORT).show()
-            }, Modifier.fillMaxWidth()) { Text("复制完整日志（含产出片段）") }
         }
+
+        Text("改动立即保存 · 对所有新任务生效 · 正在跑的任务不受影响",
+            fontSize = 11.sp, color = Sub)
     }
 }
+
+/** P0 · 诊断原文整块搬进「数据与日志」：能力一个没删，只换归属与默认折叠层级。 */
+@Composable
+private fun DiagnosticsBlock(c: Context, refresh: Int) {
+    val clipboard = LocalClipboardManager.current
+    var showBlocks by remember { mutableStateOf(false) }
+    var showRules by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
+    var showContent by remember { mutableStateOf(false) }
+    var showRaw by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    var auditTick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) { delay(3000); auditTick++ }
+    }
+    val auditText = remember(auditTick) { AuditLog.summaryText(c) }
+    val rulesText = remember(auditTick) { AuditLog.ruleText(c) }
+    val blocksText = remember(auditTick) { AuditLog.blocksText(c, 12) }
+    val previewText = remember(auditTick) { AuditLog.previewText(c, 3) }
+    val contentText = remember(auditTick) { AuditLog.contentText(c, 6) }
+    val rawText = remember(auditTick) { RawDump.latest(c) }
+    val hasEmpty = auditText.contains("零标注 ") && !auditText.contains("零标注 0")
+
+    fun buildDiag(full: Boolean): String = buildString {
+        append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
+        append("设备 ").append(android.os.Build.MODEL).append(" / Android ")
+            .append(android.os.Build.VERSION.RELEASE).append(" / ")
+            .append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "").append('\n')
+        append("引擎 ").append(if (NativeEngine.isAvailable()) NativeEngine.version() else "未装载").append('\n')
+        append("前台服务 ").append(ProduceService.status()).append('\n')
+        append("设置 ").append(Prefs.summary(c)).append('\n')
+        append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
+        append("语言模型 ").append(ModelStore.LLM).append('\n')
+        append("JSON 通过率 ").append(AbGate.summary()).append('\n')
+        append("\n=== 标注审计 ===\n").append(AuditLog.summaryText(c)).append('\n')
+        append("\n=== 标注结果（最近 3 块 · 逐条 text/speaker/instruct）===\n")
+            .append(AuditLog.contentText(c, 3)).append('\n')
+        append("\n=== 规则生效 ===\n").append(AuditLog.ruleText(c)).append('\n')
+        append("\n=== 模型原始产出（未经清洗，最近一块）===\n")
+        if (rawText.isBlank()) append("（暂无；标注后合成才有）\n")
+        else append(if (full) rawText else rawText.take(400)).append('\n')
+        append("原始产出全文目录：").append(RawDump.runDir(c)).append('\n')
+        append("\n=== 逐块明细（最近 12 块）===\n").append(AuditLog.blocksText(c, 12)).append('\n')
+        val crash = EventLog.lastCrash()
+        if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
+        append("\n=== 最近事件（不含正文）===\n")
+        append(EventLog.read().lines().takeLast(60).joinToString("\n"))
+        if (full) {
+            append("\n\n=== 产出截取（含原文片段，仅本机）===\n")
+                .append(AuditLog.previewText(c, 6)).append('\n')
+            append("\n=== 诊断态完整日志（含 TRACE，最近 300 行）===\n")
+                .append(EventLog.readDetail().lines().takeLast(300).joinToString("\n"))
+        }
+    }
+
+    Spacer(Modifier.height(10.dp))
+    Text("静态快照", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+    Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
+    Spacer(Modifier.height(10.dp))
+    Text("标注审计 · 这次到底标了没有", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+    Spacer(Modifier.height(4.dp))
+    Text(auditText, fontSize = 11.sp, color = if (hasEmpty) Warn else Sub)
+    if (hasEmpty) {
+        Spacer(Modifier.height(4.dp))
+        Text("⚠ 有块跑完却没标出条目，展开「产出截取」看模型吐了什么",
+            fontSize = 11.sp, color = Warn)
+    }
+    Spacer(Modifier.height(6.dp))
+    TextButton(onClick = { showContent = !showContent }, Modifier.fillMaxWidth()) {
+        Text(if (showContent) "收起标注内容" else "查看标注内容（每条 text / speaker / instruct）",
+            fontSize = 12.sp, color = Primary)
+    }
+    if (showContent) {
+        Text("〈模型标注〉= 语言模型真标出来的；〈程序补齐〉= 没标完的尾部由程序补成旁白。",
+            fontSize = 10.sp, color = Warn)
+        Text(contentText, fontSize = 10.5.sp, color = Sub)
+        TextButton(onClick = {
+            clipboard.setText(AnnotatedString(AuditLog.contentText(c, 20)))
+            Toast.makeText(c, "已复制标注全文（最近 20 块），仅本机保存", Toast.LENGTH_SHORT).show()
+        }, Modifier.fillMaxWidth()) { Text("复制标注全文（最近 20 块）", fontSize = 11.5.sp) }
+    }
+    TextButton(onClick = { showRaw = !showRaw }, Modifier.fillMaxWidth()) {
+        Text(if (showRaw) "收起模型原始产出" else "查看模型原始产出（未经清洗，最近一块）",
+            fontSize = 11.5.sp, color = Primary)
+    }
+    if (showRaw) Text(rawText.ifBlank { "（暂无；标注后合成才有）" },
+        fontSize = 10.sp, color = Sub)
+    Spacer(Modifier.height(6.dp))
+    Row(Modifier.fillMaxWidth()) {
+        TextButton(onClick = { showBlocks = !showBlocks }) {
+            Text(if (showBlocks) "收起逐块" else "逐块明细", fontSize = 11.5.sp)
+        }
+        TextButton(onClick = { showRules = !showRules }) {
+            Text(if (showRules) "收起规则" else "规则生效", fontSize = 11.5.sp)
+        }
+        TextButton(onClick = { showPreview = !showPreview }) {
+            Text(if (showPreview) "收起截取" else "产出截取", fontSize = 11.5.sp)
+        }
+    }
+    if (showBlocks) Text(blocksText, fontSize = 10.5.sp, color = Sub)
+    if (showRules) Text(rulesText, fontSize = 10.5.sp, color = Sub)
+    if (showPreview) Text(previewText, fontSize = 10.5.sp, color = Sub)
+    Spacer(Modifier.height(8.dp))
+    TextButton(onClick = {
+        clipboard.setText(AnnotatedString(rawText.ifBlank { "（暂无模型原始产出）" }))
+        Toast.makeText(c, "已复制最近一块模型原始产出全文，仅本机保存", Toast.LENGTH_SHORT).show()
+    }, Modifier.fillMaxWidth()) { Text("复制最近一块模型原始产出（全文）", fontSize = 11.5.sp) }
+    TextButton(onClick = {
+        clipboard.setText(AnnotatedString(buildDiag(false)))
+        Toast.makeText(c, "已复制诊断摘要，直接贴给我即可", Toast.LENGTH_SHORT).show()
+    }, Modifier.fillMaxWidth()) { Text("复制诊断信息（摘要）") }
+    TextButton(onClick = {
+        clipboard.setText(AnnotatedString(buildDiag(true)))
+        Toast.makeText(c, "已复制完整日志（含产出片段），仅本机保存", Toast.LENGTH_SHORT).show()
+    }, Modifier.fillMaxWidth()) { Text("复制完整日志（含产出片段）") }
+    TextButton(onClick = { confirmClear = true }, Modifier.fillMaxWidth()) {
+        Text("清理制作过程的分段音频", fontSize = 11.5.sp, color = Warn)
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("清理分段音频？", fontSize = 14.sp) },
+            text = { Text("只删制作过程里生成的分段 WAV，书架原书、成品和模型文件都不动。",
+                fontSize = 12.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    var n = 0
+                    try {
+                        val work = File(c.filesDir, "work")
+                        work.walkTopDown().filter { it.isFile && it.name.endsWith(".wav") }
+                            .forEach { if (it.delete()) n++ }
+                    } catch (_: Throwable) { }
+                    confirmClear = false
+                    Toast.makeText(c, "已清理 $n 个分段音频", Toast.LENGTH_SHORT).show()
+                }) { Text("确认清理") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
+        )
+    }
+}
+
+/** P0 · 两段真合成试音搬进「数据与日志」：能力不丢，不新增第五个分区。 */
+@Composable
+private fun SoundProbeBlock(c: Context, refresh: Int) {
+    val st by Producer.state.collectAsState()
+    val missing = remember(refresh) { ModelStore.missing(c) }
+    var probing by remember { mutableStateOf(false) }
+    var probeResult by remember { mutableStateOf("") }
+    var probeFile by remember { mutableStateOf("") }
+    val probeScope = rememberCoroutineScope()
+    val enabled = !probing && !st.running && missing.isEmpty()
+
+    fun doProbe(text: String, instruct: String, outName: String) {
+        probing = true; probeResult = "正在合成…"; probeFile = ""
+        probeScope.launch(Dispatchers.IO) {
+            val res = runCatching {
+                if (!NativeEngine.isAvailable()) throw IllegalStateException(
+                    NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
+                val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
+                val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
+                val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
+                if (h == 0L) throw IllegalStateException("声音模型打不开")
+                try {
+                    val f = File(c.filesDir, outName)
+                    // R38 · 目标语言已知时显式传 chinese，主链 / 两态试听 / 试音口径统一。
+                    val code = NativeEngine.ttsSynthesize(h, text, instruct, null, "chinese",
+                        f.absolutePath, Prefs.ttsKnobs(c))
+                    if (code != 0 || !f.exists() || f.length() <= 44)
+                        throw IllegalStateException("没生成声音，code=$code")
+                    f.absolutePath
+                } finally { NativeEngine.ttsFree(h) }
+            }
+            withContext(Dispatchers.Main) {
+                probing = false
+                val path = res.getOrNull()
+                probeFile = path ?: ""
+                probeResult = if (path != null)
+                    "出声了 ✓ ${File(path).length()} 字节，点右边试听"
+                else "失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
+                res.exceptionOrNull()?.let {
+                    EventLog.log(EventLog.Kind.ENGINE, "TTS_PROBE_FAIL", it.message ?: "")
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Text("声音自检 · 真合成两句", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+    Row(Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { doProbe("你好，这是一句试音。", "平稳、清晰地叙述", "probe.wav") },
+            enabled = enabled, modifier = Modifier.weight(1f)
+        ) { Text(if (probing) "…" else "试合成一句", fontSize = 12.sp) }
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(
+            onClick = {
+                doProbe(
+                    "她终于忍不住笑出声，又轻轻叹了口气，眼眶却红了。",
+                    "读到笑时带出一点轻声的笑，读到叹气时先有一口听得见的呼气，"
+                        + "结尾带压抑的哭腔、声音微颤，用气声，语气克制；不要另加字词",
+                    "probe_emote.wav")
+            },
+            enabled = enabled, modifier = Modifier.weight(1f)
+        ) { Text(if (probing) "…" else "试哭笑叹气", fontSize = 12.sp) }
+    }
+    if (probeResult.isNotBlank()) {
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(probeResult, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
+            if (probeResult.startsWith("出声了") && probeFile.isNotBlank()) {
+                TextButton(onClick = {
+                    try {
+                        val mp = MediaPlayer()
+                        mp.setDataSource(File(probeFile).absolutePath)
+                        mp.prepare(); mp.start()
+                        mp.setOnCompletionListener { it.release() }
+                    } catch (_: Throwable) {
+                        Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("试听") }
+            }
+        }
+    }
+    if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 11.sp, color = Sub)
+}
+
+/**
+ * P0 · 语言模型设置页：只管「标注后合成」那份 GGUF 与它的参数。
+ * 项清单按 R58 v2 / 新权重 2507 重排：不画思考开关、快速深度、top_k 等物理不存在的项。
+ */
+@Composable
+private fun LlmSettingsScreen(c: Context, refresh: Int, onModels: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    var cfg by remember { mutableStateOf(0) }
+    var upperOpen by rememberSaveable { mutableStateOf(true) }
+    var advOpen by rememberSaveable { mutableStateOf(false) }
+    var evalOpen by rememberSaveable { mutableStateOf(false) }
+    val nv = remember(cfg) { Prefs.nonVerbal(c) }
+    val castOn = remember(cfg) { Prefs.castEnabled(c) }
+    val nCtx = remember(cfg) { Prefs.nCtx(c) }
+    val threads = remember(cfg) { Prefs.threads(c) }
+    val temp = remember(cfg) { Prefs.temperature(c) }
+    val llmFile = remember(refresh) { ModelStore.llm(c) }
+    val sys = remember { try { Annotator.templates(c).first } catch (_: Throwable) { "" } }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+        // 只读模型卡：能力口径全部来自新权重，不写「可切换思考」这类旧假设。
+        CardBox(Modifier.padding(bottom = 10.dp)) {
+            Text("本地标注模型 · Huihui Qwen3-4B-Instruct-2507 abliterated",
+                fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Spacer(Modifier.height(5.dp))
+            Text("Q4_K_M · 仅非思考（权重决定） · 纯 CPU · llama.cpp",
+                fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(4.dp))
+            Text("原生 262,144 ｜ 当前运行 ${nCtx} ｜ 文件 " +
+                 (llmFile?.let { "%.2f GB".format(it.length() / 1024f / 1024f / 1024f) } ?: "待导入"),
+                fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(4.dp))
+            Text("只用于「标注后合成」；新书默认「直接朗读」不加载它",
+                fontSize = 11.sp, color = Sub)
+            TextButton(onClick = onModels) { Text("导入 / 查看 ›", fontSize = 11.5.sp) }
+        }
+        // R58 · 已移除项只在这一处说明，不渲染成开关行。
+        CardBox(Modifier.padding(bottom = 8.dp)) {
+            Text("换模型后已移除", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Warn)
+            Spacer(Modifier.height(4.dp))
+            Text("思考过程开关、快速 / 深度两档、思考指令、深度档的固定温度、两套缓存分桶。",
+                fontSize = 11.sp, color = Warn)
+            Spacer(Modifier.height(4.dp))
+            Text("新权重本来就不思考，也不会输出思考内容；这些开关留着就是摆设。",
+                fontSize = 11.sp, color = Sub)
+        }
+
+        SettingsSection("标注与上层", "长期默认", upperOpen, { upperOpen = it }) {
+            SettingInfoRow("标注方式", "上层", "想用就用", "不想用直接朗读；在制作准备页选")
+            SettingSwitchRow("原文拟声提示", nv) {
+                Prefs.setNonVerbal(c, it); cfg++
+                EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL_MODE", if (it) "on" else "off")
+            }
+            Text("程序规则：只给 instruct 加一句，正文一字不动", fontSize = 10.5.sp, color = Sub)
+            SettingSwitchRow("角色映射", castOn) {
+                Prefs.setCastEnabled(c, it); cfg++
+            }
+            Text("表里没内容时仍用全局音色", fontSize = 10.5.sp, color = Sub)
+        }
+
+        SettingsSection("高级", "按需", advOpen, { advOpen = it }) {
+            SettingOption("上下文上限", listOf("4096", "6144", "8192"),
+                listOf(4096, 6144, 8192).indexOf(nCtx).coerceAtLeast(0)) { i ->
+                Prefs.setNCtx(c, listOf(4096, 6144, 8192)[i]); cfg++
+            }
+            Text("运行时上限，不是模型原生窗口；手机上开太大内存会不够",
+                fontSize = 10.5.sp, color = Sub)
+            SettingOption("运算线程", listOf("2", "4", "6", "8"),
+                listOf(2, 4, 6, 8).indexOf(threads).coerceAtLeast(0)) { i ->
+                Prefs.setThreads(c, listOf(2, 4, 6, 8)[i]); cfg++
+            }
+            Text("默认自动；拉满会降频", fontSize = 10.5.sp, color = Sub)
+            SettingOption("随机度", listOf("0 稳", "0.3", "0.6"),
+                listOf(0f, 0.3f, 0.6f).indexOf(temp).coerceAtLeast(0)) { i ->
+                Prefs.setTemperature(c, listOf(0f, 0.3f, 0.6f)[i]); cfg++
+            }
+            Text("官方 2507 建议 0.7；默认最稳的一档是为逐字 JSON 稳定的有意偏离",
+                fontSize = 10.5.sp, color = Sub)
+            SettingInfoRow("实际采样链", "只读",
+                "temp $temp · top_p 0.9 · seed 42",
+                "官方 0.7 / 0.8 / 20 / 0；native 只实现温度一个自由度")
+            TextButton(onClick = {
+                clipboard.setText(AnnotatedString(sys))
+                Toast.makeText(c, "已复制系统提示词全文（只读）", Toast.LENGTH_SHORT).show()
+            }, Modifier.fillMaxWidth()) {
+                Text("系统提示词 v2 · ${sys.length} 字 · 点开复制全文", fontSize = 11.5.sp)
+            }
+            Text("只读：改它会联动 9 处，当前不给编辑框", fontSize = 10.5.sp, color = Sub)
+        }
+
+        SettingsSection("诊断与评测", "按需", evalOpen, { evalOpen = it }) {
+            Text("JSON 通过率 A/B · 换权重硬门槛", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(AbGate.summary(), fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(4.dp))
+            Text("同一批小说块、同量化同提示词同预算：完整 JSON 率 / 三字段齐备率 / " +
+                 "中文 instruct 语义有效率 / gate 重试率；四项均不劣于基线才替换线上。",
+                fontSize = 10.5.sp, color = Sub)
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = {
+                clipboard.setText(AnnotatedString(AuditLog.summaryText(c)))
+                Toast.makeText(c, "已复制标注审计", Toast.LENGTH_SHORT).show()
+            }, Modifier.fillMaxWidth()) { Text("复制标注审计", fontSize = 11.5.sp) }
+            TextButton(onClick = {
+                clipboard.setText(AnnotatedString(RawDump.latest(c)))
+                Toast.makeText(c, "已复制模型原始产出", Toast.LENGTH_SHORT).show()
+            }, Modifier.fillMaxWidth()) { Text("复制模型原始产出（最近一块）", fontSize = 11.5.sp) }
+            Text("原始产出全文目录：" + RawDump.runDir(c), fontSize = 10.sp, color = Sub)
+        }
+
+        Text("改动立即保存 · 对所有新任务生效 · 正在跑的任务不受影响",
+            fontSize = 11.sp, color = Sub)
+    }
+}
+
 
 // ── ⑤b 模型页 ────────────────────────────────────────────────
 @Composable
@@ -1831,7 +1971,7 @@ private fun ModelScreen(c: Context, refresh: Int,
                     Spacer(Modifier.height(5.dp))
                     TextButton(onClick = {
                         val url = when (label) {
-                            "语言模型" -> "https://hf-mirror.com/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf"
+                            "语言模型" -> "https://hf-mirror.com/kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF/resolve/main/huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf"
                             "声音主文件" -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
                             else -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
                         }

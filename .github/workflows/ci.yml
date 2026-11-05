@@ -61,6 +61,9 @@ jobs:
       - name: R54 设置页重设计验证（四分区 / 零跳转入口 / 能力守恒 / 反向注入）
         run: python3 scripts/r54_verify.py
 
+      - name: R60 换模型 11 处联动验证（逐项 / 零残留 / 守恒 / 反向注入）
+        run: python3 scripts/r60_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

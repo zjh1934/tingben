@@ -1,22 +1,29 @@
 {
   "project": "听本",
   "note": "唯一从旧项目带过来的外部资产。代码/界面/文档/CI 一律不带。",
-  "verified_by": "文件名与尺寸来自 LFS 指针与用户真机诊断日志；voicedesign 直链未在沙盒实测（网关挡 hf-mirror 与 HF 主域）。",
+  "verified_by": "权重口径来自 Qwen 官方 2507 模型卡与 Huihui 上游；本地文件尺寸/sha 待真机实测（不写假值）。",
   "runtime_policy": "两个模型串行加载、不同时常驻；标注阶段只加载 LLM，合成阶段只加载 TTS，交接先释放。",
   "models": [
     {
       "slot": "llm",
       "role": "语言模型 / 标注",
-      "file": "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
-      "size_bytes": 2497280544,
-      "sha256": "004f7b8f59ccd5fa42258c52aa2087b89524cced84e955b9c8b115035ca073b2",
-      "repo": "bartowski/mlabonne_Qwen3-4B-abliterated-GGUF",
-      "thinking": "可开关（/think 与 /no_think），首版默认关",
+      "file": "huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf",
+      "repo": "kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF",
+      "thinking": "仅非思考（权重决定）；不生成 <think> 块，不需要 enable_thinking=False 或 /no_think",
+      "native_context": 262144,
+      "runtime_nctx": 4096,
+      "size_bytes": null,
+      "sha256": null,
+      "verification": "R57 硬约束：字节数与 sha 必须在用户真机导入后实测回填，本文件不写推定值（旧值属初版权重，已作废）。",
       "links": [
-        "https://hf-mirror.com/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
-        "https://hf-mirror.com/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/tree/main"
+        "https://hf-mirror.com/kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF/resolve/main/huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf",
+        "https://hf-mirror.com/kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF/tree/main"
       ],
-      "status": "用户已下载并导入；真机诊断确认已加载"
+      "status": "用户已下载（2026-11-05），尚未导入 App、未加载、未跑过一块；JSON 通过率需过 R57 §4 四项 A/B gate",
+      "legacy": {
+        "file": "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
+        "policy": "保留导入白名单兼容；旧缓存分桶 fast/think 已由 m2507/ 前缀整体作废"
+      }
     },
     {
       "slot": "tts_talker",
@@ -54,5 +61,10 @@
       "file": "qwen-talker-1.7b-customvoice-Q8_0.gguf",
       "reason": "二期多角色换声时才换；文件名按规则推定，未核实"
     }
-  ]
+  ],
+  "baseline": {
+    "file": "Qwen3-4B-Instruct-2507 Q4_K_M（官方非 abliterated 量化版）",
+    "purpose": "R57 §4 A/B 对照基线；任一项退化即回退，不靠调提示词掩盖解析问题",
+    "status": "未下载，按需取"
+  }
 }

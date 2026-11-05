@@ -101,7 +101,13 @@ object BookStore {
 // ─────────────────────────── 模型槽位 ───────────────────────────
 
 object ModelStore {
-    const val LLM = "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf"
+    /**
+     * P0 · 换成 Huihui Qwen3-4B-Instruct-2507-abliterated Q4_K_M（仅非思考独立权重）。
+     * 旧 mlabonne 初版权重仍留在白名单 hint 里，用户手机上没删也能继续用；
+     * 但新权重优先匹配，避免两代标注混用。
+     */
+    const val LLM = "huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf"
+    const val LLM_LEGACY = "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf"
     const val TALKER = "qwen-talker-1.7b-voicedesign-Q8_0.gguf"
     const val TOKENIZER = "qwen-tokenizer-12hz-Q8_0.gguf"
 
@@ -171,7 +177,8 @@ object ModelStore {
         return all.firstOrNull { f -> hints.any { f.name.contains(it, true) } }
     }
 
-    fun llm(c: Context) = pick(c, LLM, "qwen3-4b", "4b-abliterated")
+    fun llm(c: Context) = pick(c, LLM, "instruct-2507", "huihui-qwen3-4b",
+        "qwen3-4b", "4b-abliterated")
     fun talker(c: Context) = pick(c, TALKER, "talker")
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
@@ -284,13 +291,17 @@ object Annotator {
             .replace("{{RECENT}}", if (recent.isEmpty()) "（无）" else recent.takeLast(3)
                 .joinToString(" / ") { it.speaker + "：" + it.text.take(40) })
             .replace("{{ORIGINAL}}", chunk.text)
-            // Qwen3 初版系软开关：放在 user 末尾，/no_think 让模板预置空 think 块
-            .plus(if (thinking) "\n/think" else "\n/no_think")
+            // P0 · 2507 是「仅非思考」独立权重，不解析 /think /no_think：
+            // 旧软开关整段删除，留着就是往 prompt 里塞无意义字符串。
+            // thinking 形参保留只为不动既有调用点，本函数不再读它。
         // 改 prompt 最容易出的哑巴错：新增占位符忘了在装配里替换，花括号原样喂给模型。
         if (u.contains("{{")) {
             EventLog.log(EventLog.Kind.PIPELINE, "PROMPT_PLACEHOLDER_LEAK",
                 "块 ${idx + 1} 仍有未替换占位符，检查 prompt 模板与 buildPrompt 是否同步")
         }
+        // P0 · 逐字对齐 2507 GGUF 自带 chat_template 的无工具分支：
+        // <|im_start|>{role}\n{content}<|im_end|>\n + assistant 头；eos/stop 为 <|im_end|>。
+        // 与初版手写模板形状一致，但语义来源改成官方模板，不再靠软开关切模式。
         return "<|im_start|>system\n$sys<|im_end|>\n<|im_start|>user\n$u<|im_end|>\n<|im_start|>assistant\n"
     }
 
@@ -481,7 +492,9 @@ object ThinkingStore {
 
 /**
  * 标注结果按块落盘。4B 在手机上一块要几分钟，不缓存就永远别想「接着跑」。
- * work 目录按「模式 + 选中章节」分桶，换选章/换思考档不会串味。
+ * P0 · 2507 仅非思考：think 形参保留兼容调用点但不再参与分桶，
+ * 统一前缀 "m2507/" 让初版权重的 fast / think 两套旧缓存一次作废，
+ * 不会把两代模型标出的结果混进同一本书。
  */
 object AnnCache {
     fun read(work: File, i: Int): List<Ann>? {
@@ -540,11 +553,54 @@ object AnnCache {
     }
 
     fun bucket(direct: Boolean, think: Boolean, only: Set<Int>?) =
-        (if (direct) "direct" else if (think) "think" else "fast") + "/" +
+        "m2507/" + (if (direct) "direct" else "annotated") + "/" +
                 (only?.sorted()?.joinToString("_") ?: "all")
 
     fun dirFor(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) =
         File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}").apply { mkdirs() }
+}
+
+// ─────────────────────────── P0 · JSON 通过率 A/B 统计入口 ───────────────────────────
+/**
+ * R57 §4 的四项硬门槛，先给「每次 attempt 一条样本」的统计入口：
+ * ① 完整可解析 JSON 率 ② 三字段齐备率 ③ 中文 instruct 有效率 ④ gate 重试率。
+ * 口径写死在 summary() 里，避免事后拿不同分母互相糊弄；
+ * 「更会写 JSON」必须同语料、同量化、同提示词、同预算与基线对拍才算结论。
+ */
+object AbGate {
+    @Volatile private var samples = 0
+    @Volatile private var fullJson = 0
+    @Volatile private var fieldsOk = 0
+    @Volatile private var instructOk = 0
+    @Volatile private var retries = 0
+
+    @Synchronized fun begin() {
+        samples = 0; fullJson = 0; fieldsOk = 0; instructOk = 0; retries = 0
+    }
+
+    @Synchronized fun record(parsed: List<Ann>?, repairLevel: Int, attempt: Int) {
+        samples++
+        val list = parsed.orEmpty()
+        if (parsed != null && list.isNotEmpty() && repairLevel >= 0) fullJson++
+        if (list.isNotEmpty() && list.all {
+                it.text.isNotBlank() && it.speaker.isNotBlank() && it.instruct.isNotBlank()
+            }) fieldsOk++
+        // 有效 = 含中文、不少于 4 字，且不是「平稳叙述」这类兜底占位。
+        val useful = list.count { a ->
+            a.instruct.length >= 4 && a.instruct.any { it.code in 0x4E00..0x9FFF } &&
+                !a.instruct.contains("平稳、清晰地叙述")
+        }
+        if (list.isNotEmpty() && useful * 2 >= list.size) instructOk++
+        if (attempt > 0) retries++
+    }
+
+    fun summary(): String {
+        if (samples == 0) return "样本 0（还没跑过标注块；换权重后需与基线同批语料对拍）"
+        fun pct(n: Int) = "%.1f%%".format(n * 100.0 / samples)
+        return "样本 $samples · 完整 JSON ${pct(fullJson)} · 三字段齐备 ${pct(fieldsOk)}" +
+            " · 中文 instruct 有效 ${pct(instructOk)} · gate 重试 ${pct(retries)}" +
+            "（口径：每次 attempt 一条样本；第三项为启发式，需人工抽听复核）"
+    }
 }
 
 // ─────────────────────────── WAV 合并（Antioch merger） ───────────────────────────
@@ -816,20 +872,26 @@ object Producer {
         // 否则以后 A/B 或回滚时，旧缓存和新结果混在一起说不清。
         EventLog.log(EventLog.Kind.ENGINE, "PROMPT_VERSION",
             "v2 sha=" + Integer.toHexString(sys.hashCode()) + " sysChars=" + sys.length)
-        val thinkOn = thinkOverride ?: Prefs.thinking(c)
+        val thinkOn = thinkOverride ?: Prefs.thinking(c)  // 仅续跑兼容，不再影响任何行为
         val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
         val nCtx = Prefs.nCtx(c)
         val threads = Prefs.threads(c)
-        val temp = if (thinkOn) 0.6f else Prefs.temperature(c)
+        // P0 · 2507 没有「深度档强制 0.6」这回事，温度只认用户选的值。
+        val temp = Prefs.temperature(c)
+        // R57 #11 · 每次跑都写明实际加载的是哪份权重，事后能分清两代结果。
+        val llmFile = ModelStore.llm(c)
+        EventLog.log(EventLog.Kind.MODEL, "MODEL_ID",
+            "file=" + (llmFile?.name ?: "缺失") + " bytes=" + (llmFile?.length() ?: 0) +
+                " · 仅非思考 · 原生 262144 / 运行 " + nCtx)
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
-            "think=$thinkOn nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}" +
+            "nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}" +
                 " · 预设=" + config.summary())
         // R21 · 本次 run 的所有块落进同一个 jsonl：跑半天到底标了几条、长度对不对、
         // 哪条规则没生效，全部可查。直接朗读也登记，只是如实写「不过语言模型」。
         AuditLog.beginRun(c, linkedMapOf(
             "book" to book.title,
             "mode" to (if (direct) "直接朗读" else "标注后合成"),
-            "think" to thinkOn.toString(), "nCtx" to nCtx.toString(),
+            "model" to (llmFile?.name ?: "缺失"), "nCtx" to nCtx.toString(),
             "chunks" to chunks.size.toString(),
             "prompt" to ("v2 sha=" + Integer.toHexString(sys.hashCode()))))
         // R24 · 移植 Alexandria llm_responses.log 的思路：每次 attempt 的原始产出全文按 run 落盘。
@@ -839,7 +901,7 @@ object Producer {
                 (if (direct) "不过语言模型" else "逐块标注") + " · 原始产出全文目录 " + RawDump.runDir(c),
             fields = mapOf("runId" to AuditLog.currentRun(), "book" to book.title,
                 "mode" to (if (direct) "直接朗读" else "标注后合成")))
-        if (thinkOn) ThinkingStore.clear(c)
+        AbGate.begin()
         EventLog.resetEngine()
 
         // R21 · 无论正常跑完、点停止、还是直接朗读，都落一条可复制的审计汇总。
@@ -954,13 +1016,11 @@ object Producer {
                             // 保证同一块无论重跑还是续跑，看到的上下文一致。
                             chunks.getOrNull(i - 1)?.text?.takeLast(120) ?: "（无）")
                         // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
-                        // 思考档要留空间给推理，且禁用贪心（思考模式贪心会无限重复）
-                        val budget = if (thinkOn) minOf(2048, chunk.text.length * 2 + 900)
-                                    else minOf(1024, chunk.text.length * 2 + 160)
+                        // P0 · 2507 仅非思考，统一旧「非思考档」预算，不再分两档。
+                        val budget = minOf(1024, chunk.text.length * 2 + 160)
                         EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
                             "块 ${i + 1}/${chunks.size} 原文 ${chunk.text.length} 字 · prompt ${prompt.length} 字" +
-                                " · 预算 $budget · nCtx $nCtx · 角色表 ${roster.size} · 近邻 ${recent.size}" +
-                                " · 思考 $thinkOn")
+                                " · 预算 $budget · nCtx $nCtx · 角色表 ${roster.size} · 近邻 ${recent.size}")
                         // 手机 CPU 上一块要几分钟，prefill 单次 llama_decode 期间 native 没有任何事件，
                         // 界面又只在块完成才更新 i+1/N —— 用户看起来就像「只跑第一段」。
                         // 这条纯 Kotlin 心跳不碰状态机，只往事件流写「还活着、算到哪块」。
@@ -1005,10 +1065,8 @@ object Producer {
                                 _state.value = halted(i, chunks.size, gateFails)
                                 return
                             }
-                            if (thinkOn) {
-                                val th = Annotator.extractThinking(raw)
-                                if (th.isNotBlank()) ThinkingStore.write(c, i, th)
-                            }
+                            // P0 · 新权重不产出 <think>；parseWithMeta 仍保留剥离防御，
+                            // 但不再主动调用 extractThinking / 写 ThinkingStore。
                             val (parsed, meta) = Annotator.parseWithMeta(raw)
                             val checks = Annotator.ruleChecks(parsed ?: emptyList(), chunk.text, meta, roster)
                             // R22 · 逐条采纳 + 确定性补齐：尾部没标完只补旁白，不再整块降级。
@@ -1028,6 +1086,8 @@ object Producer {
                             if (rec.drops.isNotEmpty()) firstDrop = rec.drops.first().reason
                             lastMeta = meta; lastChecks = checks; lastRec = rec
                             lastFailCode = failCode; attemptCount++
+                            // R57 #11 · 四项 A/B 指标逐次 attempt 入账，贴诊断摘要即可对拍。
+                            AbGate.record(parsed, meta.repairLevel, attempt)
                             EventLog.log(EventLog.Kind.AUDIT, "ANN_DISPOSITION",
                                 "块 ${i + 1} 第 $attempt 次 · ${rec.disposition} · 采纳 ${rec.kept} 条" +
                                     " · 程序补齐 ${rec.filled} 条 · 拼回原文 " +
@@ -1069,16 +1129,9 @@ object Producer {
                                         "rawChars" to meta.rawChars.toString()))
                             }
                             if (pass) { result = rec.result; break }
-                            // 思考档常见：预算全花在推理上，JSON 被拦腰截断。
-                            // 重试同样的 prompt 只会再来一次几分钟的空转，直接降级。
-                            // 旧写法是 !raw.contains("") —— 空串恒包含，这个分支永远进不来，
-                            // 于是思考被截断后照样重试一次、白烧几分钟。用常量杜绝再写空串。
-                            if (thinkOn && !raw.contains(Annotator.THINK_CLOSE)) {
-                                lastFailCode = "THINK_TAIL_NOT_CLOSED"
-                                EventLog.log(EventLog.Kind.PIPELINE, "THINK_TRUNCATED",
-                                    "块 $i 没有闭合思考标签，推理被预算截断，跳过重试")
-                                break
-                            }
+                            // P0 · 2507 仅非思考，不再有「推理被预算截断」这回事：
+                            // 旧「思考截断跳过重试」分支整段删除，否则老用户 thinking=true 时
+                            // 会因模型本就不输出 </think> 而每次失败都跳过重试。
                             EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY",
                                 "块 $i 第 $attempt 次 · $failCode · 规则通过 ${checks.values.count { it }}/${checks.size}")
                         }
