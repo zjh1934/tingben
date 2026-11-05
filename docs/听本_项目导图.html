@@ -426,7 +426,24 @@ CI <b>run 54 failure</b>（结构自检旧标题断言，已修）→ <b>run 55 
 <b>真机仍零证据</b>；队列：真机验 → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加</footer>
+
+<div class="card" style="margin-top:14px">
+<div class="h">⑰ R46 · V1 抽屉壳（1.0.0+56 / run 56）</div>
+<b>输入：</b>R34/R35 定案的 V1，连续顺延后按队列兑现；只做导航壳，不夹带章节页 / 绿勾 / 迷你条。<br>
+<b>落地：</b>根布局包进 <code>ModalNavigationDrawer</code>；☰ 与从左边缘右滑都开一整页抽屉
+（官方 <code>gesturesEnabled=true</code>，不自写横向手势）；新增 <code>BackHandler(drawerState.isOpen)</code> 排在原条之后，返回键先收抽屉；
+底栏 3 Tab 全删，7 个目的地（书架 / 任务 / 我的音频 ／ 设置 / 调音台 / 模型 / 角色音色）收进抽屉一列，调音台独立项；
+<code>drawerReturn</code> 让二级页「‹ 返回」回进入前的页；根 Column 补 <code>navigationBarsPadding()</code>，底栏删掉后不压系统白条。<br>
+<b>不手搓：</b>形状抄本地 <code>OfflineLLM/ChatScreen.kt</code>（Apache-2.0），条目用官方 M3 组件，零新增依赖。<br>
+<b>守恒：</b>Screen 9 值 / when 9 分支 / chromeOf 9 映射 / refresh / modelsFrom / 外部导入落地 / 通知回跳 /
+native / prompt v2 / Prefs / 4B / 调音台数据层 / PlayQueue / AudioLibrary / Manifest / Gradle 与 HEAD 一致。<br>
+<b>验证：</b>本地 8 套脚本 + <code>CI=true</code> 全绿（R46 正向 26 符号 / 旧壳 6 项零残留 / 反向注入 9 例 / 守恒 12 文件）·
+CI <b>run 56 全绿</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / <code>1.0.0+56</code> / 17,984,627 字节 /
+抽屉新符号全在 / 旧壳零残留 · 直链 blob <code>533dcb1c…</code> 逐字节一致。<br>
+<b>真机仍零证据</b>；队列：真机验 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 导入通道 → U2。
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加</footer>
 </div>
 </body>
 </html>

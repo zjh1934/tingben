@@ -12,7 +12,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 - **方向（R31 定，R33 订正）**：App 发力点转到音频模型调参；换模型不做。
   **端侧 4B 标注不撤、不替换、保持现状**——想用就用、不想用就不用，只是把 4B 的调整沉到后面。
   沙盒标注工厂是**可选的第二条输入来源**（格式见 `docs/标注工厂_输出契约.md`），导入通道待接。
-- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+55`），当前版本见 `STATUS.md` 头部
+- 固定地址**永远是最新版**，版本号跟 CI run 号（如 `1.0.0+56`），当前版本见 `STATUS.md` 头部
 - 想知道「模型到底标了什么」：设置页「高级（诊断）→ 查看标注内容」，或复制诊断摘要（已带最近 3 块逐条标注全文）。
   诊断摘要把「模型候选的原始产出」与「最终真正进 TTS 的段」分开写，并给出「未采纳首因」；
   进度页与分段看台也区分「模型真标注」和「模型没采纳按原文直读」；
@@ -23,7 +23,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 
 ## 用起来就四步
 
-1. 装包，左上角 ☰ →「模型」→ 导入三个 GGUF（约 5GB，App 自己不联网）
+1. 装包，左上角 ☰（或从左边缘右滑）打开抽屉 →「模型」→ 导入三个 GGUF（约 5GB，App 自己不联网）
 2. 顶栏右上「＋」导入一本书 → 选 **txt / md / epub**（仓库 `samples/` 里有测试用书）；也可以在微信、文件管理器里对一本书点「打开方式 → 听本」直接加进来；或直接在书架默认展开的输入框里粘贴文字（带粘贴 / 清除 / 建书，可折叠收起）
 3. 点书卡的 ▶ 图标 → **制作准备页**，四组折叠，默认只露第一组：
    - **① 做什么 · 仅本次**：制作方式二选一（**默认直接朗读** / 标注后合成＝实验性）、勾章节、预计块数
@@ -125,7 +125,7 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
 ```
 app/src/main/java/com/tingben/app/
   MainActivity.kt          页面主体与编排（书架/制作/进度/任务/音频/设置/模型/角色/调音台）
-  AppChrome.kt             U1 抽出的全局壳：顶栏 ☰ 菜单 / ＋、底栏 3 Tab、零文案下拉刷新、chromeOf 映射、状态栏安全区
+  AppChrome.kt             U1 抽出的全局壳：顶栏 ☰ / ＋、V1 左侧抽屉一列（7 个目的地）、零文案下拉刷新、chromeOf 映射、状态栏安全区
   ProduceService.kt        前台服务 dataSync、进度通知、按块 PARTIAL_WAKE_LOCK（移植 ReaderVoice, MIT）
   ProduceOptions.kt        折叠分组 + 档位胶囊控件（改写自现成实现）
   core/ProduceConfig.kt    本次制作预设（单一 data class + 宽容 JSON 迁移 + 指纹）

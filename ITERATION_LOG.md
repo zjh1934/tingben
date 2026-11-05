@@ -587,3 +587,22 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **拆包硬验 PASS**：CRC / 7 个 arm64 .so / 权重 0 / 无 INTERNET / `1.0.0+55` / 41 个新符号 / 18 条旧符号零残留 /
   `TTS_PARAMS_APPLIED` 在；直链 blob `e5a126d4d66a62f4933d671dc5c81847b5f9061e` 与本地 17,984,619 字节逐字节一致。
 - ⚠️ **真机仍零证据**。队列：真机验 → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2（采样 Slider 双模待用户点头）。
+
+
+## R46 · V1 抽屉壳落地（run 56 / 1.0.0+56）
+
+- **按队列推进**：R34/R35 定案的 V1 连续顺延多轮后兑现，只做抽屉壳，没夹带章节页 / 绿勾 / 迷你条 / 看书页。
+- **不手搓**：`ModalNavigationDrawer` 形状抄本地 `reference/OfflineLLM/ChatScreen.kt:99,151-160`（Apache-2.0）；
+  条目用官方 M3 `ModalDrawerSheet / NavigationDrawerItem / HorizontalDivider`，零新增 Gradle 依赖。
+- **落地**：☰ 改开抽屉、`gesturesEnabled=true` 官方手势、新增 `BackHandler(drawerState.isOpen)` 且排在原条之后（LIFO 优先）；
+  底栏 `AppBottomBar` / `AppTab` / `TOP_TABS` / `MENU_ITEMS` / `DropdownMenu` 全删，7 个目的地收进抽屉一列，调音台独立项；
+  `drawerReturn` 让二级页「‹ 返回」回进入前的页；刷新副作用迁入 `onNavigate`；根 Column 补 `navigationBarsPadding()`。
+- **守恒**：Screen 9 值 / when 9 分支 / chromeOf 9 映射 / refresh / modelsFrom / 原 BackHandler / 外部导入落地 / 通知回跳 /
+  native / prompt v2 / Prefs / 4B 设置 / 调音台数据层 / PlayQueue / AudioLibrary / Manifest / Gradle 全部与 HEAD 一致；
+  App() 之外的业务代码逐行守恒。
+- **验证**：本地 8 套脚本 + `CI=true` 复现全绿；R46 正向 26 符号 / 旧壳 6 项零残留 / 反向注入 9 例全拦下 / 守恒 12 文件；
+  CI **run 56 `completed success`**（新增 R46 验证 step）；拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / `1.0.0+56` /
+  抽屉新符号全在 / 旧壳零残留 / `TTS_PARAMS_APPLIED` 在；直链 blob `533dcb1c…` 与本地 17,984,627 字节逐字节一致。
+- **验证脚本自身订正 3 处**：`check_structure.py` 的 U1/R33/R36 旧壳断言同步到 V1 形态、`when(screen)` 分发块改带上下文锚点
+  （新增的两个 when 曾让分支计数误报 7）；`r45_common.canon()` 剔除 App() 壳区域；`r45_verify.py` Prefs 守恒 marker 笔误（HEAD 里找不到旧注释，切片恒空）。
+- ⚠️ **真机仍零证据**。队列：真机验 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 导入通道 → U2。
