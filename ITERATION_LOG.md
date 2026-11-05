@@ -673,8 +673,8 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   补 `snapshotFlow { scroll.value to anchors.toMap() }` 反算当前区；`jumpLock` + `finally` 防点击抖动；
   未列进栏的区（试听/开关/诊断）归并到前一个可见锚点；固定音色入口统一走 `jumpTo`。
 - **采样行**：带 `label=精确值` 的 M3 输入框最小高 56dp 把整行撑到约 180px。改「名字 78dp ·
-  滑块 weight(1f)/28dp · 无标签 72×38dp 数字框 · ⟳ · ▾」同一中线，`contentPadding` 压内边距，
-  范围/官方字段/任意合法值说明进展开 ⓘ；`ParamSpec` 9 项与 onInput 链路零改动。
+  滑块 weight(1f)/28dp · 无标签 72×38dp 数字框 · ⟳ · ▾」同一中线，`Modifier.height` 强约束压掉
+  M3 默认 56dp 内高，范围/官方字段/任意合法值说明进展开 ⓘ；`ParamSpec` 9 项与 onInput 链路零改动。
 - **表演层自定义（真生效，不是假开关）**：`ChipRow` 自定义框统一 140×40dp 小框（12 维同形态）；
   5 项全开。三枚短语框 → `ProduceConfig.packExtra/unpackExtra` → `extraInstruct` →
   `styleInstruct()` 拼 instruct、`audioStamp()` 进指纹、`toJson/fromJson` 存读、schema 2 宽容迁移；
@@ -683,8 +683,11 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   界面态 `perfCustom` 在提交 / 丢弃 / 载预设三处 `syncPerfCustom()` 同步。
 - **守恒**：唯一提交出口、唯一生效动词、两态试听、9 项参数表、4B / prompt v2 / 主链 /
   `bucket()` / 续跑 / FGS / native / `qt_tts_params` / Screen / 抽屉 / Manifest / Gradle 全不动。
-- **验证**：`r50_verify.py` 正向 49 + 数据对拍 11 + 反向注入 9/9 全拦下；本地 11 套 `CI=true` 全绿。
+- **验证**：`r50_verify.py` 正向 50 + 数据对拍 11 + 反向注入 10/10 全拦下；本地 11 套 `CI=true` 全绿。
   首轮复跑抓到 5 处**旧脚本断言按上一版形态写死**（diff 字段数 9→10、已删 label、84/74/30dp 旧尺寸、
   旧注入目标、r50 初版 `re.S` 跨行误命中），逐一定位订正并保留等价新断言，不是放水。
+- **CI run 59 真编译失败（已修）**：按新版 M3 想当然给两个小框加了 `contentPadding` 参数，
+  BOM `2024.12.01` 的 `OutlinedTextField` 无此参数 → `None of the following candidates is applicable`。
+  静态自检抓不到「API 不存在」；改 `Modifier.height` 强约束 + 新增禁止该参数的反向注入，run 60 复验。
 - **CI / 拆包 / 直链**：待本轮构建完成后回填。
 - ⚠️ **真机仍零证据**。队列：真机验 R50 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页沉底 → 导入通道 → U2。

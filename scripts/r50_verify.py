@@ -44,15 +44,18 @@ def checks(src):
 
     # ① 采样行紧凑化
     pr = block(m, "private fun ParamRow(", "/** R41 · 共用音色选择器")
+    cr = block(m, "private fun ChipRow(", "/** R42 · 375px 窄屏证据")
     ck("数字框无 label", 'label = { Text("精确值"' not in pr, "旧带标签大框仍在")
     ck("数字框 72x38", "Modifier.width(72.dp).height(38.dp)" in pr)
     ck("滑块拉长", "Modifier.weight(1f).height(28.dp)" in pr)
-    ck("数字框内边距", "contentPadding = PaddingValues(" in pr)
+    ck("数字框固定高度", ".height(38.dp)" in pr)
+    ck("不引 M3 不存在的 contentPadding",
+       "contentPadding =" not in pr and "contentPadding =" not in cr,
+       "BOM 2024.12.01 的 OutlinedTextField 无此参数（run 59 真编译失败复盘）")
     ck("任意合法值说明进 ⓘ", "框里可填任意合法值" in pr)
     ck("滑块与数字框同源", pr.count("onValueChange = onInput") == 1 and "onValueChange = { v ->" in pr)
 
     # ② 表演层 5 个自定义小框，且真写 draft
-    cr = block(m, "private fun ChipRow(", "/** R42 · 375px 窄屏证据")
     ck("自定义框 140x40", "Modifier.width(140.dp).height(40.dp)" in cr)
     ck("自定义框无 label", 'label = { Text("自己填（可选）"' not in cr)
     perf = block(m, 'MixerSection("表演层"', 'MixerSection("音频开关"')
@@ -175,6 +178,10 @@ def variants(src):
     v.append(("恢复带 label 大框", a))
     b = dict(src); b["main"] = b["main"].replace("Modifier.width(140.dp).height(40.dp)", "Modifier.fillMaxWidth()", 1)
     v.append(("自定义框撑满整行", b))
+    b2 = dict(src); b2["main"] = b2["main"].replace(
+        "modifier = Modifier.width(72.dp).height(38.dp), singleLine = true,",
+        "modifier = Modifier.width(72.dp).height(38.dp), singleLine = true,\n                contentPadding = PaddingValues(horizontal = 6.dp),", 1)
+    v.append(("重新引入 M3 不存在的 contentPadding", b2))
     c = dict(src); c["main"] = c["main"].replace('allowCustom = true, customValue = perfText("朗读"),', "", 1)
     v.append(("删一项自定义", c))
     d = dict(src); d["cfg"] = d["cfg"].replace("style.instruct, pace.instruct, intensity.instruct, extraInstruct.trim()",

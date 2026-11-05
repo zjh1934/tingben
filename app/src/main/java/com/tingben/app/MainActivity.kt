@@ -2037,9 +2037,10 @@ private fun ChipRow(
             // 不再占满整行；输入仍直接进 onCustom，由调用方写 draft（不摆假开关）。
             OutlinedTextField(
                 value = customValue, onValueChange = onCustom,
+                // BOM 2024.12.01 的 M3 OutlinedTextField 没有 contentPadding 参数（run 59 真编译实测）；
+                // 压高度靠 Modifier.height 强约束，不引 BasicTextField、不加依赖。
                 modifier = Modifier.width(140.dp).height(40.dp), singleLine = true,
                 placeholder = { Text("自己填", fontSize = 10.sp, color = Sub) },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
             )
         }
@@ -2219,7 +2220,6 @@ private fun ParamRow(
             OutlinedTextField(
                 value = input, onValueChange = onInput,
                 modifier = Modifier.width(72.dp).height(38.dp), singleLine = true,
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 isError = err.isNotBlank(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onDone() }),

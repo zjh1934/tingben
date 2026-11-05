@@ -83,7 +83,7 @@ def baseline(m):
 
     # 5) ParamRow：R50 紧凑行（名字 78 / 滑块 28 / 无标签 72x38 数字框），仍只有 1 个框
     for s in ["Modifier.width(78.dp)", "Modifier.weight(1f).height(28.dp)",
-              "Modifier.width(72.dp).height(38.dp)", "contentPadding = PaddingValues(",
+              "Modifier.width(72.dp).height(38.dp)", ".height(38.dp)",
               "框里可填任意合法值", "Slider(",
               "val sliderLo = (spec.min ?: 0.0).toFloat()",
               "valueRange = sliderLo..sliderHi", "onInput(s)", "FilterChip(",
