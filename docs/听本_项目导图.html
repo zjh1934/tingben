@@ -342,7 +342,19 @@ footer{text-align:center;color:var(--sub);font-size:11px;margin-top:30px}
 <b>真机仍零证据</b>，队列不变：真机验 <code>+48</code> → <b>V1 抽屉壳</b> → V2/V2b/V3 → 导入通道 → U2。</div>
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加</footer>
+<div class="card" style="margin-top:14px">
+<div class="h">⑫ R40 · 调音台统一提交（1.0.0+49 / run 49）</div>
+<b>根问题：</b>5 个写入口各自握着生效权，界面没有「待提交」层 → 收成 <code>MixerDraft</code>（唯一编辑态）
++ <code>MixerCommit.commit()</code>（唯一出口），界面里 <code>Prefs.set*</code> 清零。<br>
+<b>骨架：</b>吸顶「已生效 v4·指纹 ｜ 未提交 N 项 ｜ 查看差异 / 提交变更」→ 差异弹层全貌 + 逐项旧→新；
+② 只「填入草稿」+ 可编辑预览框；① 已生效 vs 草稿对照；⑦ 降级导出诊断；⑤ 角色 chip / 未绑定提示 / 删除确认。<br>
+<b>验证：</b>diff 对拍 6 组 / 反向注入 6 例 / 守恒 13 项 · check_structure 28 项 · r38_param_audit 6 例 ·
+<b>run 49 全绿</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / <code>+49</code> / 31 新符号 / 13 条旧动词零残留。<br>
+<b>零 diff：</b>4B / prompt v2 / Producer.start / bucket / TaskResume / 缓存分桶 / JNI / Manifest / Gradle。<br>
+<b>真机仍零证据</b>；队列：真机验 → R41 P1 → R42 P2 → V1 抽屉壳（顺延）→ V2/V2b/V3 → 导入通道。
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加</footer>
 </div>
 </body>
 </html>

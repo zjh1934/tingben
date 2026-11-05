@@ -126,3 +126,15 @@
   但我们是 Kotlin、且不能引 Python 运行时，故不采用；其「截断补闭合」思路已被 Alexandria 版覆盖。
 - **Antioch 的确定性结构切分**（`split_dialogue_paragraph`）：会改写/剥离归属语，
   与听本当前「原文一字不改」契约冲突，只采纳其清洗与容错，不采纳其切分。
+
+
+## R40 新增参考（仅架构形状，未复制源码行）
+
+- Android Developers《Compose 界面架构》《Other considerations》：单向数据流 / 单一可信来源 /
+  `SideEffect` 把状态发布给非 Compose 代码 —— `MixerDraft` + `MixerCommit.commit()` 的依据。
+- `FormViewModel.hasUnsavedChanges` / `onDataChanged` / `onDataSaved` 文章片段：
+  「未提交变更」状态机与离开确认的形状（未引 ViewModel 依赖）。
+- CleverKeys `CollapsibleSection` + `ConfigurationManager`、ZOOZ `SettingsViewModel`、
+  composeexamples `rememberLazyListState` 设置页示例：折叠分区与吸顶滚动的形态参考
+  （仓库 LICENSE 未逐份核实，**只参考结构，不复制代码**；R41 落地前需补核）。
+- 项目自身 R36 的 `MixerSection`（`rememberSaveable` 跨旋转）继续沿用，未替换。
