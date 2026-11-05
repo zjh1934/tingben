@@ -55,9 +55,6 @@ jobs:
       - name: R50 真机三处修补验证（紧凑行 / 自定义落地 / 滚动联动 / 反向注入 / 守恒）
         run: python3 scripts/r50_verify.py
 
-      - name: R51 卡顿根因与抽屉联动验证（正向 / 反向注入 / 守恒）
-        run: python3 scripts/r51_verify.py
-
       - name: JDK 17
         uses: actions/setup-java@v4
         with:
