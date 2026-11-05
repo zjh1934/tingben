@@ -9,7 +9,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.0.0+65`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.0.0+66`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
 - 仓库已改名：源码仓 `tingben-android→tingben`，APK 仓 `tingben-apk→ting-ben-apk`，旧地址自动跳转
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
@@ -29,25 +29,26 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 
 ## 三个模型（后导入、不进包）
 
-| 槽位 | 线上 `+65` 用的文件 | 国内地址 |
+| 槽位 | 线上 `+66` 用的文件 | 国内地址 |
 |---|---|---|
-| 语言模型 | `mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf` | `https://hf-mirror.com/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf` |
+| 语言模型 | `huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf` | `https://hf-mirror.com/kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF/resolve/main/huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf` |
 | 声音主文件 | `qwen-talker-1.7b-voicedesign-Q8_0.gguf` | `https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf` |
 | 声音配套 | `qwen-tokenizer-12hz-Q8_0.gguf` | `https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf` |
 
-**待切换（尚未导入）**：语言模型准备换成
-`huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf`
-（`https://hf-mirror.com/kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF/resolve/main/huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf`）。
-它是**仅非思考**权重，换上去后代码里的「思考过程」开关、`/no_think`、两套缓存分桶都要删 —— 依据 `docs/R57_换模型联动表.md`，
-且必须过 `ROADMAP.md` P0 的 A/B 四项 gate。**别下错成 Thinking-2507 版**（只差一个词）。音频模型权重不换。
+**代码路径已切换（R60 / `+66`），GGUF 仍要手动导入**：语言模型文件是
+`huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf`（国内地址见上表）。
+它是**仅非思考**权重，代码里的「思考过程」开关、`/no_think`、思考档温度 0.6、两套缓存分桶已删；旧文件名保留为导入白名单兜旧数据。
+依据 `docs/R57_换模型联动表.md` 的 11 处联动、落地报告 `docs/R60_P0换模型与双页拆分_落地.md`。
+导入后必须过 `ROADMAP.md` P0 的 A/B 四项 gate 才算「更会写 JSON」，不达标回退官方 2507 基线。
+**别下错成 Thinking-2507 版**（只差一个词）。音频模型权重不换。
 
 ## 设置页与调音台
 
-- **设置页当前形态**（`+65`）：声音 / 语言模型 / 工具 / 诊断 / 后台运行设置几组折叠，含思考过程开关、
-  上下文窗口 / 运算线程 / 随机度、拟声表达、角色映射、试合成一句、诊断两级复制、电池优化入口。
-- **已定案、尚未落地**：设置页只管软件（外观、日志、后台、关于），模型参数另开独立「语言模型设置」页；
-  项清单 `docs/R58_设置页与语言模型设置页_项清单v2.md`，v8 预览 12 屏已交付。夜间模式 / 字号在代码里
-  **没有**，预览中标「待新增」，不画假开关。
+- **设置页（R60 / `+66` 起）**：只管软件 —— 外观、数据与日志、后台、关于，加一行「语言模型设置 ›」；
+  夜间模式 / 字号在代码里**没有**，界面标「待新增」，不画假开关。
+- **语言模型设置页**（抽屉独立目的地）：只读模型卡 + 已移除项说明 + 主层三项 + 高级只读五项 + 诊断评测；
+  `MODEL_ID` / `AbGate` 写进诊断摘要。思考开关、`top_k` / `min_p` / YaRN / GPU 层数等物理不存在的项一个都不画。
+  项清单 `docs/R58_设置页与语言模型设置页_项清单v2.md`，v8 预览 12 屏已通过并落地。
 - **调音台**（☰ 直达独立页）：`MixerDraft` 唯一编辑态 + `commitAll()` 唯一生效出口，
   **提交不需要先试听**；「试听未提交参数 / 试听已生效参数」点一下 = 合成 + 自动播放。
   9 项采样（中文名 · 滑块 · 小数字框 · ⟳）真到 `qt_tts_params`，逐项对应官方字段与默认值；
@@ -84,7 +85,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 
 ```
 app/src/main/java/com/tingben/app/
-  MainActivity.kt          页面主体与编排（书架/制作/进度/任务/音频/设置/模型/角色/调音台）
+  MainActivity.kt          页面主体与编排（书架/制作/进度/任务/音频/设置/语言模型设置/模型/角色/调音台）
   AppChrome.kt            全局壳：顶栏 ☰/＋、左侧抽屉、零文案下拉刷新、chromeOf、状态栏安全区
   ProduceService.kt       dataSync 前台服务、进度通知、按块唤醒锁
   ProduceOptions.kt       折叠分组与档位胶囊

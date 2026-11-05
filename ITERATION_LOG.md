@@ -744,3 +744,32 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   性能页删除 / 4B 不撤」四条台账，以及「换模型不做」「4B 撤主路」两条作废口径。
 - ⚠️ **新权重仍在用户手机下载**，未导入、未加载、未跑过一块；本轮未动 manifest / 下载直链 /
   `ModelStore` / prompt / native / 设置页代码。维护报告见 `docs/R59_项目文件维护报告.md`。
+
+
+## R60 · P0 换语言模型 + 设置页/语言模型设置页拆分（1.0.0+66 / run 66）
+
+- **用户指令**：v8 预览 12 屏「通过」；新权重 `huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf` 已下载；「去做吧」→「继续」。
+  上一轮只做到代码与本地自检，**没发包、项目记录未回填**，本轮补齐收尾。
+- **换权重 11 处联动**（R57 逐项）：manifest 换新名/新 repo/国内直链/`仅非思考` 口径并登记官方 2507 回退基线、
+  **实测字节数与 sha 留空不写假值**；模型页下载地址换 `kuronekkko`；`ModelStore.LLM` 换名 + `LLM_LEGACY` 旧名白名单；
+  `buildPrompt` 删 `/think` `/no_think`、按 GGUF 自带 chat_template 对齐手写 ChatML；温度统一 `Prefs.temperature(c)`、
+  删思考档 0.6 覆盖；缓存统一 `m2507/` 前缀一次作废旧两套；`KEY_THINKING` 留兼容读、界面不再写；
+  `extractThinking` 降级为防御；抽屉加 `NAV_LLM` + `Screen.LLM -> LlmSettingsScreen`；诊断加 `MODEL_ID` 与 `AbGate` 四项统计。
+- **双页拆分**（v8 / R58 v2）：设置页只留外观 / 数据与日志 / 后台 / 关于 + 一行「语言模型设置 ›」；
+  语言模型页给只读模型卡、已移除项说明、主层三项、高级只读五项、诊断与 A/B 评测。
+  思考开关、`top_k` / `min_p` / YaRN / GPU 层数、可编辑提示词等物理不存在的项**一个都不画**；
+  制作准备页「思考过程」行改为只读「不适用 · 新权重仅非思考」。
+- **守恒**：`prompt_zh.txt` v2、`Adoption` 逐字 gate、`TextSplitter`、两条制作路径、`tingben_native.cpp` 采样链、
+  `MixerDraft.commitAll()` 与两态试听、`ProduceService`、Manifest、Gradle 依赖一行未动。
+- **验证**：本地 15 套 `CI=true` 全绿；`r60_verify.py` 11 处逐项 / 旧形态零残留 / 守恒 / 反向注入 10/10 拦下；
+  **CI run 66 `completed success`**（真 Kotlin 编译）；新增 `scripts/r60_apk_audit.py` 拆包硬验：
+  CRC 全过 / 7 个 arm64 .so / 权重 0 / 无 INTERNET（ASCII + UTF-16LE 双查）/ `1.0.0+66` /
+  20 新符号全在 / 7 条旧形态零残留 / `TTS_PARAMS_APPLIED` 在 / 直链 blob 与本地逐字节一致，`--selftest` 正确拦下。
+  旧权重文件名仍应在（`LLM_LEGACY` 白名单），脚本列为必在项而非残留。
+- **发布**：远端 API 单次提交 `826183697b`（base_tree 只增不删）触发 run 66；raw 域名 502，
+  改从 `git/blobs` base64 取回 APK，**18,017,394 字节 / blob `4ed33b068173…`**，与直链仓库 tree 一致；
+  项目文件回填后带 `[skip ci]` 同步。落地报告 `docs/R60_P0换模型与双页拆分_落地.md`。
+- ⚠️ **新权重已下载但仍在 App 外**：未导入、未加载、未跑过一块；CI 全绿只证明代码路径切换，不等于模型跑起来。
+  四项 A/B gate 全不劣于基线才替换线上，否则回退官方 2507 Q4_K_M 基线。真机仍是零证据。
+- **队列**（`ROADMAP.md` 唯一真源）：真机验 → P1 V2 目录页 + 按章绿勾 → P2 看书页 → P3 迷你条 →
+  P4 标注导入 → P5 性能二期 → P6 软件设置补齐；P0 代码侧已落地，剩余是用户侧导入与 A/B。

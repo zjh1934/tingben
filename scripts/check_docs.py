@@ -9,7 +9,7 @@ import os, re, sys, pathlib, zipfile, tempfile, shutil
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = ROOT / 'docs'
 BAD_WORDS = ['换模型不做', '4B 撤主路', '下轮队列', '下一轮第一件']
-CURRENT_VER = '1.0.0+65'
+CURRENT_VER = '1.0.0+66'
 
 
 def read(p):

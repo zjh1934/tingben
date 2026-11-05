@@ -526,7 +526,21 @@ release-like 构建。<b>不宣称卡顿归零，真机帧率仍零证据。</b>
 </div>
 
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加，⑳ 由 R50 追加，㉑ 由 R51 追加</footer>
+<div class="card" style="margin-top:14px">
+<div class="h">㉒ R60 · P0 换语言模型 + 双页拆分落地（1.0.0+66 / run 66）</div>
+<b>用户：</b>v8 预览「通过」、新权重已下载 <code>huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf</code>；上一轮只做到代码与自检，本轮补齐发包与回填。<br>
+<b>换权重 11 处联动：</b>manifest / 国内直链 / <code>ModelStore.LLM</code> + <code>LLM_LEGACY</code> 白名单 / GGUF chat_template 对齐 /
+删 <code>/think</code> <code>/no_think</code> 与思考档温度 0.6 / 缓存统一 <code>m2507/</code> 前缀作废旧两套 /
+<code>KEY_THINKING</code> 留兼容读 / <code>extractThinking</code> 降防御 / 抽屉加 <code>NAV_LLM</code> / 诊断 <code>MODEL_ID</code> + <code>AbGate</code> 四项统计。<br>
+<b>双页：</b>设置页只管软件（外观 / 数据与日志 / 后台 / 关于 + 一行跳转）；语言模型设置页独立给只读模型卡、已移除项说明、主层三项、高级只读五项、诊断评测。物理不存在的项一个开关都不画。<br>
+<b>验证：</b>15 套 <code>CI=true</code> 全绿 · <code>r60_verify</code> 反向注入 10/10 · run 66 真编译成功 ·
+新增 <code>r60_apk_audit.py</code>（CRC / 7 .so / 权重 0 / 无 INTERNET / <code>1.0.0+66</code> / 20 新符号 / 7 旧形态零残留 / 直链 blob 逐字节一致，含 <code>--selftest</code>）。<br>
+<b>发布：</b><b>18,017,394 字节</b> / blob <code>4ed33b068173…</code>；raw 域名 502，改从 <code>git/blobs</code> 取回核对；文档带 <code>[skip ci]</code> 同步。<br>
+<b>如实：</b>权重已下载但仍在 App 外，未导入、未加载、未跑过一块；四项 A/B gate 不达标就回退官方 2507 基线。真机零证据。<br>
+<b>队列：</b>真机验 → P1 V2 目录页 + 按章绿勾；P0 代码侧已完成。
+</div>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加，⑳ 由 R50 追加，㉑ 由 R51 追加，㉒ 由 R60 追加</footer>
 </div>
 </body>
 </html>
