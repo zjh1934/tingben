@@ -19,8 +19,8 @@ import java.io.File
  *  - 「新建 Session 时选预设 / Session 设置里存为预设」抄 IndexTTS WebUI 项目面板。
  *  - 版本化宽容迁移抄 PocketPal `completionSettingsVersions.ts`。
  *
- * 边界：预设只是「一键写入既有真值源」的配方，不新建第二份 TtsKnobs / ProduceConfig
- * 配置。应用预设只走 Prefs.setTtsKnobs / Prefs.setVoiceDescription / Prefs.setDefaultPerf，
+ * 边界：预设只是「一键载入待提交」的配方，不新建第二份 TtsKnobs / ProduceConfig
+ * 配置。载入预设只写 MixerDraft，唯一出口仍是 MixerCommit.commit，
  * 不碰 Producer.start 签名、不碰 TaskInfo 书签、不碰缓存分桶。
  */
 private const val PRESET_SCHEMA = 1

@@ -117,13 +117,21 @@ def check(src):
     if "TTS_PARAMS_APPLIED" not in src["cpp"]:
         errs.append("JNI 缺 TTS_PARAMS_APPLIED 实收日志")
 
-    # 8) 界面：音色身份是首屏固定卡（不是默认收起的折叠）、采样组默认展开
-    if "音色身份" not in src["ui"] or "保存并生效" not in src["ui"]:
-        errs.append("首屏音色身份输入框/保存按钮不见了")
+    # 8) 界面（R40）：音色身份是首屏固定卡；唯一生效动词是「提交变更」；
+    #    采样组默认收起、身份生成器默认展开（评审骨架）。
+    if "音色身份" not in src["ui"]:
+        errs.append("首屏音色身份输入框不见了")
+    for sym in ["提交变更", "未提交变更", "查看差异", "MixerCommit.commit(c, draft, n)"]:
+        if sym not in src["ui"]:
+            errs.append("R40 统一提交条缺符号 " + sym)
+    if "保存并生效" in src["ui"]:
+        errs.append("R40 回退：又出现第二个生效动词")
     if 'MixerSection("音色身份"' in src["ui"]:
         errs.append("音色身份又被塞进折叠组了")
-    if not re.search(r'MixerSection\("① 采样参数[^"]*", "sampling", true', src["ui"]):
-        errs.append("采样参数组没有默认展开")
+    if not re.search(r'MixerSection\("① 采样参数[^"]*", "sampling", false', src["ui"]):
+        errs.append("R40 回退：采样 9 项又默认展开了")
+    if 'MixerSection("② 音色身份生成器（12 维 / 现成网格）", "identity", true' not in src["ui"]:
+        errs.append("R40 回退：身份生成器没默认展开")
     if "ParamCatalog.SAMPLING.forEach" not in src["ui"]:
         errs.append("采样参数没有走 ParamCatalog 单一定义")
     if "ParamCatalog.DOCS" not in src["ui"]:
@@ -159,8 +167,13 @@ def inject(src, case):
             r'\s*EventLog\.log\(EventLog\.Kind\.ENGINE, "TTS_PARAMS",[\s\S]*?level = EventLog\.Level\.TRACE\)\n',
             "\n", s["engine"], count=1)
     elif case == "hide_voice":
-        s["ui"] = s["ui"].replace('MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", true',
-                                  'MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", false')
+        # R40：把「采样默认收起」改回默认展开，断言必须响
+        s["ui"] = s["ui"].replace('MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", false',
+                                  'MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", true')
+    elif case == "drop_commit":
+        # R40：把唯一出口删掉，断言必须响
+        s["ui"] = s["ui"].replace('MixerCommit.commit(c, draft, n)',
+                                  'MixerCommit.diff(active, draft).size.toLong()')
     return s
 
 
@@ -170,7 +183,7 @@ def main():
     print("基线:", "PASS" if not base else "FAIL")
     for e in base:
         print("  -", e)
-    cases = ["drop_tp", "bad_official", "bad_default", "drop_event", "hide_voice"]
+    cases = ["drop_tp", "bad_official", "bad_default", "drop_event", "hide_voice", "drop_commit"]
     bad = 0
     for c in cases:
         errs = check(inject(src, c))
@@ -181,7 +194,7 @@ def main():
     if base or bad:
         print("结果: FAIL")
         sys.exit(1)
-    print("矩阵 9 项逐字段核对通过；5 例反向注入全部拦下；结果 PASS")
+    print("矩阵 9 项逐字段核对通过；6 例反向注入全部拦下；结果 PASS")
 
 
 if __name__ == "__main__":

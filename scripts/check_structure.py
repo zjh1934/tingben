@@ -191,7 +191,7 @@ mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_AB", "Mixer.CHAIN", "调音台", "🎛 调音台",
            "Anatomy-First", "12 维", "A/B 试听", "MixerScreen", "Screen.MIXER",
-           "当前生效配置", "恢复上游默认值"]
+           "导出与诊断", "恢复上游默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
 for sym in ["GENDER", "PITCH", "TIMBRE", "BREATH", "PERSONA",
@@ -345,8 +345,8 @@ if "statusBarsPadding()" not in main_src:
 
 # ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 / 角色卡 ──
 R36_ALL = ["MixerSection(", "rememberSaveable(key)", "MixerPresetStore", "MixerPreset(",
-           "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_PERF", "MIXER_DIM",
-           "MIXER_CAST", "当前生效配置", "预设库", "角色预设", "参数触达矩阵与官方资料",
+           "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
+           "MIXER_CAST", "导出与诊断", "预设库", "角色预设", "参数触达矩阵与官方资料",
            "max_new_tokens（单次音频上限）", "下个任务起", "可增删改", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
@@ -366,7 +366,7 @@ for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
     if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
-R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "保存并生效",
+R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "提交变更",
            "参数触达矩阵与官方资料", "恢复官方默认", "精确值", "当前生效 · 全书固定",
            "官方资料（按名称自行查", "采样参数 · 9 项（全部到引擎）"]
 for sym in R38_ALL:
@@ -380,6 +380,39 @@ if 'MixerSection("音色身份"' in main_src:
     errs.append("R38 回退：音色身份又藏进折叠组")
 if "ParamCatalog.SAMPLING.forEach" not in main_src:
     errs.append("R38 回退：采样参数没有走单一目录")
+
+# ── R40 · 调音台统一提交：唯一编辑态 / 唯一出口 / 旧生效动词零残留 ──────
+draft_path = ROOT / "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
+draft_src = draft_path.read_text(encoding="utf-8", errors="replace") if draft_path.exists() else ""
+R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit(",
+           "TIMING_NOW", "TIMING_NEXT", "active(c: Context)", "查看差异", "提交变更",
+           "未提交变更", "载入为待提交", "丢弃全部待提交", "TimingHint(", "有未提交变更",
+           "未绑定音色", "填入草稿", "当前生效全貌"]
+for sym in R40_ALL:
+    if sym not in all_src: errs.append("缺少 R40 统一提交符号: " + sym)
+# 唯一出口：MixerScreen 区块里禁止出现任何直接写 Prefs 的调用
+blk_i = main_src.find("// ── ⑥ 调音台")
+mixer_block = main_src[blk_i:] if blk_i >= 0 else ""
+for banned in ["Prefs.setTtsKnobs(", "Prefs.setVoiceDescription(", "Prefs.setDefaultPerf(",
+               "Prefs.setNonVerbal(", "Prefs.setCastEnabled(", "Prefs.resetTtsKnobs("]:
+    if banned in mixer_block:
+        errs.append("R40 回退：界面里出现第二个生效写入口 " + banned)
+if "MixerCommit.commit(c, draft, n)" not in mixer_block:
+    errs.append("R40 回退：界面没走唯一出口 MixerCommit.commit")
+if draft_src.count("Prefs.set") != 5:
+    errs.append("R40 回退：commit 写入口不是 5 个（实际 %d）" % draft_src.count("Prefs.set"))
+if draft_src.count("put(") != 10:  # 9 次字段调用 + 1 次 put() 定义
+    errs.append("R40 回退：diff 源码调用数不是 9（实际 %d）" % (draft_src.count("put(") - 1))
+# 旧生效动词（只查字符串字面量，注释里描述旧 bug 不算）
+lits = ui_literals(main_src) + ui_literals(draft_src)
+for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
+    if any(banned in x for x in lits):
+        errs.append("R40 回退：又出现旧生效动词 " + banned)
+# 默认展开：身份生成器开、采样组收
+if 'MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", false' not in main_src:
+    errs.append("R40 回退：采样 9 项又默认展开了")
+if 'MixerSection("② 音色身份生成器（12 维 / 现成网格）", "identity", true' not in main_src:
+    errs.append("R40 回退：身份生成器没默认展开")
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
