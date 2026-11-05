@@ -1,15 +1,15 @@
 # 听本 · 当前状态
 
-**2026-11-05 · R50 调音台真机三处修补 · 紧凑参数行 / 表演层自定义真落地 / 锚点滚动联动**
+**2026-11-05 · R51 卡顿根因收窄 + 抽屉联动（本轮不进 V2）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+60`（run 60；发布详情见 `docs/R50_真机三处修补_落地.md`） |
-| APK | arm64-v8a / 固定 debug 签名 / **18,001,010 字节** / 详见 `docs/R50_真机三处修补_落地.md` |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk`（blob `7f4297dc…`，与本地逐字节一致） |
-| CI | **run 60 `completed success`**（30/32 步 ok，含新增 R50 验证 step；run 59 编译失败已修） |
-| 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
-| APK 仓 | `zjh1934/tingben-apk`（公开） |
+| 版本 | `1.0.0+65`（run 65；发布详情见 `docs/R51_卡顿根因与抽屉联动_落地.md`） |
+| APK | arm64-v8a / 固定 debug 签名 / **18,001,017 字节** / 详见 `docs/R51_卡顿根因与抽屉联动_落地.md` |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `52bf35a2…`，与本地逐字节一致；旧名 `tingben-apk` 自动跳转） |
+| CI | **run 65 `completed success`**（29 步：27 ok / 2 skipped，含新增 R51 验证 step；run 62 仅直链发布失败，63/64 修复） |
+| 源码仓 | `zjh1934/tingben`（原 `tingben-android`，GitHub 改名后旧名自动跳转；公开） |
+| APK 仓 | `zjh1934/ting-ben-apk`（原 `tingben-apk`，旧名自动跳转；公开） |
 
 ## 方向（R31 定，R33 订正）
 
@@ -1263,3 +1263,16 @@ run 39 为 push+dispatch 重复触发，已取消，固定直锁 `+38`。
 - 直链 blob `e32c2e9088b978d51ffeaec0cfeaa598c6904366`、17968245 字节，与本地 APK 逐字节一致。
 
 ⚠️ 真机仍是零证据。队列：真机验 → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。
+
+
+## R51 · 卡顿根因收窄 + 抽屉联动（1.0.0+65 / run 65）
+
+- **本轮不进 V2**（目录页 / 按章绿勾 / 看书页 / 迷你条一行未动）。用户反馈「软件小却卡、界面切换卡」「抽屉应和工作页联动，不是覆盖」。
+- **卡顿实查**：`App()` 顶层为 5 个 `LibraryScreen` 根本没读的参数订阅 `Producer.state/resume`，制作时每次块更新重组 `when(screen)` 下全部 9 页；三个无条件定时器（音频 300ms / 任务 1000ms / 进度 1000ms）闲着也重组；`Column+verticalScroll` 全量组合；组合期同步读磁盘；debug 产物关 Compose 优化。
+- **本轮修**：2 个顶层订阅下沉到 `KeepScreenOn()` / `TaskBar()` 两个叶子；删 5 个白挂参数；续跑回调读 `.value` 不订阅；三个定时器按 `pq.isPlaying` / `st.running` 门控，任务页合成 2 秒 `loadTick`；锚点流不再每帧 `anchors.toMap()`。
+- **抽屉**：`ModalNavigationDrawer`（覆盖 + 全屏遮罩）→ `DismissibleNavigationDrawer`（展开时把右侧工作页一起推走）。☰ / 左滑手势 / 返回键优先 / 7 目的地 / 240dp / 底部安全区一行未改。
+- **未改（单列性能二期）**：`Column→LazyColumn`（会破坏 R50 锚点坐标语义）、组合期磁盘 IO 迁 `produceState`、release-like 构建。不宣称卡顿归零，**真机帧率仍零证据**。
+- **守恒**：4B 设置 / prompt v2 / 两条制作路径 / 缓存分桶 / 续跑书签 / 唯一提交出口 / 两态试听 / `ParamSpec` / `MixerDraft` / native / JNI / 前台服务 / Manifest / Gradle 依赖全不动。
+- **验证**：本地 12 套 `CI=true` 全绿；`r51_verify.py` 正向 14 项 + 反向注入 6/6；`check_structure.py` 改判 `DismissibleNavigationDrawer(`；新增 `r51_apk_verify.py`（CRC / 7 .so / 权重 0 / 无 INTERNET / `1.0.0+65` / 23 新符号 / 15 条旧形态零残留 / `TTS_PARAMS_APPLIED` 在，含 `--selftest` 反向注入）。
+- **发布**：仓库改名（`tingben-android→tingben`、`tingben-apk→ting-ben-apk`）；run 61/62 失败分别是 CI 仓库引用与直链 307，run 63 修 `publish_apk` POST 307、64 恢复文件、65 全绿。直链 blob `52bf35a251532ddc8253471371d38adde1a9ea82` 与本地逐字节一致。
+- **队列不变，仅顺延**：真机验 R51 → V2 目录页+按章绿勾 → V2b 看书页 → V3 迷你条 → 导入通道 → U2；性能二期单独立项。

@@ -499,8 +499,27 @@ CI <b>run 58 全绿（31 步）</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTER
 <b>真机仍零证据</b>；队列：真机验 R50 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页沉底 → 导入通道 → U2。
 </div>
 
+<div class="card" style="margin-top:14px">
+<div class="h">㉑ R51 · 卡顿根因收窄 + 抽屉从覆盖改联动（1.0.0+65 / run 65）</div>
+<b>输入：</b>「软件小却卡、界面切换卡得要死」「抽屉和工作页应该有联动，不是覆盖」。本轮<b>不进 V2</b>。<br>
+<b>卡顿实查：</b><code>App()</code> 顶层订阅 <code>Producer.state/resume</code>，只为给 <code>LibraryScreen</code>
+传 5 个函数体零引用的参数 → 每次块更新重组 <code>when(screen)</code> 全部 9 页；三个无条件 tick（音频 300ms /
+任务 1000ms / 进度 1000ms）；9 页 <code>Column+verticalScroll</code> 全量组合；组合期同步读盘；debug 关 Compose 优化。<br>
+<b>落地：</b>2 顶层订阅下沉 <code>KeepScreenOn()</code> / <code>TaskBar()</code> 叶子、续跑读 <code>.value</code>；
+三个 tick 按播放态 / 制作态门控，任务页合成 2 秒 <code>loadTick</code>；锚点流不再每帧 <code>anchors.toMap()</code>。<br>
+<b>抽屉：</b><code>ModalNavigationDrawer</code>（覆盖 + 遮罩）→ <code>DismissibleNavigationDrawer</code>（展开把右侧工作页一起推走）；
+☰ / 左滑 / 返回键 / 7 目的地 / 240dp / 安全区守恒。<br>
+<b>未做（性能二期）：</b><code>Column→LazyColumn</code>（会破坏 R50 锚点坐标语义）/ 组合期 IO 迁 <code>produceState</code> /
+release-like 构建。<b>不宣称卡顿归零，真机帧率仍零证据。</b><br>
+<b>验证：</b>12 套 <code>CI=true</code> 全绿 · <code>r51_verify</code> 正向 14 + 反向 6/6 · 新增 <code>r51_apk_verify.py</code>
+（CRC / 7 .so / 权重 0 / 无 INTERNET / <code>1.0.0+65</code> / 23 新符号 / 15 条旧形态零残留，含 <code>--selftest</code>）。<br>
+<b>发布：</b>仓库改名 <code>tingben-android→tingben</code> / <code>tingben-apk→ting-ben-apk</code>；run 62 仅直链 307 失败、
+63 修 <code>publish_apk</code>、65 全绿（29 步 27 ok / 2 skipped）· <b>18,001,017 字节</b> / blob <code>52bf35a2…</code> 与本地逐字节一致。<br>
+<b>队列：</b>真机验 R51 → V2 目录页+按章绿勾 → V2b 看书页 → V3 迷你条 → 导入通道 → U2；性能二期单独立项。
+</div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加，⑳ 由 R50 追加</footer>
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加，⑳ 由 R50 追加，㉑ 由 R51 追加</footer>
 </div>
 </body>
 </html>

@@ -5,21 +5,22 @@
 ## 下载安装
 
 ```
-https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
+https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
-备用（Release 页）：`https://github.com/zjh1934/tingben-android/releases/latest`
+备用（Release 页）：`https://github.com/zjh1934/tingben/releases/latest`。
+> 仓库已改名：源码仓 `tingben-android→tingben`，APK 仓 `tingben-apk→ting-ben-apk`；旧地址自动跳转。
 
 - **方向（R31 定，R33 订正）**：App 发力点转到音频模型调参；换模型不做。
   **端侧 4B 标注不撤、不替换、保持现状**——想用就用、不想用就不用，只是把 4B 的调整沉到后面。
   沙盒标注工厂是**可选的第二条输入来源**（格式见 `docs/标注工厂_输出契约.md`），导入通道待接。
-- 固定地址**永远是最新版**，版本号跟 CI run 号（当前 `1.0.0+60`）；每轮字节数、直链 blob 与验证结果见 `STATUS.md` 头部
+- 固定地址**永远是最新版**，版本号跟 CI run 号（当前 `1.0.0+65`）；每轮字节数、直链 blob 与验证结果见 `STATUS.md` 头部
 - 想知道「模型到底标了什么」：设置页「高级（诊断）→ 查看标注内容」，或复制诊断摘要（已带最近 3 块逐条标注全文）。
   诊断摘要把「模型候选的原始产出」与「最终真正进 TTS 的段」分开写，并给出「未采纳首因」；
   进度页与分段看台也区分「模型真标注」和「模型没采纳按原文直读」；
   看台上方有「语言模型是否生效」判定条，不用贴日志就能判（见 `docs/本次测试_语言模型生效判定卡.md`）
 - 浏览器直接打开即可下载；包名 `com.tingben.app`，与旧墨听不同，**可同时安装、不用卸载**
 - 固定签名，后续新版直接覆盖安装，模型和已做好的音频都保留
-- 源码：`https://github.com/zjh1934/tingben-android`（公开）
+- 源码：`https://github.com/zjh1934/tingben`（公开）
 
 ## 用起来就四步
 
@@ -92,6 +93,11 @@ https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk
   `ProduceConfig.extraInstruct` 真拼 instruct / 进指纹 / 进 diff / JSON 宽容迁移，数值两项改范围校验
   不再被白名单静默重置；`snapshotFlow` 补「滚动 → 锚点高亮」反向联动并加跳转锁。
   详见 `docs/R50_真机三处修补_落地.md` / `docs/R50_真机三处修补_联动表.md`。
+  **R51 卡顿根因与抽屉联动**：`App()` 顶层两个高频引擎订阅下沉到 `KeepScreenOn()` / `TaskBar()`
+  叶子（书架页 5 个从未被读取的参数删掉），三个无条件定时器按播放态 / 制作态门控，锚点流不再每帧复制整张表；
+  外层抽屉 `ModalNavigationDrawer` → `DismissibleNavigationDrawer`，展开时右侧工作页一起推走（不再是覆盖 + 遮罩）。
+  `Column→LazyColumn` / 组合期磁盘 IO / release-like 构建单列性能二期，本轮未做。
+  详见 `docs/R51_卡顿根因与抽屉联动_落地.md` / `docs/R51_卡顿根因与抽屉联动_联动表.md`。
 维度体系见 `docs/R31_调音台_维度体系与联动表.md`，触达矩阵见 `docs/R38_调音台重做_联动表与参数触达矩阵.md`，
   分轮依据见 `docs/R39_调音台统一提交_联动表与分轮.md`，落地见 `docs/R40_调音台统一提交_落地.md`；
   试听改版见 `docs/R41a_试听改版_联动表.md`；P1 联动表见 `docs/R41_P1_信息架构_联动表.md`、

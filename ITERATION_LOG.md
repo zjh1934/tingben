@@ -698,3 +698,17 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **直链核对**：18,001,010 字节，blob `7f4297dc965a00a13269ab053249aed57d8056fa`（按 git blob 算法复算）
   与本地 APK 逐字节一致；文档用 API 增量同步、带 `[skip ci]` 未触发多余构建。
 - ⚠️ **真机仍零证据**。队列：真机验 R50 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页沉底 → 导入通道 → U2。
+
+
+## R51 · 卡顿根因收窄 + 抽屉从覆盖改联动（1.0.0+65 / run 65）
+
+- **用户问句**：「为什么这么小的软件用起来这么卡？界面切换也卡得要死」「抽屉应该是左滑展开收起、和右边工作页有联动，不是覆盖」。本轮先不进 V2。
+- **结论**：不是包小就该快。① `App()` 顶层订阅 `Producer.state/resume`，只为给 `LibraryScreen` 传 5 个函数体零引用的参数 → 制作时每次块更新重组 `when(screen)` 全部 9 页；② 9 页全 `Column+verticalScroll` 一次性全量组合；③ 音频页 300ms / 任务页 1000ms / 进度页 1000ms 三个无条件 tick，闲着也重组；④ `remember(refresh){...list()}` 组合期同步读盘；⑤ debug 包关闭 Compose 编译器优化。
+- **落地**：删 5 参 + 2 顶层订阅；`KeepScreenOn()` / `TaskBar()` 叶子订阅，续跑回调读 `Producer.resume.value`；三个 tick 分别改 `LaunchedEffect(pq.isPlaying)` + 500ms / 2 秒 `loadTick` / `LaunchedEffect(st.running)`；`snapshotFlow { scroll.value }` 不再每帧 `anchors.toMap()`。
+- **抽屉**：官方 `DismissibleNavigationDrawer` 展开推走工作页，替代 modal 覆盖式；`@OptIn(ExperimentalMaterial3Api::class)`；☰ / 左滑 / 返回键 / 7 目的地 / 240dp / 安全区守恒。
+- **未做（如实）**：`Column→LazyColumn`（破坏 R50 `onGloballyPositioned` 锚点语义）、组合期 IO 迁 `produceState`、release-like 构建 —— 单列性能二期，不宣称卡顿归零。
+- **验证**：12 套 `CI=true` 全绿；`r51_verify.py` 正向 14 + 反向 6/6；脚本自身两处假绿（注释里的 `TaskBar(onNavigate` 骗过 `in` 断言 → 改行首正则、注释锚点名写错）已修；`check_structure.py` 改判联动抽屉 + 覆盖式零残留。
+- **发布复盘**：仓库改名 `tingben-android→tingben` / `tingben-apk→ting-ben-apk`；run 61（CI 仓库引用）、run 62（直链发布 307）失败，**run 62 真编译与 APK 闸门都过**；run 63 修 `publish_apk` POST 307、run 64 恢复文件、run 65 补挂 `r51_verify` 后 `completed success`（29 步 27 ok / 2 skipped）。
+- **拆包**：新增 `scripts/r51_apk_verify.py` + `--selftest` —— CRC 全过 / 7 个 arm64 .so / 权重 0 / 无 INTERNET / binary Manifest `1.0.0+65` / 23 新符号 / 15 条旧形态零残留 / `TTS_PARAMS_APPLIED` 在。debug dex 仍保留 M3 内部引用的 `ModalNavigationDrawer` 类名，调用清零由源码层断言负责。
+- **直链**：18,001,017 字节，blob `52bf35a251532ddc8253471371d38adde1a9ea82`（官方 `download_url` 为新仓库名），与本地逐字节一致；文档同步带 `[skip ci]`。
+- ⚠️ **真机帧率仍零证据**。队列：真机验 R51 → V2 目录页+按章绿勾 → V2b 看书页 → V3 迷你条 → 导入通道 → U2；性能二期单独立项。
