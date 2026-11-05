@@ -43,6 +43,9 @@ jobs:
       - name: R45 调音台 v4 验证（折叠分层 / 参数对齐 / 固定音色只读 / 守恒）
         run: python3 scripts/r45_verify.py
 
+      - name: R46 V1 抽屉壳验证（正向形态 / 旧壳零残留 / 反向注入 / 守恒）
+        run: python3 scripts/r46_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

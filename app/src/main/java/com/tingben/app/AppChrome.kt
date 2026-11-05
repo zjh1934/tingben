@@ -1,28 +1,34 @@
 package com.tingben.app
 
 /**
- * U1 · 应用级「壳」：顶层目的地、顶栏、底栏、下拉刷新条集中在这一层。
+ * U1 · 应用级「壳」：顶层目的地、顶栏、下拉刷新条、V1 抽屉集中在这一层。
  *
  * 不手搓依据：Now in Android 的 NiaAppState / TopLevelDestination 思路 ——
  * 顶层目的地集中定义，页面只负责内容，导航归属不散落在各个 when 分支里。
  * 逐条见 docs/R32_全局UI重构_审计与联动表.md。
  *
- * R33 · U1 返工：
- * - 顶栏 ☰ 改成一级导航菜单（设置 / 调音台 / 模型 / 角色音色），调音台不再藏在二层；
- * - 下拉刷新条去掉全部提示文字与 Toast，只留一条随手势变色的细横杠；
- * - 状态栏安全区由 App() 外层 Column 的 statusBarsPadding() 统一负责，本层不重复加。
+ * R33 · U1 返工：顶栏 ☰ 改一级菜单、下拉刷新零文案、状态栏安全区由外层 Column 统一负责。
+ *
+ * R46 · V1 抽屉壳：
+ * - ☰ 从 DropdownMenu 浮层改成打开 ModalNavigationDrawer（一整页左侧抽屉）；
+ * - 底栏 3 Tab 收进抽屉一列，抽屉形状抄本地 reference/OfflineLLM/ChatScreen.kt:151-160；
+ * - 左滑/右滑用官方 gesturesEnabled，不自写横向手势；返回键优先关抽屉由 App() 处理；
+ * - 底栏删除后，底部安全区改由外层 Column 的 navigationBarsPadding() 负责。
+ * 详见 docs/R46_V1抽屉壳_联动表.md。
  *
  * 本文件零业务逻辑：不认识 Screen 枚举、不碰 refresh 计数器、不碰任何数据层。
  */
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,15 +39,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 顶层目的地下标。TAB_NONE = 当前页不属于任何顶层组（设置域），底栏不高亮。 */
+/** 顶层目的地下标。TAB_NONE = 当前页不属于任何顶层组（设置域），不高亮。 */
 internal const val TAB_LIBRARY = 0
 internal const val TAB_TASKS = 1
 internal const val TAB_AUDIO = 2
 internal const val TAB_NONE = -1
 
+/** V1 · 抽屉 7 个目的地下标。前 3 个与 TAB_* 同值，方便直接复用 chrome.activeTab。 */
+internal const val NAV_LIBRARY = 0
+internal const val NAV_TASKS = 1
+internal const val NAV_AUDIO = 2
+internal const val NAV_SETTINGS = 3
+internal const val NAV_MIXER = 4
+internal const val NAV_MODELS = 5
+internal const val NAV_CAST = 6
+
 /**
  * 一屏的「壳」描述。由 App() 里的 chromeOf(Screen) 生成，本层只消费。
- * activeTab / showImport 取代原先散在顶栏和底栏里的 4 处 screen == ... 判断。
+ * activeTab 在 V1 里同时用作抽屉顶层选中态，语义不变。
  */
 internal data class ChromeSpec(
     val title: String,
@@ -49,44 +64,38 @@ internal data class ChromeSpec(
     val showImport: Boolean = false,
 )
 
-private val TOP_TABS = listOf(
-    TAB_LIBRARY to "书架",
-    TAB_TASKS to "任务",
-    TAB_AUDIO to "音频",
+private val DRAWER_TOP = listOf(
+    NAV_LIBRARY to "书架",
+    NAV_TASKS to "任务",
+    NAV_AUDIO to "我的音频",
 )
 
-private val MENU_ITEMS = listOf("设置", "调音台", "模型", "角色音色")
+private val DRAWER_MORE = listOf(
+    NAV_SETTINGS to "设置",
+    NAV_MIXER to "调音台",
+    NAV_MODELS to "模型",
+    NAV_CAST to "角色音色",
+)
 
 /**
- * 统一顶栏：左侧 ☰ 一级菜单、中间当前页标题、右侧仅书架显示导入 ＋。
+ * 统一顶栏：左侧 ☰ 打开抽屉、中间当前页标题、右侧仅书架显示导入 ＋。
  * 不显示产品名 / 产品定位 / 刷新按钮 / 任何操作提示文字。
  */
 @Composable
 internal fun AppTopBar(
     spec: ChromeSpec,
-    onMenu: (Int) -> Unit,
+    onMenu: () -> Unit,
     onImport: () -> Unit,
     surface: Color,
     primary: Color,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().background(surface).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box {
-            IconButton(onClick = { menuOpen = true }) {
-                // 不引入 material-icons-extended 依赖：文字字形即可，离线构建零新增依赖
-                Text("☰", fontSize = 19.sp, color = primary)
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                MENU_ITEMS.forEachIndexed { i, label ->
-                    DropdownMenuItem(
-                        text = { Text(label, fontSize = 13.sp) },
-                        onClick = { menuOpen = false; onMenu(i) }
-                    )
-                }
-            }
+        IconButton(onClick = onMenu) {
+            // 不引入 material-icons-extended 依赖：文字字形即可，离线构建零新增依赖
+            Text("☰", fontSize = 19.sp, color = primary)
         }
         Text(
             spec.title,
@@ -107,54 +116,59 @@ internal fun AppTopBar(
     }
 }
 
-/** 3 个顶层 Tab。设置入口在顶栏菜单，底栏不再承担「设置」。 */
+/**
+ * V1 · 左侧抽屉一列：原底栏 3 个顶层 Tab + 4 个设置域页面，调音台是独立一项。
+ * 形状抄 reference/OfflineLLM/ChatScreen.kt 的 ModalNavigationDrawer + DrawerState；
+ * 条目用官方 NavigationDrawerItem，不画产品名、不写操作教程。
+ */
 @Composable
-internal fun AppBottomBar(
-    active: Int,
-    onTab: (Int) -> Unit,
+internal fun AppDrawerSheet(
+    selected: Int,
+    onNavigate: (Int) -> Unit,
     surface: Color,
     primary: Color,
-    primarySoft: Color,
     sub: Color,
 ) {
-    Row(
-        Modifier.fillMaxWidth().navigationBarsPadding().background(surface).padding(vertical = 6.dp)
-    ) {
-        TOP_TABS.forEach { (idx, label) ->
-            AppTab(label, active == idx, Modifier.weight(1f),
-                primary, primarySoft, sub) { onTab(idx) }
+    ModalDrawerSheet(drawerContainerColor = surface) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(vertical = 18.dp)
+        ) {
+            DRAWER_TOP.forEach { (idx, label) ->
+                DrawerRow(label, selected == idx, primary, sub) { onNavigate(idx) }
+            }
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                color = Color(0xFFE7EAF2)
+            )
+            DRAWER_MORE.forEach { (idx, label) ->
+                DrawerRow(label, selected == idx, primary, sub) { onNavigate(idx) }
+            }
         }
     }
 }
 
 @Composable
-private fun AppTab(
+private fun DrawerRow(
     label: String,
     on: Boolean,
-    mod: Modifier,
     primary: Color,
-    primarySoft: Color,
     sub: Color,
     click: () -> Unit,
 ) {
-    Column(
-        mod.clickable { click() }.padding(vertical = 3.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            Modifier
-                .background(if (on) primarySoft else Color.Transparent, RoundedCornerShape(50))
-                .padding(horizontal = 13.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center
-        ) {
+    NavigationDrawerItem(
+        label = {
             Text(
                 label,
-                fontSize = 13.sp,
-                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                fontSize = 14.sp,
+                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (on) primary else sub
             )
-        }
-    }
+        },
+        selected = on,
+        onClick = click,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+    )
 }
 
 /**

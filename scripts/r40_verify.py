@@ -27,7 +27,7 @@ CONSERVE = [
     "app/src/main/java/com/tingben/app/core/VoiceProfile.kt",
     "app/src/main/java/com/tingben/app/core/Mixer.kt",
     "app/src/main/java/com/tingben/app/ProduceService.kt",
-    "app/src/main/java/com/tingben/app/AppChrome.kt",
+    # R46 · V1 抽屉壳允许改 AppChrome.kt，改由 r46_verify.py 做形态断言
     "app/src/main/cpp/tingben_native.cpp",
     "app/src/main/AndroidManifest.xml",
     "app/build.gradle.kts",

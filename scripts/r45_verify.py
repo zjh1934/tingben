@@ -132,7 +132,7 @@ KEEP = [
     "app/src/main/java/com/tingben/app/core/PlayQueue.kt",
     "app/src/main/java/com/tingben/app/engine/NativeEngine.kt",
     "app/src/main/java/com/tingben/app/ProduceService.kt",
-    "app/src/main/java/com/tingben/app/AppChrome.kt",
+    # R46 · V1 抽屉壳允许改 AppChrome.kt，改由 r46_verify.py 做形态断言
     "app/src/main/cpp/tingben_native.cpp",
     "app/src/main/AndroidManifest.xml", "app/build.gradle.kts",
 ]
@@ -149,7 +149,9 @@ if not os.environ.get("CI"):
     oldp = head("app/src/main/java/com/tingben/app/core/Prefs.kt")
     if oldp:
         o = oldp.decode("utf-8")
-        a = o[o.find("    /** 默认只展开"):o.find("    fun setMixerOpenSections")]
+        # R46 订正：原断言在 HEAD 里找「/** 默认只展开」，但 HEAD 已是 R45 之后的版本，
+        # 该 marker 不存在 → find 返回 -1，a 切成空串，基线恒 FAIL（CI 跳过守恒段才没暴露）。
+        a = o[o.find("    /** R45"):o.find("    fun setMixerOpenSections")]
         b = PREFS[PREFS.find("    /** R45"):PREFS.find("    fun setMixerOpenSections")]
         chk(o.replace(a, "") == PREFS.replace(b, ""), "Prefs 除默认值外被改动")
 else:

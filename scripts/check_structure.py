@@ -204,7 +204,7 @@ for sid in ["upstream", "stable", "drama", "deterministic"]:
     if sid not in mixer_src: errs.append("Mixer.kt 缺少采样预设: " + sid)
 if "Screen.MIXER -> MixerScreen" not in main_src:
     errs.append("R31 回退：调音台页没接进导航")
-if "onMixer = { screen = Screen.MIXER }" not in main_src:
+if "onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER }" not in main_src:
     errs.append("R31 回退：设置页没有调音台入口")
 # 调音台只读汇总，不许自己存一份 TtsKnobs 副本
 if "private val knobs" in mixer_src or "var knobs" in mixer_src:
@@ -235,14 +235,17 @@ for p in kt_files:
 # ── U1 · 全局壳：只许改表现层，导航骨架/数据流必须守恒 ──────────────
 chrome_path = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
 chrome_src = chrome_path.read_text(encoding="utf-8", errors="replace") if chrome_path.exists() else ""
-for sym in ["AppTopBar", "AppBottomBar", "RefreshStrip", "ChromeSpec",
-            "TAB_LIBRARY", "TAB_TASKS", "TAB_AUDIO", "TAB_NONE"]:
+for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip", "ChromeSpec",
+            "TAB_LIBRARY", "TAB_TASKS", "TAB_AUDIO", "TAB_NONE",
+            "NAV_LIBRARY", "NAV_TASKS", "NAV_AUDIO", "NAV_SETTINGS",
+            "NAV_MIXER", "NAV_MODELS", "NAV_CAST",
+            "ModalDrawerSheet(", "NavigationDrawerItem("]:
     if sym not in chrome_src: errs.append("U1 缺壳层符号: " + sym)
 for sym in ["chromeOf(screen)",
-            "onMenu = { idx ->"]:
+            "onMenu = { scope.launch { drawerState.open() } }"]:
     if sym not in main_src: errs.append("U1 回退：MainActivity 没接壳层: " + sym)
 # 调用必须是真实代码行，注释里出现同名字符串不算（反向验证抓到过这个漏洞）
-for sym in ["AppTopBar", "AppBottomBar", "RefreshStrip"]:
+for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip"]:
     if not re.search(r"^\s*" + sym + r"\(", main_src, re.M):
         errs.append("U1 回退：MainActivity 没有真实调用 " + sym)
 # 旧 UI 不许残留（产品名/定位/文字刷新按钮/4 Tab 组件/注释式提示）
@@ -267,7 +270,9 @@ else:
     errs.append("U1 回退：找不到 Screen 枚举")
 # mask_strings 保持字符数不变，用它做括号配对定位，避免正则被内层 } 提前截断
 masked_main = mask_strings(main_src)
-head = "when (screen) {"
+# R46：App() 里新增了 drawerSelected / from 两个 when(screen)，
+# 用「Box + 分发 when」这段带上下文的锚点定位真正的 9 分支，避免切错块。
+head = "Box(Modifier.weight(1f)) {\n            when (screen) {"
 start = masked_main.find(head)
 if start >= 0:
     open_i = start + len(head) - 1  # 指向那个 '{'
@@ -293,14 +298,21 @@ if co_m:
     if len(covered) != 9: errs.append("U1 回退：chromeOf 只覆盖 %d/9 个目的地" % len(covered))
 else:
     errs.append("U1 回退：找不到 chromeOf 映射")
-# 底栏只能有 3 个顶层 Tab，且不含「设置」
-tabs_m = re.search(r"TOP_TABS\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
+# V1 · 抽屉一列：顶层 3 个（不含设置）+ 设置域 4 个（调音台必须是独立项）
+tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
+more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 if tabs_m:
     body = tabs_m.group(1)
     if body.count(" to ") != 3 or "设置" in body:
-        errs.append("U1 回退：顶层 Tab 不是 3 个或仍含设置入口")
+        errs.append("U1 回退：抽屉顶层不是 3 个或仍含设置入口")
 else:
-    errs.append("U1 回退：找不到 TOP_TABS")
+    errs.append("U1 回退：找不到 DRAWER_TOP")
+if more_m:
+    body2 = more_m.group(1)
+    if body2.count(" to ") != 4 or "调音台" not in body2:
+        errs.append("U1 回退：抽屉设置域不是 4 项或调音台不是独立项")
+else:
+    errs.append("U1 回退：找不到 DRAWER_MORE")
 # 下拉刷新机制保留、阈值不变（必须查代码行，注释里也写了 55f，会被字符串包含骗过）
 if "if (acc > 55f)" not in chrome_src or "onRefresh()" not in chrome_src:
     errs.append("U1 回退：下拉刷新机制或阈值被改动")
@@ -326,12 +338,12 @@ def ui_literals(src):
     return re.findall(r'"((?:\\.|[^"\\])*)"', src)
 
 R33_MUST = ["statusBarsPadding()", "taskExpanded", "confirmDelete",
-            "AlertDialog(", "onMenu = { idx ->",
+            "AlertDialog(", "onMenu = { scope.launch { drawerState.open() } }",
             "BookStore.delete(c, id); confirmDelete = null; onChanged()",
             ".clickable { taskExpanded = !taskExpanded }"]
 for sym in R33_MUST:
     if sym not in main_src: errs.append("R33 缺新壳层符号: " + sym)
-for sym in ["DropdownMenu(", "MENU_ITEMS", "width(if (pulled)"]:
+for sym in ["ModalDrawerSheet(", "NavigationDrawerItem(", "width(if (pulled)"]:
     if sym not in chrome_src: errs.append("R33 缺壳层符号: " + sym)
 R33_BAN = ["下拉刷新", "松开即可刷新", "已刷新", "把小说变成能听的音频",
            "书架只放原书", "每块约 500 字", "算完一块才会往上走一格",
@@ -356,18 +368,43 @@ R36_ALL = ["MixerSection(", "Prefs.mixerOpenSections", "MixerPresetStore", "Mixe
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
 for sym in ["private fun MixerSection(", "Screen.MIXER -> MixerScreen",
-            "onMixer = { screen = Screen.MIXER }", "t.config else Prefs.defaultPerf(c)"]:
+            "onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER }",
+            "t.config else Prefs.defaultPerf(c)"]:
     if sym not in main_src: errs.append("缺少 R36 界面符号: " + sym)
 # 反向：设置页不许再画第二遍 9 项采样，不许出现第二份真值源
 for banned in ["声音采样（进阶）", "putKnobs(", "descDraft"]:
     if banned in main_src: errs.append("R36 回退：设置页又出现第二套采样 " + banned)
 if "var knobs" in mixer_src:
     errs.append("R36 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
-if main_src.count("Screen.MIXER ->") != 1:
+# R46：drawerSelected 的 when 里也有一行 Screen.MIXER ->，只数真实分发调用
+if main_src.count("Screen.MIXER -> MixerScreen") != 1:
     errs.append("R36 回退：调音台导航分支异常")
 bld = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8", errors="replace")
 for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
     if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
+
+# ── R46 · V1 抽屉壳：一整页抽屉 / 返回键优先 / 底部安全区 / 旧壳零残留 ──
+for sym in ["ModalNavigationDrawer(", "drawerState = drawerState",
+            "gesturesEnabled = true", "drawerContent = {",
+            "AppDrawerSheet(", "rememberDrawerState(DrawerValue.Closed)",
+            "BackHandler(enabled = drawerState.isOpen)",
+            "scope.launch { drawerState.close() }",
+            ".navigationBarsPadding()", "drawerReturn"]:
+    if sym not in main_src: errs.append("R46 缺 V1 抽屉符号: " + sym)
+# 后注册的 callback 优先：抽屉 BackHandler 必须紧跟在原 BackHandler 之后
+i_old = main_src.find("BackHandler(enabled = screen != Screen.LIBRARY)")
+i_new = main_src.find("BackHandler(enabled = drawerState.isOpen)")
+if i_old < 0 or i_new < 0 or i_new <= i_old:
+    errs.append("R46 回退：抽屉 BackHandler 没排在原 BackHandler 之后")
+# 旧壳零残留（底栏 / 下拉菜单 / 旧 Tab 表 / 旧菜单回调）
+for sym in ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS",
+            "onMenu = { idx ->", "AppTab("]:
+    if sym in main_src or sym in chrome_src:
+        errs.append("R46 回退：旧壳残留 " + sym)
+# 二级页返回回「进入前的那一页」，不再写死 SETTINGS
+for sym in ["Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })",
+            "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })"]:
+    if sym not in main_src: errs.append("R46 回退：二级页返回没回来源 " + sym)
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
 R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "提交变更",

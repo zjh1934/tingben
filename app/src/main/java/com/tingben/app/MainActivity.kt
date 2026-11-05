@@ -141,8 +141,17 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val st by Producer.state.collectAsState()
     val resumeTask by Producer.resume.collectAsState()
 
+    // V1 · 抽屉状态：☰ 与从左边缘右滑都开它；drawerReturn 记「从哪一页进的二级页」。
+    // 形状抄 reference/OfflineLLM/ChatScreen.kt:99,151-160（Apache-2.0），不自写横向手势。
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }
+
     // 系统返回键/手势统一回书架，而不是直接退出 App。
     BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }
+    // V1 · 后注册的 callback 优先：抽屉开着时先收抽屉，不误退回书架。
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
 
     // R19 · 长任务在跑时保持屏幕常亮：只加前台窗口 flag，零权限、零 WakeLock。
     // ⚠️ 这不等于保活：锁屏/切后台后 CPU 仍会睡、进程仍可能被回收。
@@ -294,22 +303,58 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
     }
 
-    // U1 · 顶层目的地归属集中到 chromeOf()，顶栏/底栏只消费规格，不再各自写 screen == ...
+    // U1 · 顶层目的地归属集中到 chromeOf()，顶栏/抽屉只消费规格，不再各自写 screen == ...
     val chrome = chromeOf(screen)
-    Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding()) {
+    // V1 · 抽屉选中态：顶层沿用 chrome.activeTab 的下标，二级页一一对应。
+    val drawerSelected = when (screen) {
+        Screen.LIBRARY, Screen.PRODUCE -> NAV_LIBRARY
+        Screen.PROGRESS, Screen.TASKS -> NAV_TASKS
+        Screen.AUDIO -> NAV_AUDIO
+        Screen.SETTINGS -> NAV_SETTINGS
+        Screen.MIXER -> NAV_MIXER
+        Screen.MODELS -> NAV_MODELS
+        Screen.CAST -> NAV_CAST
+    }
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = true,
+        drawerContent = {
+            AppDrawerSheet(
+                selected = drawerSelected,
+                onNavigate = { idx ->
+                    // 从顶层页进二级页时记住来源；已在二级页则沿用上一次来源
+                    val from = when (screen) {
+                        Screen.LIBRARY, Screen.TASKS, Screen.AUDIO,
+                        Screen.PRODUCE, Screen.PROGRESS -> screen
+                        else -> drawerReturn
+                    }
+                    drawerReturn = from
+                    screen = when (idx) {
+                        NAV_LIBRARY -> Screen.LIBRARY
+                        NAV_TASKS -> Screen.TASKS
+                        NAV_AUDIO -> Screen.AUDIO
+                        NAV_SETTINGS -> Screen.SETTINGS
+                        NAV_MIXER -> Screen.MIXER
+                        NAV_MODELS -> Screen.MODELS
+                        NAV_CAST -> Screen.CAST
+                        else -> Screen.LIBRARY
+                    }
+                    // 原菜单 / 底栏的刷新副作用迁到这里，语义不变
+                    if (idx == NAV_AUDIO || idx == NAV_SETTINGS) refresh++
+                    if (idx == NAV_MODELS) modelsFrom = from
+                    scope.launch { drawerState.close() }
+                },
+                surface = Card,
+                primary = Primary,
+                sub = Sub
+            )
+        }
+    ) {
+        // 底栏移除后，底部系统手势区由这一层统一让开（原 AppBottomBar 的 navigationBarsPadding）
+        Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
         AppTopBar(
             spec = chrome,
-            onMenu = { idx ->
-                screen = when (idx) {
-                    0 -> Screen.SETTINGS
-                    1 -> Screen.MIXER
-                    2 -> Screen.MODELS
-                    3 -> Screen.CAST
-                    else -> Screen.SETTINGS
-                }
-                if (idx == 0) refresh++
-                if (idx == 2) modelsFrom = Screen.SETTINGS
-            },
+            onMenu = { scope.launch { drawerState.open() } },
             onImport = { openBookPicker() },
             surface = Card,
             primary = Primary
@@ -330,7 +375,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onProgress = { screen = Screen.PROGRESS },
                     onDone = { screen = Screen.AUDIO; refresh++ },
                     onStarted = { lastSelection = it },
-                    onGoCast = { screen = Screen.CAST })
+                    onGoCast = { drawerReturn = Screen.PRODUCE; screen = Screen.CAST })
                 Screen.PROGRESS -> ProgressScreen(ctx,
                     onBack = { screen = Screen.LIBRARY },
                     onResume = {
@@ -363,10 +408,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
                     onLibrary = { screen = Screen.LIBRARY },
-                    onCast = { screen = Screen.CAST },
-                    onMixer = { screen = Screen.MIXER })
-                Screen.CAST -> CastScreen(ctx, onBack = { screen = Screen.SETTINGS })
-                Screen.MIXER -> MixerScreen(ctx, onBack = { screen = Screen.SETTINGS })
+                    onCast = { drawerReturn = Screen.SETTINGS; screen = Screen.CAST },
+                    onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER })
+                Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })
+                Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },
@@ -445,22 +490,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 }
             }
         }
-        // U1 · 3 个顶层 Tab；设置入口移到顶栏左侧，设置域页面不高亮任何 Tab
-        AppBottomBar(
-            active = chrome.activeTab,
-            onTab = { idx ->
-                screen = when (idx) {
-                    TAB_TASKS -> Screen.TASKS
-                    TAB_AUDIO -> Screen.AUDIO
-                    else -> Screen.LIBRARY
-                }
-                if (idx == TAB_AUDIO) refresh++
-            },
-            surface = Card,
-            primary = Primary,
-            primarySoft = PrimarySoft,
-            sub = Sub
-        )
+        // V1 · 3 个顶层 Tab 已收进左侧抽屉；底部安全区由外层 Column 的 navigationBarsPadding() 负责。
+        // 任务条保持原位置与「上扒展开 / 下扒收起」手势，本轮不动。
+    }
     }
 }
 

@@ -13,6 +13,16 @@ def strip_r45(s):
     return s
 
 def canon(t):
-    """去纯空行 / 去尾部空白 / 去 import 行，供调音台前业务代码守恒比较。"""
-    return [x.rstrip() for x in strip_r45(t).splitlines()
+    """去纯空行 / 去尾部空白 / 去 import 行，供调音台前业务代码守恒比较。
+
+    R46 · V1 抽屉壳允许改 App() 内的导航与壳挂载（☰ / 抽屉 / 底栏 / 二级页返回），
+    所以把 App() 函数体整段剔除；App() 之外的业务代码仍与 HEAD 逐行守恒。
+    AppChrome.kt 整文件允许改，由 r46_verify.py 做形态断言与旧壳零残留检查。
+    """
+    t = strip_r45(t)
+    a = t.find("private fun App(")
+    b = t.find("private fun queryName(", a + 1)
+    if a >= 0 and b > a:
+        t = t[:a] + t[b:]
+    return [x.rstrip() for x in t.splitlines()
             if x.strip() and not x.startswith("import ")]
