@@ -540,8 +540,18 @@ release-like 构建。<b>不宣称卡顿归零，真机帧率仍零证据。</b>
 <b>队列：</b>真机验 → P1 V2 目录页 + 按章绿勾；P0 代码侧已完成。
 </div>
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加，⑳ 由 R50 追加，㉑ 由 R51 追加，㉒ 由 R60 追加</footer>
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加，⑳ 由 R50 追加，㉑ 由 R51 追加，㉒ 由 R60 追加，㉓ 由 R61 追加，㉔ 由 R65 追加</footer>
 </div>
 <div style="margin:18px;padding:12px;border-left:4px solid #4338CA;background:#EEF0FE"><b>㉓ R61 · 目录页四列与悬浮条（1.0.0+68 / run 68）</b><br>点书进 Screen.CHAPTERS：原始 / 标注 / 合成 / 可播四列横滑；勾选后底部三条批量；看书页与标注结果页为本页覆盖层；全局悬浮条订阅 PlayQueue.state。index.json 加 chapterIndices 并兼容旧数据，旧「整本」成品不点亮单章。引擎仍只有两条路径，去标注与标注并合成落同一档，界面如实写明。真机零证据。</div>
+<div style="margin:18px;padding:12px;border-left:4px solid #4338CA;background:#EEF0FE"><b>㉔ R65 · 进度页 v12 落地（1.0.0+69 / run 69）</b><br>
+用户三轮纠偏（现状实读 → v11 空间重分配 → v12 看台原貌）后批准。贴底任务卡整条删；顶部一个纯图标 ⏸/▶ 在进度条左边；
+五步横排 3dp 色块（正在做只加粗）；语言模型折一行；分段看台常驻 8 格，点格展开 <code>RawDump.forBlock(c, block+1)</code> 的<b>模型原始产出</b>
+（未清洗全文 / attempt 可切 / 等宽原样），<code>s.text</code> 降级为收起的「对照」；音频 ▶/⏸ 两态走 PlayQueue 单实例。<br>
+<b>唯一新增：</b><code>RawDump.forBlock</code> 约 20 行纯读文件；segmap block 0-based、落盘文件名 1-based，<b>差一已 4 组对拍</b>。
+数据结构 / 引擎 / 两条制作路径 / 调音台 / 四列目录页 / 抽屉 8 项全守恒。<br>
+<b>验证：</b>17 套 <code>CI=true</code> 全绿 · run 69 真编译 · <code>r65_apk_audit.py</code>（21 新符号 / 8 旧形态零残留 / 直链 blob <code>04cd9edd2027…</code> 逐字节一致 / <code>--selftest</code> 拦下）。
+3 处旧验证脚本按上一版形态写死造成假红，已订正。<b>真机零证据。</b><br>
+<b>队列：</b>临时插入轮，不占位次；真机验 → 只标注管线 / 逐章进度 / 阅读位置 → 设置页 v7 → P4 → P5 → P6。
+</div>
 </body>
 </html>
