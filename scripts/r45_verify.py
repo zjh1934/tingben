@@ -51,9 +51,9 @@ POS = {
     "12 维每维自定义框": ['allowCustom: Boolean = false', 'customValue: String = ""',
                     'Modifier.width(140.dp).height(40.dp)', 'placeholder = { Text("自己填"',
                     'allowCustom = true', 'curDim in d.options'],
-    "设置页固定音色入口": ['R45_FIXED_VOICE_ENTRY_BEGIN', 'R45_FIXED_VOICE_ENTRY_END',
-                    '官方三模式说明 · 当前权重能固定哪三样',
-                    'Prefs.mixerOpenSections(c) + "fixedVoice"'],
+    # R54 · 设置页不再画跳转卡；入口只保留在抽屉，正向断言改成零入口。
+    "设置页零跳转入口": ['R54 · onLibrary / onCast / onMixer 保留签名但零调用',
+                    'SettingsSection("声音", "长期默认"', 'SettingsSection("诊断", "给排查用"'],
     "首屏人话与直达": ['固定音色 = 这段描述 + 种子 + 9 项采样全书不变。', '固定音色是什么？ ›'],
     "提交不依赖试听": ['提交不依赖试听：改完直接点「提交变更」即可生效。'],
     "底部留白": ['Spacer(Modifier.height(40.dp))'],
@@ -89,7 +89,8 @@ def baseline(main, prefs):
     ck("ParamCatalog.LOCKED.forEach" in mp, "不可调清单被删")
     ck('"⟳ 换一个"' in main and "MIXER_SEED" in main, "seed 换一个被删")
     ck("allowCustom = true" in main, "12 维自定义框被删")
-    ck("R45_FIXED_VOICE_ENTRY_BEGIN" in main, "设置页入口被删")
+    ck("R45_FIXED_VOICE_ENTRY_BEGIN" not in main, "设置页又出现 R45 跳转入口")
+    ck("Card(Modifier.clickable { onMixer() })" not in main, "设置页又出现调音台跳转卡")
     ck("提交不依赖试听" in "".join(literals(main)), "提交与试听又绑回去")
     ck("MixerCommit.commit(c, draft, n)" in main, "唯一提交出口被删")
     ck("Spacer(Modifier.height(40.dp))" in main, "底部留白被删")
@@ -108,7 +109,8 @@ INJECT = {
                                           'Switch(checked = false, onCheckedChange = {})\n                ParamCatalog.LOCKED.forEach { r ->'), p),
     "删 seed 换一个": lambda m, p: (m.replace('"⟳ 换一个"', '"默认"'), p),
     "删自定义框": lambda m, p: (m.replace("allowCustom = true", "allowCustom = false"), p),
-    "删设置页入口": lambda m, p: (m.replace("R45_FIXED_VOICE_ENTRY_BEGIN", "R45_ENTRY_GONE"), p),
+    "恢复设置页跳转卡": lambda m, p: (m.replace('SettingsSection("声音"',
+                        'Card(Modifier.clickable { onMixer() })\n        SettingsSection("声音"'), p),
     "提交绑回试听": lambda m, p: (m.replace("提交不依赖试听：改完直接点「提交变更」即可生效。",
                                         "先试听再提交变更才能生效。"), p),
     "注入第二写入口": lambda m, p: (m.replace("fun commitAll() {",

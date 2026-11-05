@@ -119,9 +119,10 @@ R25_ALL = ["TextSplitter", "SPLIT_STATS", "ANN_PHASE_HINT", "ANN_BLOCK_END",
            "directWithStats", "零标注 ⚠️ 白跑", "用户中断（本次不计产出）"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
-R25_MAIN = ["private fun GroupLabel(", "① 语言模型 · 长期默认", "② 音频模型 · 长期默认",
-            "仅本次", "作用域", "ACTION_MAIN 也被当成", "ProduceMode.DIRECT",
-            "标注后合成（实验性）"]
+# R54 · 设置页重设计后不再有圈码分组标题，改验四分区组件与作用域文案。
+R25_MAIN = ["private fun GroupLabel(", "private fun SettingsSection(",
+            "SettingsSection(\"声音\", \"长期默认\"", "仅本次", "作用域",
+            "ACTION_MAIN 也被当成", "ProduceMode.DIRECT", "标注后合成（实验性）"]
 for sym in R25_MAIN:
     if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
 # 反向断言：按字符腰斩的旧实现、把标注档当默认的旧写法不许回来
@@ -190,7 +191,7 @@ if "s.src == \"MODEL\"" not in main_src:
 mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
 # R41a · A/B 对比换成「草稿 / 已生效」两态一步试听；日志事件同步改名。
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
-           "MIXER_PROFILE", "MIXER_TRIAL", "Mixer.CHAIN", "调音台", "🎛 调音台",
+           "MIXER_PROFILE", "MIXER_TRIAL", "Mixer.CHAIN", "调音台", "private fun SettingsSection(",
            "Anatomy-First", "12 维", "试听未提交参数", "试听已生效参数",
            "MixerScreen", "Screen.MIXER", "导出与诊断", "恢复上游默认"]
 for sym in R31_ALL:
@@ -211,6 +212,12 @@ if "private val knobs" in mixer_src or "var knobs" in mixer_src:
     errs.append("R31 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
 if "MIXER_TRIAL" not in main_src:
     errs.append("R41a 回退：两态试听没把完整参数写进日志")
+# R54 · 设置页重设计：界面里不许再出现跳转卡 / 圈码 / 跨页大按钮 / 教程腔。
+_s54 = main_src.split("private fun SettingsScreen(")[-1].split("// ── ⑤b 模型页")[0]
+for _banned in ["🎛 调音台", "固定音色", "音色 12 维 · 采样 9 项", "去书架制作",
+                "①", "②", "提交变更", "共用一份文件表", "R45_FIXED_VOICE_ENTRY"]:
+    if _banned in _s54:
+        errs.append("R54 回退：设置页残留 " + _banned)
 for s in ["A/B 试听", "合成 A", "▶ 听 A", "MIXER_AB", "bPresetId", "对比用文本",
           "B 用哪组预设", "fileA", "abMsg"]:
     if s in main_src: errs.append("R41a 回退：旧 A/B 试听残留 " + s)

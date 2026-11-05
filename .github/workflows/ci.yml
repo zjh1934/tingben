@@ -58,6 +58,9 @@ jobs:
       - name: R51 卡顿根因与抽屉联动验证（正向 / 反向注入 / 守恒）
         run: python3 scripts/r51_verify.py
 
+      - name: R54 设置页重设计验证（四分区 / 零跳转入口 / 能力守恒 / 反向注入）
+        run: python3 scripts/r54_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

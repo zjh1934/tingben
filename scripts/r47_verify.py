@@ -86,9 +86,9 @@ def baseline(chrome, main, spec):
     pr = paramrow(main)
     ck("Slider(" in pr and "onInput(s)" in pr, "滑块双模被破坏")
     ck(not re.findall(r"Prefs\.set\w+\(", pr), "ParamRow 内出现直接写生效态")
-    # 设置页语言模型组必须仍在音频组之前？本轮不改设置页，只验证没被顺手移动
-    ck(main.find('GroupLabel("① 语言模型 · 长期默认"') <
-       main.find('GroupLabel("② 音频模型 · 长期默认"'), "设置页分组被顺手挪动")
+    # R54 · 设置页改四分区；声音区仍须排在语言模型区之前（作用域主次不倒）。
+    ck(main.find('SettingsSection("声音"') <
+       main.find('SettingsSection("语言模型"'), "设置页分区顺序被顺手挪动")
     return e
 
 
