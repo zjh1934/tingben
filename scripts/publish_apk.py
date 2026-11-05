@@ -12,12 +12,22 @@ H = {"Authorization": f"token {T}", "Accept": "application/vnd.github+json",
      "User-Agent": "tingben-publish"}
 
 def api(m, path, d=None, timeout=240):
-    r = urllib.request.Request(PUB + path, data=json.dumps(d).encode() if d is not None else None,
-                               method=m, headers=H)
+    body = json.dumps(d).encode() if d is not None else None
+    r = urllib.request.Request(PUB + path, data=body, method=m, headers=H)
     try:
         with urllib.request.urlopen(r, timeout=timeout) as x:
             return x.status, json.loads(x.read() or b"{}")
     except urllib.error.HTTPError as e:
+        # 仓库改名后 GitHub 对部分 POST 端点返回 307（Location 指向 /repositories/{id}/...），
+        # urllib 不自动跟随 307 的 POST，这里显式重发一次，方法与 body 不变。
+        loc = e.headers.get("Location")
+        if e.code in (301, 302, 307, 308) and loc:
+            r2 = urllib.request.Request(loc, data=body, method=m, headers=H)
+            try:
+                with urllib.request.urlopen(r2, timeout=timeout) as x:
+                    return x.status, json.loads(x.read() or b"{}")
+            except urllib.error.HTTPError as e2:
+                return e2.code, json.loads(e2.read() or b"{}")
         return e.code, json.loads(e.read() or b"{}")
 
 apk = None
