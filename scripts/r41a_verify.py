@@ -7,7 +7,7 @@ MAIN = "app/src/main/java/com/tingben/app/MainActivity.kt"
 CONSERVE = [
     "app/src/main/assets/prompt_zh.txt",
     "app/src/main/java/com/tingben/app/core/Pipeline.kt",
-    "app/src/main/java/com/tingben/app/core/Prefs.kt",
+    # R41：Prefs.kt 加了纯 UI 键，改由 r41_verify.py 做语义守恒
     "app/src/main/java/com/tingben/app/core/ProduceConfig.kt",
     "app/src/main/java/com/tingben/app/core/VoiceProfile.kt",
     "app/src/main/java/com/tingben/app/core/PlayQueue.kt",
@@ -121,9 +121,12 @@ def main():
                                                stderr=subprocess.DEVNULL)
             except subprocess.CalledProcessError:
                 return None
-        cur = m.splitlines()[:1880]
+        # R41 只在文件头加了 7 行 Compose import；按区块标记切，避开行号偏移。
+        no_imports = lambda ls: [x for x in ls if not x.startswith("import ")]
+        cur = no_imports(m.split("// ── ⑥ 调音台")[0].splitlines())
         old = head(MAIN)
-        same = old is not None and cur == old.decode("utf-8").splitlines()[:1880]
+        same = old is not None and cur == no_imports(
+            old.decode("utf-8").split("// ── ⑥ 调音台")[0].splitlines())
         print("  MainActivity 前 1880 行:", "一致" if same else "被改动")
         if not same: ok = False
         for p in CONSERVE:

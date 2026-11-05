@@ -53,12 +53,15 @@ data class MixerPreset(
             .put("perf", perf.toJson()).put("builtin", builtin)
     }
 
-    /** 一行摘要给列表用，不拼长说明文字。 */
+    /** R41 · 一行摘要补全关键字段，列表里就能看出预设改了什么，不拼长说明文字。 */
     fun chips(): String = buildList {
-        add("temp ${knobs.temperature}")
-        add("sub ${knobs.subTemperature}")
+        add("主 ${knobs.temperature}/${knobs.topK}/${knobs.topP}")
+        add("副 ${knobs.subTemperature}/${knobs.subTopK}")
+        add("rep ${knobs.repetitionPenalty}")
+        add("max ${knobs.maxNewTokens}")
         add("seed ${knobs.seed}")
         add(perf.style.label)
+        if (voice.isNotBlank()) add("身份 ${voice.length}字")
         if (fields.isNotEmpty()) add("${fields.size} 维")
     }.joinToString(" · ")
 
@@ -140,19 +143,40 @@ object MixerPresetStore {
     fun exists(c: Context, name: String): Boolean =
         readUser(c).any { it.name == safeName(name) }
 
-    /** 同名覆盖（抄 IndexTTS「存为预设（同名覆盖）」）；原子落盘，写一半被杀不留坏 JSON。 */
+    /** R41 · 空名 / untitled 一律拒存，界面与 Store 双层拦，别再留脏预设。 */
+    private fun usableName(raw: String): String? {
+        if (raw.trim().isEmpty()) return null
+        val n = safeName(raw)
+        return if (n == "untitled") null else n
+    }
+
+    /** 一份原子落盘逻辑，save / delete / rename 共用（.part 写一半被杀不留坏 JSON）。 */
+    private fun writeAll(c: Context, list: List<MixerPreset>): Boolean = try {
+        val arr = JSONArray(); list.forEach { arr.put(it.toJson()) }
+        val root = JSONObject().put("schema", PRESET_SCHEMA).put("presets", arr)
+        val tmp = part(c); tmp.writeText(root.toString(1))
+        if (!tmp.renameTo(file(c))) { file(c).writeText(root.toString(1)); tmp.delete() }
+        true
+    } catch (_: Throwable) { false }
+
+    /** 同名覆盖（抄 IndexTTS「存为预设（同名覆盖）」）。 */
     fun save(c: Context, p: MixerPreset): Boolean {
-        val name = safeName(p.name)
+        val name = usableName(p.name) ?: return false
         val item = p.copy(id = sha(name).take(10), name = name, builtin = false)
         val list = readUser(c).filter { it.name != name }.toMutableList()
         list.add(item)
-        return try {
-            val arr = JSONArray(); list.forEach { arr.put(it.toJson()) }
-            val root = JSONObject().put("schema", PRESET_SCHEMA).put("presets", arr)
-            val tmp = part(c); tmp.writeText(root.toString(1))
-            if (!tmp.renameTo(file(c))) { file(c).writeText(root.toString(1)); tmp.delete() }
-            true
-        } catch (_: Throwable) { false }
+        return writeAll(c, list)
+    }
+
+    /** R41 · 给历史遗留的 untitled 一个改名出口；同名冲突拒改。 */
+    fun rename(c: Context, id: String, raw: String): Boolean {
+        val name = usableName(raw) ?: return false
+        val list = readUser(c).toMutableList()
+        val idx = list.indexOfFirst { it.id == id }
+        if (idx < 0) return false
+        if (list.any { it.name == name && it.id != id }) return false
+        list[idx] = list[idx].copy(id = sha(name).take(10), name = name)
+        return writeAll(c, list)
     }
 
     /** 内置预设不许删，返回 false 由界面给明确提示。 */
@@ -160,12 +184,6 @@ object MixerPresetStore {
         if (id.startsWith("builtin_")) return false
         val list = readUser(c).toMutableList()
         if (list.removeIf { it.id == id }.not()) return false
-        return try {
-            val arr = JSONArray(); list.forEach { arr.put(it.toJson()) }
-            val root = JSONObject().put("schema", PRESET_SCHEMA).put("presets", arr)
-            val tmp = part(c); tmp.writeText(root.toString(1))
-            if (!tmp.renameTo(file(c))) { file(c).writeText(root.toString(1)); tmp.delete() }
-            true
-        } catch (_: Throwable) { false }
+        return writeAll(c, list)
     }
 }

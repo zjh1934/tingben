@@ -73,6 +73,9 @@ object Prefs {
     private const val KEY_TTS_SUBTOPP = "ttsSubTopP"
     private const val KEY_DEFAULT_PERF = "defaultPerf"
     private const val KEY_CAST_SEEDED = "castSeeded"
+    // R41 · 纯 UI 偏好：不进 voiceStamp、不进 diff、不碰 4B/任务书签
+    private const val KEY_MIXER_OPEN = "mixerOpenSections"
+    private const val KEY_RECENT_VOICES = "mixerRecentVoices"
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -159,6 +162,25 @@ object Prefs {
     /** 角色预设只 seed 一次，避免覆盖用户后来改过的角色表。 */
     fun castSeeded(c: Context) = sp(c).getBoolean(KEY_CAST_SEEDED, false)
     fun setCastSeeded(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_CAST_SEEDED, v).apply()
+
+    // ── R41 · 调音台 UI 偏好（纯界面，不参与声音指纹）──
+    /** 默认只展开「身份生成器」；离开页面重进仍保留上次展开的分区。 */
+    fun mixerOpenSections(c: Context): Set<String> =
+        (sp(c).getString(KEY_MIXER_OPEN, null) ?: "identity")
+            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+    fun setMixerOpenSections(c: Context, keys: Set<String>) =
+        sp(c).edit().putString(KEY_MIXER_OPEN, keys.sorted().joinToString(",")).apply()
+
+    /** 「最近使用」最多 4 条，最新在前；只存 VoicePreset.id。 */
+    fun recentVoices(c: Context): List<String> =
+        (sp(c).getString(KEY_RECENT_VOICES, "") ?: "")
+            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(4)
+
+    fun pushRecentVoice(c: Context, id: String) {
+        val next = (listOf(id) + recentVoices(c).filter { it != id }).distinct().take(4)
+        sp(c).edit().putString(KEY_RECENT_VOICES, next.joinToString(",")).apply()
+    }
 
     /**
      * 声音指纹：音色描述 / 角色表 / 采样 / instruct 模板 任一变化，旧 WAV 必须作废。

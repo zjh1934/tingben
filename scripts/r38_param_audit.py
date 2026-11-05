@@ -128,12 +128,16 @@ def check(src):
         errs.append("R40 回退：又出现第二个生效动词")
     if 'MixerSection("音色身份"' in src["ui"]:
         errs.append("音色身份又被塞进折叠组了")
-    if not re.search(r'MixerSection\("① 采样参数[^"]*", "sampling", false', src["ui"]):
-        errs.append("R40 回退：采样 9 项又默认展开了")
-    if 'MixerSection("② 音色身份生成器（12 维 / 现成网格）", "identity", true' not in src["ui"]:
-        errs.append("R40 回退：身份生成器没默认展开")
-    if "ParamCatalog.SAMPLING.forEach" not in src["ui"]:
+    if 'MixerSection("采样参数 · 9 项到引擎", "sampling",' not in src["ui"] or \
+       'openMap.contains("sampling")' not in src["ui"]:
+        errs.append("R41 回退：采样组没走受控 openMap")
+    if 'MixerSection("音色身份生成器", "identity",' not in src["ui"] or \
+       'openMap.contains("identity")' not in src["ui"]:
+        errs.append("R41 回退：身份生成器没走受控 openMap")
+    if "ParamCatalog.find(" not in src["ui"]:
         errs.append("采样参数没有走 ParamCatalog 单一定义")
+    if "ParamCatalog.SAMPLING.forEach" in src["ui"]:
+        errs.append("R41 回退：九项又退回平铺卡")
     if "ParamCatalog.DOCS" not in src["ui"]:
         errs.append("官方资料索引没进控制台")
     if 'null, "auto"' in src["ui"]:
@@ -167,9 +171,8 @@ def inject(src, case):
             r'\s*EventLog\.log\(EventLog\.Kind\.ENGINE, "TTS_PARAMS",[\s\S]*?level = EventLog\.Level\.TRACE\)\n',
             "\n", s["engine"], count=1)
     elif case == "hide_voice":
-        # R40：把「采样默认收起」改回默认展开，断言必须响
-        s["ui"] = s["ui"].replace('MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", false',
-                                  'MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", true')
+        # R41：把受控展开态改回写死 true（绕过 Prefs 持久化），断言必须响
+        s["ui"] = s["ui"].replace('openMap.contains("sampling")', 'true')
     elif case == "drop_commit":
         # R40：把唯一出口删掉，断言必须响
         s["ui"] = s["ui"].replace('MixerCommit.commit(c, draft, n)',

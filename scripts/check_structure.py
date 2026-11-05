@@ -348,10 +348,10 @@ if "statusBarsPadding()" not in main_src:
     errs.append("R33 回退：顶栏又贴回状态栏")
 
 # ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 / 角色卡 ──
-R36_ALL = ["MixerSection(", "rememberSaveable(key)", "MixerPresetStore", "MixerPreset(",
+R36_ALL = ["MixerSection(", "Prefs.mixerOpenSections", "MixerPresetStore", "MixerPreset(",
            "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
-           "MIXER_CAST", "导出与诊断", "预设库", "角色预设", "参数触达矩阵与官方资料",
-           "max_new_tokens（单次音频上限）", "下个任务起", "可增删改", "同名覆盖",
+           "MIXER_CAST", "导出与诊断", "预设库", "角色预设", "参数触达与官方资料",
+           "max_new_tokens（单次音频上限）", "TIMING_NEXT", "添加角色", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
@@ -371,8 +371,8 @@ for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
 R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "提交变更",
-           "参数触达矩阵与官方资料", "恢复官方默认", "精确值", "当前生效 · 全书固定",
-           "官方资料（按名称自行查", "采样参数 · 9 项（全部到引擎）"]
+           "参数触达与官方资料", "恢复本组官方默认", "精确值", "当前生效 · 全书固定",
+           "官方资料（按名称自行查", "采样参数 · 9 项到引擎"]
 for sym in R38_ALL:
     if sym not in all_src: errs.append("缺少 R38 控制台符号: " + sym)
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
@@ -382,8 +382,10 @@ if 'null, "auto"' in main_src:
     errs.append("R38 回退：试音又用 auto，与主链 chinese 不一致")
 if 'MixerSection("音色身份"' in main_src:
     errs.append("R38 回退：音色身份又藏进折叠组")
-if "ParamCatalog.SAMPLING.forEach" not in main_src:
-    errs.append("R38 回退：采样参数没有走单一目录")
+if "ParamCatalog.find(" not in main_src:
+    errs.append("R41 回退：采样参数没有走 ParamCatalog 单一目录")
+if "ParamCatalog.SAMPLING.forEach" in main_src:
+    errs.append("R41 回退：九项又退回一张张平铺卡（没走分组）")
 
 # ── R40 · 调音台统一提交：唯一编辑态 / 唯一出口 / 旧生效动词零残留 ──────
 draft_path = ROOT / "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
@@ -412,11 +414,14 @@ lits = ui_literals(main_src) + ui_literals(draft_src)
 for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
     if any(banned in x for x in lits):
         errs.append("R40 回退：又出现旧生效动词 " + banned)
-# 默认展开：身份生成器开、采样组收
-if 'MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", false' not in main_src:
-    errs.append("R40 回退：采样 9 项又默认展开了")
-if 'MixerSection("② 音色身份生成器（12 维 / 现成网格）", "identity", true' not in main_src:
-    errs.append("R40 回退：身份生成器没默认展开")
+# 默认展开（R41）：身份生成器开、采样组收；展开态由 Prefs 持久化，不再靠字面 true/false
+prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text(encoding="utf-8", errors="replace")
+if '?: "identity"' not in prefs_src:
+    errs.append("R41 回退：展开态默认值不是只展开身份生成器")
+if 'MixerSection("采样参数 · 9 项到引擎", "sampling",\n                openMap.contains("sampling")' not in main_src:
+    errs.append("R41 回退：采样组没走受控 openMap（可能又默认展开了）")
+if 'MixerSection("音色身份生成器", "identity",\n                openMap.contains("identity")' not in main_src:
+    errs.append("R41 回退：身份生成器没走受控 openMap")
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)

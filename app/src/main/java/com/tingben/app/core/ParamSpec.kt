@@ -2,11 +2,14 @@ package com.tingben.app.core
 
 /**
  * R38 · 控制台参数目录：把界面上每一项与官方资料一一对应。
+ * R41 · P1 第 10 条：范围/单位/校验收成唯一一份元数据，界面不再各处硬编码。
  *
  * 不手搓依据：
  *  - 元数据形状（label / 默认值 / 范围 / 步长 / 说明）抄 PocketPal
  *    src__utils__modelSettings.ts 的 COMPLETION_PARAMS_METADATA 与
  *    CompletionSettings.tsx 的 renderServerDefault。
+ *  - 范围校验 validateNumericField（isNaN → aboveMin/belowMax → 可显示错误文案）
+ *    抄 PocketPal modelSettings.ts:155-180（Apache-2.0）。
  *  - 参数行「名称 + 一行说明 + 当前值 + 恢复默认」抄 OfflineLLM
  *    SettingsScreen.kt 的 ParamSlider 形状（本项目用档位 + 精确输入，不引滑块依赖）。
  *
@@ -32,7 +35,11 @@ data class ParamSpec(
     val hint: String,
     val source: String,
     val options: List<String>,
-    val kind: ParamKind = ParamKind.ENGINE
+    val kind: ParamKind = ParamKind.ENGINE,
+    /** R41 · 唯一范围来源。null = 不设该侧界限；界面 rangeLabel 由它生成。 */
+    val min: Double? = null,
+    val max: Double? = null,
+    val unit: String = ""
 ) {
     val isDefault: (TtsKnobs) -> Boolean = { k ->
         val a = read(k).toFloatOrNull()
@@ -52,59 +59,90 @@ data class ParamSpec(
         else -> ""
     }
 
+    /** 人话范围，界面直接显示；不再各处写「0~2」「256~8192」。 */
+    val rangeLabel: String
+        get() {
+            val lo = min
+            val hi = max
+            return when {
+                lo != null && hi != null -> "${fmt(lo)}~${fmt(hi)}"
+                lo != null -> "≥${fmt(lo)}"
+                hi != null -> "≤${fmt(hi)}"
+                else -> "不限"
+            }
+        }
+
+    /**
+     * 抄 PocketPal validateNumericField：数值 / 上下界 / 类型解析三层，
+     * 返回可直接显示的错误文案；null = 合法。界面只显示，不自行判断。
+     */
+    fun validate(raw: String): String? {
+        val s = raw.trim()
+        if (s.isEmpty()) return "请填数值"
+        val n = s.toDoubleOrNull() ?: return "只能填数字"
+        min?.let { if (n < it) return "不能小于 ${fmt(it)}" }
+        max?.let { if (n > it) return "不能大于 ${fmt(it)}" }
+        if (withValue(TtsKnobs(), s) == null) return "不在允许范围 $rangeLabel"
+        return null
+    }
+
     /** 按官方语义做范围校验；非法返回 null，界面给明确提示，不静默吞掉。 */
     fun withValue(k: TtsKnobs, raw: String): TtsKnobs? {
         val s = raw.trim()
+        val n = s.toDoubleOrNull() ?: return null
+        min?.let { if (n < it) return null }
+        max?.let { if (n > it) return null }
         return when (key) {
-            "seed" -> s.toLongOrNull()?.takeIf { it >= -1L }?.let { k.copy(seed = it) }
-            "maxNewTokens" -> s.toIntOrNull()?.takeIf { it in 256..8192 }?.let { k.copy(maxNewTokens = it) }
-            "temperature" -> s.toFloatOrNull()?.takeIf { it in 0f..2f }?.let { k.copy(temperature = it) }
-            "topK" -> s.toIntOrNull()?.takeIf { it in 0..1000 }?.let { k.copy(topK = it) }
-            "topP" -> s.toFloatOrNull()?.takeIf { it in 0f..1f }?.let { k.copy(topP = it) }
-            "repetitionPenalty" -> s.toFloatOrNull()?.takeIf { it in 1f..2f }
-                ?.let { k.copy(repetitionPenalty = it) }
-            "subTemperature" -> s.toFloatOrNull()?.takeIf { it in 0f..2f }
-                ?.let { k.copy(subTemperature = it) }
-            "subTopK" -> s.toIntOrNull()?.takeIf { it in 0..1000 }?.let { k.copy(subTopK = it) }
-            "subTopP" -> s.toFloatOrNull()?.takeIf { it in 0f..1f }?.let { k.copy(subTopP = it) }
+            "seed" -> s.toLongOrNull()?.let { k.copy(seed = it) }
+            "maxNewTokens" -> s.toIntOrNull()?.let { k.copy(maxNewTokens = it) }
+            "temperature" -> s.toFloatOrNull()?.let { k.copy(temperature = it) }
+            "topK" -> s.toIntOrNull()?.let { k.copy(topK = it) }
+            "topP" -> s.toFloatOrNull()?.let { k.copy(topP = it) }
+            "repetitionPenalty" -> s.toFloatOrNull()?.let { k.copy(repetitionPenalty = it) }
+            "subTemperature" -> s.toFloatOrNull()?.let { k.copy(subTemperature = it) }
+            "subTopK" -> s.toIntOrNull()?.let { k.copy(subTopK = it) }
+            "subTopP" -> s.toFloatOrNull()?.let { k.copy(subTopP = it) }
             else -> null
         }
     }
 
     private fun trimNum(f: Float): String =
         if (f == f.toLong().toFloat()) f.toLong().toString() else "%.3f".format(f).trimEnd('0').trimEnd('.')
+
+    private fun fmt(v: Double): String =
+        if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
 }
 
 object ParamCatalog {
-    /** 9 项采样参数：全部真到 qt_tts_params，逐字段经 JNI 覆盖。 */
+    /** 9 项采样参数：全部真到 qt_tts_params，逐字段经 JNI 覆盖。min/max 与 withValue 旧范围逐项对齐。 */
     val SAMPLING: List<ParamSpec> = listOf(
         ParamSpec("seed", "qt_tts_params.seed", "seed（随机种子）", "42",
             "固定可复现；-1 = 引擎硬件随机（O5:308-310）", "O4/O5",
-            listOf("42", "1234", "随机")),
+            listOf("42", "1234", "随机"), min = -1.0),
         ParamSpec("maxNewTokens", "qt_tts_params.max_new_tokens", "max_new_tokens（单次音频上限）", "2048",
             "12.5Hz → 单次约 164 秒音频；官方评测也用 2048（O1:465）", "O1/O4/O6",
-            listOf("1024", "2048", "3072")),
+            listOf("1024", "2048", "3072"), min = 256.0, max = 8192.0, unit = " token"),
         ParamSpec("temperature", "qt_tts_params.temperature", "主 temperature", "0.9",
             "talker 抽语义码 c0；0 = argmax（O5:307）", "O4/O5/O6",
-            listOf("0", "0.4", "0.6", "0.9", "1.1")),
+            listOf("0", "0.4", "0.6", "0.9", "1.1"), min = 0.0, max = 2.0),
         ParamSpec("topK", "qt_tts_params.top_k", "主 top_k", "50",
             "候选集；<=0 关闭截断（O5:308）", "O4/O5/O6",
-            listOf("0", "20", "50")),
+            listOf("0", "20", "50"), min = 0.0, max = 1000.0, unit = " 个"),
         ParamSpec("topP", "qt_tts_params.top_p", "主 top_p", "1.0",
             "核采样；>=1 关闭截断（O5:308）", "O1/O4/O5/O6",
-            listOf("0.8", "0.95", "1.0")),
+            listOf("0.8", "0.95", "1.0"), min = 0.0, max = 1.0),
         ParamSpec("repetitionPenalty", "qt_tts_params.repetition_penalty", "repetition_penalty", "1.05",
             "采样链第一环：rep → temp → topK → topP（O4:22-23）", "O4/O5/O6",
-            listOf("1.0", "1.05", "1.1", "1.2")),
+            listOf("1.0", "1.05", "1.1", "1.2"), min = 1.0, max = 2.0),
         ParamSpec("subTemperature", "qt_tts_params.subtalker_temperature", "副 temperature", "0.9",
             "副解码器抽声学码，独立一套采样（O5:303-307）", "O4/O5/O6",
-            listOf("0", "0.4", "0.6", "0.9", "1.1")),
+            listOf("0", "0.4", "0.6", "0.9", "1.1"), min = 0.0, max = 2.0),
         ParamSpec("subTopK", "qt_tts_params.subtalker_top_k", "副 top_k", "50",
             "声学层候选集（O5:319）", "O5/O6",
-            listOf("0", "20", "50")),
+            listOf("0", "20", "50"), min = 0.0, max = 1000.0, unit = " 个"),
         ParamSpec("subTopP", "qt_tts_params.subtalker_top_p", "副 top_p", "1.0",
             "声学层核采样（O5:320）", "O5/O6",
-            listOf("0.8", "0.95", "1.0"))
+            listOf("0.8", "0.95", "1.0"), min = 0.0, max = 1.0)
     )
 
     /** 上层项：不是模型 API 字段，只影响 App 自己的文本/合并/流程。 */

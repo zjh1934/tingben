@@ -18,10 +18,10 @@ DRAFT = "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
 CONSERVE = [
     "app/src/main/assets/prompt_zh.txt",
     "app/src/main/java/com/tingben/app/core/Pipeline.kt",
-    "app/src/main/java/com/tingben/app/core/Prefs.kt",
+    # R41：Prefs.kt / ParamSpec.kt 加了纯 UI 键与范围元数据，改由
+    # r41_verify.py 做「4B 键 / voiceStamp 公式 / 官方字段名与默认值」语义守恒
     "app/src/main/java/com/tingben/app/core/ProduceConfig.kt",
     "app/src/main/java/com/tingben/app/core/VoiceProfile.kt",
-    "app/src/main/java/com/tingben/app/core/ParamSpec.kt",
     "app/src/main/java/com/tingben/app/core/Mixer.kt",
     "app/src/main/java/com/tingben/app/ProduceService.kt",
     "app/src/main/java/com/tingben/app/AppChrome.kt",
@@ -151,9 +151,12 @@ def main():
         print("  CI 环境：HEAD 即本次提交，守恒已在提交前本地核对，跳过逐字节比")
         print("结果:", "PASS" if ok else "FAIL")
         sys.exit(0 if ok else 1)
-    head = m.splitlines()[:1880]
+    # R41 只在文件头加了 7 行 Compose import；调音台区块之前的业务代码不许动。
+    # 按区块标记切，而不是固定行数（新增 import 会让行号整体偏移）。
+    no_imports = lambda ls: [x for x in ls if not x.startswith("import ")]
+    head = no_imports(m.split("// ── ⑥ 调音台")[0].splitlines())
     try:
-        old = git_head(MAIN).decode("utf-8").splitlines()[:1880]
+        old = no_imports(git_head(MAIN).decode("utf-8").split("// ── ⑥ 调音台")[0].splitlines())
         same = head == old
         print("  MainActivity 前 1880 行:", "一致" if same else "被改动")
         if not same: ok = False

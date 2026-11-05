@@ -23,17 +23,26 @@ def run_asserts(text, errs):
     # 正向：折叠分组必须真有定义与状态保持，不能只是标题文字
     check(re.search(r"private fun MixerSection\(", text) is not None,
           "缺 MixerSection 定义形态", errs)
-    check("rememberSaveable(key)" in text, "折叠状态没用 rememberSaveable", errs)
-    # 预设 CRUD 必须有真实调用点
-    for call in ["MixerPresetStore.save(c, p)", "MixerPresetStore.delete(c, p.id)",
-                 "MixerPresetStore.list(c)", "MixerPresetStore.safeName(presetName)"]:
+    # R41：展开态改受控 openMap + Prefs 持久化。rememberSaveable 只跨旋转、重进页面会丢，
+    # 旧断言查的字面量已不存在，改成查「读 Persist + 写 Persist」两端都在。
+    check("Prefs.mixerOpenSections(c)" in text and "Prefs.setMixerOpenSections(c, next)" in text,
+          "折叠状态没持久化到 Prefs（R41 受控 openMap）", errs)
+    # 预设 CRUD 必须有真实调用点（R41 删除走二次确认、新增重命名）
+    for call in ["MixerPresetStore.save(c, p)", "MixerPresetStore.list(c)",
+                 "MixerPresetStore.safeName(presetName)",
+                 "MixerPresetStore.delete(c, confirmDeletePresetId)",
+                 "MixerPresetStore.rename(c, renamePresetId, renameText)",
+                 "confirmDeletePresetId.isNotEmpty()"]:
         check(call in text, "缺预设调用点 " + call, errs)
     # 12 维 / 9 采样 / 5 表演 / 角色 / 日志，逐项核对「能控的通通都要控」
     check("VoiceDimension.entries.forEach" in text, "12 维不是逐维可编辑", errs)
-    # R38/R40 起 9 项采样从 9 个 SettingOption 改成 ParamCatalog.SAMPLING 表格逐行渲染；
-    # MIXER_PERF 并入 MixerDraft 统一提交。R41a 同步历史断言，避免脚本假红。
-    check("ParamCatalog.SAMPLING.forEach" in text, "9 项采样没用官方字段表逐行渲染", errs)
-    check("恢复官方默认 ${spec.def}" in text, "缺单项恢复官方默认", errs)
+    # R41：9 项从逐行 forEach 改成三组紧凑表 + 共用 ParamRow；
+    # 单项恢复走行内 onReset，组尾另有「恢复本组官方默认」。旧断言同步到新形态，避免假红。
+    check("keys.mapNotNull { ParamCatalog.find(it) }" in text, "9 项采样没走官方字段表", errs)
+    check("主采样（5 项）" in text and "副采样（3 项）" in text and "确定性（1 项）" in text,
+          "9 项没分成主/副/确定性三组", errs)
+    check("ParamRow(" in text and "onReset = {" in text, "缺 ParamRow 单项恢复官方默认", errs)
+    check("恢复本组官方默认（待提交）" in text, "缺组尾恢复本组官方默认", errs)
     check("全部恢复上游默认（待提交）" in text, "缺全部恢复上游默认", errs)
     for s in ["朗读档位", "语速倾向", "情绪强度", "段间静音", "失败重做"]:
         check('SettingOption("' + s + '"' in text, "表演层缺项 " + s, errs)
@@ -81,11 +90,13 @@ if errs:
 # ── 反向注入：每类违规必须真的被拦下 ──
 INJECT = [
     ("删折叠定义", lambda t: t.replace("private fun MixerSection(", "private fun GoneSection(")),
-    ("删状态保持", lambda t: t.replace("rememberSaveable(key)", "remember(key)")),
+    ("删状态持久化", lambda t: t.replace("Prefs.setMixerOpenSections(c, next)", "")),
     ("删预设保存", lambda t: t.replace("MixerPresetStore.save(c, p)", "true")),
     ("恢复第二套采样", lambda t: t.replace("音频模型 · 全部参数", "声音采样（进阶）")),
-    ("删 9 项采样表", lambda t: t.replace("ParamCatalog.SAMPLING.forEach",
-                                          "emptyList<String>().forEach")),
+    ("删 9 项采样表", lambda t: t.replace("keys.mapNotNull { ParamCatalog.find(it) }",
+                                          "emptyList<String>().mapNotNull { null }")),
+    ("删三组分组", lambda t: t.replace("主采样（5 项）", "主采样")),
+    ("删删除确认", lambda t: t.replace("MixerPresetStore.delete(c, confirmDeletePresetId)", "true")),
     ("删角色 seed", lambda t: t.replace("CastPresets.seedIfEmpty(c)", "false")),
     ("试听写回默认", lambda t: t.replace('trialText, instruct, null, "chinese"',
                                           'Prefs.setTtsKnobs(c, src.knobs); trialText, instruct, null, "chinese"')),

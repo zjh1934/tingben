@@ -18,6 +18,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1893,13 +1900,18 @@ private fun CastScreen(c: Context, onBack: () -> Unit) {
 private fun MixerSection(
     title: String,
     key: String,
-    defaultOpen: Boolean = false,
+    open: Boolean,
+    onToggle: (Boolean) -> Unit,
     badge: String = "",
+    anchor: ((Int) -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    var open by rememberSaveable(key) { mutableStateOf(defaultOpen) }
-    CardBox(Modifier.padding(bottom = 10.dp)) {
-        Row(Modifier.fillMaxWidth().clickable { open = !open },
+    val mod = Modifier.padding(bottom = 10.dp).then(
+        if (anchor != null) Modifier.onGloballyPositioned { anchor(it.positionInParent().y.toInt()) }
+        else Modifier
+    )
+    CardBox(mod) {
+        Row(Modifier.fillMaxWidth().clickable { onToggle(!open) },
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                 modifier = Modifier.weight(1f))
@@ -1921,6 +1933,110 @@ private fun MixerSection(
 private fun TimingHint(timing: String) {
     Text("改动先进入待提交，按顶部「提交变更」写入；$timing",
         fontSize = 10.sp, color = Sub)
+}
+
+/** R41 · 锚点导航：抄 OfflineLLM ChatScreen 的列表滚动思路，本页用 ScrollState，不引 LazyColumn。 */
+@Composable
+private fun AnchorBar(items: List<Pair<String, String>>, onJump: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        items.forEach { (key, label) ->
+            TextButton(onClick = { onJump(key) }, modifier = Modifier.padding(end = 2.dp)) {
+                Text(label, fontSize = 11.sp, color = Primary)
+            }
+        }
+    }
+}
+
+/** R41 · 九项紧凑行：抄 PocketPal CompletionSettings 的 TextInput + 官方默认回填形状。 */
+@Composable
+private fun ParamRow(
+    spec: ParamSpec,
+    cur: String,
+    input: String,
+    err: String,
+    onInput: (String) -> Unit,
+    onDone: () -> Unit,
+    onPick: (String) -> Unit,
+    onReset: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(spec.label, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f))
+            Text("范围 ${spec.rangeLabel}${spec.unit}", fontSize = 9.5.sp, color = Sub)
+        }
+        Text("${spec.hint} · 官方默认 ${spec.def}", fontSize = 9.5.sp, color = Sub)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            spec.options.forEach { o ->
+                val target = if (o == "随机") "-1" else o
+                val on = cur == target || (o == "随机" && (cur.toLongOrNull() ?: 0L) < 0L)
+                TextButton(onClick = { onPick(target) }) {
+                    Text(o, fontSize = 10.5.sp,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                        color = if (on) Primary else Sub)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onReset) { Text("默认", fontSize = 10.sp, color = Primary) }
+        }
+        OutlinedTextField(
+            value = input, onValueChange = onInput,
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text("精确值 ${spec.rangeLabel}${spec.unit}", fontSize = 9.5.sp) },
+            isError = err.isNotBlank(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onDone() }),
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
+        )
+        if (err.isNotBlank()) Text(err, fontSize = 10.sp, color = Warn)
+        HorizontalDivider(color = Line)
+    }
+}
+
+/** R41 · 共用音色选择器：搜索 + 最近使用 + 网格，身份生成器与角色预设不再各写一套控件。 */
+@Composable
+private fun VoicePicker(
+    query: String,
+    onQuery: (String) -> Unit,
+    recent: List<String>,
+    selectedId: String,
+    onPick: (VoicePreset) -> Unit
+) {
+    OutlinedTextField(
+        value = query, onValueChange = onQuery,
+        modifier = Modifier.fillMaxWidth(), singleLine = true,
+        label = { Text("搜索音色（编号 / 名称 / 特征）", fontSize = 10.sp) },
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
+    )
+    if (recent.isNotEmpty()) {
+        Spacer(Modifier.height(4.dp))
+        Text("最近使用", fontSize = 10.sp, color = Sub)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            recent.forEach { id ->
+                val p = VoicePresets.ALL.firstOrNull { it.id == id } ?: return@forEach
+                TextButton(onClick = { onPick(p) }) {
+                    Text(p.name, fontSize = 10.5.sp,
+                        color = if (p.id == selectedId) Primary else Sub)
+                }
+            }
+        }
+    }
+    val list = VoicePresets.ALL.filter {
+        query.isBlank() || it.id.contains(query, true) || it.name.contains(query, true) ||
+            it.chips().contains(query, true)
+    }
+    list.forEach { p ->
+        Row(Modifier.fillMaxWidth().clickable { onPick(p) }.padding(vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("${p.id} ${p.name}", fontSize = 11.5.sp,
+                    fontWeight = if (p.id == selectedId) FontWeight.Bold else FontWeight.Normal)
+                Text(p.chips(), fontSize = 10.sp, color = Sub)
+            }
+            Text(if (p.id == selectedId) "已选" else "选用", fontSize = 10.5.sp, color = Primary)
+        }
+    }
+    if (list.isEmpty()) Text("没有匹配的音色", fontSize = 10.5.sp, color = Warn)
 }
 
 @Composable
@@ -1952,6 +2068,22 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var editCastText by remember { mutableStateOf("") }
     var gridTargetId by remember { mutableStateOf("") }
     var confirmDeleteId by remember { mutableStateOf("") }
+    // R41 · 锚点 / 展开态 / 音色选择器 / 预设三弹层（全部是界面态，不写生效态）
+    val scroll = rememberScrollState()
+    val anchors = remember { mutableStateMapOf<String, Int>() }
+    var openMap by remember { mutableStateOf(Prefs.mixerOpenSections(c)) }
+    var voiceQuery by remember { mutableStateOf("") }
+    var recentVoices by remember { mutableStateOf(Prefs.recentVoices(c)) }
+    var showPresetDiff by remember { mutableStateOf<MixerPreset?>(null) }
+    var renamePresetId by remember { mutableStateOf("") }
+    var renameText by remember { mutableStateOf("") }
+    var confirmDeletePresetId by remember { mutableStateOf("") }
+    fun toggleSection(k: String, v: Boolean) {
+        val next = if (v) openMap + k else openMap - k
+        openMap = next
+        Prefs.setMixerOpenSections(c, next)
+    }
+    fun jumpTo(k: String) { scope.launch { scroll.animateScrollTo(anchors[k] ?: 0) } }
 
     // R41a · 试听只看两态：草稿（未提交）/ 已生效。不再有 A/B、预设对比、合成/播放两步。
     var trialText by remember {
@@ -1983,19 +2115,21 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         paramDrafts = emptyMap(); paramErr = emptyMap()
         msg = "已丢弃待提交变更"
     }
+    /** R41 · 预设 → draft 只此一份构造，diff 预览与实际载入共用，不复制第二份拼串。 */
+    fun buildPresetDraft(p: MixerPreset): MixerDraft = draft.copy(
+        knobs = p.knobs,
+        perf = p.perf,
+        voice = if (p.voice.isBlank()) draft.voice else p.voice,
+        dims = p.fields,
+        dimText = p.fields.let { f ->
+            VoicePreset("edit", "自定义", f.filter { it.value != "不指定" }, "").render()
+        }
+    )
     /** 载入预设只写 draft，绝不越过顶部状态条直接生效。 */
     fun loadPreset(p: MixerPreset) {
-        val next = draft.copy(
-            knobs = p.knobs,
-            perf = p.perf,
-            voice = if (p.voice.isBlank()) draft.voice else p.voice,
-            dims = p.fields,
-            dimText = p.fields.let { f ->
-                VoicePreset("edit", "自定义", f.filter { it.value != "不指定" }, "").render()
-            }
-        )
-        draft = next
+        draft = buildPresetDraft(p)
         dimEdited = true
+        paramDrafts = emptyMap(); paramErr = emptyMap()
         Mixer.logPreset("载入预设为待提交", p)
         msg = "已把「${p.name}」载入待提交，按顶部「提交变更」生效"
     }
@@ -2123,12 +2257,17 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             }
         }
 
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)) {
+        AnchorBar(listOf(
+            "identity" to "身份", "sampling" to "采样", "perf" to "表演",
+            "switches" to "开关", "casts" to "角色", "presets" to "预设", "trace" to "资料"
+        )) { jumpTo(it) }
+        Spacer(Modifier.height(4.dp))
+        Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(4.dp))
 
             // ── 固定首屏：已生效全文（只读） vs 草稿（可编辑）+ diff 高亮 ────
-            CardBox(Modifier.padding(bottom = 10.dp)) {
+            CardBox(Modifier.padding(bottom = 10.dp)
+                .onGloballyPositioned { anchors["identity"] = it.positionInParent().y.toInt() }) {
                 Text("音色身份", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Text("当前生效 · 全书固定（只读）", fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.height(4.dp))
@@ -2156,60 +2295,59 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 TimingHint(TIMING_NOW)
             }
 
-            // ── ① 采样参数：9 项，行内改值只进 draft，删掉 9 个逐项提交按钮 ──
-            MixerSection("① 采样参数 · 9 项（全部到引擎）", "sampling", false, "可编辑 · O4/O5/O6") {
+            // ── 采样参数：三组紧凑表，改动只进 draft，生效权仍归顶部状态条 ──
+            MixerSection("采样参数 · 9 项到引擎", "sampling",
+                openMap.contains("sampling"), { toggleSection("sampling", it) },
+                anchor = { anchors["sampling"] = it }) {
                 Text(Mixer.CHAIN, fontSize = 10.5.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
-                ParamCatalog.SAMPLING.forEach { spec ->
-                    CardBox(Modifier.padding(bottom = 8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(spec.label, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f))
-                            Text(spec.official, fontSize = 9.5.sp, color = Sub)
-                        }
-                        Text("${spec.hint} · 官方默认 ${spec.def} · 本次 ${spec.read(draft.knobs)}",
-                            fontSize = 10.5.sp, color = Sub)
-                        Spacer(Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            spec.options.forEach { o ->
-                                val target = if (o == "随机") "-1" else o
-                                val k = spec.withValue(draft.knobs, target)
-                                val on = spec.read(draft.knobs) == target ||
-                                    (o == "随机" && draft.knobs.seed < 0)
-                                TextButton(enabled = k != null,
-                                    onClick = { if (k != null) draft = draft.copy(knobs = k) }) {
-                                    Text(o, fontSize = 11.sp,
-                                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (on) Primary else Sub)
-                                }
-                            }
-                        }
-                        OutlinedTextField(
-                            value = paramDrafts[spec.key] ?: "",
-                            onValueChange = { s ->
+                Spacer(Modifier.height(4.dp))
+                val groups = listOf(
+                    "主采样（5 项）" to listOf("temperature", "topK", "topP", "repetitionPenalty", "maxNewTokens"),
+                    "副采样（3 项）" to listOf("subTemperature", "subTopK", "subTopP"),
+                    "确定性（1 项）" to listOf("seed")
+                )
+                groups.forEach { (gname, keys) ->
+                    Text(gname, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Primary,
+                        modifier = Modifier.padding(top = 6.dp))
+                    keys.mapNotNull { ParamCatalog.find(it) }.forEach { spec ->
+                        val cur = spec.read(draft.knobs)
+                        val shown = paramDrafts[spec.key] ?: cur
+                        ParamRow(
+                            spec = spec, cur = cur, input = shown,
+                            err = paramErr[spec.key] ?: "",
+                            onInput = { s ->
                                 paramDrafts = paramDrafts + (spec.key to s)
                                 val k = spec.withValue(draft.knobs, s)
-                                paramErr = paramErr + (spec.key to
-                                    if (s.isBlank() || k != null) "" else "数值不在允许范围")
+                                paramErr = paramErr + (spec.key to (spec.validate(s) ?: ""))
                                 if (k != null) draft = draft.copy(knobs = k)
                             },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                            label = { Text("精确值（改完进待提交）", fontSize = 10.sp) },
-                            placeholder = { Text(spec.read(draft.knobs), fontSize = 11.sp) },
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.5.sp)
+                            onDone = {
+                                paramDrafts = paramDrafts + (spec.key to spec.read(draft.knobs))
+                                paramErr = paramErr - spec.key
+                            },
+                            onPick = { target ->
+                                spec.withValue(draft.knobs, target)?.let { draft = draft.copy(knobs = it) }
+                                paramDrafts = paramDrafts - spec.key
+                                paramErr = paramErr - spec.key
+                            },
+                            onReset = {
+                                spec.withValue(draft.knobs, spec.def)?.let { draft = draft.copy(knobs = it) }
+                                paramDrafts = paramDrafts - spec.key
+                                paramErr = paramErr - spec.key
+                            }
                         )
-                        val err = paramErr[spec.key] ?: ""
-                        if (err.isNotBlank()) Text(err, fontSize = 10.sp, color = Warn)
-                        if (!spec.isDefault(draft.knobs)) {
-                            TextButton(onClick = {
-                                spec.withValue(draft.knobs, spec.def)?.let {
-                                    draft = draft.copy(knobs = it)
-                                    paramDrafts = paramDrafts - spec.key
-                                    paramErr = paramErr - spec.key
-                                }
-                            }) { Text("恢复官方默认 ${spec.def}", fontSize = 10.5.sp, color = Primary) }
-                        }
                     }
+                    TextButton(onClick = {
+                        var k = draft.knobs
+                        keys.forEach { key ->
+                            ParamCatalog.find(key)?.let { s -> s.withValue(k, s.def)?.let { k = it } }
+                        }
+                        draft = draft.copy(knobs = k)
+                        keys.forEach { key ->
+                            paramDrafts = paramDrafts - key
+                            paramErr = paramErr - key
+                        }
+                    }) { Text("恢复本组官方默认（待提交）", fontSize = 10.5.sp) }
                 }
                 TextButton(onClick = {
                     draft = draft.copy(knobs = TtsKnobs())
@@ -2218,8 +2356,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 TimingHint(TIMING_NOW)
             }
 
-            // ── ② 身份生成器：只有一种语义（生成 → 可编辑预览 → 填入草稿）──
-            MixerSection("② 音色身份生成器（12 维 / 现成网格）", "identity", true, "填入草稿") {
+            // ── 音色身份生成器：只有一种语义（生成 → 可编辑预览 → 填入草稿）──
+            MixerSection("音色身份生成器", "identity",
+                openMap.contains("identity"), { toggleSection("identity", it) }) {
                 Text("12 维是帮你写 instruct 的拼装模板，不是模型字段（ReaderVoice 096b_personas.py，MIT）。",
                     fontSize = 10.5.sp, color = Sub)
                 Spacer(Modifier.height(5.dp))
@@ -2258,27 +2397,22 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     }) { Text("清空 12 维", fontSize = 11.sp) }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 6.dp), color = Line)
-                Text("现成音色网格（点一条填入草稿，不会自己生效）",
+                Text("现成音色（选用后填入草稿，不会自己生效）",
                     fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                VoicePresets.ALL.forEach { p ->
-                    Row(Modifier.fillMaxWidth().clickable {
-                        draft = draft.copy(voice = p.render(), dims = emptyMap(), dimText = p.render())
-                        dimEdited = true
-                        EventLog.log(EventLog.Kind.ENGINE, "MIXER_DIM_DRAFT",
-                            "网格 ${p.id} 填入草稿 · 未生效")
-                    }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${p.id} ${p.name}", fontSize = 11.5.sp)
-                            Text(p.chips(), fontSize = 10.sp, color = Sub)
-                        }
-                        Text("填入草稿", fontSize = 11.sp, color = Primary)
-                    }
+                VoicePicker(voiceQuery, { voiceQuery = it }, recentVoices, "") { p ->
+                    draft = draft.copy(voice = p.render(), dims = emptyMap(), dimText = p.render())
+                    dimEdited = true
+                    Prefs.pushRecentVoice(c, p.id)
+                    recentVoices = Prefs.recentVoices(c)
+                    EventLog.log(EventLog.Kind.ENGINE, "MIXER_DIM_DRAFT",
+                        "网格 ${p.id} 填入草稿 · 未生效")
                 }
                 TimingHint(TIMING_NOW)
             }
 
-            // ── ③ 表演层：只写 draft.perf，提交后对所有新任务生效 ──────────
-            MixerSection("③ 表演层 · 上层（下个任务起）", "perf", false, "不进模型 API") {
+            // ── 表演层：只写 draft.perf，提交后对所有新任务生效 ─────────────
+            MixerSection("表演层", "perf", openMap.contains("perf"), { toggleSection("perf", it) },
+                anchor = { anchors["perf"] = it }) {
                 SettingOption("朗读档位", ReadingStyle.entries.map { it.label },
                     ReadingStyle.entries.indexOf(draft.perf.style).coerceAtLeast(0)) { i ->
                     draft = draft.copy(perf = draft.perf.copy(style = ReadingStyle.entries[i]))
@@ -2302,8 +2436,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 TimingHint(TIMING_NEXT)
             }
 
-            // ── ④ 音频开关：只写 draft，角色未绑定给可见提示 ────────────────
-            MixerSection("④ 音频开关 · 上层", "switches", false, "对所有新任务生效") {
+            // ── 音频开关：只写 draft，角色未绑定给可见提示 ───────────────────
+            MixerSection("音频开关", "switches", openMap.contains("switches"),
+                { toggleSection("switches", it) }, anchor = { anchors["switches"] = it }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("拟声表达", fontSize = 12.sp, modifier = Modifier.weight(1f))
                     Text(if (draft.nonVerbal) "开" else "关", fontSize = 11.sp, color = Sub)
@@ -2324,8 +2459,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 TimingHint(TIMING_NOW)
             }
 
-            // ── ⑤ 角色预设：补音色 chip / 未绑定 / 删除二次确认 ─────────────
-            MixerSection("⑤ 角色预设", "casts", false, "可增删改") {
+            // ── 角色预设：补音色 chip / 未绑定 / 删除二次确认 ─────────────────
+            MixerSection("角色预设", "casts", openMap.contains("casts"), { toggleSection("casts", it) },
+                anchor = { anchors["casts"] = it }) {
                 if (casts.isEmpty()) Text("暂无角色卡", fontSize = 11.sp, color = Sub)
                 casts.forEach { e ->
                     val bound = VoicePresets.ALL.firstOrNull { it.render() == e.description }
@@ -2358,9 +2494,11 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     label = { Text("新角色名", fontSize = 11.sp) },
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
                 )
-                SettingOption("初始音色", VoicePresets.ALL.map { it.name },
-                    VoicePresets.ALL.indexOfFirst { it.id == newCastGrid }.coerceAtLeast(0)) { i ->
-                    newCastGrid = VoicePresets.ALL[i].id
+                Text("新角色的初始音色", fontSize = 11.sp, color = Sub)
+                VoicePicker(voiceQuery, { voiceQuery = it }, recentVoices, newCastGrid) { p ->
+                    newCastGrid = p.id
+                    Prefs.pushRecentVoice(c, p.id)
+                    recentVoices = Prefs.recentVoices(c)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(onClick = {
@@ -2378,8 +2516,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 }
             }
 
-            // ── ⑥ 预设库：载入只写 draft；保存的是已生效配置，空名禁存 ──────
-            MixerSection("⑥ 预设库", "presets", false, "可自定义") {
+            // ── 预设库：载入只写 draft；保存的是已生效配置，空名禁存 ─────────
+            MixerSection("预设库", "presets", openMap.contains("presets"), { toggleSection("presets", it) },
+                anchor = { anchors["presets"] = it }) {
                 presets.forEach { p ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -2387,16 +2526,18 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                             Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             Text(p.chips(), fontSize = 10.sp, color = Sub)
                         }
-                        TextButton(onClick = { loadPreset(p) }) {
-                            Text("载入为待提交", fontSize = 11.sp)
+                        TextButton(onClick = { showPresetDiff = p }) {
+                            Text("对比并载入", fontSize = 10.5.sp)
                         }
                         if (!p.builtin) {
-                            TextButton(onClick = {
-                                if (MixerPresetStore.delete(c, p.id)) {
-                                    Mixer.logPreset("删除预设", p); tick++
-                                    msg = "已删除「${p.name}」"
+                            if (p.name == "untitled") {
+                                TextButton(onClick = { renamePresetId = p.id; renameText = "" }) {
+                                    Text("重命名", fontSize = 10.sp, color = Warn)
                                 }
-                            }) { Text("删除", fontSize = 11.sp, color = Warn) }
+                            }
+                            TextButton(onClick = { confirmDeletePresetId = p.id }) {
+                                Text("删除", fontSize = 10.5.sp, color = Warn)
+                            }
                         }
                     }
                 }
@@ -2410,8 +2551,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 Spacer(Modifier.height(5.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(onClick = {
-                        if (presetName.trim().isEmpty()) {
-                            msg = "先填预设名再保存"
+                        if (presetName.trim().isEmpty() ||
+                            MixerPresetStore.safeName(presetName) == "untitled") {
+                            msg = "先填个名字（不要用 untitled）"
                         } else {
                             val p = MixerPreset(
                                 id = "", name = presetName,
@@ -2434,21 +2576,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 }
             }
 
-            // ── ⑦ 降级为导出 / 诊断入口；全貌搬进「查看差异」抽屉 ──────────
-            MixerSection("⑦ 导出与诊断", "snapshot", false, "只读") {
-                Text("已生效 v$INSTRUCT_TEMPLATE_VERSION · 指纹 $stamp",
-                    fontSize = 11.sp, color = Sub)
-                Text("合成并发 1 · 语言 chinese · 24kHz 单声道 WAV",
-                    fontSize = 11.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
-                TextButton(onClick = {
-                    Mixer.logProfile(c, "手动导出当前配置到日志")
-                    Toast.makeText(c, "已写进诊断日志，复制诊断信息即可贴出", Toast.LENGTH_SHORT).show()
-                }) { Text("复制进诊断日志", fontSize = 12.sp) }
-            }
-
-            // ── ⑧ 触达矩阵 + 官方资料索引（一一对应，用户自己去看）────────
-            MixerSection("⑧ 参数触达矩阵与官方资料", "trace", false, "只读 · O1~O7") {
+            // ── 参数触达与官方资料（一一对应，用户自己去看）──────────────────
+            MixerSection("参数触达与官方资料", "trace", openMap.contains("trace"),
+                { toggleSection("trace", it) }, anchor = { anchors["trace"] = it }) {
                 var last = ""
                 Mixer.coverage().forEach { (g, item, kind) ->
                     if (g != last) {
@@ -2483,6 +2613,17 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         Text(r.value, fontSize = 10.5.sp, modifier = Modifier.weight(1.2f))
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Text("分区元信息：采样 9 项可编辑 / 表演层与开关属上层 / 触达矩阵与官方索引只读",
+                    fontSize = 10.sp, color = Sub)
+                Spacer(Modifier.height(6.dp))
+                Text("导出与诊断", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                Text("已生效 v$INSTRUCT_TEMPLATE_VERSION · 指纹 $stamp · 合成并发 1 · 语言 chinese · 24kHz 单声道 WAV",
+                    fontSize = 10.sp, color = Sub)
+                TextButton(onClick = {
+                    Mixer.logProfile(c, "手动导出当前配置到日志")
+                    Toast.makeText(c, "已写进诊断日志，复制诊断信息即可贴出", Toast.LENGTH_SHORT).show()
+                }) { Text("复制进诊断日志", fontSize = 12.sp) }
             }
 
             // R41a · 试听已移进吸顶状态条那一块（草稿 / 已生效各一个按钮，一步合成并播放）。
@@ -2598,6 +2739,76 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 }
             },
             confirmButton = { TextButton(onClick = { gridTargetId = "" }) { Text("关闭") } }
+        )
+    }
+
+    // ── R41 · 预设对比并载入：逐项「当前生效 → 该预设」再确认 ──────────────
+    showPresetDiff?.let { p ->
+        val next = buildPresetDraft(p)
+        val pdiff = MixerCommit.diff(active, next)
+        AlertDialog(
+            onDismissRequest = { showPresetDiff = null },
+            title = { Text("对比「${p.name}」", fontSize = 14.sp) },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text(p.chips(), fontSize = 10.sp, color = Sub)
+                    Spacer(Modifier.height(6.dp))
+                    if (dirty) Text("会覆盖当前 ${changes.size} 项待提交改动；仍由顶部「提交变更」生效。",
+                        fontSize = 10.5.sp, color = Warn)
+                    Text(if (pdiff.isEmpty()) "与当前生效一致，没有差异" else "共 ${pdiff.size} 项差异",
+                        fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    pdiff.forEach { ch ->
+                        CardBox(Modifier.padding(vertical = 3.dp)) {
+                            Text(ch.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("${ch.old} → ${ch.new}", fontSize = 11.sp, color = Primary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { loadPreset(p); showPresetDiff = null }) {
+                    Text("载入为待提交", fontSize = 12.sp)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showPresetDiff = null }) { Text("取消") } }
+        )
+    }
+
+    // ── R41 · 重命名历史 untitled 预设 ───────────────────────────────────
+    if (renamePresetId.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { renamePresetId = "" },
+            title = { Text("重命名预设", fontSize = 14.sp) },
+            text = {
+                OutlinedTextField(value = renameText, onValueChange = { renameText = it },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("新名字", fontSize = 11.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (MixerPresetStore.rename(c, renamePresetId, renameText)) {
+                        msg = "已重命名预设"; tick++; renamePresetId = ""; renameText = ""
+                    } else Toast.makeText(c, "名字为空、叫 untitled 或重名", Toast.LENGTH_SHORT).show()
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { renamePresetId = "" }) { Text("取消") } }
+        )
+    }
+
+    // ── R41 · 删除预设二次确认 ───────────────────────────────────────────
+    if (confirmDeletePresetId.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { confirmDeletePresetId = "" },
+            title = { Text("删除预设", fontSize = 14.sp) },
+            text = { Text("确定删掉这个预设？只删库里这一条，不影响已生效配置。", fontSize = 12.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (MixerPresetStore.delete(c, confirmDeletePresetId)) { msg = "已删除预设"; tick++ }
+                    confirmDeletePresetId = ""
+                }) { Text("删除", fontSize = 12.sp, color = Warn) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeletePresetId = "" }) { Text("取消") } }
         )
     }
 }
