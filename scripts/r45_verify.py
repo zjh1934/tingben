@@ -47,8 +47,10 @@ POS = {
     "seed 一键换新的固定种子": ['onRoll: (() -> Unit)? = null', '"⟳ 换一个"',
                         'java.util.concurrent.ThreadLocalRandom.current()',
                         'MIXER_SEED', '仅草稿，不直接生效'],
+    # R50：自定义框改成 140x40 无标签小框，「自己填（可选）」这个旧 label 已删
     "12 维每维自定义框": ['allowCustom: Boolean = false', 'customValue: String = ""',
-                    '"自己填（可选）"', 'allowCustom = true', 'curDim in d.options'],
+                    'Modifier.width(140.dp).height(40.dp)', 'placeholder = { Text("自己填"',
+                    'allowCustom = true', 'curDim in d.options'],
     "设置页固定音色入口": ['R45_FIXED_VOICE_ENTRY_BEGIN', 'R45_FIXED_VOICE_ENTRY_END',
                     '官方三模式说明 · 当前权重能固定哪三样',
                     'Prefs.mixerOpenSections(c) + "fixedVoice"'],

@@ -81,13 +81,15 @@ def baseline(m):
     ck("Text(active.voice.trim().ifBlank { DEFAULT_IDENTITY }," not in ident,
        "身份卡又把已生效全文直铺两遍")
 
-    # 5) ParamRow：一行一项，只有 1 个精确值框，R47 滑块双模仍在
-    for s in ["Modifier.width(84.dp)", "Modifier.weight(1f).height(30.dp)",
-              "Modifier.width(74.dp)", "精确值", "Slider(",
+    # 5) ParamRow：R50 紧凑行（名字 78 / 滑块 28 / 无标签 72x38 数字框），仍只有 1 个框
+    for s in ["Modifier.width(78.dp)", "Modifier.weight(1f).height(28.dp)",
+              "Modifier.width(72.dp).height(38.dp)", "contentPadding = PaddingValues(",
+              "框里可填任意合法值", "Slider(",
               "val sliderLo = (spec.min ?: 0.0).toFloat()",
               "valueRange = sliderLo..sliderHi", "onInput(s)", "FilterChip(",
               "字段 ${spec.official}", "HelpNote(", "⟳ 换一个"]:
         ck(s in pr, "紧凑参数行缺: " + s)
+    ck('label = { Text("精确值"' not in pr, "带标签的大数字框又回来了")
     ck(pr.count("OutlinedTextField(") == 1, "又画了第二个精确值输入框")
     ck("horizontalScroll" not in pr, "参数行出现横向滚动")
 
@@ -130,8 +132,8 @@ INJECT = {
                                    '                Text(active.voice.trim().ifBlank { DEFAULT_IDENTITY },\n                val vdiff = voiceFieldDiff('),
     "删逐维diff": lambda s: s.replace('Text("改动 ${vdiff.size} 处", fontSize = 11.sp, fontWeight = FontWeight.Bold)',
                                   'Text("无改动", fontSize = 11.sp)'),
-    "画第二个精确值框": lambda s: s.replace("            TextButton(onClick = onReset, modifier = Modifier.width(28.dp)) {",
-                                     '            OutlinedTextField(value = input, onValueChange = {}, singleLine = true)\n            TextButton(onClick = onReset, modifier = Modifier.width(28.dp)) {'),
+    "画第二个精确值框": lambda s: s.replace("            TextButton(onClick = onReset, modifier = Modifier.width(24.dp)) {",
+                                     '            OutlinedTextField(value = input, onValueChange = {}, singleLine = true)\n            TextButton(onClick = onReset, modifier = Modifier.width(24.dp)) {'),
     "提交绑回试听": lambda s: s.replace("提交不依赖试听：改完直接点「提交变更」即可生效。",
                                    "先试听再提交变更才能生效。"),
     "删底部8dp": lambda s: s.replace(

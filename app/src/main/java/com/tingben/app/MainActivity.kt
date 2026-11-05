@@ -2033,10 +2033,13 @@ private fun ChipRow(
             }
         }
         if (allowCustom) {
+            // R50 · 真机评审：自定义框「小一点就可以」。去 label、压到 140×40dp，
+            // 不再占满整行；输入仍直接进 onCustom，由调用方写 draft（不摆假开关）。
             OutlinedTextField(
                 value = customValue, onValueChange = onCustom,
-                modifier = Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("自己填（可选）", fontSize = 9.5.sp) },
+                modifier = Modifier.width(140.dp).height(40.dp), singleLine = true,
+                placeholder = { Text("自己填", fontSize = 10.sp, color = Sub) },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
             )
         }
@@ -2187,10 +2190,14 @@ private fun ParamRow(
     onRoll: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(spec.label, fontSize = 10.5.sp, modifier = Modifier.width(84.dp))
-            // R47 · v4 预览 ⑥ 落地：滑块与精确值框是同一个值，改动只进草稿。
+    Column(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+        // R50 · 真机评审第 1 条：旧版带 label 的 OutlinedTextField 最小高 56dp 把整行
+        // 撑到约 180px、滑块只剩一小段。改成「名字 · 滑块 · 小数字框 · ⟳ · ▾」同一中线，
+        // 数字框无 label、72×38dp；「任意合法值 / 范围」移到展开的 ⓘ，不占行高。
+        Row(verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()) {
+            Text(spec.label, fontSize = 10.5.sp, modifier = Modifier.width(78.dp))
+            // R47 · v4 预览 ⑥ 落地：滑块与数字框是同一个值，改动只进草稿。
             // 滑块只覆盖常用区间（seed 无上界时取 2000）；任意合法值仍可直接在框里填。
             val sliderLo = (spec.min ?: 0.0).toFloat()
             val sliderHi = (spec.max ?: if (spec.key == "seed") 2000.0 else 1000.0).toFloat()
@@ -2206,28 +2213,29 @@ private fun ParamRow(
                     onInput(s)
                 },
                 valueRange = sliderLo..sliderHi,
-                modifier = Modifier.weight(1f).height(30.dp)
+                modifier = Modifier.weight(1f).height(28.dp)
             )
+            Spacer(Modifier.width(2.dp))
             OutlinedTextField(
                 value = input, onValueChange = onInput,
-                modifier = Modifier.width(74.dp), singleLine = true,
-                label = { Text("精确值", fontSize = 8.sp) },
+                modifier = Modifier.width(72.dp).height(38.dp), singleLine = true,
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 isError = err.isNotBlank(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onDone() }),
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
             )
-            TextButton(onClick = onReset, modifier = Modifier.width(28.dp)) {
+            TextButton(onClick = onReset, modifier = Modifier.width(24.dp)) {
                 Text("⟳", fontSize = 12.sp, color = Sub)
             }
-            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.width(26.dp)) {
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.width(22.dp)) {
                 Text(if (expanded) "▴" else "▾", fontSize = 11.sp, color = Sub)
             }
         }
         if (err.isNotBlank()) Text(err, fontSize = 10.sp, color = Warn)
         if (expanded) {
             HelpNote("参数说明",
-                "${spec.hint} · 官方默认 ${spec.def} · 字段 ${spec.official} · 范围 ${spec.rangeLabel}${spec.unit}")
+                "框里可填任意合法值 · ${spec.hint} · 官方默认 ${spec.def} · 字段 ${spec.official} · 范围 ${spec.rangeLabel}${spec.unit}")
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2321,6 +2329,39 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var showVoiceEdit by remember { mutableStateOf(true) }
     var showLeave by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
+    // R50 · 表演层 5 枚自定义小框的文本态（不是生效态）；数值两项共用这张表，
+    // 但 packExtra 只认「朗读/语速/情绪」，数值项各写 gapMs / gateRetries。
+    fun seedPerfCustom(p: ProduceConfig): Map<String, String> =
+        ProduceConfig.unpackExtra(p.extraInstruct) +
+            ("静音" to if (p.gapMs in ProduceConfig.GAP_OPTIONS) "" else p.gapMs.toString()) +
+            ("重做" to if (p.gateRetries in ProduceConfig.RETRY_OPTIONS) "" else p.gateRetries.toString())
+    var perfCustom by remember { mutableStateOf(seedPerfCustom(active.perf)) }
+    fun syncPerfCustom(p: ProduceConfig) { perfCustom = seedPerfCustom(p) }
+    fun perfText(k: String): String = perfCustom[k] ?: ""
+    /** 自定义框 → draft 的唯一写入口；非法数值只留文本、不改生效态，避免输入抖动。 */
+    fun setPerfCustom(k: String, v: String) {
+        val next = if (v.isBlank()) perfCustom - k else perfCustom + (k to v.trim())
+        perfCustom = next
+        when (k) {
+            "静音" -> v.filter { it.isDigit() }.take(4).toIntOrNull()
+                ?.takeIf { it in ProduceConfig.GAP_RANGE }
+                ?.let { draft = draft.copy(perf = draft.perf.copy(gapMs = it)) }
+            "重做" -> v.filter { it.isDigit() }.take(2).toIntOrNull()
+                ?.takeIf { it in ProduceConfig.RETRY_RANGE }
+                ?.let { draft = draft.copy(perf = draft.perf.copy(gateRetries = it)) }
+            else -> draft = draft.copy(
+                perf = draft.perf.copy(extraInstruct = ProduceConfig.packExtra(next)))
+        }
+    }
+    /** 选了预设 chip 就撤掉该项自定义；短语项要同步重算 extraInstruct，数值项只清文本。 */
+    fun clearPerfCustom(k: String) {
+        val next = perfCustom - k
+        perfCustom = next
+        if (k != "静音" && k != "重做") {
+            draft = draft.copy(
+                perf = draft.perf.copy(extraInstruct = ProduceConfig.packExtra(next)))
+        }
+    }
     var paramDrafts by remember { mutableStateOf(emptyMap<String, String>()) }
     var paramErr by remember { mutableStateOf(emptyMap<String, String>()) }
     var dimEdited by remember { mutableStateOf(false) }
@@ -2348,11 +2389,32 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         openMap = next
         Prefs.setMixerOpenSections(c, next)
     }
+    // R50 · 真机第 3 问：旧版 activeAnchor 只在点 chip 时赋值，滚动没有任何回写，
+    // 所以「往下扒标签页不跟着变」。这里补反向联动；点击跳转期间锁住，避免动画抖动。
+    var jumpLock by remember { mutableStateOf(false) }
+    val anchorShown = listOf("identity", "sampling", "perf", "casts", "presets", "fixedVoice", "mapping")
     fun jumpTo(k: String) {
         activeAnchor = k
         // R49 · v5 第 6 条：锚点点击先展开目标折叠区，再滚过去
         if (k !in openMap) toggleSection(k, true)
-        scope.launch { scroll.animateScrollTo(anchors[k] ?: 0) }
+        scope.launch {
+            jumpLock = true
+            try { scroll.animateScrollTo(anchors[k] ?: 0) }
+            finally { jumpLock = false }
+        }
+    }
+    LaunchedEffect(Unit) {
+        snapshotFlow { scroll.value to anchors.toMap() }.collect { (v, pos) ->
+            if (jumpLock) return@collect
+            val top = v + 24
+            var best = "identity"
+            for ((k, y) in pos.entries.sortedBy { it.value }) {
+                if (y > top) break
+                if (k in anchorShown) best = k
+                // 试听 / 开关 / 诊断不在锚点栏里：归并到前一个可见锚点，不出现全不高亮。
+            }
+            if (best != activeAnchor) activeAnchor = best
+        }
     }
 
     // R41a · 试听只看两态：草稿（未提交）/ 已生效。不再有 A/B、预设对比、合成/播放两步。
@@ -2390,12 +2452,14 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         val after = MixerCommit.commit(c, draft, n)
         active = MixerDraft.active(c)
         draft = active.copy(dims = draft.dims, dimText = draft.dimText)
+        syncPerfCustom(active.perf)   // R50 · 提交后小框回到已生效值，不留编辑态
         paramDrafts = emptyMap(); paramErr = emptyMap()
         tick++
         msg = "已提交 $n 项变更"
     }
     fun discardAll() {
         draft = active.copy(dims = draft.dims, dimText = draft.dimText)
+        syncPerfCustom(active.perf)   // R50 · 丢弃待提交，小框一起复位
         paramDrafts = emptyMap(); paramErr = emptyMap()
         msg = "已丢弃待提交变更"
     }
@@ -2412,6 +2476,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     /** 载入预设只写 draft，绝不越过顶部状态条直接生效。 */
     fun loadPreset(p: MixerPreset) {
         draft = buildPresetDraft(p)
+        syncPerfCustom(draft.perf)   // R50 · 预设里的自定义语气也要回填到三个小框
         dimEdited = true
         paramDrafts = emptyMap(); paramErr = emptyMap()
         Mixer.logPreset("载入预设为待提交", p)
@@ -2583,11 +2648,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         fontSize = 10.5.sp, color = Sub)
                 }
                 Text("固定音色 = 这段描述 + 种子 + 9 项采样全书不变。", fontSize = 10.sp, color = Sub)
-                TextButton(onClick = {
-                    toggleSection("fixedVoice", true)
-                    activeAnchor = "fixedVoice"
-                    scope.launch { scroll.animateScrollTo(anchors["fixedVoice"] ?: 0) }
-                }) { Text("固定音色是什么？ ›", fontSize = 10.5.sp, color = Primary) }
+                TextButton(onClick = { jumpTo("fixedVoice") }) {
+                    Text("固定音色是什么？ ›", fontSize = 10.5.sp, color = Primary)
+                }
                 TimingHint(TIMING_NOW)
             }
 
@@ -2763,35 +2826,53 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             // ── 表演层：只写 draft.perf，提交后对所有新任务生效 ─────────────
             MixerSection("表演层", "perf", openMap.contains("perf"), { toggleSection("perf", it) },
                 badge = "上层", anchor = { anchors["perf"] = it }) {
-                ChipRow("朗读档位", "叙事 / 对白 / 广播剧",
-                    ReadingStyle.entries.map { it.label }, draft.perf.style.label) { v ->
+                // R50 · 真机评审第 2 条：整块都要有自定义输入块，且必须真进 draft。
+                // 三枚短语框合并进 extraInstruct → styleInstruct() → instruct；
+                // 两枚数值框直接写 gapMs / gateRetries，预设之外的合法值不再被 fromJson 重置。
+                ChipRow("朗读档位", "叙事 / 对白 / 广播剧，也可自己填一句",
+                    ReadingStyle.entries.map { it.label }, draft.perf.style.label,
+                    allowCustom = true, customValue = perfText("朗读"),
+                    onCustom = { setPerfCustom("朗读", it) }) { v ->
                     ReadingStyle.entries.firstOrNull { it.label == v }?.let {
                         draft = draft.copy(perf = draft.perf.copy(style = it))
                     }
+                    clearPerfCustom("朗读")
                 }
-                ChipRow("语速倾向", "慢 / 正常 / 快，只写稳定倾向",
-                    Pace.entries.map { it.label }, draft.perf.pace.label) { v ->
+                ChipRow("语速倾向", "慢 / 正常 / 快，只写稳定倾向；可自己填",
+                    Pace.entries.map { it.label }, draft.perf.pace.label,
+                    allowCustom = true, customValue = perfText("语速"),
+                    onCustom = { setPerfCustom("语速", it) }) { v ->
                     Pace.entries.firstOrNull { it.label == v }?.let {
                         draft = draft.copy(perf = draft.perf.copy(pace = it))
                     }
+                    clearPerfCustom("语速")
                 }
-                ChipRow("情绪强度", "克制 / 标准 / 饱满",
-                    Intensity.entries.map { it.label }, draft.perf.intensity.label) { v ->
+                ChipRow("情绪强度", "克制 / 标准 / 饱满；可自己填",
+                    Intensity.entries.map { it.label }, draft.perf.intensity.label,
+                    allowCustom = true, customValue = perfText("情绪"),
+                    onCustom = { setPerfCustom("情绪", it) }) { v ->
                     Intensity.entries.firstOrNull { it.label == v }?.let {
                         draft = draft.copy(perf = draft.perf.copy(intensity = it))
                     }
+                    clearPerfCustom("情绪")
                 }
-                ChipRow("段间静音", "合并时插入空白，不改正文",
-                    ProduceConfig.GAP_OPTIONS.map { "${it}ms" }, "${draft.perf.gapMs}ms") { v ->
+                ChipRow("段间静音", "合并时插入空白，不改正文；可填 0~5000 之间任意毫秒",
+                    ProduceConfig.GAP_OPTIONS.map { "${it}ms" }, "${draft.perf.gapMs}ms",
+                    allowCustom = true, customValue = perfText("静音"),
+                    onCustom = { setPerfCustom("静音", it) }) { v ->
                     v.removeSuffix("ms").toIntOrNull()?.let {
                         draft = draft.copy(perf = draft.perf.copy(gapMs = it))
                     }
+                    clearPerfCustom("静音")
                 }
-                ChipRow("失败重做", "标注不通过时重试次数",
-                    ProduceConfig.RETRY_OPTIONS.map { "${it} 次" }, "${draft.perf.gateRetries} 次") { v ->
+                ChipRow("失败重做", "标注不通过时重试次数；可填 0~10 之间任意次数",
+                    ProduceConfig.RETRY_OPTIONS.map { "${it} 次" }, "${draft.perf.gateRetries} 次",
+                    allowCustom = true, customValue = perfText("重做"),
+                    onCustom = { setPerfCustom("重做", it) }) { v ->
                     v.removeSuffix(" 次").toIntOrNull()?.let {
                         draft = draft.copy(perf = draft.perf.copy(gateRetries = it))
                     }
+                    clearPerfCustom("重做")
                 }
                 TimingHint(TIMING_NEXT)
             }

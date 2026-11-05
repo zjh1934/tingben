@@ -662,3 +662,29 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   不做老用户展开态一次性清空（R41 要求「记住上次展开」，新装/清数据默认全折叠）；
   v4 ② 设置页语言模型沉底、v4 ⑫⑬ 底部三层分区专图仍属既有差额，单列下一轮。
 - ⚠️ **真机仍零证据**。队列：真机验 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页语言模型沉底 → 导入通道 → U2。
+
+## R50 · 调音台真机三处修补（`1.0.0+<run>`）
+
+**输入**：`+58` 真机两张截图 + 三问（采样行滑块/输入框要调整、表演层要有自定义输入块、
+往下扒时锚点标签为什么不跟着变）。联动表先列 3 处根因 / 守恒 / 6 条验收，再动代码。
+
+- **锚点为什么不变（实查）**：`activeAnchor` 只在 `jumpTo()` 与「固定音色是什么」里赋值，
+  `AnchorBar.selected` 只读它，`scroll.value` 没有任何回写，注释还写「不从滚动位置猜」。
+  补 `snapshotFlow { scroll.value to anchors.toMap() }` 反算当前区；`jumpLock` + `finally` 防点击抖动；
+  未列进栏的区（试听/开关/诊断）归并到前一个可见锚点；固定音色入口统一走 `jumpTo`。
+- **采样行**：带 `label=精确值` 的 M3 输入框最小高 56dp 把整行撑到约 180px。改「名字 78dp ·
+  滑块 weight(1f)/28dp · 无标签 72×38dp 数字框 · ⟳ · ▾」同一中线，`contentPadding` 压内边距，
+  范围/官方字段/任意合法值说明进展开 ⓘ；`ParamSpec` 9 项与 onInput 链路零改动。
+- **表演层自定义（真生效，不是假开关）**：`ChipRow` 自定义框统一 140×40dp 小框（12 维同形态）；
+  5 项全开。三枚短语框 → `ProduceConfig.packExtra/unpackExtra` → `extraInstruct` →
+  `styleInstruct()` 拼 instruct、`audioStamp()` 进指纹、`toJson/fromJson` 存读、schema 2 宽容迁移；
+  两枚数值框写 `gapMs`/`gateRetries`，**修掉旧 `fromJson` 白名单静默重置自定义值**的真 bug
+  （改 `0..5000ms` / `0..10` 范围校验）。`MixerCommit.diff` 补「附加语气」，
+  界面态 `perfCustom` 在提交 / 丢弃 / 载预设三处 `syncPerfCustom()` 同步。
+- **守恒**：唯一提交出口、唯一生效动词、两态试听、9 项参数表、4B / prompt v2 / 主链 /
+  `bucket()` / 续跑 / FGS / native / `qt_tts_params` / Screen / 抽屉 / Manifest / Gradle 全不动。
+- **验证**：`r50_verify.py` 正向 49 + 数据对拍 11 + 反向注入 9/9 全拦下；本地 11 套 `CI=true` 全绿。
+  首轮复跑抓到 5 处**旧脚本断言按上一版形态写死**（diff 字段数 9→10、已删 label、84/74/30dp 旧尺寸、
+  旧注入目标、r50 初版 `re.S` 跨行误命中），逐一定位订正并保留等价新断言，不是放水。
+- **CI / 拆包 / 直链**：待本轮构建完成后回填。
+- ⚠️ **真机仍零证据**。队列：真机验 R50 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页沉底 → 导入通道 → U2。

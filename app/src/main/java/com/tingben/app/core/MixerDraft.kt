@@ -75,6 +75,8 @@ object MixerCommit {
         put("情绪强度", a.perf.intensity.label, d.perf.intensity.label, TIMING_NEXT)
         put("段间静音", "${a.perf.gapMs} ms", "${d.perf.gapMs} ms", TIMING_NEXT)
         put("失败重做", "${a.perf.gateRetries} 次", "${d.perf.gateRetries} 次", TIMING_NEXT)
+        // R50 · 表演层三枚自定义小框合并后的附加语气，进 diff 才能出现在顶部计数与差异弹层。
+        put("附加语气", a.perf.extraInstruct, d.perf.extraInstruct, TIMING_NEXT)
         put("拟声表达", onOff(a.nonVerbal), onOff(d.nonVerbal), TIMING_NOW)
         put("角色映射", onOff(a.castEnabled), onOff(d.castEnabled), TIMING_NOW)
     }

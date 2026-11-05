@@ -39,20 +39,28 @@ data class ProduceConfig(
     val pace: Pace = Pace.NORMAL,
     val intensity: Intensity = Intensity.STANDARD,
     val gapMs: Int = DEFAULT_GAP_MS,
-    val gateRetries: Int = 1
+    val gateRetries: Int = 1,
+    // R50 · 表演层三枚自定义小框合并后的附加语气短语（上层：只拼 instruct，不是模型字段）。
+    // 格式「朗读:…｜语速:…｜情绪:…」，读回时按前缀拆回三个框；旧数据缺字段一律空串。
+    val extraInstruct: String = ""
 ) {
     /**
      * 身份层之外的「本次风格层」，挂到 VoiceProfile 现成的第二层（roleStyle），
      * 不改 build/buildWithReport 签名。只拼 instruct，Ann.text 一个字不碰。
+     * R50：末尾按需拼自定义语气，空串时输出与旧版逐字相同。
      */
-    fun styleInstruct(): String = listOf(style.instruct, pace.instruct, intensity.instruct)
-        .filter { it.isNotBlank() }.joinToString("；")
+    fun styleInstruct(): String = listOf(
+        style.instruct, pace.instruct, intensity.instruct, extraInstruct.trim()
+    ).filter { it.isNotBlank() }.joinToString("；")
 
     /**
      * 只含会影响**已合成 WAV** 的项。
      * gapMs 只在合并时插静音、分段 WAV 内容不变；gateRetries 只影响标注重试 —— 都不进指纹。
+     * R50：附加语气会改变 instruct，必须进指纹，否则改了自定义词却沿用旧 WAV。
      */
-    fun audioStamp(): String = sha(listOf(style.name, pace.name, intensity.name).joinToString("|"))
+    fun audioStamp(): String = sha(listOf(
+        style.name, pace.name, intensity.name, extraInstruct
+    ).joinToString("|"))
 
     fun summary(): String = "${style.label} · ${pace.label} · ${intensity.label} · " +
             "段间静音 ${gapMs}ms · 失败重做 $gateRetries 次"
@@ -64,13 +72,32 @@ data class ProduceConfig(
         .put("intensity", intensity.name)
         .put("gapMs", gapMs)
         .put("gateRetries", gateRetries)
+        .put("extraInstruct", extraInstruct)
 
     companion object {
-        const val SCHEMA = 1
+        const val SCHEMA = 2
         const val DEFAULT_GAP_MS = 300
 
         val GAP_OPTIONS = listOf(0, 300, 600)
         val RETRY_OPTIONS = listOf(0, 1, 2)
+        // R50 · 自定义框允许预设之外的合法值；fromJson 改范围校验，不再静默回默认。
+        val GAP_RANGE = 0..5000
+        val RETRY_RANGE = 0..10
+        const val EXTRA_SEP = "｜"
+        val EXTRA_KEYS = listOf("朗读", "语速", "情绪")
+
+        /** 三个小框 → 一条附加语气；空值不写，保证空串时与旧版一致。 */
+        fun packExtra(m: Map<String, String>): String = EXTRA_KEYS.mapNotNull { k ->
+            m[k]?.trim()?.takeIf { it.isNotEmpty() }?.let { "$k:$it" }
+        }.joinToString(EXTRA_SEP)
+
+        /** 一条附加语气 → 三个小框；旧数据无字段时返回空表。 */
+        fun unpackExtra(s: String): Map<String, String> = s.split(EXTRA_SEP)
+            .mapNotNull { part ->
+                val i = part.indexOf(':')
+                if (i <= 0 || part.substring(0, i) !in EXTRA_KEYS) null
+                else part.substring(0, i) to part.substring(i + 1)
+            }.toMap()
 
         /**
          * 宽容迁移：旧书签没有 config、字段缺失、枚举值不认识，一律回默认，绝不崩。
@@ -86,12 +113,14 @@ data class ProduceConfig(
                 style = pick("style", ReadingStyle.values(), ReadingStyle.NARRATION),
                 pace = pick("pace", Pace.values(), Pace.NORMAL),
                 intensity = pick("intensity", Intensity.values(), Intensity.STANDARD),
+                // R50：预设 chip 之外允许自定义合法值，范围外才回默认，绝不静默丢弃。
                 gapMs = o.optInt("gapMs", DEFAULT_GAP_MS).let { g ->
-                    if (g in GAP_OPTIONS) g else DEFAULT_GAP_MS
+                    if (g in GAP_RANGE) g else DEFAULT_GAP_MS
                 },
                 gateRetries = o.optInt("gateRetries", 1).let { r ->
-                    if (r in RETRY_OPTIONS) r else 1
-                }
+                    if (r in RETRY_RANGE) r else 1
+                },
+                extraInstruct = o.optString("extraInstruct", "")
             )
         }
     }

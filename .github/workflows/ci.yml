@@ -52,6 +52,9 @@ jobs:
       - name: R49 调音台 v5 重设计验证（细状态条 / 锚点换行 / 紧凑行 / 反向注入 / 守恒）
         run: python3 scripts/r49_verify.py
 
+      - name: R50 真机三处修补验证（紧凑行 / 自定义落地 / 滚动联动 / 反向注入 / 守恒）
+        run: python3 scripts/r50_verify.py
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:

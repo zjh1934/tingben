@@ -475,7 +475,29 @@ CI <b>run 58 全绿（31 步）</b> · 拆包 CRC / 7 .so / 权重 0 / 无 INTER
 </div>
 
 
-<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加</footer>
+<div class="card" style="margin-top:14px">
+<div class="h">⑳ R50 · 调音台真机三处修补（1.0.0+<run> / 本轮）</div>
+<b>输入：</b>用户贴 <code>+58</code> 真机两张截图，三条意见：采样行滑块/输入框要调整、表演层应有自定义输入块、
+「把设置页往下扒的时候，标签页为什么不跟着变」。<br>
+<b>实查第 3 问：</b><code>activeAnchor</code> 只在点 chip / 点「固定音色是什么」时赋值，
+<code>scroll.value</code> 没有任何回写 —— 只有「chip → 滚动」，缺「滚动 → chip」。补
+<code>snapshotFlow { scroll.value to anchors.toMap() }</code> 反算当前区，<code>jumpLock</code>+<code>finally</code>
+防抖，未列入锚点栏的区归并到前一个可见锚点。<br>
+<b>① 采样行：</b>带 <code>label=精确值</code> 的 M3 输入框最小高 56dp 把整行撑到约 180px；
+改「名字 78dp · 滑块 <code>weight(1f)</code>/28dp · 无标签 72×38dp 数字框 · ⟳ · ▾」同一中线，
+范围与官方字段进 ⓘ；<code>ParamSpec</code> 9 项零改动。<br>
+<b>② 表演层自定义（真生效）：</b><code>ChipRow</code> 自定义框统一 140×40dp（12 维同形态）；
+5 项全开。三枚短语框 → <code>ProduceConfig.extraInstruct</code> → <code>styleInstruct()</code> / <code>audioStamp()</code>
+/ <code>diff</code> / JSON schema 2 宽容迁移；两枚数值框写 <code>gapMs</code>/<code>gateRetries</code>，
+<b>修掉旧 <code>fromJson</code> 白名单静默重置自定义值</b>的真 bug。<br>
+<b>守恒：</b>唯一提交出口 / 两态试听 / 9 项参数表 / 4B / prompt v2 / 主链 / native / Screen / 抽屉 / Gradle 全不动。<br>
+<b>验证：</b>本地 11 套 <code>CI=true</code> 全绿 · R50 正向 49 + 数据对拍 11 + 反向注入 9/9 ·
+首轮抓到 5 处旧脚本断言按上一版形态写死，逐一定位订正（不是放水）。<br>
+<b>真机仍零证据</b>；队列：真机验 R50 → V2 目录页+绿勾 → V2b 看书页 → V3 迷你条 → 设置页沉底 → 导入通道 → U2。
+</div>
+
+
+<footer>听本 · 项目导图 ｜ 按「导图 → 扒源码 → 加工 → 串 → 落软件 → 推 GitHub → 出 APK」顺序生成 ｜ ⑥ 由 R19 追加、R33/R37 订正，⑧ 由 R26 追加，⑨ 由 R28 追加，⑩ 由 R37 追加，⑪ 由 R38 追加，⑫ 由 R40 追加，⑬ 由 R41a 追加，⑭ 由 R41b 追加，⑮ 由 R42 追加，⑯ 由 R45 追加，⑰ 由 R46 追加，⑱ 由 R47 追加，⑲ 由 R49 追加，⑳ 由 R50 追加</footer>
 </div>
 </body>
 </html>
