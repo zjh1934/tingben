@@ -2171,7 +2171,7 @@ private fun ParamRow(
                 modifier = Modifier.weight(1f))
             Text("范围 ${spec.rangeLabel}${spec.unit}", fontSize = 9.5.sp, color = Sub)
         }
-        HelpNote("参数说明", "${spec.hint} · 官方默认 ${spec.def}")
+        HelpNote("参数说明", "${spec.hint} · 官方默认 ${spec.def} · 字段 ${spec.official}")
         Row(verticalAlignment = Alignment.CenterVertically) {
             spec.options.forEach { o ->
                 val target = if (o == "随机") "-1" else o
@@ -2188,6 +2188,24 @@ private fun ParamRow(
                 TextButton(onClick = roll) { Text("⟳ 换一个", fontSize = 10.sp, color = Primary) }
             }
         }
+        // R47 · v4 预览 ⑥ 落地：滑块与精确值框是同一个值，改动只进草稿。
+        // 滑块只覆盖常用区间（seed 无上界时取 2000）；任意合法值仍可直接在框里填。
+        val sliderLo = (spec.min ?: 0.0).toFloat()
+        val sliderHi = (spec.max ?: if (spec.key == "seed") 2000.0 else 1000.0).toFloat()
+        val intLike = spec.key == "seed" || spec.key == "maxNewTokens" ||
+            spec.key == "topK" || spec.key == "subTopK"
+        val sliderVal = (input.toFloatOrNull() ?: cur.toFloatOrNull() ?: sliderLo)
+            .coerceIn(sliderLo, sliderHi)
+        Slider(
+            value = sliderVal,
+            onValueChange = { v ->
+                val s = if (intLike) v.toLong().toString()
+                else "%.2f".format(v).trimEnd('0').trimEnd('.')
+                onInput(s)
+            },
+            valueRange = sliderLo..sliderHi,
+            modifier = Modifier.fillMaxWidth()
+        )
         OutlinedTextField(
             value = input, onValueChange = onInput,
             modifier = Modifier.fillMaxWidth(), singleLine = true,

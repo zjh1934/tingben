@@ -24,5 +24,11 @@ def canon(t):
     b = t.find("private fun queryName(", a + 1)
     if a >= 0 and b > a:
         t = t[:a] + t[b:]
+    # R47 · ParamRow 允许改（滑块双模），由 r47_verify.py 做逐行对拍；
+    # 其余 App() 之外的业务代码仍与 HEAD 逐行守恒。
+    a = t.find("private fun ParamRow(")
+    b = t.find("/** R41 · 共用音色选择器", a + 1)
+    if a >= 0 and b > a:
+        t = t[:a] + t[b:]
     return [x.rstrip() for x in t.splitlines()
             if x.strip() and not x.startswith("import ")]

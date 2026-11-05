@@ -18,7 +18,8 @@ CHROME = (ROOT / CHROME_P).read_text(encoding="utf-8")
 # ── 1) 正向形态断言（查定义/调用形态，不查裸名字） ─────────────────────
 CHROME_POS = [
     "internal fun AppDrawerSheet(",
-    "ModalDrawerSheet(drawerContainerColor = surface)",
+    "requiredWidth(240.dp)",
+    "fontSize = 13.sp",
     "NavigationDrawerItem(",
     "HorizontalDivider(",
     "onMenu: () -> Unit",

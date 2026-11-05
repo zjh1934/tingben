@@ -33,6 +33,8 @@ NEW = [
     "固定音色".encode(), "哪些能改 · 和模型一一对齐".encode(),
     b"TTS_PARAMS", b"ANN_CONTENT", b"LLM_VERDICT", b"FGS_BEGIN",
     b"RefreshStrip",
+    # R47 · 抽屉收窄与 v4 ⑥ 人话参数名
+    "主·随机度".encode(), "副·候选范围".encode(), "采样种子".encode(),
 ]
 # 旧壳（底栏 / 浮层菜单 / 旧注释式文案）零残留
 OLD = [

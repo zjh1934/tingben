@@ -16,6 +16,10 @@ package com.tingben.app
  * - 底栏删除后，底部安全区改由外层 Column 的 navigationBarsPadding() 负责。
  * 详见 docs/R46_V1抽屉壳_联动表.md。
  *
+ * R47 · 抽屉收窄：M3 ModalDrawerSheet 默认 320dp 对 7 个三五字标签过宽，
+ * 用 requiredWidth(240.dp) 覆盖（社区常用 250dp / M2 上限 280dp 之间取值），
+ * 条目字号、padding 同步收紧；左滑手势与返回键优先行为一行不动。
+ *
  * 本文件零业务逻辑：不认识 Screen 枚举、不碰 refresh 计数器、不碰任何数据层。
  */
 import androidx.compose.foundation.background
@@ -129,16 +133,19 @@ internal fun AppDrawerSheet(
     primary: Color,
     sub: Color,
 ) {
-    ModalDrawerSheet(drawerContainerColor = surface) {
+    ModalDrawerSheet(
+        modifier = Modifier.requiredWidth(240.dp),
+        drawerContainerColor = surface
+    ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(vertical = 18.dp)
+                .padding(vertical = 12.dp)
         ) {
             DRAWER_TOP.forEach { (idx, label) ->
                 DrawerRow(label, selected == idx, primary, sub) { onNavigate(idx) }
             }
             HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                 color = Color(0xFFE7EAF2)
             )
             DRAWER_MORE.forEach { (idx, label) ->
@@ -160,14 +167,14 @@ private fun DrawerRow(
         label = {
             Text(
                 label,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (on) primary else sub
             )
         },
         selected = on,
         onClick = click,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+        modifier = Modifier.padding(horizontal = 10.dp, vertical = 0.dp)
     )
 }
 

@@ -187,7 +187,7 @@ if not os.environ.get("CI"):
     KEEP = ["app/src/main/assets/prompt_zh.txt",
             "app/src/main/java/com/tingben/app/core/Pipeline.kt",
             "app/src/main/java/com/tingben/app/core/MixerDraft.kt",
-            "app/src/main/java/com/tingben/app/core/ParamSpec.kt",
+            # R47 · ParamSpec 只改 9 个显示名，由 r47_verify.py 逐字段对拍；其余字段仍守恒
             "app/src/main/java/com/tingben/app/core/Mixer.kt",
             "app/src/main/java/com/tingben/app/core/VoiceProfile.kt",
             "app/src/main/java/com/tingben/app/ProduceService.kt",

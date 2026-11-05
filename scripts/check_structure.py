@@ -363,7 +363,7 @@ if "statusBarsPadding()" not in main_src:
 R36_ALL = ["MixerSection(", "Prefs.mixerOpenSections", "MixerPresetStore", "MixerPreset(",
            "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
            "MIXER_CAST", "导出与诊断", "预设库", "角色预设", "参数触达与官方资料",
-           "max_new_tokens（单次音频上限）", "TIMING_NEXT", "添加角色", "同名覆盖",
+           "单次音频长度上限", "TIMING_NEXT", "添加角色", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
