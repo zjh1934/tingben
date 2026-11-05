@@ -1,13 +1,13 @@
 # 听本 · 当前状态
 
-**2026-11-05 · R47 抽屉收窄 + v4 预览 ⑥ 落地（CI run 57）· 抽屉 240dp / 采样滑块双模 / 参数人话名 / 官方字段收进 ⓘ**
+**2026-11-05 · R49 调音台 v5 重设计（CI run 58）· 细状态条 / 锚点换行 / 采样一行一项 / 身份卡摘要与 diff / 试听折叠**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+57`（17,984,635 字节；直链 blob `eb7eee71965dbe5af589894feb2746be4f3ebb5a` 与本地逐字节一致） |
-| APK | 17,984,635 字节 / arm64-v8a / 固定 debug 签名 / 发布详情见 `docs/R47_抽屉收窄与预览落地_落地.md` |
+| 版本 | `1.0.0+58`（17,984,624 字节；直链 blob `8f96fc264c2fd25274be8e0c7aa579189dd9aa49` 与本地逐字节一致） |
+| APK | 17,984,624 字节 / arm64-v8a / 固定 debug 签名 / 发布详情见 `docs/R49_调音台v5_落地.md` |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | **run 57 `completed success`**（30 步，含新增 R47 验证 step；native 缓存命中） |
+| CI | **run 58 `completed success`**（31 步，含新增 R49 验证 step；native 缓存命中） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -29,6 +29,11 @@
 - 一键制作两档：标注后合成 / 直接朗读（后者连语言模型都不加载）
 - **R42 P2**：调音台开发者信息收「高级」默认折叠、12 维与表演层 `FlowRow+FilterChip` 375px 不碎字、开关 info、细分割线、时机提示统一；详见 `docs/R42_P2_落地.md`
 - **R45 调音台 v4**：默认全折叠；新增「固定音色 · 官方模式说明」与「哪些能改 · 和模型一一对齐」两个后程只读折叠区（不可调项不画开关）；seed「⟳ 换一个」写草稿；12 维每维小自定义框；设置页加固定音色入口；提交与试听解耦写进差异弹层。详见 `docs/R45_调音台v4_落地.md`
+- **R49 调音台 v5**：真机截图评审后重排界面层 —— 吸顶大卡换 48dp 细状态条、两态试听移进默认折叠区、
+  锚点 `FlowRow+FilterChip` 自动换行并高亮当前区、身份卡摘要 + 展开全文/编辑 + 逐维 diff、
+  采样 9 项改一行一项（中文名·滑块·小数字框·⟳）、三态徽标分区、固定音色锚点直达、底部 48dp 留白。
+  **只改 `MainActivity.kt` 的 `AnchorBar`/`ParamRow`/`MixerScreen`**，参数一个不删、唯一提交出口与两态试听原样。
+  详见 `docs/R49_调音台v5_落地.md` / `docs/R49_调音台v5_联动表.md`。
 - **R47 抽屉收窄 + v4 ⑥ 落地**：抽屉 320dp → `requiredWidth(240.dp)`、条目 13sp 紧凑；采样 9 项补「滑块 + 精确值框」双模（共值、范围取 `ParamSpec` 唯一来源）；9 个显示名改人话、官方字段收进 ⓘ。详见 `docs/R47_抽屉收窄与预览落地_落地.md`
 - **R46 V1 抽屉壳**：☰ / 从左边缘右滑都开 `ModalNavigationDrawer`（抄本地 OfflineLLM `ChatScreen.kt`，Apache-2.0）；返回键优先关抽屉；底栏 3 Tab 收进抽屉一列（7 个目的地，调音台独立项）；二级页「‹ 返回」回进入前的页；底栏删掉后根 Column 补 `navigationBarsPadding()`。章节页 / 绿勾 / 迷你条 / 看书页本轮未做。详见 `docs/R46_V1抽屉壳_落地.md`
 - 标注：v2 提示词 + 四级 JSON 修复 + 字符级 gate + 逐块落盘断点续传 + 思考外显
