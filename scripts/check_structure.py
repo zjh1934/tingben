@@ -372,7 +372,7 @@ for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
 R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "提交变更",
            "参数触达与官方资料", "恢复本组官方默认", "精确值", "当前生效 · 全书固定",
-           "官方资料（按名称自行查", "采样参数 · 9 项到引擎"]
+           "官方资料（按名称自行查", "采样参数 · 9 项真到模型"]
 for sym in R38_ALL:
     if sym not in all_src: errs.append("缺少 R38 控制台符号: " + sym)
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
