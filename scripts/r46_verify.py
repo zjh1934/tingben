@@ -51,7 +51,7 @@ MAIN_POS = [
 OLD_SHELL = ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS", "AppTab(",
              "onMenu = { idx ->", "ModalNavigationDrawer("]
 
-# 守恒：Screen 枚举 10 值 / when 分发 10 分支 / chromeOf 10 映射 / 外部导入落地
+# 守恒：Screen 枚举 / when 分发 / chromeOf 三处由 EXPECTED_SCREENS 统一推算（R61 不再写死 10）
 def enum_count(s):
     m = re.search(r"private enum class Screen \{([^}]*)\}", s)
     return len(set(re.findall(r"\b[A-Z_]+\b", m.group(1)))) if m else -1
@@ -70,9 +70,12 @@ def dispatch_count(s):
                 return len(re.findall(r"Screen\.[A-Z_]+\s*->", s[start:k + 1]))
     return -1
 
-def chrome_count(s):
+def chrome_set(s):
     m = re.search(r"private fun chromeOf\(s: Screen\): ChromeSpec = when \(s\) \{(.*?)\n\}", s, re.S)
-    return len(set(re.findall(r"Screen\.([A-Z_]+)\s*->", m.group(1)))) if m else -1
+    return set(re.findall(r"Screen\.([A-Z_]+)\s*->", m.group(1))) if m else set()
+
+def chrome_count(s):
+    return len(chrome_set(s))
 
 def check(main, chrome, tag):
     e = []
@@ -88,9 +91,13 @@ def check(main, chrome, tag):
     a = main.find("BackHandler(enabled = screen != Screen.LIBRARY)")
     b = main.find("BackHandler(enabled = drawerState.isOpen)")
     ck(a >= 0 and b > a, "抽屉 BackHandler 没排在原 BackHandler 之后")
-    ck(enum_count(main) == 10, "Screen 枚举不是 10 值")
-    ck(dispatch_count(main) == 10, "when(screen) 分发不是 10 分支")
-    ck(chrome_count(main) == 10, "chromeOf 没覆盖 10 个目的地")
+    EXPECTED_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
+                        "SETTINGS", "MODELS", "CAST", "MIXER", "LLM", "CHAPTERS"}
+    n = len(EXPECTED_SCREENS)
+    ck(enum_count(main) == n, "Screen 枚举不是 %d 值" % n)
+    ck(dispatch_count(main) == n, "when(screen) 分发不是 %d 分支" % n)
+    ck(chrome_count(main) == n, "chromeOf 没覆盖 %d 个目的地" % n)
+    ck(chrome_set(main) == EXPECTED_SCREENS, "chromeOf 目的地集合与枚举不一致")
     for s in ["fun importBook(uri: Uri?", "incoming: String?", "EXTERNAL_INTENT",
               "ProduceService", "screen = Screen.LIBRARY"]:
         ck(s in main, "外部导入/通知回跳落地丢失: " + s)

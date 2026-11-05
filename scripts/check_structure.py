@@ -267,12 +267,13 @@ for sym in [
     "screen = Screen.LIBRARY",
 ]:
     if sym not in main_src: errs.append("U1 回退：导航骨架被改动 " + sym)
+# R61 · 目的地随版本增长：白名单显式列出，数量一律由它推算，不再写死 10。
+WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
+                "SETTINGS", "MODELS", "CAST", "MIXER", "LLM", "CHAPTERS"}
 enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
 if enum_m:
     got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))
-    want = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-            "SETTINGS", "MODELS", "CAST", "MIXER", "LLM"}
-    if got != want: errs.append("U1 回退：Screen 枚举被改 " + str(got ^ want))
+    if got != WANT_SCREENS: errs.append("U1 回退：Screen 枚举被改 " + str(got ^ WANT_SCREENS))
 else:
     errs.append("U1 回退：找不到 Screen 枚举")
 # mask_strings 保持字符数不变，用它做括号配对定位，避免正则被内层 } 提前截断
@@ -294,15 +295,15 @@ if start >= 0:
                 break
     block = main_src[open_i:(end + 1)] if end else ""
     n = len(re.findall(r"Screen\.[A-Z_]+\s*->", block))
-    if n != 10: errs.append("U1 回退：when(screen) 分发分支 %d 个，应为 10" % n)
+    if n != len(WANT_SCREENS): errs.append("U1 回退：when(screen) 分发分支 %d 个，应为 %d" % (n, len(WANT_SCREENS)))
 else:
     errs.append("U1 回退：找不到 when(screen) 分发")
-# chromeOf 必须覆盖全部 10 个目的地（漏一个 = 那一页顶栏标题为空、Tab 不高亮）
+# chromeOf 必须覆盖全部目的地（漏一个 = 那一页顶栏标题为空、Tab 不高亮）
 co_m = re.search(r"private fun chromeOf\(s: Screen\): ChromeSpec = when \(s\) \{(.*?)\n\}",
                  main_src, re.S)
 if co_m:
     covered = set(re.findall(r"Screen\.([A-Z_]+)\s*->", co_m.group(1)))
-    if len(covered) != 10: errs.append("U1 回退：chromeOf 只覆盖 %d/10 个目的地" % len(covered))
+    if covered != WANT_SCREENS: errs.append("U1 回退：chromeOf 没覆盖全部目的地 " + str(covered ^ WANT_SCREENS))
 else:
     errs.append("U1 回退：找不到 chromeOf 映射")
 # V1 · 抽屉一列：顶层 3 个（不含设置）+ 设置域 5 个（调音台 / 语言模型必须是独立项）
