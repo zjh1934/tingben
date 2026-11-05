@@ -550,3 +550,19 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   `1.0.0+52` / 新符号全在 / 旧编号零残留 / `TTS_PARAMS_APPLIED` 在；直链 blob `e32c2e90…` 与本地
   17,968,245 字节逐字节一致。
 - 队列：真机验 → R42(P2) → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。
+
+
+## R42 · P2 文案 / 响应式 / 视觉（run 53 / 1.0.0+53）
+
+- **评审 P2 五条落地**：13 开发者信息全收 `AdvancedDrawer` 默认折叠（吸顶条与提交提示去指纹）；
+  14 12 维与表演层统一 `ChipRow`（官方 `FlowRow + FilterChip`）+ `@Preview(widthDp=375)`；
+  15 `SwitchRow` 开/关文字 + `HelpNote` info；16 说明降级 ⓘ、分区与弹层改细分割线、主色收口；
+  17 `TimingHint` 补到 8 处、删「不会自己生效」第二套说法。**只改调音台 UI，主链一行不动。**
+- **联动 11 处 + 守恒 12 文件**：`MixerDraft` / `ParamSpec` / `Mixer` / `Prefs` / native / Manifest / Gradle / prompt 逐字节一致。
+- **验证脚本自身订正 3 处**（不是放水）：r42 基线误传 `Mixer.kt` 查官方字段 → 改传 `ParamSpec.kt` 并纳入 errs；
+  `ChipRow` 出现数 18 → 9（1 定义 + 2 Preview + 1 循环 + 5 表演）；`r36_verify.py` 表演层断言从
+  `SettingOption` 同步到 `ChipRow` 新形态 + 补「回退」反向用例（10/10 真拦下）。
+- **本地 7 套脚本全绿**；CI **run 53 全绿**（27 步，新增 R42 验证 step）；
+  拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / `1.0.0+53` / R42 新符号 / 旧文案零残留 /
+  `TTS_PARAMS_APPLIED` 在；直链 blob `f984cc977abbee2e233d18d96b264f8f6ede3aab` 与本地 17,968,240 字节逐字节一致。
+- 队列：真机验 → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。

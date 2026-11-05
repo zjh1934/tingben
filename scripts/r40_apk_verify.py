@@ -48,8 +48,11 @@ OLD = [
     # R41 P1 · 圈码编号、第二套音色控件、元信息外泄、9 卡平铺都不许回到包里
     "① 采样参数", "② 音色身份生成器", "⑦ 当前生效配置", "现成音色网格",
     "可编辑 ·", "只读 ·", "恢复官方默认 ${spec.def}",
-    # R42 P2 · 第二套时机说法与开发者信息不许摊在普通视图
-    "不会自己生效", "096b_personas.py", "12 维是帮你写 instruct 的拼装模板",
+    # R42 P2 · 第二套时机说法与界面旧文案不许回到包里。
+    # 注意：096b_personas.py 仍在 ParamSpec.UPPER 的 hint 数据源里，coverage() 只用
+    # it.label 渲染，任何界面都不显示它；dex 字符串池查它属于误判，可见性由
+    # r42_verify.py 的「切掉 AdvancedDrawer 后取字面量」断言保证。
+    "不会自己生效", "12 维是帮你写 instruct 的拼装模板",
 ]
 print("--- dex 新符号 ---")
 new_bad = [s for s in NEW if s.encode() not in dex]

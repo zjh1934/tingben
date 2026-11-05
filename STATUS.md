@@ -1,13 +1,13 @@
 # 听本 · 当前状态
 
-**2026-11-05 · R41b 已发（CI run 52）· 调音台 P1 信息架构：锚点导航 / 编号统一 / 三组紧凑表 / 精确值范围 / 预设 diff / 音色选择器合并**
+**2026-11-05 · R42 P2 已发（CI run 53）· 调音台文案 / 响应式 / 视觉：开发者信息收高级抽屉 / 12 维 FlowRow 自动换行 / 开关 info / 细分割线 / 时机收口**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.0.0+52`（17,968,245 字节；直链 blob `e32c2e90…` 与本地逐字节一致） |
-| APK | 17,968,245 字节 / arm64-v8a / 固定 debug 签名 / 发布详情见 `docs/R41_P1_信息架构_落地.md` |
+| 版本 | `1.0.0+53`（17,968,240 字节；直链 blob `f984cc977abbee2e233d18d96b264f8f6ede3aab` 与本地逐字节一致） |
+| APK | 17,968,240 字节 / arm64-v8a / 固定 debug 签名 / 发布详情见 `docs/R42_P2_落地.md` |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/tingben-apk/main/app-debug.apk` |
-| CI | **run 52 `completed success`**（26 步，含新增 R41 P1 验证 step；native 缓存命中） |
+| CI | **run 53 `completed success`**（27 步，含新增 R42 P2 验证 step；native 缓存命中） |
 | 源码仓 | `zjh1934/tingben-android`（公开，commit 见 releases） |
 | APK 仓 | `zjh1934/tingben-apk`（公开） |
 
@@ -27,6 +27,7 @@
 - **R33 界面返工**：顶栏 `statusBarsPadding()` 避开状态栏；全局清注释式文案（大标题 / 刷新小字 / 书架说明 / 各页教程）；粘贴框默认展开、书卡图标化 + 删除确认 + 删完刷新；常驻任务条上扒展开 / 下扒收起；调音台进 ☰ 一级入口。详见 `docs/R33_U1返工_全局文案清理与安全区.md`
 - 导入：txt / md / epub（按 spine 分章、编码自适应）、外部「打开方式 / 分享」、粘贴建书、指纹去重
 - 一键制作两档：标注后合成 / 直接朗读（后者连语言模型都不加载）
+- **R42 P2**：调音台开发者信息收「高级」默认折叠、12 维与表演层 `FlowRow+FilterChip` 375px 不碎字、开关 info、细分割线、时机提示统一；详见 `docs/R42_P2_落地.md`
 - 标注：v2 提示词 + 四级 JSON 修复 + 字符级 gate + 逐块落盘断点续传 + 思考外显
 - **R22 新增**：逐条采纳/确定性补齐（PARTIAL 不再整块降级）、native JSON 闭合早停、
   标注内容全文进日志（`ANN_CONTENT` / `TTS_INPUT` / 诊断页「查看标注内容」）
@@ -1246,4 +1247,4 @@ run 39 为 push+dispatch 重复触发，已取消，固定直锁 `+38`。
   新符号全在 / 旧编号与旧生效动词零残留 / `.so` 里 `TTS_PARAMS_APPLIED` 仍在。
 - 直链 blob `e32c2e9088b978d51ffeaec0cfeaa598c6904366`、17968245 字节，与本地 APK 逐字节一致。
 
-⚠️ 真机仍是零证据。队列：真机验 → R42(P2) → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。
+⚠️ 真机仍是零证据。队列：真机验 → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。

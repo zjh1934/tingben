@@ -72,6 +72,11 @@ chk(any("qt_tts_params" in x for x in literals(ADV)), "高级抽屉里也没了�
 chk(any("分区元信息：采样 9 项可编辑" in x for x in literals(ADV)), "分区元信息没进高级抽屉")
 chk("096b_personas.py" not in literals(MAIN).__str__(), "普通视图还留着 .py 出处")
 chk("不会自己生效" not in literals(MAIN).__str__(), "第二套时机说法没删干净")
+# .py 只躺在 ParamSpec.UPPER 的 hint 数据里；覆盖表必须只渲染 label，否则外泄。
+chk('add(Triple("上层 · 不进模型 API", it.label, "上层"))' in MIXER,
+    "覆盖表把含 .py 出处的 hint 渲染进界面了")
+chk('096b_personas.py' in SPEC and '096b_personas.py' not in MAIN,
+    ".py 出处不在数据层或混进了界面源码")
 
 # ── 3) 375px：12 维块 + ChipRow 内都不许横向藏选项 ─────────────────────
 chk(bool(ADV) and bool(CHIP) and bool(SECT) and bool(DIMS), "函数切片失败")
