@@ -566,3 +566,24 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   拆包 CRC / 7 .so / 权重 0 / 无 INTERNET / `1.0.0+53` / R42 新符号 / 旧文案零残留 /
   `TTS_PARAMS_APPLIED` 在；直链 blob `f984cc977abbee2e233d18d96b264f8f6ede3aab` 与本地 17,968,240 字节逐字节一致。
 - 队列：真机验 → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2。
+
+
+## R45 · 调音台 v4 落地（run 55 / 1.0.0+55）
+
+- **v4 预览 14 屏通过后落代码**：默认全折叠（`mixerOpenSections` 默认值 → 空）；新增两个后程只读折叠区
+  「固定音色 · 官方模式说明」（三模式 / 9 编号 / 当前能固定的三样 / 收敛漂移≠官方一致 / 明写不画开关）与
+  「哪些能改 · 和模型一一对齐」（✅ 到引擎 / ⚠️ 上层 / 🔒 结构不可调，清单取 `ParamCatalog`）；
+  设置页「② 音频模型」加固定音色入口（复用展开态偏好，不改签名）；采样标题改「9 项真到模型」；
+  seed「⟳ 换一个」写草稿；12 维每维小自定义框；差异弹层写「提交不依赖试听」；末尾留白 40dp。
+- **底层对齐**：官方三模式是三份权重，当前 voicedesign 无 speaker id / 音色锁 / 参考音频入口；
+  `speed`/`pitch`/并发/24kHz/量化档在 `qt_tts_params` 里物理不存在，一律不画开关。
+- **不手搓**：三态清单来自 `ParamCatalog`；折叠/锚点/help/开关全复用既有组件；没引 Slider（v4 ⑥ 的滑块双模本轮未做，如实登记）。
+- **联动 13 处先列表再动**；守恒 13 个 core/引擎/主链文件 + prompt/Manifest/Gradle 与 HEAD 逐字节一致，
+  `Prefs.kt` 除默认值那段外一致，`MixerScreen` 段内无第二个写生效态入口。
+- **CI run 54 failure**：`check_structure.py` 的 R38 旧标题断言在本地靠 docs 命中、CI 的 `all_src` 不含 docs 而失败；
+  同步到新标题并本地 `CI=true` 复现全 7 套脚本后重提。**run 55 `completed success`**（28 步，新增 R45 验证 step）。
+- **验证脚本自身订正 2 处**：`r45_verify` 写入口正则误命中 `Prefs.setMixerOpenSections`（UI 偏好），改负向前瞻并纳入基线（反向 10/10）；
+  `r45_apk_verify` 查 🔒 按 UTF-8 直搜 dex 假阴性（MUTF-8/CESU-8 代理对），改查中文子串。
+- **拆包硬验 PASS**：CRC / 7 个 arm64 .so / 权重 0 / 无 INTERNET / `1.0.0+55` / 41 个新符号 / 18 条旧符号零残留 /
+  `TTS_PARAMS_APPLIED` 在；直链 blob `e5a126d4d66a62f4933d671dc5c81847b5f9061e` 与本地 17,984,619 字节逐字节一致。
+- ⚠️ **真机仍零证据**。队列：真机验 → V1 抽屉壳 → V2/V2b/V3 → 导入通道 → U2（采样 Slider 双模待用户点头）。
