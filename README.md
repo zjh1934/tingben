@@ -11,7 +11,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.1.0+102`（R103 播放身份改用稳定 id / 看台三处同源），字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.1.0+103`（R104 四类 JSON 记录统一原子落盘，坏索引不再清空音频列表），字节数 / blob / 验证结果见 `STATUS.md`
 - 源码仓 `zjh1934/tingben`、APK 仓 `zjh1934/ting-ben-apk`（旧名自动跳转）
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
@@ -77,6 +77,7 @@ app/src/main/java/com/tingben/app/
   core/Pipeline.kt        书架、模型槽位、分块、直接朗读、WAV 合并、任务书签
   core/Mixer*.kt / ParamSpec.kt / VoiceProfile.kt   调音台快照 / 编辑态 / 9 项官方元数据 / 音色描述
   core/AudioLibrary.kt / PlayQueue.kt / ReadingState.kt / TaskResume.kt
+  core/AtomicJson.kt      四类 JSON 记录的统一原子落盘与安全读取
   core/Prefs.kt / ProduceConfig.kt / TextSplitter.kt / SegPlan.kt / Workbench.kt / NonVerbal.kt
   engine/NativeEngine.kt  JNI 声明
   diag/EventLog.kt        事件日志
