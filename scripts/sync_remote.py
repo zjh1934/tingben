@@ -3,8 +3,9 @@
 
 为什么不用 git push：本环境实测 github.com 的 git 通路返回 403，API 通路正常。
 做法：先拉远端 tree 拿每个文件的 blob sha，本地按 git blob 算法算 sha，
-只上传不一致的文件；POST /git/trees 带 base_tree，未列出的远端文件一律保留
-（绝不删），避免误删远端文件的老事故。
+只上传不一致的文件；POST /git/trees 带 base_tree。
+R89 起：docs/ 与 scripts/ 这两个活跃目录按本地清单对齐——远端有、本地没有的
+条目显式删除（原文都在归档包里，可回查）；其余目录仍一律保留，不误删。
 凭据从 git remote 的 URL 里取，不落新文件、不打印。
 """
 import base64, hashlib, json, os, pathlib, re, sys, urllib.request, urllib.error
@@ -95,7 +96,14 @@ def upload(item):
     return path, b["sha"]
 
 entries = []
-deletes = [p for p in sorted(DELETE_PATHS) if p in remote]
+# R89 · 活跃目录按本地清单对齐：远端残留的旧文档 / 一次性脚本只在这两个前缀下删。
+# LOCAL_ONLY 是本地专用脚本，远端若已有也不动它。
+PRUNE_PREFIXES = ("docs/", "scripts/")
+auto_deletes = [p for p in remote
+                if p.startswith(PRUNE_PREFIXES)
+                and p not in files and p not in LOCAL_ONLY]
+deletes = sorted(({p for p in DELETE_PATHS if p in remote} | set(auto_deletes)))
+print("活跃目录清理:", len(auto_deletes), "份")
 for p in deletes:
     entries.append({"path": p, "mode": "100644", "type": "blob", "sha": None})
     print("  -", p, "(删除)")
