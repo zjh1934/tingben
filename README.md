@@ -11,7 +11,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.1.0+97`（R100 端到端链路修复），字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.1.0+99`（R101 任务页与章节页状态同步、采样分模式），字节数 / blob / 验证结果见 `STATUS.md`
 - 源码仓 `zjh1934/tingben`、APK 仓 `zjh1934/ting-ben-apk`（旧名自动跳转）
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
@@ -29,7 +29,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 
 上游仓库 `Serveurperso/Qwen3-TTS-GGUF`（国内镜像把域名换成 `hf-mirror.com` 即可）。
 `1.1.0+80` 真机截图显示四份均已导入。自 `1.1.0+87` 起三种模式都能合成：描述造音色用一段文字，
-预设音色从模型自带的音色表里挑一个，参考音频导入一小段 24kHz 单声道 WAV。
+预设音色从模型自带的音色表里挑一个，参考音频导入一小段人声 WAV（App 内部下混、重采样成 24kHz 单声道）。
 每种模式只画它真实存在的输入，模式由引擎从 GGUF 读出，不靠界面开关决定。
 模型能调什么以随包 `app/src/main/cpp/qwen.h` 为准，详见 `docs/01_音频模型调教逻辑.md`。
 
@@ -50,7 +50,8 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
   点一下读这一段、再点一下停（格子本身就是开关，没有独立播放键，也不展开正文）
 - **目录页**：点章名看原文，成品从软件内悬浮条播放，不做独立播放器页
 - **调音台**：`MixerDraft` 唯一编辑态 + `commitAll()` 唯一生效出口，提交不需要先试听；
-  9 项采样真到 `qt_tts_params`。**一级入口 `+83`、整页重做与首帧减负 `+85` 已落地；三模式接通在 `ROADMAP.md` P1**
+  三张模式卡并列点即切，9 项采样真到 `qt_tts_params`，但**只在「描述造音色」铺开**，
+  另两种模式只留一行「沿用全局设置」，把页面让给音色编号 / 参考音频
 
 导航：无底栏，☰ / 左边缘右滑开左侧抽屉（**6 个目的地**：一级 4 项含调音台 + 更多 2 项），展开时右侧工作页一起推走。
 
