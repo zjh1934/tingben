@@ -37,7 +37,7 @@ object SynthInput {
         when (ModelStore.currentMode(c)) {
             ModelStore.Mode.VOICE_DESIGN -> Params(instructVD, null)
             ModelStore.Mode.CUSTOM_VOICE -> {
-                val tone = listOf(Prefs.voiceDescription(c).trim(), style?.trim().orEmpty())
+                val tone = listOf(Prefs.cvStyle(c).trim(), style?.trim().orEmpty())
                     .filter { it.isNotEmpty() }.joinToString("；")
                 Params(tone.ifBlank { null }, Prefs.speakerName(c).takeIf { it.isNotBlank() })
             }

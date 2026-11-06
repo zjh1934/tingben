@@ -83,6 +83,8 @@ object Prefs {
     private const val KEY_SPEAKER = "speakerName"
     private const val KEY_SPEAKER_NAMES = "speakerNames"
     private const val KEY_REF_TEXT = "refText"
+    // R98 · custom_voice 念法指令独立键；不进 voiceStamp
+    private const val KEY_CV_STYLE = "cvStyle"
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -181,6 +183,10 @@ object Prefs {
     fun speakerName(c: Context): String = sp(c).getString(KEY_SPEAKER, "") ?: ""
     fun setSpeakerName(c: Context, v: String) =
         sp(c).edit().putString(KEY_SPEAKER, v.trim()).apply()
+
+    fun cvStyle(c: Context): String = sp(c).getString(KEY_CV_STYLE, "") ?: ""
+    fun setCvStyle(c: Context, v: String) =
+        sp(c).edit().putString(KEY_CV_STYLE, v.trim()).apply()
 
     fun speakerNames(c: Context): List<String> =
         (sp(c).getString(KEY_SPEAKER_NAMES, "") ?: "")

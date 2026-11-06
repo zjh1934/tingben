@@ -91,7 +91,7 @@ object TaskResume {
      * 界面预判和真正开工读的是同一个值，不会出现两处算法慢慢漂移。
      */
     fun expectedModeStamp(c: Context): String = sha(
-        listOf(ModelStore.currentMode(c).id, Prefs.speakerName(c), VoiceRef.fingerprint(c))
+        listOf(ModelStore.currentMode(c).id, Prefs.speakerName(c), Prefs.cvStyle(c), VoiceRef.fingerprint(c))
             .joinToString("||"))
 
     /**
