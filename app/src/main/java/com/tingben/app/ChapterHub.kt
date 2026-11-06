@@ -34,15 +34,16 @@ import kotlinx.coroutines.launch
  * 播放走软件内悬浮条，不做独立播放器页；看书页是本页的覆盖层，
  * 不扩张 Screen 枚举。状态只从磁盘成品 / Producer.state / segmap 取，不画假进度。
  */
-private val HubBg = Color(0xFFF4F6FB)
-private val HubCard = Color(0xFFFFFFFF)
-private val HubPrimary = Color(0xFF4338CA)
-private val HubSoft = Color(0xFFEEF0FE)
-private val HubSub = Color(0xFF6B7280)
-private val HubGood = Color(0xFF0E9F6E)
-private val HubLine = Color(0xFFE7EAF2)
-private val HubWarn = Color(0xFFB45309)
-private val HubGrey = Color(0xFFB9BFCB)
+// R73 · 跟随主题，调用点一行不动。
+private val HubBg: Color get() = palette.bg
+private val HubCard: Color get() = palette.card
+private val HubPrimary: Color get() = palette.primary
+private val HubSoft: Color get() = palette.primarySoft
+private val HubSub: Color get() = palette.sub
+private val HubGood: Color get() = palette.good
+private val HubLine: Color get() = palette.line
+private val HubWarn: Color get() = palette.warn
+private val HubGrey: Color get() = palette.grey
 
 private val HubTitles = listOf("章节", "合成", "可播")
 
@@ -386,14 +387,20 @@ private fun ReaderPane(
         val e = ch.end.coerceIn(s, text.length)
         text.substring(s, e).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
     }
-    var size by remember { mutableStateOf(16f) }
+    var size by remember { mutableStateOf(Prefs.readerFontScale(c)) }
     Column(Modifier.fillMaxSize().background(HubCard)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onClose) { Text("‹ 目录") }
             Text(ch.title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, modifier = Modifier.weight(1f))
-            TextButton(onClick = { size = (size - 1f).coerceIn(12f, 24f) }) { Text("A-") }
-            TextButton(onClick = { size = (size + 1f).coerceIn(12f, 24f) }) { Text("A+") }
+            TextButton(onClick = {
+                size = (size - 1f).coerceIn(12f, 24f)
+                Prefs.setReaderFontScale(c, size)
+            }) { Text("A-") }
+            TextButton(onClick = {
+                size = (size + 1f).coerceIn(12f, 24f)
+                Prefs.setReaderFontScale(c, size)
+            }) { Text("A+") }
         }
         LazyColumn(Modifier.weight(1f).padding(horizontal = 18.dp)) {
             items(body) { p ->

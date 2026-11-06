@@ -57,15 +57,16 @@ private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, 
 /** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
 private enum class ProduceMode { DIRECT }
 
-// R11 · 视觉现代化：冷灰底 + 靛蓝主色 + 明确的层级，去掉旧版淡紫调试台观感
-private val Bg = Color(0xFFF4F6FB)
-private val Card = Color(0xFFFFFFFF)
-private val Primary = Color(0xFF4338CA)
-private val PrimarySoft = Color(0xFFEEF0FE)
-private val Sub = Color(0xFF6B7280)
-private val Good = Color(0xFF0E9F6E)
-private val Line = Color(0xFFE7EAF2)
-private val Warn = Color(0xFFB45309)
+// R73 · 颜色跟随主题：普通 getter 读顶层 snapshot state，组合期自动跟踪，切换即重组。
+// 22 个调用点一行不动；亮/暗两套色板见 Theme.kt。
+private val Bg: Color get() = palette.bg
+private val Card: Color get() = palette.card
+private val Primary: Color get() = palette.primary
+private val PrimarySoft: Color get() = palette.primarySoft
+private val Sub: Color get() = palette.sub
+private val Good: Color get() = palette.good
+private val Line: Color get() = palette.line
+private val Warn: Color get() = palette.warn
 
 class MainActivity : ComponentActivity() {
     /**
@@ -78,10 +79,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyAppTheme(this, Prefs.themeMode(this))
         pushIncoming(intent)
         setContent {
-            val incoming by incomingFlow.collectAsState()
-            App(incoming = incoming, onConsumed = { incomingFlow.value = null })
+            TingbenTheme {
+                val incoming by incomingFlow.collectAsState()
+                App(incoming = incoming, onConsumed = { incomingFlow.value = null })
+            }
         }
     }
 
@@ -745,17 +749,13 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) { cfg = cfg.copy(gapMs = it) }
             OptionRow("分段失败重做", "",
                 ProduceConfig.RETRY_OPTIONS.map { it to "${it}次" }, cfg.gateRetries) { cfg = cfg.copy(gateRetries = it) }
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Text("思考过程", fontSize = 12.sp, modifier = Modifier.weight(1f))
-                Text("不适用 · 新权重仅非思考", fontSize = 12.sp, color = Sub)
-            }
         }
 
-        ExpandGroup("④ 高级 · 跨书默认值（只读）", "") {
+        ExpandGroup("④ 本次制作 · 只读", "") {
             listOf(
-                "上下文窗口" to "${Prefs.nCtx(c)} token",
-                "推理线程" to "${Prefs.threads(c)} 线程",
-                "随机度" to "${Prefs.temperature(c)}"
+                "声音身份" to if (Prefs.voiceDescription(c).isBlank()) "默认锚点" else "自定义",
+                "采样种子" to "${Prefs.ttsKnobs(c).seed}",
+                "软件版本" to com.tingben.app.BuildConfig.VERSION_NAME
             ).forEach { (k, v) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                     Text(k, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
@@ -986,7 +986,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         }
                         Spacer(Modifier.height(7.dp))
                         Text(if (sg.text.isBlank()) "（这一段没有落盘文字）" else sg.text,
-                            fontSize = 11.sp, color = Color(0xFF20242E), lineHeight = 17.sp)
+                            fontSize = 11.sp, color = palette.text, lineHeight = 17.sp)
                     }
                 }
             }
@@ -1337,9 +1337,13 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     // 设置页不再画第二遍跳转卡。
     val missing = remember(refresh) { ModelStore.missing(c) }
     var lookOpen by rememberSaveable { mutableStateOf(false) }
-    var dataOpen by rememberSaveable { mutableStateOf(false) }
+    var dataOpen by rememberSaveable { mutableStateOf(true) }
     var backOpen by rememberSaveable { mutableStateOf(false) }
     var moreOpen by rememberSaveable { mutableStateOf(true) }
+    // R73 · 主题 / 字号拨动即写 Prefs；诊断二级折叠默认收起。
+    var themeMode by remember { mutableStateOf(Prefs.themeMode(c)) }
+    var fontScale by remember { mutableStateOf(Prefs.readerFontScale(c)) }
+    var diagOpen by rememberSaveable { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1355,10 +1359,43 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             fontSize = 10.5.sp, color = Sub)
 
         SettingsSection("外观与显示", "软件", lookOpen, { lookOpen = it }) {
-            // 主题 / 字号在 themes.xml 里目前只有单一主题，代码没有切换逻辑：
-            // 标「待新增」只读行，不画一个拨了没反应的假开关（P6 再实现）。
-            SettingInfoRow("主题", "待新增", "跟随系统", "深色模式尚未实现")
-            SettingInfoRow("字号", "待新增", "标准", "大字号尚未实现")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("主题", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("切换立即生效", fontSize = 10.5.sp, color = Sub)
+            }
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                listOf("跟随系统" to 0, "浅色" to 1, "深色" to 2).forEach { (label, m) ->
+                    TextButton(onClick = {
+                        themeMode = m
+                        Prefs.setThemeMode(c, m)
+                        applyAppTheme(c, m)
+                    }, modifier = Modifier.weight(1f).padding(horizontal = 2.dp)) {
+                        Text(label, fontSize = 11.5.sp,
+                            color = if (themeMode == m) Primary else Sub)
+                    }
+                }
+            }
+            HorizontalDivider(color = Line)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("正文字号", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("看书页长期保留", fontSize = 10.5.sp, color = Sub)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    val v = (fontScale - 1f).coerceIn(12f, 24f)
+                    fontScale = v
+                    Prefs.setReaderFontScale(c, v)
+                }) { Text("A-", fontSize = 12.sp) }
+                Text(fontScale.toInt().toString(), fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp))
+                TextButton(onClick = {
+                    val v = (fontScale + 1f).coerceIn(12f, 24f)
+                    fontScale = v
+                    Prefs.setReaderFontScale(c, v)
+                }) { Text("A+", fontSize = 12.sp) }
+                Spacer(Modifier.weight(1f))
+                Text("预览：巷口那盏灯还亮着", fontSize = 11.sp, color = Sub)
+            }
             SettingInfoRow("状态栏安全区", "现有", "已处理", "顶栏已与系统通知栏错开")
         }
 
@@ -1367,8 +1404,10 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             SettingInfoRow("分段记录", "现有", "按 run 分目录", "每次制作落一份段映射")
             SettingInfoRow("清理音频缓存", "需确认", "二次确认后清理",
                 "只删制作过程的分段 WAV，不碰原书与模型")
-            DiagnosticsBlock(c, refresh)
-            SoundProbeBlock(c, refresh)
+            SettingsSection("诊断与试音", "按需", diagOpen, { diagOpen = it }) {
+                DiagnosticsBlock(c, refresh)
+                SoundProbeBlock(c, refresh)
+            }
         }
 
         SettingsSection("后台与关于", "系统", backOpen, { backOpen = it }) {
@@ -1412,6 +1451,7 @@ private fun DiagnosticsBlock(c: Context, _refresh: Int) {
         append("前台服务 ").append(ProduceService.status()).append('\n')
         append("设置 ").append(Prefs.summary(c)).append('\n')
         append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
+        append("引擎 ").append(if (NativeEngine.isAvailable()) "已装载" else "未装载").append('\n')
         val crash = EventLog.lastCrash()
         if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
         append("\n=== 最近事件（不含正文）===\n")

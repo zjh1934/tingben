@@ -27,11 +27,12 @@ import androidx.compose.ui.unit.sp
  *
  * 与主界面解耦：不引用 MainActivity.kt 里文件私有的 CardBox / 颜色常量。
  */
-private val OptCard = Color(0xFFFFFFFF)
-private val OptChip = Color(0xFFF3F5FA)
-private val OptChipOn = Color(0xFFEEF0FE)
-private val OptPrimary = Color(0xFF4338CA)
-private val OptSub = Color(0xFF6B7280)
+// R73 · 跟随主题，调用点一行不动。
+private val OptCard: Color get() = palette.card
+private val OptChip: Color get() = palette.primarySoft
+private val OptChipOn: Color get() = palette.primarySoft
+private val OptPrimary: Color get() = palette.primary
+private val OptSub: Color get() = palette.sub
 
 @Composable
 fun ExpandGroup(

@@ -34,6 +34,9 @@ jobs:
       - name: R68 P1b 单一路径重构验证（旧文件不存在 / 零残留 / 守恒 / 反向注入）
         run: python3 scripts/r68_verify.py
 
+      - name: R73 P2 软件设置验证（主题 / 字号 / 折叠 / 零残留 / 反向注入 / 守恒）
+        run: python3 scripts/r73_verify.py
+
       - name: R38 参数触达矩阵与反向注入
         run: python3 scripts/r38_param_audit.py
 

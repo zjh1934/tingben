@@ -75,6 +75,9 @@ object Prefs {
     // R41 · 纯 UI 偏好：不进 voiceStamp、不进 diff、不碰 4B/任务书签
     private const val KEY_MIXER_OPEN = "mixerOpenSections"
     private const val KEY_RECENT_VOICES = "mixerRecentVoices"
+    // R73 · P2 软件设置：主题 0 跟随 / 1 浅 / 2 深；正文字号 12–24sp。
+    private const val KEY_THEME_MODE = "themeMode"
+    private const val KEY_FONT_SCALE = "readerFontScale"
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -171,6 +174,17 @@ object Prefs {
         sp(c).edit().putString(KEY_MIXER_OPEN, keys.sorted().joinToString(",")).apply()
 
     /** 「最近使用」最多 4 条，最新在前；只存 VoicePreset.id。 */
+    fun themeMode(c: Context) = sp(c).getInt(KEY_THEME_MODE, 0)
+
+    fun setThemeMode(c: Context, v: Int) =
+        sp(c).edit().putInt(KEY_THEME_MODE, v.coerceIn(0, 2)).apply()
+
+    fun readerFontScale(c: Context) = sp(c).getFloat(KEY_FONT_SCALE, 16f)
+        .coerceIn(12f, 24f)
+
+    fun setReaderFontScale(c: Context, v: Float) =
+        sp(c).edit().putFloat(KEY_FONT_SCALE, v.coerceIn(12f, 24f)).apply()
+
     fun recentVoices(c: Context): List<String> =
         (sp(c).getString(KEY_RECENT_VOICES, "") ?: "")
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(4)
@@ -192,11 +206,11 @@ object Prefs {
     ).joinToString("||"))
 
     fun summary(c: Context) = buildString {
-        // P0 · 2507 仅非思考：不再显示「思考 开/关」，也不再假装温度被 0.6 覆盖。
-        append("仅非思考（权重决定）")
-        append(" · 上下文 ").append(nCtx(c))
-        append(" · 线程 ").append(threads(c))
-        append(" · 温度 ").append(temperature(c))
+        // R73 · 只报软件自身状态；语言模型时代的「上下文 / 线程 / 温度 / 仅非思考」整套退场。
+        append("主题 ").append(when (themeMode(c)) {
+            1 -> "浅色"; 2 -> "深色"; else -> "跟随系统"
+        })
+        append(" · 正文字号 ").append(readerFontScale(c).toInt())
         append(" · 拟声表达 ").append(if (nonVerbal(c)) "开" else "关")
         append("\n声音 · ").append(if (voiceDescription(c).isBlank()) "默认身份锚点" else "自定义音色")
         append(" · 角色映射 ").append(if (castEnabled(c)) "开" else "关")

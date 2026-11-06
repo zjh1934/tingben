@@ -149,7 +149,7 @@ internal fun AppDrawerSheet(
             }
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                color = Color(0xFFE7EAF2)
+                color = palette.line
             )
             DRAWER_MORE.forEach { (idx, label) ->
                 DrawerRow(label, selected == idx, primary, sub) { onNavigate(idx) }
