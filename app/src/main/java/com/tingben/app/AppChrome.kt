@@ -52,7 +52,7 @@ internal const val TAB_TASKS = 1
 internal const val TAB_AUDIO = 2
 internal const val TAB_NONE = -1
 
-/** V1 · 抽屉 7 个目的地下标。前 3 个与 TAB_* 同值，方便直接复用 chrome.activeTab。 */
+/** 抽屉 6 个目的地下标。前 3 个与 TAB_* 同值，方便直接复用 chrome.activeTab。 */
 internal const val NAV_LIBRARY = 0
 internal const val NAV_TASKS = 1
 internal const val NAV_AUDIO = 2
@@ -70,15 +70,16 @@ internal data class ChromeSpec(
     val showImport: Boolean = false,
 )
 
+/** R89 · 调音台进一级：跟「选项卡」平级，点一下就到，不再翻「更多」。总数仍 6 项。 */
 private val DRAWER_TOP = listOf(
     NAV_LIBRARY to "书架",
     NAV_TASKS to "任务",
     NAV_AUDIO to "我的音频",
+    NAV_MIXER to "调音台",
 )
 
 private val DRAWER_MORE = listOf(
     NAV_SETTINGS to "设置",
-    NAV_MIXER to "调音台",
     NAV_MODELS to "模型",
 )
 

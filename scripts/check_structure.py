@@ -318,19 +318,19 @@ if co_m:
     if covered != WANT_SCREENS: errs.append("U1 回退：chromeOf 没覆盖全部目的地 " + str(covered ^ WANT_SCREENS))
 else:
     errs.append("U1 回退：找不到 chromeOf 映射")
-# V1 · 抽屉一列：顶层 3 个（不含设置）+ 设置域 3 个（调音台必须是独立项）
+# R89 · 抽屉一列：一级 4 项（调音台与选项卡平级）+ 更多 2 项，总数恒 6
 tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 if tabs_m:
     body = tabs_m.group(1)
-    if body.count(" to ") != 3 or "设置" in body:
-        errs.append("U1 回退：抽屉顶层不是 3 个或仍含设置入口")
+    if body.count(" to ") != 4 or "设置" in body or "调音台" not in body:
+        errs.append("U1 回退：抽屉一级不是 4 项 / 调音台不在一级 / 混入了设置")
 else:
     errs.append("U1 回退：找不到 DRAWER_TOP")
 if more_m:
     body2 = more_m.group(1)
-    if body2.count(" to ") != 3 or "调音台" not in body2:
-        errs.append("U1 回退：抽屉设置域不是 3 项或调音台不是独立项")
+    if body2.count(" to ") != 2 or "调音台" in body2:
+        errs.append("U1 回退：更多组不是 2 项或调音台仍留在更多组")
     if "语言模型" in body2 or "文本处理" in body2:
         errs.append("U1 回退：抽屉仍含已删模块")
 else:

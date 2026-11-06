@@ -67,6 +67,9 @@ jobs:
       - name: R88 任务中心页收敛验证（空态下一步 / 跳转降级 / 去重 / 四项操作守恒 / 反向注入）
         run: python3 scripts/r88_verify.py --selftest
 
+      - name: R89 调音台一级入口验证（平级入口 / 抽屉 6 项 / 导航守恒 / 反向注入）
+        run: python3 scripts/r89_verify.py --selftest
+
       - name: R38 参数触达矩阵与反向注入
         run: python3 scripts/r38_param_audit.py
 
