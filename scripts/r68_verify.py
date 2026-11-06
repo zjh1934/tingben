@@ -66,7 +66,9 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     if 'val annotated = chunks.flatMap' not in pipe: e.append('直接朗读主体被删')
     if 'val gateFails = 0' not in pipe: e.append('恒 0 降级计数被删')
     if 'String.format("direct_%04d.wav", i)' not in pipe: e.append('WAV 命名没收敛')
-    if pipe.count('\n') > 980: e.append('Pipeline 仍超 980 行，旧分支疑似未删干净')
+    # R100 · 单一路径之上又加了「失败中止 / 章节偏移登记」，行数自然增长；
+    # 旧分支回潮仍由上面三条特征断言 + 本脚本注入对拍拦住，不再靠行数卡新代码。
+    if pipe.count('\n') > 1100: e.append('Pipeline 异常膨胀，旧分支疑似回潮')
     if 'R68 · P1b' not in pipe: e.append('缺 R68 重构注记')
 
     # ③ 零残留
