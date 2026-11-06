@@ -119,7 +119,7 @@ object EventLog {
         while (ring.size > RING_MAX) ring.removeFirst()
         // 主日志：全部保留（用户要详细），轮转上限比旧版放宽
         appendCapped(file, mainLine, 768 * 1024L, 800)
-        // 诊断态：带 level + 字段，供「复制完整日志」使用
+        // 诊断态：带 level + 字段，事件日志本机留存
         appendCapped(detailFile, detailLine, 1536 * 1024L, 2000)
     }
 

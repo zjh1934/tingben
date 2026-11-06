@@ -135,8 +135,8 @@ def main():
         ('抽屉多一项', lambda: check(chrome=CHROME + '\nconst val NAV_LLM = 8\n')),
         ('版本号退回', lambda: check(gradle=GRADLE.replace('1.1.0+', '1.0.0+'))),
         ('旧说法注释回潮', lambda: check(pipe=PIPE.replace('// R68 · 单一路径：', '// 4B 标注档：\n        // R68 · 单一路径：'))),
-        ('旧权重加载函数回潮', lambda: check(pipe=PIPE.replace('    // R68 · P1b：旧文本权重的加载函数已删',
-            '    fun llm(c: Context) = pick(c, LLM)\n    // R68 · P1b：旧文本权重的加载函数已删'))),
+        ('旧权重加载函数回潮', lambda: check(pipe=PIPE.replace('    fun tokenizer(c: Context)',
+            '    fun llm(c: Context) = pick(c, LLM)\n    fun tokenizer(c: Context)'))),
     ]
     bad = []
     for name, fn in INJ:

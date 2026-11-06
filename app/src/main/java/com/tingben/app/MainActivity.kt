@@ -1382,7 +1382,7 @@ private fun SettingInfoRow(label: String, badge: String, value: String, note: St
 }
 
 /**
- * R66 · 设置页只管软件：外观、数据与日志、后台与关于；模型参数不再有独立页。
+ * R66 · 设置页只管软件：外观、本机数据、后台与关于；模型参数不再有独立页。
  * 三套作用域守恒：设置页拨动即写 Prefs（长期默认），无草稿、无差异、无提交按钮；
  * 调音台是草稿 → 唯一 commitAll()，制作准备页是「仅本次」。
  */
@@ -1394,6 +1394,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     // R54 · onLibrary / onMixer 保留签名但零调用：抽屉已有独立目的地，
     // 设置页不再画第二遍跳转卡。
     val missing = remember(refresh) { ModelStore.missing(c) }
+    val modeCount = remember(refresh) { ModelStore.installedModes(c).size }
     var lookOpen by rememberSaveable { mutableStateOf(false) }
     var dataOpen by rememberSaveable { mutableStateOf(true) }
     var backOpen by rememberSaveable { mutableStateOf(false) }
@@ -1405,7 +1406,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (missing.isEmpty()) "2 个声音模型都准备好了"
+            Text(if (missing.isEmpty()) "模型已就绪 · $modeCount 个模式"
                  else "还差：" + missing.joinToString("、"),
                 fontSize = 12.5.sp, color = if (missing.isEmpty()) Good else Warn,
                 modifier = Modifier.weight(1f))
@@ -1457,9 +1458,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             SettingInfoRow("状态栏安全区", "现有", "已处理", "顶栏已与系统通知栏错开")
         }
 
-        SettingsSection("数据与日志", "本机", dataOpen, { dataOpen = it }) {
-            SettingInfoRow("诊断全文", "现有", "复制全文", "事件、审计、TTS 参数、设备信息")
-            SettingInfoRow("分段记录", "现有", "按 run 分目录", "每次制作落一份段映射")
+        SettingsSection("本机数据", "本机", dataOpen, { dataOpen = it }) {
             SettingInfoRow("清理音频缓存", "需确认", "二次确认后清理",
                 "只删制作过程的分段 WAV，不碰原书与模型")
             SettingsSection("诊断与试音", "按需", diagOpen, { diagOpen = it }) {
@@ -1498,7 +1497,7 @@ private fun DiagnosticsBlock(c: Context, _refresh: Int) {
     val clipboard = LocalClipboardManager.current
     var confirmClear by remember { mutableStateOf(false) }
 
-    fun buildDiag(full: Boolean): String = buildString {
+    fun buildDiag(): String = buildString {
         append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
         append("设备 ").append(android.os.Build.MODEL).append(" / Android ")
             .append(android.os.Build.VERSION.RELEASE).append(" / ")
@@ -1512,10 +1511,6 @@ private fun DiagnosticsBlock(c: Context, _refresh: Int) {
         if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
         append("\n=== 最近事件（不含正文）===\n")
         append(EventLog.read().lines().takeLast(60).joinToString("\n"))
-        if (full) {
-            append("\n\n=== 诊断态完整日志（含 TRACE，最近 300 行）===\n")
-                .append(EventLog.readDetail().lines().takeLast(300).joinToString("\n"))
-        }
     }
 
     Spacer(Modifier.height(10.dp))
@@ -1523,13 +1518,9 @@ private fun DiagnosticsBlock(c: Context, _refresh: Int) {
     Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
     Spacer(Modifier.height(8.dp))
     TextButton(onClick = {
-        clipboard.setText(AnnotatedString(buildDiag(false)))
+        clipboard.setText(AnnotatedString(buildDiag()))
         Toast.makeText(c, "已复制诊断摘要，直接贴给我即可", Toast.LENGTH_SHORT).show()
     }, Modifier.fillMaxWidth()) { Text("复制诊断信息（摘要）") }
-    TextButton(onClick = {
-        clipboard.setText(AnnotatedString(buildDiag(true)))
-        Toast.makeText(c, "已复制完整日志，仅本机保存", Toast.LENGTH_SHORT).show()
-    }, Modifier.fillMaxWidth()) { Text("复制完整日志") }
     TextButton(onClick = { confirmClear = true }, Modifier.fillMaxWidth()) {
         Text("清理制作过程的分段音频", fontSize = 11.5.sp, color = Warn)
     }
@@ -1556,7 +1547,7 @@ private fun DiagnosticsBlock(c: Context, _refresh: Int) {
     }
 }
 
-/** P0 · 两段真合成试音搬进「数据与日志」：能力不丢，不新增第五个分区。 */
+/** P0 · 两段真合成试音搬进「本机数据」：能力不丢，不新增第五个分区。 */
 @Composable
 private fun SoundProbeBlock(c: Context, refresh: Int) {
     val st by Producer.state.collectAsState()
@@ -1573,6 +1564,7 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
             val res = runCatching {
                 if (!NativeEngine.isAvailable()) throw IllegalStateException(
                     NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
+                ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }
                 val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
                 val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
                 val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
@@ -1641,28 +1633,42 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
     if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 11.sp, color = Sub)
 }
 
-// ── ⑤b 模型页（R81 · 缺件态单主卡 / 就绪态不同构） ──────────────
+// ── ⑤b 模型页（R84 · 1 共用底座 + 3 模式，各自单独导入） ──────────
 @Composable
 private fun ModelScreen(c: Context, refresh: Int,
                         importing: String?, importBytes: Long, importError: String?,
                         onPick: () -> Unit, onBack: () -> Unit, onLibrary: () -> Unit,
                         onChanged: () -> Unit) {
     val clipboard = LocalClipboardManager.current
+    val st by Producer.state.collectAsState()
     val files = remember(refresh) { ModelStore.files(c) }
     val missing = remember(refresh) { ModelStore.missing(c) }
+    val installed = remember(refresh) { ModelStore.installedModes(c) }
+    val current = remember(refresh) { ModelStore.currentMode(c) }
+    val modeFiles = remember(refresh) { ModelStore.modeFiles(c) }
+    val baseFile = remember(refresh) { ModelStore.tokenizer(c) }
     val allReady = missing.isEmpty()
 
+    fun copyUrl(url: String) {
+        clipboard.setText(AnnotatedString(url))
+        Toast.makeText(c, "地址已复制，用浏览器下载", Toast.LENGTH_SHORT).show()
+    }
+    fun cnUrl(name: String) =
+        "https://hf-mirror.com/Serveurperso/Qwen3-TTS-GGUF/resolve/main/$name"
+    fun hfUrl(name: String) =
+        "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/$name"
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        // R81 · 返回与状态并成一行，不再单独占一整行
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ 返回", fontSize = 12.sp, color = Primary) }
             Spacer(Modifier.weight(1f))
-            Text(if (allReady) "已就绪 · 2 份" else "还缺 ${missing.size} 份",
+            Text(if (allReady) "已就绪 · ${installed.size} 个模式"
+                 else if (baseFile == null) "还缺共用底座" else "还缺模式主文件",
                 fontSize = 11.5.sp, color = if (allReady) Good else Warn)
         }
         Spacer(Modifier.height(6.dp))
 
-        // 导入中：明确告诉用户「别关」，而不是一片静默像死机
+        // 导入中 / 导入失败：两态沿用，不静默
         if (importing != null) {
             CardBox(Modifier.padding(bottom = 11.dp)) {
                 Text("正在复制，别关掉 App", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Primary)
@@ -1685,80 +1691,150 @@ private fun ModelScreen(c: Context, refresh: Int,
             }
         }
 
-        if (allReady) {
-            // R81 · 就绪态不再与缺件态同构：不列两份「还缺」卡、不摆整宽导入按钮
-            CardBox(Modifier.padding(bottom = 10.dp)) {
-                Text("两份文件都在", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(Modifier.height(4.dp))
-                Text("可以合成音频了。", fontSize = 11.5.sp, color = Sub)
-                Spacer(Modifier.height(14.dp))
-                Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("回书架，导入一本书", fontSize = 15.sp)
-                }
-            }
-        } else {
-            // R81 · 缺件态只留一张主卡：缺哪两份写清，主按钮唯一
-            CardBox(Modifier.padding(bottom = 10.dp)) {
-                Text("还差 ${missing.size} 份文件", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(Modifier.height(4.dp))
-                Text("缺件就出不了声，两份都要放进 App 的模型目录。", fontSize = 11.5.sp, color = Sub)
-                Spacer(Modifier.height(14.dp))
-                Button(onClick = onPick, enabled = importing == null,
-                    modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("导入模型文件", fontSize = 15.sp)
-                }
-                Spacer(Modifier.height(12.dp))
-                val slots = listOf(
-                    "声音主文件" to ModelStore.TALKER,
-                    "声音配套文件" to ModelStore.TOKENIZER
-                )
-                slots.forEach { (label, name) ->
-                    val f = files.find { it.name.equals(name, true) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(label, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Spacer(Modifier.height(2.dp))
-                            Text("需要：$name", fontSize = 10.sp, color = Sub, maxLines = 1)
-                        }
-                        if (f != null) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("已导入 ✓", fontSize = 11.sp, color = Good)
-                                Text("%.2f GB".format(f.length() / 1024f / 1024f / 1024f),
-                                    fontSize = 10.sp, color = Sub)
-                            }
-                        } else {
-                            TextButton(onClick = {
-                                val url = when (label) {
-                                    "声音主文件" -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
-                                    else -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
-                                }
-                                clipboard.setText(AnnotatedString(url))
-                                Toast.makeText(c, "地址已复制，用浏览器下载", Toast.LENGTH_SHORT).show()
-                            }) { Text("复制地址 ›", fontSize = 11.5.sp, color = Primary) }
-                        }
+        // ── 老大：共用底座，三模式共用，导入一次就够 ──
+        CardBox(Modifier.padding(bottom = 10.dp)) {
+            Text("共用底座 · 三个模式都要用", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("12Hz 码 ↔ 24kHz 波形，导入一次就够。", fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
+            Text(ModelStore.TOKENIZER, fontSize = 10.sp, color = Sub,
+                fontFamily = FontFamily.Monospace)
+            Spacer(Modifier.height(6.dp))
+            if (baseFile != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("已导入 ✓ · %.2f GB".format(
+                        baseFile.length() / 1024f / 1024f / 1024f),
+                        fontSize = 11.5.sp, color = Good, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { ModelStore.delete(c, baseFile); onChanged() }) {
+                        Text("删除重试", fontSize = 10.5.sp, color = Sub)
                     }
-                    if (f != null) {
-                        Row {
-                            Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) {
-                                Text("删除重试", fontSize = 10.5.sp, color = Sub)
-                            }
-                        }
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("还缺这一份", fontSize = 11.5.sp, color = Warn,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = { copyUrl(cnUrl(ModelStore.TOKENIZER)) }) {
+                        Text("复制国内地址 ›", fontSize = 11.5.sp, color = Primary)
                     }
-                    Spacer(Modifier.height(10.dp))
+                    TextButton(onClick = { copyUrl(hfUrl(ModelStore.TOKENIZER)) }) {
+                        Text("备用 ›", fontSize = 10.5.sp, color = Sub)
+                    }
                 }
             }
         }
 
-        // R81 · 重新导入在就绪态降级成小文字入口，不再整宽重复
-        if (allReady) {
-            TextButton(onClick = onPick, enabled = importing == null) {
-                Text("重新导入某个文件 ›", fontSize = 11.5.sp, color = Primary)
+        Text("模式主文件 · 装一份就能用", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+        Text("App 不联网：复制地址 → 浏览器下 → 回来点导入。",
+            fontSize = 10.5.sp, color = Sub)
+        Spacer(Modifier.height(8.dp))
+
+        ModelStore.Mode.values().forEach { mode ->
+            val f = modeFiles[mode]
+            val isCurrent = mode == current
+            CardBox(Modifier.padding(bottom = 9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(mode.label + (if (isCurrent) " · 当前启用" else ""),
+                            fontWeight = FontWeight.Bold, fontSize = 13.5.sp,
+                            color = if (isCurrent) Primary else Color.Unspecified)
+                        Text(mode.id, fontSize = 10.sp, color = Sub)
+                    }
+                    if (isCurrent) Text("✓", fontSize = 14.sp, color = Good)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(mode.file, fontSize = 10.sp, color = Sub,
+                    fontFamily = FontFamily.Monospace)
+                Spacer(Modifier.height(3.dp))
+                Text(mode.hint, fontSize = 10.5.sp, color = Sub)
+                Spacer(Modifier.height(7.dp))
+                if (f != null) {
+                    Text("已导入 · %.2f GB".format(f.length() / 1024f / 1024f / 1024f),
+                        fontSize = 11.sp, color = Good)
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!isCurrent) {
+                            TextButton(onClick = {
+                                if (!st.running) { Prefs.setModelMode(c, mode.id); onChanged() }
+                            }, enabled = !st.running) {
+                                Text("启用这个模式", fontSize = 11.5.sp, color = Primary)
+                            }
+                        } else {
+                            Text("这是当前模式", fontSize = 11.sp, color = Sub)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) {
+                            Text("删除重试", fontSize = 10.5.sp, color = Sub)
+                        }
+                    }
+                    if (!isCurrent && st.running) {
+                        Text("正在制作，这一本跑完之前不能切", fontSize = 10.5.sp, color = Warn)
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("待导入", fontSize = 11.sp, color = Warn,
+                            modifier = Modifier.weight(1f))
+                        TextButton(onClick = onPick, enabled = importing == null) {
+                            Text("导入这份 ›", fontSize = 11.5.sp, color = Primary)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { copyUrl(cnUrl(mode.file)) }) {
+                            Text("复制国内地址 ›", fontSize = 11.sp, color = Primary)
+                        }
+                        TextButton(onClick = { copyUrl(hfUrl(mode.file)) }) {
+                            Text("备用 ›", fontSize = 10.5.sp, color = Sub)
+                        }
+                    }
+                }
             }
+        }
+
+        if (allReady) {
+            CardBox(Modifier.padding(bottom = 10.dp)) {
+                Text("底座 + 至少 1 个模式都在", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(current.label + " 是当前模式。" + (if (current == ModelStore.Mode.VOICE_DESIGN)
+                    "可以合成音频了。"
+                else "这个模式的合成界面还没做完，先切回「描述造音色」再制作。"),
+                    fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(12.dp))
+                if (current == ModelStore.Mode.VOICE_DESIGN) {
+                    Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
+                        Text("回书架，导入一本书", fontSize = 15.sp)
+                    }
+                } else {
+                    // R84 自审：不能让用户带着「还不能合成」的模式回书架，给一键切回。
+                    Button(onClick = {
+                        if (!st.running) {
+                            Prefs.setModelMode(c, ModelStore.Mode.VOICE_DESIGN.id)
+                            onChanged()
+                        }
+                    }, enabled = !st.running, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                        Text("切回「描述造音色」", fontSize = 15.sp)
+                    }
+                }
+            }
+        } else {
+            CardBox(Modifier.padding(bottom = 10.dp)) {
+                Text("还差 " + missing.joinToString("、"), fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("缺件就出不了声，先补齐上面高亮的那一份。", fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onPick, enabled = importing == null,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("导入模型文件", fontSize = 15.sp)
+                }
+            }
+        }
+
+        TextButton(onClick = onPick, enabled = importing == null) {
+            Text("重新导入某个文件 ›", fontSize = 11.5.sp, color = Primary)
         }
         if (files.isNotEmpty()) {
             Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
         }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -1950,9 +2026,6 @@ private fun AdvancedDrawer(rows: List<MixerRow>, stamp: String) {
             Text("分区元信息：采样 9 项可编辑 / 表演层与开关属上层 / 触达矩阵与官方索引只读",
                 fontSize = 10.sp, color = Sub)
             Spacer(Modifier.height(6.dp))
-            Text("导出与诊断", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-            Text("已生效 v$INSTRUCT_TEMPLATE_VERSION · 指纹 $stamp · 合成并发 1 · 语言 chinese · 24kHz 单声道 WAV",
-                fontSize = 10.sp, color = Sub)
         }
     }
 }
@@ -2312,6 +2385,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         scope.launch(Dispatchers.IO) {
             val res = runCatching {
                 if (!NativeEngine.isAvailable()) throw IllegalStateException("本地引擎没装载，请重启 App")
+                ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }
                 val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
                 val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
                 val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
@@ -2824,11 +2898,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             MixerSection("参数触达与官方资料", "trace", openMap.contains("trace"),
                 { toggleSection("trace", it) }, badge = "只读", anchor = { anchors["trace"] = it }) {
                 HelpNote("怎么用这份控制台",
-                    "改完点顶部「提交变更」；正在跑的任务不受影响。想复盘就点下面「复制进诊断日志」。")
-                TextButton(onClick = {
-                    Mixer.logProfile(c, "手动导出当前配置到日志")
-                    Toast.makeText(c, "已写进诊断日志，复制诊断信息即可贴出", Toast.LENGTH_SHORT).show()
-                }) { Text("复制进诊断日志", fontSize = 12.sp) }
+                    "改完点顶部「提交变更」；正在跑的任务不受影响。")
                 AdvancedDrawer(rows, stamp)
                 TimingHint(TIMING_NOW)
             }

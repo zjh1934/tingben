@@ -100,12 +100,33 @@ object BookStore {
 object ModelStore {
     /**
      * R68 · P1b：旧文本权重整套退场后，下面两个名称常量只作「旧数据白名单」保留——
-     * 老用户私有目录里若还躺着旧 GGUF，不主动删、也不再加载；模型清单只读两份声音权重。
+     * 老用户私有目录里若还躺着旧 GGUF，不主动删、也不再加载。
      */
     const val LLM = "huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf"
     const val LLM_LEGACY = "mlabonne_Qwen3-旧权重-abliterated-Q4_K_M.gguf"
     const val TALKER = "qwen-talker-1.7b-voicedesign-Q8_0.gguf"
     const val TOKENIZER = "qwen-tokenizer-12hz-Q8_0.gguf"
+
+    /**
+     * R84 · 结构不是「两份配套文件」，而是 1 个共用底座 + 3 份模式主文件。
+     * 底座三模式共用、导入一次；三份主文件各自单独点导入，装哪份用哪份。
+     * 模式语义以随包 qwen.h 为准：instruct 只归 voice_design（必填），
+     * speaker 编号只归 custom_voice，ref_audio_24k 只归 base 且与 instruct 互斥。
+     */
+    enum class Mode(
+        val id: String, val label: String, val file: String,
+        val key: String, val hint: String
+    ) {
+        VOICE_DESIGN("voice_design", "描述造音色",
+            "qwen-talker-1.7b-voicedesign-Q8_0.gguf", "voicedesign",
+            "一段文字描述造音色，instruct 必填；当前唯一接通合成的模式。"),
+        CUSTOM_VOICE("custom_voice", "预设音色",
+            "qwen-talker-1.7b-customvoice-Q8_0.gguf", "customvoice",
+            "预设音色编号 + 语气指令；合成界面下一轮做。"),
+        BASE("base", "参考音频",
+            "qwen-talker-1.7b-base-Q8_0.gguf", "base",
+            "一小段参考音频克隆，拒 instruct；合成界面下一轮做。")
+    }
 
     fun dir(c: Context) = File(c.filesDir, "models").apply { mkdirs() }
     fun files(c: Context): List<File> = try {
@@ -173,14 +194,43 @@ object ModelStore {
         return all.firstOrNull { f -> hints.any { f.name.contains(it, true) } }
     }
 
-    // R68 · P1b：旧文本权重的加载函数已删，只剩上面的名称常量兜旧数据。
-    fun talker(c: Context) = pick(c, TALKER, "talker")
+    /**
+     * R84 · 按「模式独有关键词」识别，绝不用泛化的 "talker"：
+     * 旧写法按泛化关键词找主文件，会把 customvoice / base 误当成
+     * voicedesign 加载，而 speaker 恒 null、instruct 必填，引擎会直接判非法。
+     * 下载器在文件名后加 (1) / _1 时，仍靠 -voicedesign- / -customvoice- / -base- 认出来。
+     */
+    private fun pickFor(c: Context, m: Mode): File? {
+        val all = files(c)
+        all.find { it.name.equals(m.file, true) }?.let { return it }
+        return all.firstOrNull { it.name.contains("-" + m.key + "-", true) }
+    }
+
+    fun modeFile(c: Context, m: Mode) = pickFor(c, m)
+    fun modeFiles(c: Context): Map<Mode, File?> = Mode.values().associateWith { pickFor(c, it) }
+    fun installedModes(c: Context): List<Mode> = Mode.values().filter { pickFor(c, it) != null }
+    fun currentMode(c: Context): Mode =
+        Mode.values().firstOrNull { it.id == Prefs.modelMode(c) } ?: Mode.VOICE_DESIGN
+
+    /** 当前启用模式没装时回退到已装的 voicedesign，保证老用户升级后仍能出声。 */
+    fun talker(c: Context): File? = pickFor(c, currentMode(c)) ?: pickFor(c, Mode.VOICE_DESIGN)
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
+
+    /**
+     * R84 · customvoice 要音色编号、base 要参考音频，输入界面属于下一轮调音台。
+     * 明确拦住比把错误参数丢给引擎好：不画假开关、不静默产出坏音频。
+     * ttsLoad 每次合成都重新加载并 ttsFree，切模式后下一次合成自然生效，无需额外卸载。
+     */
+    fun synthesisBlockReason(c: Context): String? {
+        val m = currentMode(c)
+        if (m == Mode.VOICE_DESIGN) return null
+        return "当前是「${m.label}」模式，这个模式的合成界面还没做完；先去模型页切回「描述造音色」。"
+    }
 
     fun missing(c: Context): List<String> {
         val m = mutableListOf<String>()
-        if (talker(c) == null) m.add("声音主文件")
-        if (tokenizer(c) == null) m.add("声音配套文件")
+        if (tokenizer(c) == null) m.add("共用底座（12Hz）")
+        if (installedModes(c).isEmpty()) m.add("模式主文件")
         return m
     }
     fun ready(c: Context) = missing(c).isEmpty()
@@ -564,14 +614,18 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, NativeEngine.shortReason())
             return
         }
+        // R84 · 非 voicedesign 模式的输入界面还没做，明确拦住，不静默产出坏音频。
+        ModelStore.synthesisBlockReason(c)?.let { reason ->
+            _state.value = Progress(false, "没开始", 0, 0, 0, reason)
+            return
+        }
         val tk = ModelStore.talker(c); val tok = ModelStore.tokenizer(c)
         val miss = mutableListOf<String>()
-        if (tk == null) miss.add("声音主文件")
-        if (tok == null) miss.add("声音配套文件")
-        // R67 · P1a：只剩声音模型，不再检查第二份权重。
+        if (tk == null) miss.add("模式主文件")
+        if (tok == null) miss.add("共用底座（12Hz）")
         if (miss.isNotEmpty()) {
             _state.value = Progress(false, "没开始", 0, 0, 0,
-                "还差：" + miss.joinToString("、") + "。去设置页导入。")
+                "还差：" + miss.joinToString("、") + "。去模型页导入。")
             return
         }
 

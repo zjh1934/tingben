@@ -130,8 +130,8 @@ def main():
             'run(c, book, onlyChapters, true, thinkOverride, config)',
             'run(c, book, onlyChapters, directRead, thinkOverride, config)'))),
         ('模型缺失又拦截', lambda: check(pipe=PIPE.replace(
-            'if (tk == null) miss.add("声音主文件")',
-            'if (llm(c) == null) miss.add("语言模型")\n        if (tk == null) miss.add("声音主文件")'))),
+            'if (tk == null) miss.add("模式主文件")',
+            'if (llm(c) == null) miss.add("语言模型")\n        if (tk == null) miss.add("模式主文件")'))),
         ('manifest 旧 slot 回潮', lambda: check(manifest={
             'models': [{'slot': 'llm'}, {'slot': 'tts_talker'}, {'slot': 'tts_tokenizer'}],
             'baseline': {}})),

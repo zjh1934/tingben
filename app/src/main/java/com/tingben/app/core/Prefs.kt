@@ -77,6 +77,8 @@ object Prefs {
     // R73 · P2 软件设置：主题 0 跟随 / 1 浅 / 2 深；正文字号 12–24sp。
     private const val KEY_THEME_MODE = "themeMode"
     private const val KEY_FONT_SCALE = "readerFontScale"
+    // R84 · 当前启用的音频模式 id；不进 voiceStamp，切模式不误删旧 WAV。
+    private const val KEY_MODEL_MODE = "modelMode"
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -165,6 +167,12 @@ object Prefs {
         sp(c).edit().putString(KEY_MIXER_OPEN, keys.sorted().joinToString(",")).apply()
 
     /** 「最近使用」最多 4 条，最新在前；只存 VoicePreset.id。 */
+    // R84 · 1 底座 + 3 模式里的当前模式，默认描述造音色（兼容旧数据）。
+    fun modelMode(c: Context): String =
+        sp(c).getString(KEY_MODEL_MODE, "voice_design") ?: "voice_design"
+    fun setModelMode(c: Context, v: String) =
+        sp(c).edit().putString(KEY_MODEL_MODE, v).apply()
+
     fun themeMode(c: Context) = sp(c).getInt(KEY_THEME_MODE, 0)
 
     fun setThemeMode(c: Context, v: Int) =

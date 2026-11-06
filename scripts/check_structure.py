@@ -205,7 +205,7 @@ mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "Mixer.CHAIN", "调音台", "private fun SettingsSection(",
            "Anatomy-First", "12 维", "试听未提交参数", "试听已生效参数",
-           "MixerScreen", "Screen.MIXER", "导出与诊断", "恢复上游默认"]
+           "MixerScreen", "Screen.MIXER", "怎么用这份控制台", "恢复上游默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
 for sym in ["GENDER", "PITCH", "TIMBRE", "BREATH", "PERSONA",
@@ -387,7 +387,7 @@ if "statusBarsPadding()" not in main_src:
 # R77 · 角色卡整套退场：CastPresets / seedIfEmpty 已随文件删除，换成迁移期符号
 R36_ALL = ["MixerSection(", "Prefs.mixerOpenSections", "MixerPresetStore", "MixerPreset(",
            "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
-           "导出与诊断", "预设库", "参数触达与官方资料",
+           "本机数据", "预设库", "参数触达与官方资料",
            "单次音频长度上限", "TIMING_NEXT", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:

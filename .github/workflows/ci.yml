@@ -58,8 +58,8 @@ jobs:
       - name: R80 我的音频页收敛验证（空态下一步 / 控制默认收起 / 零播放卡 / 守恒 / 反向注入）
         run: python3 scripts/r80_verify.py --selftest
 
-      - name: R81 模型页重排验证（缺件单主卡 / 就绪不同构 / 复制降级 / 守恒 / 反向注入）
-        run: python3 scripts/r81_verify.py --selftest
+      - name: R84 模型选择页验证（1 底座 + 3 模式 / 精确识别 / 导出日志零残留 / 守恒 / 反向注入）
+        run: python3 scripts/r84_verify.py --selftest
 
       - name: R38 参数触达矩阵与反向注入
         run: python3 scripts/r38_param_audit.py
