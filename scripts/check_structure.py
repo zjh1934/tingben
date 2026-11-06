@@ -14,7 +14,7 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "docs/THIRD_PARTY_NOTICES.md",
  "scripts/build_native.sh", "scripts/check_structure.py", ".github/workflows/ci.yml", "keystore.jks",
  "contracts/model-manifest.json", "contracts/pipeline_spec.md",
- "contracts/sampling-defaults.h", "scripts/r38_param_audit.py",
+ "contracts/sampling-defaults.h", "scripts/r92_verify.py",
  "app/src/main/java/com/tingben/app/core/ParamSpec.kt"]
 for f in REQUIRED:
     if not (ROOT / f).exists(): errs.append("缺少必备文件: " + f)
@@ -205,7 +205,7 @@ mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "Mixer.CHAIN", "调音台", "private fun SettingsSection(",
            "Anatomy-First", "12 维", "试听未提交参数", "试听已生效参数",
-           "MixerScreen", "Screen.MIXER", "怎么用这份控制台", "恢复上游默认"]
+           "MixerScreen", "Screen.MIXER", "恢复上游默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
 for sym in ["GENDER", "PITCH", "TIMBRE", "BREATH", "PERSONA",
@@ -385,9 +385,9 @@ if "statusBarsPadding()" not in main_src:
 
 # ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 ──
 # R77 · 角色卡整套退场：CastPresets / seedIfEmpty 已随文件删除，换成迁移期符号
-R36_ALL = ["MixerSection(", "Prefs.mixerOpenSections", "MixerPresetStore", "MixerPreset(",
-           "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
-           "本机数据", "预设库", "参数触达与官方资料",
+R36_ALL = ["MixerSection(", "MixerPresetStore", "MixerPreset(",
+           "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT",
+           "本机数据",
            "单次音频长度上限", "TIMING_NEXT", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
@@ -435,8 +435,7 @@ for sym in ["Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn }
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
 R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "提交变更",
-           "参数触达与官方资料", "恢复本组官方默认", "精确值", "当前生效 · 全书固定",
-           "官方资料（按名称自行查", "采样参数 · 9 项真到模型"]
+           "恢复本组官方默认", "采样参数 · 9 项真到模型", "声音描述"]
 for sym in R38_ALL:
     if sym not in all_src: errs.append("缺少 R38 控制台符号: " + sym)
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
@@ -456,8 +455,8 @@ draft_path = ROOT / "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
 draft_src = draft_path.read_text(encoding="utf-8", errors="replace") if draft_path.exists() else ""
 R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit(",
            "TIMING_NOW", "TIMING_NEXT", "active(c: Context)", "查看差异", "提交变更",
-           "未提交变更", "载入为待提交", "丢弃全部待提交", "TimingHint(", "有未提交变更",
-           "填入草稿", "当前生效全貌"]
+           "未提交变更", "丢弃全部待提交", "TimingHint(", "有未提交变更",
+           "当前生效全貌"]
 for sym in R40_ALL:
     if sym not in all_src: errs.append("缺少 R40 统一提交符号: " + sym)
 # 唯一出口：MixerScreen 区块里禁止出现任何直接写 Prefs 的调用
@@ -482,14 +481,16 @@ for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应
 prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text(encoding="utf-8", errors="replace")
 if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
-if 'MixerSection("采样参数 · 9 项真到模型", "sampling",\n                openMap.contains("sampling")' not in main_src:
-    errs.append("R45 回退：采样组没走受控 openMap")
-if 'MixerSection("固定音色 · 官方模式说明", "fixedVoice",' not in main_src:
-    errs.append("R45 回退：固定音色官方说明折叠区缺失")
-if 'MixerSection("哪些能改 · 和模型一一对齐", "mapping",' not in main_src:
-    errs.append("R45 回退：参数对齐只读折叠区缺失")
-if 'MixerSection("音色身份生成器", "identity",\n                openMap.contains("identity")' not in main_src:
-    errs.append("R41 回退：身份生成器没走受控 openMap")
+# R92 · 调音台整页重做：只守新形态，不再要求已删分区存在
+for sym in ['MixerSection("采样参数 · 9 项真到模型", "sampling",',
+            'samplingOpen', 'trialOpen', 'val mode = remember(tick) { ModelStore.currentMode(c) }',
+            'OutlinedTextField(', 'submit' if False else '提交变更']:
+    if sym not in main_src: errs.append("R92 回退：新调音台缺 " + sym)
+_mixer = main_src[main_src.index("private fun MixerScreen("):]
+for banned in ["音色身份生成器", "固定音色 · 官方模式说明", "哪些能改 · 和模型一一对齐",
+               "参数触达与官方资料", "openMap.contains", "showVoiceEdit", "AnchorBar(",
+               "snapshotFlow { scroll.value }"]:
+    if banned in _mixer: errs.append("R92 回退：旧调音台形态残留 " + banned)
 
 # R66 · 1.1.0 语言模型退场：4 条旧说法不许以界面字符串回潮。
 # 注释里描述旧 bug 不算；只认字符串字面量，和 r66_verify.py 的口径一致。

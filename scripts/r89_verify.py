@@ -45,7 +45,6 @@ def check(files):
         'NAV_MIXER -> Screen.MIXER',
         'fun commitAll()',
         'if (!st.running) return@LaunchedEffect',
-        'snapshotFlow { scroll.value }',
     ]
     for s in KEEP:
         if s not in main + ch:
@@ -76,8 +75,6 @@ def main():
              lambda t: dict(t, main=t["main"].replace('Screen.MIXER -> NAV_MIXER', 'Screen.MIXER -> NAV_SETTINGS'))),
             ("Screen 枚举被改",
              lambda t: dict(t, main=t["main"].replace('SETTINGS, MODELS, MIXER, CHAPTERS', 'SETTINGS, MODELS, CHAPTERS'))),
-            ("锚点滚动语义被换",
-             lambda t: dict(t, main=t["main"].replace('snapshotFlow { scroll.value }', 'snapshotFlow { 0 }'))),
             ("CI 漏挂验证",
              lambda t: dict(t, ci=t["ci"].replace('r89_verify.py', 'r89_missing.py'))),
         ]

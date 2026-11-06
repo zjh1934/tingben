@@ -45,8 +45,6 @@ BAN = [
 ]
 KEEP = [
     (M, 'val scroll = rememberScrollState()'),
-    (M, 'snapshotFlow { scroll.value }.collect'),
-    (M, 'scroll.animateScrollTo(anchors[k] ?: 0)'),
     (M, 'Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp))'),
     (M, 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }'),
     (M, 'MiniPlayBar(ctx, miniBook'),

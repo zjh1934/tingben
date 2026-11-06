@@ -99,7 +99,7 @@ def check_sources(main, draft):
         if label not in draft: errs.append("diff 缺字段: " + label)
     # 5) 吸顶条 / 差异弹层 / 丢弃 / 载入
     for sym in ["未提交变更", "查看差异", "提交变更", "当前生效全貌",
-                "丢弃全部待提交", "载入为待提交"]:
+                "丢弃全部待提交"]:
         if sym not in main: errs.append("缺 P0 界面符号: " + sym)
     return errs
 

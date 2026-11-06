@@ -73,31 +73,22 @@ jobs:
       - name: R91 分段看台交互验证（格子即播停 / 旧形态零残留 / 守恒 / 反向注入）
         run: python3 scripts/r91_verify.py --selftest
 
-      - name: R38 参数触达矩阵与反向注入
-        run: python3 scripts/r38_param_audit.py
+      - name: R92 调音台整页重做验证（首帧减负 / 旧形态零残留 / 守恒 / 反向注入）
+        run: python3 scripts/r92_verify.py --selftest
+
 
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 
-      - name: R41a 两态试听验证（正向 / 两态对拍 / 反向注入 / 守恒）
-        run: python3 scripts/r41a_verify.py
 
-      - name: R41 P1 信息架构验证（正向 / 36 例范围对拍 / 反向注入 / 守恒）
-        run: python3 scripts/r41_verify.py
       - name: R46 V1 抽屉壳验证（正向形态 / 旧壳零残留 / 反向注入 / 守恒）
         run: python3 scripts/r46_verify.py
 
       - name: R47 抽屉收窄与预览落地验证（正向 / 反向注入 / 守恒）
         run: python3 scripts/r47_verify.py
 
-      - name: R49 调音台 v5 重设计验证（细状态条 / 锚点换行 / 紧凑行 / 反向注入 / 守恒）
-        run: python3 scripts/r49_verify.py
 
-      - name: R50 真机三处修补验证（紧凑行 / 自定义落地 / 滚动联动 / 反向注入 / 守恒）
-        run: python3 scripts/r50_verify.py
 
-      - name: R51 卡顿根因与抽屉联动验证（正向 / 反向注入 / 守恒）
-        run: python3 scripts/r51_verify.py
       - name: JDK 17
         uses: actions/setup-java@v4
         with:
