@@ -43,9 +43,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
-import com.tingben.app.diag.AuditLog
 import com.tingben.app.diag.EventLog
-import com.tingben.app.diag.RawDump
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -622,12 +620,12 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
     val thinkOn = false  // R67 · P1a：不再读写思考设置键
-    // R17 · 进页面时对齐已有任务：书正以「直接朗读」跑着，别把高亮停在标注档，
+    // R17 · 进页面时对齐已有任务：书正以「直接朗读」跑着，别把高亮停在旧档位，
     // 否则用户看到的模式和任务页/断点续跑用的不是同一套。
     // R20 · 本次预设也对齐已有任务书签，续跑时界面显示的档位与实际跑的一致。
     var mode by remember(book, refresh) {
         val t = TaskResume.load(c)
-        // R25 · 真机证据：标注档 643 秒 0 条标注，日志还把它写成「通过」。
+        // R25 · 历史教训：零产出不许在日志里写成「通过」。
         // 新书默认走直接朗读；已有任务仍按书签原样恢复，不擅自改正在跑的档。
         mutableStateOf(if (t != null && t.bookId == id)
             ProduceMode.DIRECT
@@ -643,7 +641,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         else allChunks.count { it.chapter in selected }
     }
     // 两种模式的缓存分桶不同，hasCached 必须跟着 mode 走，
-    // 不然切到直接朗读还会显示「继续制作」，点的却是标注档的旧缓存。
+    // 不然切到直接朗读还会显示「继续制作」，点的却是旧分桶的缓存。
     val hasCached = remember(book, refresh, selected, cacheTick, thinkOn, mode) {
         book?.let { Producer.hasProgress(c, it.id, directMode, thinkOn,
             if (selected.isEmpty() || selected.size == chapters.size) null else selected) } ?: false
@@ -790,7 +788,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 
         if (hasCached && !st.running) {
             TextButton(onClick = {
-                // 清的是当前模式的那一桶，不能切到直接朗读却还去清标注缓存。
+                // 清的是当前模式的那一桶，不能切到直接朗读却还去清旧缓存。
                 Producer.clearProgress(c, book.id, directMode, thinkOn,
                     if (selected.isEmpty() || selected.size == chapters.size) null else selected)
                 cacheTick++
@@ -1246,7 +1244,7 @@ private fun AudioScreen(c: Context, refresh: Int) {
     }
 }
 
-// ── ⑤ 设置（只管软件） / ⑤a 语言模型设置（两件事、两个页，v8 预览通过） ──
+// ── ⑤ 设置（只管软件） ──
 /** R25 · 历史分组小标题组件，R54 起不再调用，保留定义避免动别处引用。 */
 @Composable
 private fun GroupLabel(title: String, sub: String) {
@@ -1399,27 +1397,11 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     }
 }
 
-/** P0 · 诊断原文整块搬进「数据与日志」：能力一个没删，只换归属与默认折叠层级。 */
+/** R68 · P1b：旧审计与原始产出退场，诊断区只留软件自身状态与事件日志。 */
 @Composable
-private fun DiagnosticsBlock(c: Context, refresh: Int) {
+private fun DiagnosticsBlock(c: Context, _refresh: Int) {
     val clipboard = LocalClipboardManager.current
-    var showBlocks by remember { mutableStateOf(false) }
-    var showRules by remember { mutableStateOf(false) }
-    var showPreview by remember { mutableStateOf(false) }
-    var showContent by remember { mutableStateOf(false) }
-    var showRaw by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
-    var auditTick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) {
-        while (true) { delay(3000); auditTick++ }
-    }
-    val auditText = remember(auditTick) { AuditLog.summaryText(c) }
-    val rulesText = remember(auditTick) { AuditLog.ruleText(c) }
-    val blocksText = remember(auditTick) { AuditLog.blocksText(c, 12) }
-    val previewText = remember(auditTick) { AuditLog.previewText(c, 3) }
-    val contentText = remember(auditTick) { AuditLog.contentText(c, 6) }
-    val rawText = remember(auditTick) { RawDump.latest(c) }
-    val hasEmpty = auditText.contains("零分段 ") && !auditText.contains("零分段 0")
 
     fun buildDiag(full: Boolean): String = buildString {
         append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
@@ -1430,15 +1412,12 @@ private fun DiagnosticsBlock(c: Context, refresh: Int) {
         append("前台服务 ").append(ProduceService.status()).append('\n')
         append("设置 ").append(Prefs.summary(c)).append('\n')
         append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
-        append("引擎 ").append(if (NativeEngine.isAvailable()) "已装载" else "未装载").append('\n')
         val crash = EventLog.lastCrash()
         if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
         append("\n=== 最近事件（不含正文）===\n")
         append(EventLog.read().lines().takeLast(60).joinToString("\n"))
         if (full) {
-            append("\n\n=== 产出截取（含原文片段，仅本机）===\n")
-                .append(AuditLog.previewText(c, 6)).append('\n')
-            append("\n=== 诊断态完整日志（含 TRACE，最近 300 行）===\n")
+            append("\n\n=== 诊断态完整日志（含 TRACE，最近 300 行）===\n")
                 .append(EventLog.readDetail().lines().takeLast(300).joinToString("\n"))
         }
     }
@@ -1446,34 +1425,15 @@ private fun DiagnosticsBlock(c: Context, refresh: Int) {
     Spacer(Modifier.height(10.dp))
     Text("静态快照", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
     Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
-    Spacer(Modifier.height(10.dp))
-    Row(Modifier.fillMaxWidth()) {
-        TextButton(onClick = { showBlocks = !showBlocks }) {
-            Text(if (showBlocks) "收起逐块" else "逐块明细", fontSize = 11.5.sp)
-        }
-        TextButton(onClick = { showRules = !showRules }) {
-            Text(if (showRules) "收起规则" else "规则生效", fontSize = 11.5.sp)
-        }
-        TextButton(onClick = { showPreview = !showPreview }) {
-            Text(if (showPreview) "收起截取" else "产出截取", fontSize = 11.5.sp)
-        }
-    }
-    if (showBlocks) Text(blocksText, fontSize = 10.5.sp, color = Sub)
-    if (showRules) Text(rulesText, fontSize = 10.5.sp, color = Sub)
-    if (showPreview) Text(previewText, fontSize = 10.5.sp, color = Sub)
     Spacer(Modifier.height(8.dp))
-    TextButton(onClick = {
-        clipboard.setText(AnnotatedString(rawText.ifBlank { "（暂无模型原始产出）" }))
-        Toast.makeText(c, "已复制最近一块模型原始产出全文，仅本机保存", Toast.LENGTH_SHORT).show()
-    }, Modifier.fillMaxWidth()) { Text("复制最近一块模型原始产出（全文）", fontSize = 11.5.sp) }
     TextButton(onClick = {
         clipboard.setText(AnnotatedString(buildDiag(false)))
         Toast.makeText(c, "已复制诊断摘要，直接贴给我即可", Toast.LENGTH_SHORT).show()
     }, Modifier.fillMaxWidth()) { Text("复制诊断信息（摘要）") }
     TextButton(onClick = {
         clipboard.setText(AnnotatedString(buildDiag(true)))
-        Toast.makeText(c, "已复制完整日志（含产出片段），仅本机保存", Toast.LENGTH_SHORT).show()
-    }, Modifier.fillMaxWidth()) { Text("复制完整日志（含产出片段）") }
+        Toast.makeText(c, "已复制完整日志，仅本机保存", Toast.LENGTH_SHORT).show()
+    }, Modifier.fillMaxWidth()) { Text("复制完整日志") }
     TextButton(onClick = { confirmClear = true }, Modifier.fillMaxWidth()) {
         Text("清理制作过程的分段音频", fontSize = 11.5.sp, color = Warn)
     }
@@ -1678,7 +1638,7 @@ private fun ModelScreen(c: Context, refresh: Int,
 @Composable
 private fun CastScreen(c: Context, onBack: () -> Unit) {
     var ver by remember { mutableStateOf(0) }
-    // 每次进来扫一遍已落盘的标注，自动把「李寻欢 / 小李探花」并成同一角色
+    // 每次进来扫一遍已落盘的分段文件，自动把「李寻欢 / 小李探花」并成同一角色
     val entries = remember(ver) { VoiceCast.reconcile(c) }
     val global = remember(ver) { Prefs.voiceDescription(c) }
     val observedCount = remember(ver) { VoiceCast.collect(c).size }

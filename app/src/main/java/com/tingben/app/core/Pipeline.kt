@@ -2,10 +2,7 @@ package com.tingben.app.core
 
 import android.content.Context
 import com.tingben.app.ProduceService
-import com.tingben.app.diag.AuditLog
-import com.tingben.app.diag.BlockAudit
 import com.tingben.app.diag.EventLog
-import com.tingben.app.diag.RawDump
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -102,9 +99,8 @@ object BookStore {
 
 object ModelStore {
     /**
-     * P0 · 换成 Huihui Qwen3-4B-Instruct-2507-abliterated Q4_K_M（仅非思考独立权重）。
-     * 旧 mlabonne 初版权重仍留在白名单 hint 里，用户手机上没删也能继续用；
-     * 但新权重优先匹配，避免两代标注混用。
+     * R68 · P1b：旧文本权重整套退场后，下面两个名称常量只作「旧数据白名单」保留——
+     * 老用户私有目录里若还躺着旧 GGUF，不主动删、也不再加载；模型清单只读两份声音权重。
      */
     const val LLM = "huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf"
     const val LLM_LEGACY = "mlabonne_Qwen3-旧权重-abliterated-Q4_K_M.gguf"
@@ -177,8 +173,7 @@ object ModelStore {
         return all.firstOrNull { f -> hints.any { f.name.contains(it, true) } }
     }
 
-    fun llm(c: Context) = pick(c, LLM, "instruct-2507", "huihui-qwen3-4b",
-        "qwen3-4b", "4b-abliterated")
+    // R68 · P1b：旧文本权重的加载函数已删，只剩上面的名称常量兜旧数据。
     fun talker(c: Context) = pick(c, TALKER, "talker")
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
@@ -262,197 +257,13 @@ object ChapterSplitter {
     }
 }
 
-// ─────────────────────────── 标注（Alexandria，加逐字 gate） ───────────────────────────
+// ─────────────────────────── 文本切分（直接朗读） ───────────────────────────
 
 object Annotator {
-    /** 思考闭标签。写成常量，避免再出现 `contains("")` 那种恒真的空串判断。 */
-    const val THINK_CLOSE = "</think>"
-
-    fun templates(c: Context): Pair<String, String> = try {
-        val raw = c.assets.open("prompt.txt").bufferedReader().use { it.readText() }
-        val parts = raw.split("---SEPARATOR---", limit = 2)
-        parts[0].trim() to parts[1].trim()
-    } catch (_: Throwable) {
-        "只输出 JSON 数组，不要解释。" to "原文：{{ORIGINAL}}"
-    }
-
-    fun buildPrompt(sys: String, user: String, chunk: Chunk, idx: Int, total: Int,
-                    roster: Set<String>, recent: List<Ann>, thinking: Boolean = false,
-                    contextBefore: String = "（无）"): String {
-        val u = user
-            .replace("{{CHUNK_INDEX}}", (idx + 1).toString())
-            .replace("{{CHUNK_TOTAL}}", total.toString())
-            .replace("{{ROSTER}}", if (roster.isEmpty()) "（暂无）" else roster.joinToString("、"))
-            // R16 · 紧邻前因：上一块末尾的原文，给「谁正在说话 / 引号有没有闭合」。
-            // 放 target 之前，不放之后 —— 端侧 prefill 很贵，不放目标段之后的整段原文。
-            .replace("{{CONTEXT_BEFORE}}", contextBefore.ifBlank { "（无）" })
-            // 最近 3 条给完整一点的句子，24 字经常被截在半句里反而误导归属。
-            .replace("{{RECENT}}", if (recent.isEmpty()) "（无）" else recent.takeLast(3)
-                .joinToString(" / ") { it.speaker + "：" + it.text.take(40) })
-            .replace("{{ORIGINAL}}", chunk.text)
-            // P0 · 2507 是「仅非思考」独立权重，不解析 /think /no_think：
-            // 旧软开关整段删除，留着就是往 prompt 里塞无意义字符串。
-            // thinking 形参保留只为不动既有调用点，本函数不再读它。
-        // 改 prompt 最容易出的哑巴错：新增占位符忘了在装配里替换，花括号原样喂给模型。
-        if (u.contains("{{")) {
-            EventLog.log(EventLog.Kind.PIPELINE, "PROMPT_PLACEHOLDER_LEAK",
-                "块 ${idx + 1} 仍有未替换占位符，检查 prompt 模板与 buildPrompt 是否同步")
-        }
-        // P0 · 逐字对齐 2507 GGUF 自带 chat_template 的无工具分支：
-        // <|im_start|>{role}\n{content}<|im_end|>\n + assistant 头；eos/stop 为 <|im_end|>。
-        // 与初版手写模板形状一致，但语义来源改成官方模板，不再靠软开关切模式。
-        return "<|im_start|>system\n$sys<|im_end|>\n<|im_start|>user\n$u<|im_end|>\n<|im_start|>assistant\n"
-    }
-
-    /** 把模型「想了什么」抽出来，单独存；标注 JSON 仍由 parse() 从 </think> 之后取。 */
-    fun extractThinking(raw: String): String {
-        val end = raw.lastIndexOf(THINK_CLOSE)
-        if (end < 0) return ""
-        var s = raw.indexOf("<think>")
-        if (s < 0) s = 0 else s += 7
-        return raw.substring(s, end).trim()
-    }
-
-    /** R21 · 解析过程的可观测量：长度、思考、修复层级、截取片段。 */
-    data class ParseMeta(
-        val rawChars: Int, val thinkChars: Int, val bodyChars: Int,
-        val jsonStart: Int, val jsonEnd: Int, val repairLevel: Int,
-        val fenceRemoved: Boolean, val thinkClosed: Boolean, val trailingChars: Int,
-        val previewHead: String, val previewTail: String
-    )
-
     /**
-     * R24 · 换成移植件 JsonSalvage（Alexandria clean_json_string + repair_json_array）：
-     * 括号计数找真闭合、字符串内控制字符修复、裸串过滤、截断到最后一个完整对象。
-     * 上一版手搓的「取最后一个右方括号」会被正文里的方括号骗到，也不处理字符串内裸换行。
-     * ParseMeta 字段语义保持不变，ruleChecks / BlockAudit 不跟着改。
-     */
-    fun parseWithMeta(rawIn: String): Pair<List<Ann>?, ParseMeta> {
-        var raw = rawIn
-        val rawChars = raw.length
-        val close = raw.lastIndexOf(THINK_CLOSE)
-        val thinkClosed = close >= 0
-        val thinkChars = if (close >= 0) close else 0
-        if (close >= 0) raw = raw.substring(close + THINK_CLOSE.length)
-        val ex = JsonSalvage.extract(raw)
-        val (anns, level) = JsonSalvage.repair(ex.body)
-        val meta = ParseMeta(rawChars, thinkChars, ex.body?.length ?: 0,
-            ex.jsonStart, ex.jsonEnd, level, ex.fenceRemoved, thinkClosed,
-            ex.trailingChars, raw.take(160).replace('\n', '⏎'),
-            raw.takeLast(80).replace('\n', '⏎'))
-        return anns to meta
-    }
-
-    fun parse(rawIn: String): List<Ann>? = parseWithMeta(rawIn).first
-
-    /** 首个差异偏移；全等返回 -1。gate 失败时写进日志，不用把整段原文贴出来。 */
-    fun firstDiff(a: String, b: String): Int {
-        val n = minOf(a.length, b.length)
-        for (i in 0 until n) if (a[i] != b[i]) return i
-        return if (a.length == b.length) -1 else n
-    }
-
-    /** 逐条检查 v2 提示词里的硬规则到底有没有生效（查 4B 原始产出，不是清理后的）。 */
-    fun ruleChecks(anns: List<Ann>, original: String, m: ParseMeta,
-                   roster: Set<String>): Map<String, Boolean> {
-        val joined = anns.joinToString("") { it.text }
-        var cursor = 0
-        var ordered = anns.isNotEmpty()
-        // R27 · 与 Adoption 对齐：模型可以跳过标题/空行，只要每条 text 是
-        // 原文中「cursor 之后的有序子串」即可；缺口与尾部由程序补齐。
-        // VERBATIM 仍查模型有没有逐字覆盖整块，两条各管一件事，不再互相打架。
-        for (a in anns) {
-            if (a.text.isEmpty()) { ordered = false; break }
-            val pos = original.indexOf(a.text, cursor)
-            if (pos < 0) { ordered = false; break }
-            cursor = pos + a.text.length
-        }
-        val bound = original.count { it in "。！？；.!?;" } + 2
-        val inlineTag = Regex("\\[[A-Za-z_]{2,}\\]")
-        val dependent = listOf("仍然", "依旧", "同上", "如前", "继续")
-        return linkedMapOf(
-            "VERBATIM" to (anns.isNotEmpty() && joined == original),
-            "ORDERED_SUBSTRING" to ordered,
-            "JSON_ONLY" to (m.jsonStart == 0 && m.jsonEnd > m.jsonStart && !m.fenceRemoved),
-            "NO_TRAILING_TEXT" to (m.trailingChars == 0),
-            "NO_INLINE_TAG" to anns.all { !inlineTag.containsMatchIn(it.instruct) },
-            "NO_IDENTITY" to anns.all { !VoiceProfile.hasIdentityTerms(it.instruct) },
-            "COUNT_BOUND" to (anns.isEmpty() || anns.size <= bound),
-            "SPEAKER_OK" to anns.all {
-                it.speaker.isNotBlank() && (roster.isEmpty() || it.speaker == "旁白" || it.speaker in roster)
-            },
-            "INSTRUCT_OK" to anns.all {
-                it.instruct.isNotBlank() && dependent.none { w -> it.instruct.contains(w) }
-            }
-        )
-    }
-
-    /** 字符级红线：所有 text 顺序拼接必须 == 本块原文。 */
-    fun gate(anns: List<Ann>, original: String): Boolean =
-        anns.joinToString("") { it.text } == original
-
-    /**
-     * R22 建、R24 换成移植件 Adoption（Antioch annotate / generate_instructs）。
-     *
-     * 旧实现只做「顺序前缀匹配 + 尾部补齐」；移植件额外带 echo 检测、标签前缀剥离、
-     * 首句截断、去重、单条失败用 sensible defaults 补齐。模型吐到预算上限被腰斩时，
-     * 前面标对的条仍保留，尾部才由程序补成旁白，不再整块降级成「跑了半天啥也没标」。
-     *
-     * 与逐字契约的关系：result 拼起来仍严格 == original（一个字没放宽）。
-     */
-    data class Reconcile(
-        val result: List<Ann>, val kept: Int, val filled: Int, val disposition: String,
-        val drops: List<Adoption.Drop> = emptyList(),
-        val srcModel: List<Boolean> = emptyList()
-    ) {
-        companion object {
-            const val FULL = "FULL"         // 模型全标对
-            const val PARTIAL = "PARTIAL"   // 模型标对前若干条，尾部由程序补齐
-            const val FALLBACK = "FALLBACK" // 一条都没采纳，整块直读
-        }
-    }
-
-    fun reconcile(parsed: List<Ann>?, original: String): Reconcile {
-        val r = Adoption.adopt(parsed, original) { rest -> directSegments(rest) }
-        return Reconcile(r.anns, r.kept, r.filled, r.disposition, r.drops, r.srcModel)
-    }
-
-    /** 标注结果全文（带来源标记），落进 audit jsonl 与「复制标注全文」。单块上限 8KB。 */
-    fun contentJson(anns: List<Ann>, srcModel: List<Boolean>): String = try {
-        val arr = JSONArray()
-        anns.forEachIndexed { i, a ->
-            arr.put(JSONObject().put("text", a.text).put("speaker", a.speaker)
-                .put("instruct", a.instruct)
-                .put("src", if (srcModel.getOrElse(i) { false }) "MODEL" else "FILL"))
-        }
-        val s = arr.toString()
-        if (s.length > 8192) s.substring(0, 8192) + "…（本块分段全文超长，已截断）" else s
-    } catch (_: Throwable) { "[]" }
-
-    /**
-     * R23 · 主事件流里给人看的逐条内容：用户原话「从日志里面能有它标注过后的内容」。
-     * 旧版只给前 8 条、每条正文截 70 字，贴「最近事件」给开发者看时仍像没标；
-     * 现在逐条给 text 全文 + instruct 全文 + 来源标记，单块 16KB 才截断。
-     * 逐字全文也同时落在 audit jsonl 与诊断页，主日志只是让「贴一段日志」就能自证。
-     */
-    fun contentLines(anns: List<Ann>, srcModel: List<Boolean>): String = buildString {
-        anns.forEachIndexed { i, a ->
-            append(i + 1).append(". [").append(a.speaker).append("] ")
-                .append(a.text.replace('\n', '⏎'))
-                .append("\n   → ").append(a.instruct)
-                .append("  〈").append(if (srcModel.getOrElse(i) { false }) "模型分段" else "程序补齐")
-                .append("〉\n")
-        }
-    }.let { if (it.length > 16384) it.substring(0, 16384) + "…（已截断，全文见诊断页）" else it.trimEnd() }
-
-    // 降级也必须切短句：真机日志里块 1 降级成整块 500 字一次喂 TTS，
-    // 合成阶段从 04:49 卡到 05:24（35 分钟）。长文本单次合成在手机上是灾难。
-    fun fallback(chunk: Chunk) = directSegments(chunk.text)
-
-    /**
-     * R25 · 断句改为移植件：只在句末标点 / 段落 / 次级标点边界断，绝不按字数腰斩。
-     * 旧实现 `buf.length >= 110` 会把「冷风就」这类半句切进上一段，真机 TTS_INPUT 里能看到。
-     * 切片拼回去与原文逐字相等（TextSplitter.Stats.charsIn == charsOut）。
+     * R25 · 断句只在句末标点 / 段落 / 次级标点边界，绝不按字数腰斩；
+     * 切片拼回与原文逐字相等（TextSplitter.Stats.charsIn == charsOut）。
+     * R68 · P1b：旧分段管线退场，本对象只剩「直接朗读」的断句入口。
      */
     fun directWithStats(text: String): Pair<List<Ann>, TextSplitter.Stats> {
         val (segs, st) = TextSplitter.split(text)
@@ -462,68 +273,12 @@ object Annotator {
     fun directSegments(text: String): List<Ann> = directWithStats(text).first
 }
 
-/** 思考外显的内容本地落盘，只留最近 20 块，不进主界面、不联网。 */
-object ThinkingStore {
-    private fun dir(c: Context) = File(c.filesDir, "thinking").apply { mkdirs() }
-
-    fun write(c: Context, index: Int, text: String) {
-        try {
-            File(dir(c), "block_%04d.txt".format(index)).writeText(text)
-            val all = dir(c).listFiles()?.filter { it.isFile && it.name.startsWith("block_") }
-                ?.sortedByDescending { it.name } ?: return
-            all.drop(20).forEach { it.delete() }
-        } catch (_: Throwable) { }
-    }
-
-    fun latest(c: Context): Pair<Int, String> = try {
-        val f = dir(c).listFiles()?.filter { it.isFile && it.name.startsWith("block_") }
-            ?.maxByOrNull { it.name }
-        if (f != null) {
-            val idx = f.name.removePrefix("block_").removeSuffix(".txt").toIntOrNull() ?: 0
-            idx to f.readText()
-        } else -1 to ""
-    } catch (_: Throwable) { -1 to "" }
-
-    fun clear(c: Context) {
-        try { dir(c).listFiles()?.forEach { it.delete() } } catch (_: Throwable) { }
-    }
-}
-
 /**
- * 标注结果按块落盘。4B 在手机上一块要几分钟，不缓存就永远别想「接着跑」。
- * P0 · 2507 仅非思考：think 形参保留兼容调用点但不再参与分桶，
- * 统一前缀 "v11/" 让初版权重的 fast / think 两套旧缓存一次作废，
- * 不会把两代模型标出的结果混进同一本书。
+ * 制作工作目录按块落盘，断点续传靠它认「哪几块做好了」。
+ * R68 · P1b：只剩一条直接朗读路径，分桶前缀继续沿用 "v11/direct"，
+ * 旧版本的分桶目录仍按原规则读取，不删用户已做好的分段 WAV。
  */
 object AnnCache {
-    fun read(work: File, i: Int): List<Ann>? {
-        return try {
-            val f = File(work, "ann_%04d.json".format(i))
-            if (!f.exists()) null else {
-                val arr = JSONArray(f.readText())
-                (0 until arr.length()).map { k ->
-                    val o = arr.getJSONObject(k)
-                    Ann(o.getString("text"), o.optString("speaker", "旁白"), o.optString("instruct", ""))
-                }.takeIf { it.isNotEmpty() }
-            }
-        } catch (_: Throwable) { null }
-    }
-
-    fun write(work: File, i: Int, list: List<Ann>) {
-        try {
-            val arr = JSONArray()
-            list.forEach { a ->
-                arr.put(JSONObject().put("text", a.text)
-                    .put("speaker", a.speaker).put("instruct", a.instruct))
-            }
-            // R11 · 原子落位：进程在写入途中被杀，半成品不能占着正式文件名，
-            // 否则重启后 read() 会把它当「已完成块」跳过，整段原文就丢了。
-            val dst = File(work, "ann_%04d.json".format(i))
-            val tmp = File(work, "ann_%04d.json.part".format(i))
-            tmp.writeText(arr.toString())
-            if (!tmp.renameTo(dst)) { dst.writeText(arr.toString()); tmp.delete() }
-        } catch (_: Throwable) { }
-    }
 
     fun count(work: File): Int = try {
         work.listFiles()?.count { it.isFile && it.name.startsWith("ann_") && it.name.endsWith(".json") } ?: 0
@@ -727,7 +482,7 @@ object Producer {
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         AnnCache.cleanup(AnnCache.dirFor(c, book.id, true, thinkOn, onlyChapters))
         // R17 · 制作方式从 UI 小按钮升成正式选择后，所有入口（制作页 / 任务页 / 进度页续跑）
-        // 都汇到 start，在这里记一条，诊断里能直接看出这一本是过了语言模型还是没过。
+        // 所有启动入口都汇到 start，在这里记一次本次制作范围与预设。
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_MODE",
             "直接朗读" +
                 " · think=" + thinkOn +
@@ -805,7 +560,7 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, NativeEngine.shortReason())
             return
         }
-        val llm = ModelStore.llm(c); val tk = ModelStore.talker(c); val tok = ModelStore.tokenizer(c)
+        val tk = ModelStore.talker(c); val tok = ModelStore.tokenizer(c)
         val miss = mutableListOf<String>()
         if (tk == null) miss.add("声音主文件")
         if (tok == null) miss.add("声音配套文件")
@@ -824,364 +579,44 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, "这本书没有可制作的文字")
             return
         }
-        val (sys, usr) = Annotator.templates(c)
-        // R67 · P1a：提示词版本审计随语言模型退场，不再上报。
-        val thinkOn = thinkOverride ?: false  // R67 · P1a：不再读写思考设置键
+        // R68 · P1b：只剩一条直接朗读路径，不加载第二份权重、不读旧文本管线参数。
+        val thinkOn = thinkOverride ?: false
         val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
-        val nCtx = Prefs.nCtx(c)
-        val threads = Prefs.threads(c)
-        // P0 · 2507 没有「深度档强制 0.6」这回事，温度只认用户选的值。
-        val temp = Prefs.temperature(c)
-        // R67 · P1a：不再记录第二份权重信息；下面只保留制作参数日志。
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
-            "nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}" +
-                " · 预设=" + config.summary())
+            "chunks=${chunks.size} · 预设=" + config.summary())
         EventLog.resetEngine()
 
-        // R67 · P1a：审计汇总随语言模型退场，不再落盘；事件日志仍照常记录。
-
-        // R28 · 必须在 if/else 之外定义：合成阶段在分支外，
-        // 放 else 里会 Unresolved reference（CI run 36 真编译错，已修）。
-        val segOrigin = mutableListOf<Triple<Int, Int, Boolean?>>()
-        val annotated: List<Ann>
-        var gateFails = 0
-        // R27 · 「已标注 X/Y 块」以前按「跑完几块」算，降级直读也算标了。
-        // 真机截图因此出现「已标注 1/2」而诊断写「一条没采纳」。单独数真标过的块。
-        var modelHits = 0
-        if (direct) {
-            // 快速出声路径：不加载 4B、不标注，原文按符号切段后直接交给 TTS。
-            // 真机 4B 逐 token 约 10 秒，整本不可等；先让用户几分钟内听到声音。
-            val stats = mutableListOf<TextSplitter.Stats>()
-            annotated = chunks.flatMap { ch ->
-                val (segs, s) = Annotator.directWithStats(ch.text)
-                stats.add(s)
-                segs
-            }
-            // R25 · 用户原话「起码按符号断，不能按字符段」：把断句结果写进日志，
-            // 贴一段事件就能核对有没有从半句腰斩、原文有没有少字。
-            EventLog.log(EventLog.Kind.PIPELINE, "SPLIT_STATS",
-                "${chunks.size} 块 → ${annotated.size} 段 · 只在标点/段落边界断 · " +
-                    "字符硬切 0 · 句段边界 ${stats.sumOf { it.sentenceCuts }} · " +
-                    "次级边界 ${stats.sumOf { it.softCuts }} · " +
-                    "超长整句保留 ${stats.sumOf { it.oversize }} · " +
-                    "最长 ${stats.maxOfOrNull { it.longest } ?: 0} 字 · " +
-                    "原文 ${stats.sumOf { it.charsIn }} 字 拼回 ${stats.sumOf { it.charsOut }} 字" +
-                    (if (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }) " · 逐字无损" else " · ⚠️字数不一致"),
-                fields = mapOf("chunks" to chunks.size.toString(), "segments" to annotated.size.toString(),
-                    "hardCuts" to "0", "lossless" to
-                        (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
-            EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
-                "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
-            emit("正在生成声音", 0, annotated.size, 0, "直接朗读原文，不跑文本处理…")
-        } else {
-            // ── 标注阶段：只加载 LLM ──
-            // 真机 16:23→16:29 prefill 单独花了约 600 秒，期间只有 ANN_WAIT，看着像死机。
-            // 开工先说清阶段，别让用户以为「进度一直不动 = 挂了」。
-            EventLog.log(EventLog.Kind.PIPELINE, "ANN_PHASE_HINT",
-                "这一块先把提示词读进模型（NATIVE_PREFILL_*），再逐 token 生成；" +
-                    "预读期间块进度不会动，手机 CPU 上可能好几分钟，不是死机。",
-                fields = mapOf("nCtx" to nCtx.toString(), "chunks" to chunks.size.toString()))
-            emit("正在理解文字", 0, chunks.size, 0, "文本处理正在逐块分段谁说的、怎么读…")
-            val llmHandle = try {
-                NativeEngine.llmLoad(llm!!.absolutePath, nCtx, threads)
-            } catch (t: Throwable) {
-                _state.value = Progress(false, "没开始", 0, 0, 0, "文本处理加载失败：" + (t.message ?: ""))
-                return
-            }
-            if (llmHandle == 0L) {
-                _state.value = Progress(false, "没开始", 0, 0, 0, "文本处理打不开，请确认文件完整")
-                return
-            }
-
-            val roster = LinkedHashSet<String>()
-            val recent = mutableListOf<Ann>()
-            val collected = mutableListOf<Ann>()
-            var resumed = 0
-            try {
-                for ((i, chunk) in chunks.withIndex()) {
-                    if (cancelRequested) {
-                        _state.value = halted(i, chunks.size, gateFails)
-                        return
-                    }
-                    // R26 · 每块重新申请一次带 30 分钟硬超时的唤醒锁，
-                    // 不整轮常驻；结束由 Producer.finally 统一释放。
-                    ProduceService.touch(c.applicationContext, "分段块 ${i + 1}/${chunks.size}")
-                    // 断点续传：这一块之前标过就直接读盘，不重跑 4B；
-                    // 同时照样喂进 roster / recent，保证后面块的上下文是连贯的。
-                    var result = AnnCache.read(work, i)
-                    if (result != null) {
-                        resumed++
-                        // 续上的块也要在审计里占一行，否则用户会以为「这一块没标」。
-                        AuditLog.write(c, BlockAudit(
-                            runId = AuditLog.currentRun(), block = i + 1, total = chunks.size,
-                            attempt = 0, origChars = chunk.text.length, rawChars = 0,
-                            thinkChars = 0, bodyChars = 0, annCount = result.size,
-                            textChars = result.sumOf { it.text.length },
-                            lenDelta = result.sumOf { it.text.length } - chunk.text.length,
-                            firstDiff = -1,
-                            speakers = result.map { it.speaker }.distinct().joinToString("、"),
-                            instructEmpty = result.count { it.instruct.isBlank() },
-                            status = AuditLog.CACHED, failCode = "-", rules = emptyMap(),
-                            previewHead = "（本块从磁盘续上，未重跑文本处理）", previewTail = "",
-                            elapsedMs = 0L, fromCache = true,
-                            finalVerbatim = Annotator.gate(result, chunk.text)))
-                        EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
-                            "块 ${i + 1}/${chunks.size} 从磁盘续上 · 角色表 ${roster.size} · 近邻 ${recent.size}")
-                    } else {
-                        var lastMeta: Annotator.ParseMeta? = null
-                        var lastChecks: Map<String, Boolean> = emptyMap()
-                        var lastRec: Annotator.Reconcile? = null
-                        var lastFailCode = "-"
-                        var attemptCount = 0
-                        var usedFallback = false
-                        // R27 · 采纳 0 条时，把第一条被丢弃的原因带进审计摘要。
-                        var firstDrop = "-"
-                        val blockStartAt = System.currentTimeMillis()
-                        val prompt = Annotator.buildPrompt(sys, usr, chunk, i, chunks.size, roster, recent, thinkOn,
-                            // R16 · 上一块末尾 120 字作为「紧邻前因」。续跑读盘的块也照样传，
-                            // 保证同一块无论重跑还是续跑，看到的上下文一致。
-                            chunks.getOrNull(i - 1)?.text?.takeLast(120) ?: "（无）")
-                        // 按块字数给预算，避免模型无限吐字（旧项目 768 token 不收敛的教训）
-                        // P0 · 2507 仅非思考，统一旧「非思考档」预算，不再分两档。
-                        val budget = minOf(1024, chunk.text.length * 2 + 160)
-                        EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
-                            "块 ${i + 1}/${chunks.size} 原文 ${chunk.text.length} 字 · prompt ${prompt.length} 字" +
-                                " · 预算 $budget · nCtx $nCtx · 角色表 ${roster.size} · 近邻 ${recent.size}")
-                        // 手机 CPU 上一块要几分钟，prefill 单次 llama_decode 期间 native 没有任何事件，
-                        // 界面又只在块完成才更新 i+1/N —— 用户看起来就像「只跑第一段」。
-                        // 这条纯 Kotlin 心跳不碰状态机，只往事件流写「还活着、算到哪块」。
-                        val beat = scope.launch(Dispatchers.IO) {
-                            var sec = 0
-                            while (isActive) {
-                                delay(5000)
-                                sec += 5
-                                EventLog.log(EventLog.Kind.ENGINE, "ANN_WAIT",
-                                    "块 ${i + 1}/${chunks.size} 仍在算 · 已 ${sec}s（手机 CPU 慢，不是死机）")
-                            }
-                        }
-                        try {
-                        // R20 · 重试次数由「本次制作」预设控制（0/1/2 次）。
-                        // 手机上每次重试都要再跑几分钟 4B，用户该能自己定要几次。
-                        for (attempt in 0..config.gateRetries) {
-                            // R9 · 停止可能发生在 prefill 里，generate 返回后必须立刻查；
-                            // 否则空结果会被当成「标注失败」再重试一次，停止就永远不生效。
-                            if (cancelRequested) {
-                                _state.value = halted(i, chunks.size, gateFails)
-                                return
-                            }
-                            val raw = try {
-                                NativeEngine.llmGenerate(llmHandle, prompt, budget, temp)
-                            } catch (t: Throwable) {
-                                EventLog.log(EventLog.Kind.ENGINE, "LLM_ERROR", t.message ?: "")
-                                break
-                            }
-                            // R24 · 移植 Alexandria llm_responses.log：未经任何清洗的原始产出全文落盘，
-                            // 事后能自证「真标还是假标」，不再只有头 160 尾 80 的截取。
-                            val dumpPath = RawDump.write(c, i + 1, attempt + 1, raw,
-                                prompt.length, budget)
-                            EventLog.log(EventLog.Kind.AUDIT, "ANN_RAW_DUMP",
-                                "块 ${i + 1} 第 ${attempt + 1} 次 · 原始产出 ${raw.length} 字 · " +
-                                    (if (dumpPath.isEmpty()) "全文落盘失败" else "全文已落盘（诊断页可复制）"),
-                                fields = mapOf("block" to (i + 1).toString(),
-                                    "attempt" to (attempt + 1).toString(),
-                                    "outChars" to raw.length.toString(),
-                                    "budget" to budget.toString(),
-                                    "path" to dumpPath.takeLast(80)))
-                            if (cancelRequested) {
-                                _state.value = halted(i, chunks.size, gateFails)
-                                return
-                            }
-                            // P0 · 新权重不产出 <think>；parseWithMeta 仍保留剥离防御，
-                            // 但不再主动调用 extractThinking / 写 ThinkingStore。
-                            val (parsed, meta) = Annotator.parseWithMeta(raw)
-                            val checks = Annotator.ruleChecks(parsed ?: emptyList(), chunk.text, meta, roster)
-                            // R22 · 逐条采纳 + 确定性补齐：尾部没标完只补旁白，不再整块降级。
-                            val rec = Annotator.reconcile(parsed, chunk.text)
-                            // gate 仍是最终裁判，这里只是断言 reconcile 没破坏逐字契约。
-                            val gateOk = Annotator.gate(rec.result, chunk.text)
-                            val pass = rec.disposition != Annotator.Reconcile.FALLBACK && gateOk
-                            val failCode = when {
-                                parsed == null -> "EMPTY_ARRAY"
-                                rec.disposition == Annotator.Reconcile.FALLBACK ->
-                                    if (meta.repairLevel < 0) "JSON_SYNTAX_FAIL" else "ADOPT_0_KEPT"
-                                !gateOk -> "RECONCILE_BROKEN"
-                                else -> "-"
-                            }
-                            // R27 · 旧码叫 CONCAT_LEN_MISMATCH，实际是「逐条采纳 0 条」，
-                            // 名字把人往「长度不对」上带。改名并保留首因原文。
-                            if (rec.drops.isNotEmpty()) firstDrop = rec.drops.first().reason
-                            lastMeta = meta; lastChecks = checks; lastRec = rec
-                            lastFailCode = failCode; attemptCount++
-                            EventLog.log(EventLog.Kind.AUDIT, "ANN_DISPOSITION",
-                                "块 ${i + 1} 第 $attempt 次 · ${rec.disposition} · 采纳 ${rec.kept} 条" +
-                                    " · 程序补齐 ${rec.filled} 条 · 拼回原文 " +
-                                    "${if (gateOk) "逐字相等" else "有差异"}",
-                                fields = mapOf("block" to (i + 1).toString(),
-                                    "disposition" to rec.disposition,
-                                    "kept" to rec.kept.toString(), "filled" to rec.filled.toString(),
-                                    "gateOk" to gateOk.toString()))
-                            // R24 · 移植件带回来的逐条判据结果：echo / 标签 / 太短 / 重复 / 位置不符。
-                            // 用户原话「不知道它标注是真标注还是假标注」——这里给出可核对的依据。
-                            if (rec.drops.isNotEmpty()) {
-                                EventLog.log(EventLog.Kind.AUDIT, "ANN_ADOPT_DETAIL",
-                                    "块 ${i + 1} 逐条判据 · " + rec.drops.joinToString("；") {
-                                        "第 ${it.index + 1} 条[${it.speaker}] ${it.reason}：${it.preview}"
-                                    },
-                                    level = EventLog.Level.WARN,
-                                    fields = mapOf("block" to (i + 1).toString(),
-                                        "drops" to rec.drops.size.toString()))
-                            }
-                            EventLog.log(EventLog.Kind.AUDIT, "ANN_RAW",
-                                "块 ${i + 1} 第 $attempt 次 · 原始 ${meta.rawChars} 字 · 思考 ${meta.thinkChars} 字" +
-                                    " · JSON 候选 ${meta.bodyChars} 字 · 修复层级 ${meta.repairLevel}" +
-                                    " · 拆出 ${parsed?.size ?: 0} 条 · $failCode",
-                                fields = mapOf(
-                                    "block" to (i + 1).toString(), "attempt" to attempt.toString(),
-                                    "rawChars" to meta.rawChars.toString(), "thinkChars" to meta.thinkChars.toString(),
-                                    "bodyChars" to meta.bodyChars.toString(), "repair" to meta.repairLevel.toString(),
-                                    "annCount" to (parsed?.size ?: 0).toString(), "failCode" to failCode,
-                                    "thinkClosed" to meta.thinkClosed.toString()))
-                            // 产出截取只进诊断态日志，不进常态摘要；默认不把正文搬来搬去。
-                            EventLog.log(EventLog.Kind.AUDIT, "ANN_PREVIEW",
-                                "块 ${i + 1} 产出开头：${meta.previewHead} ｜ 结尾：${meta.previewTail}",
-                                level = EventLog.Level.TRACE)
-                            if (parsed == null) {
-                                EventLog.log(EventLog.Kind.AUDIT, "ANN_EMPTY",
-                                    "⚠ 块 ${i + 1} 跑完却没解析出任何分段条目（模型可能只吐了废话或推理）",
-                                    level = EventLog.Level.WARN,
-                                    fields = mapOf("block" to (i + 1).toString(),
-                                        "rawChars" to meta.rawChars.toString()))
-                            }
-                            if (pass) { result = rec.result; break }
-                            // P0 · 2507 仅非思考，不再有「推理被预算截断」这回事：
-                            // 旧「思考截断跳过重试」分支整段删除，否则老用户 thinking=true 时
-                            // 会因模型本就不输出 </think> 而每次失败都跳过重试。
-                            EventLog.log(EventLog.Kind.PIPELINE, "GATE_RETRY",
-                                "块 $i 第 $attempt 次 · $failCode · 规则通过 ${checks.values.count { it }}/${checks.size}")
-                        }
-                        if (result == null) {
-                            result = Annotator.fallback(chunk)
-                            gateFails++
-                            usedFallback = true
-                            EventLog.log(EventLog.Kind.PIPELINE, "GATE_FALLBACK", "块 $i 降级直读")
-                        }
-                        AnnCache.write(work, i, result)
-                        // 这一块是真重跑过了，撤销「重新标注本块」的待办标记。
-                        SegPlan.clearRedo(work, "block:$i")
-                        // R21 · 这一块的最终结论落盘：标了几条、text 多少字、差几个字、
-                        // 9 条规则过了几条、模型吐出来的开头结尾是什么。不是只写一句「完成」。
-                        val finalAnns = result ?: emptyList()
-                        val m = lastMeta
-                        val joinedLen = finalAnns.sumOf { it.text.length }
-                        // R22 · 用户要的是「标注过后的内容」，不是统计数字。
-                        // 最终走 fallback（重试全失败）时全部是程序补齐；否则前 rec.kept 条来自模型。
-                        val rec0 = lastRec
-                        val srcKept = if (usedFallback) 0 else (rec0?.kept ?: 0)
-                        // 缺口补齐后模型条目可能插在中间，不能再用「前 kept 条」判来源。
-                        val srcFlags = if (usedFallback) List(finalAnns.size) { false }
-                            else (rec0?.srcModel ?: List(finalAnns.size) { false })
-                        val disposition = if (usedFallback) Annotator.Reconcile.FALLBACK
-                            else (rec0?.disposition ?: Annotator.Reconcile.FALLBACK)
-                        if (srcKept > 0) modelHits++
-                        // R27 · 看台小格颜色不再只看「有没有 ann 文件」：
-                        // 有文件但全是直读段 = 黄，真的有模型标注 = 蓝。
-                        try {
-                            File(work, "ann_%04d.src".format(i))
-                                .writeText(if (srcKept > 0) "MODEL" else "FILL")
-                        } catch (_: Throwable) { }
-                        // R27 只在内存里算 srcFlags，进程被杀续跑后就丢了；落盘后
-                        // 看台才能逐段（而不是逐块）判「这条是不是模型标的」。
-                        SegPlan.writeFlags(work, i, srcFlags)
-                        val contentJson = Annotator.contentJson(finalAnns, srcFlags)
-                        EventLog.log(EventLog.Kind.AUDIT, "ANN_CONTENT",
-                            "块 ${i + 1}/${chunks.size} 最终采纳 ${finalAnns.size} 条（模型 $srcKept" +
-                                " / 补齐 ${finalAnns.size - srcKept}）· $disposition ｜ " +
-                                Annotator.contentLines(finalAnns, srcFlags).replace('\n', '｜'),
-                            level = if (srcKept == 0) EventLog.Level.WARN else EventLog.Level.INFO,
-                            fields = mapOf("block" to (i + 1).toString(),
-                                "annCount" to finalAnns.size.toString(),
-                                "kept" to srcKept.toString(), "disposition" to disposition))
-                        AuditLog.write(c, BlockAudit(
-                            runId = AuditLog.currentRun(), block = i + 1, total = chunks.size,
-                            attempt = attemptCount, origChars = chunk.text.length,
-                            rawChars = m?.rawChars ?: 0, thinkChars = m?.thinkChars ?: 0,
-                            bodyChars = m?.bodyChars ?: 0, annCount = finalAnns.size,
-                            textChars = joinedLen, lenDelta = joinedLen - chunk.text.length,
-                            firstDiff = if (m != null)
-                                Annotator.firstDiff(finalAnns.joinToString("") { it.text }, chunk.text) else -1,
-                            speakers = finalAnns.map { it.speaker }.distinct().joinToString("、"),
-                            instructEmpty = finalAnns.count { it.instruct.isBlank() },
-                            status = if (usedFallback) AuditLog.FALLBACK else AuditLog.PASS,
-                            failCode = if (usedFallback) lastFailCode else "-",
-                            rules = lastChecks,
-                            previewHead = m?.previewHead ?: "", previewTail = m?.previewTail ?: "",
-                            elapsedMs = System.currentTimeMillis() - blockStartAt, fromCache = false,
-                            disposition = disposition, kept = srcKept,
-                            filled = finalAnns.size - srcKept, annsJson = contentJson,
-                            adoptFirstDrop = firstDrop,
-                            finalVerbatim = Annotator.gate(finalAnns, chunk.text)))
-                        EventLog.log(EventLog.Kind.AUDIT, "ANN_AUDIT",
-                            "块 ${i + 1}/${chunks.size} ${if (usedFallback) "降级直读" else "通过"} · " +
-                                "$disposition（模型 $srcKept 条）· " +
-                                "标 ${finalAnns.size} 条 · text ${joinedLen} 字（原文 ${chunk.text.length}） · " +
-                                "规则 ${lastChecks.values.count { it }}/${lastChecks.size} · " +
-                                (if (usedFallback) lastFailCode else "-"),
-                            level = if (usedFallback) EventLog.Level.WARN else EventLog.Level.INFO,
-                            fields = mapOf(
-                                "block" to (i + 1).toString(),
-                                "status" to (if (usedFallback) AuditLog.FALLBACK else AuditLog.PASS),
-                                "annCount" to finalAnns.size.toString(),
-                                "lenDelta" to (joinedLen - chunk.text.length).toString(),
-                                "rulePass" to lastChecks.values.count { it }.toString(),
-                                "ruleTotal" to lastChecks.size.toString()))
-                        } finally {
-                            beat.cancel()
-                            // R25 · 真机日志出现「0 条标注 · 通过 · 耗时 643428ms」：
-                            // 用户点了停止，result 为空，旧文案照样写「通过」，把白跑 10 分钟
-                            // 伪装成成功。零产出、无结果、被中断一律 WARN，不许叫通过。
-                            val endCount = result?.size ?: 0
-                            val endStatus = when {
-                                cancelRequested -> "用户中断（本次不计产出）"
-                                result == null -> "无结果（生成失败或被停止）"
-                                endCount == 0 -> "零分段 ⚠️ 白跑"
-                                usedFallback -> "降级直读"
-                                else -> "通过"
-                            }
-                            val bad = cancelRequested || result == null || endCount == 0 || usedFallback
-                            EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_END",
-                                "块 ${i + 1}/${chunks.size} 结束 · $endCount 条分段 · $endStatus" +
-                                    " · 耗时 ${System.currentTimeMillis() - blockStartAt}ms",
-                                level = if (bad) EventLog.Level.WARN else EventLog.Level.INFO,
-                                fields = mapOf("block" to (i + 1).toString(),
-                                    "annCount" to endCount.toString(), "status" to endStatus))
-                        }
-                    }
-                    val safe = result!!
-                    safe.forEachIndexed { k, a ->
-                        collected.add(a)
-                        segOrigin.add(Triple(i, k, SegPlan.sourceOf(work, i, k)))
-                        if (a.speaker.isNotBlank() && a.speaker != "旁白") roster.add(a.speaker)
-                    }
-                    recent.addAll(safe)
-                    while (recent.size > 3) recent.removeAt(0)
-                    emit("正在理解文字", i + 1, chunks.size, gateFails,
-                        "已完成 ${i + 1}/${chunks.size} 块 · 模型真分段 $modelHits 块" +
-                            " · 改走直读 $gateFails 块" +
-                            (if (resumed > 0) " · 磁盘续上 $resumed 块（旧缓存未记来源）" else ""))
-                }
-            } finally {
-                try { NativeEngine.llmFree(llmHandle) } catch (_: Throwable) { }
-            }
-            if (cancelRequested) { _state.value = halted(chunks.size, chunks.size, gateFails); return }
-            annotated = collected
+        // R68 · P1b：单一路径后没有块级审计/模型命中计数；gateFails 恒 0，
+        // 只为不改合成/合并段 6 处算式而保留，kotlin 会内联成常量。
+        val gateFails = 0
+        // R68 · 单一路径：原文按标点/段落边界切段后直接交给 TTS，不跑任何文本管线。
+        val stats = mutableListOf<TextSplitter.Stats>()
+        val annotated = chunks.flatMap { ch ->
+            val (segs, s) = Annotator.directWithStats(ch.text)
+            stats.add(s)
+            segs
         }
-
+        // R25 · 用户原话「起码按符号断，不能按字符段」：把断句结果写进日志，
+        // 贴一段事件就能核对有没有从半句腰斩、原文有没有少字。
+        EventLog.log(EventLog.Kind.PIPELINE, "SPLIT_STATS",
+            "${chunks.size} 块 → ${annotated.size} 段 · 只在标点/段落边界断 · " +
+                "字符硬切 0 · 句段边界 ${stats.sumOf { it.sentenceCuts }} · " +
+                "次级边界 ${stats.sumOf { it.softCuts }} · " +
+                "超长整句保留 ${stats.sumOf { it.oversize }} · " +
+                "最长 ${stats.maxOfOrNull { it.longest } ?: 0} 字 · " +
+                "原文 ${stats.sumOf { it.charsIn }} 字 拼回 ${stats.sumOf { it.charsOut }} 字" +
+                (if (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }) " · 逐字无损" else " · ⚠️字数不一致"),
+            fields = mapOf("chunks" to chunks.size.toString(), "segments" to annotated.size.toString(),
+                "hardCuts" to "0", "lossless" to
+                    (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
+        EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
+            "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
         // ── 合成阶段：先释放再加载 TTS，绝不同时常驻 ──
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
 
         // R14 · 声音指纹：音色描述 / 角色表 / 采样 / instruct 模板 任一变化，
         // 旧 WAV 必须作废，否则「续跑」会跳过旧块、听起来还是旧声音，界面还假装续上了。
-        // 只删 WAV，标注结果（跑了几分钟的 4B 产物）留着不重算。
+        // 只删 WAV，文本切分结果留着不重算。
         // 第一次写指纹时不删（默认配置下 instruct 与旧版完全一致，旧 WAV 仍有效）。
         val knobs = Prefs.ttsKnobs(c)
         val globalVoice = Prefs.voiceDescription(c)
@@ -1203,9 +638,9 @@ object Producer {
                 " · temp=${knobs.temperature} · lang=chinese（官方 README：目标语言已知时显式传，别用 auto）")
 
         // R20 · 预设指纹：voiceStamp 覆盖「升级 App 导致模板版本变化」，
-        // 这里覆盖「同一版本内用户把叙事改成广播剧」。两者都只删 WAV、保留 ann_ 标注：
-        // 换风格应该「复用标注、重合成」，不是重跑几小时的 4B。
-        // gapMs / gateRetries 不进指纹（前者只在合并插静音，后者只影响标注重试）。
+        // 这里覆盖「同一版本内用户把叙事改成广播剧」。两者都只删 WAV、保留切分结果：
+        // 换风格应该「复用切分、重合成」，不是重新切一遍书。
+        // gapMs 不进指纹（只在合并插静音）。
         val presetFile = File(work, "produce_stamp.txt")
         val presetStamp = config.audioStamp()
         try {
@@ -1239,41 +674,23 @@ object Producer {
             return
         }
 
-        // R11 · 拟声表达：只在合成前增强 instruct，text 一字不动（逐字 gate 不受影响）
+        // R11 · 拟声表达：只在合成前增强 instruct，正文一字不动
         val nonVerbalOn = Prefs.nonVerbal(c)
         var unmapped = 0
         var strippedTotal = 0
         val toSpeak = annotated.map { ann ->
             val base = if (nonVerbalOn) NonVerbal.apply(ann) else ann
-            // R14 · 身份层（角色专属 > 全局）由用户/角色表固定，4B 只负责本段情绪。
+            // R14 · 身份层（角色专属 > 全局）由用户/角色表固定，全局音色决定声音。
             // 不暂停长任务：未映射的角色沿用全局音色，并如实记一条，角色页里能看见待确认。
             val role = if (castOn) VoiceCast.resolve(c, ann.speaker) else null
             if (castOn && !VoiceCast.isNarrator(ann.speaker) && role == null) unmapped++
             val identity = role?.description?.takeIf { it.isNotBlank() } ?: globalVoice
-            // R19 · 程序层兜底：4B 漏写的音色身份词在这里剥掉，避免逐段换声。
+            // R19 · 程序层兜底：指令里混进的音色身份词在这里剥掉，避免逐段换声。
             // R20 · 本次风格层（朗读档位/语速/情绪强度）挂到现成的第二层，零签名改动。
             // 只改 instruct，text 原样，gate 不受影响。
             val built = VoiceProfile.buildWithReport(identity, config.styleInstruct(), base.instruct)
             strippedTotal += built.second
             Ann(base.text, base.speaker, built.first)
-        }
-        // R28 · 唯一真实来源：把「第几段来自第几块第几条、是不是模型标的」落盘。
-        // 看台以前把 ann_（块索引）和 chunk_（段索引）按同一个 i 并排画格，
-        // 一块常切成好几段，格子既不是块也不是段。direct 档没跑 4B，不写 segmap，
-        // 判定条按 direct 单独说明，不把「没跑模型」冒充成「模型没采纳」。
-        if (!direct && segOrigin.size == toSpeak.size) {
-            val metas = toSpeak.mapIndexed { si, a ->
-                val (blk, ai, fm) = segOrigin[si]
-                SegMeta(si, blk, ai, fm, a.text, a.speaker, a.instruct,
-                    "chunk_%04d.wav".format(si))
-            }
-            SegPlan.writeMap(work, metas)
-            val v = SegPlan.verdict(metas)
-            EventLog.log(EventLog.Kind.PIPELINE, "LLM_VERDICT",
-                v.label + " · 模型 ${v.model} / 直读 ${v.fill} / 旧缓存未知 ${v.unknown}",
-                level = if (v.model == 0) EventLog.Level.WARN else EventLog.Level.INFO,
-                fields = mapOf("model" to v.model.toString(), "fill" to v.fill.toString(),
-                    "unknown" to v.unknown.toString(), "total" to v.total.toString()))
         }
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_IDENTITY",
             "身份层=${if (globalVoice.isBlank()) "默认锚点" else "自定义"} · " +
@@ -1299,9 +716,9 @@ object Producer {
                 }
                 // R26 · 合成阶段同样按段刷新唤醒锁；TTS 单次可能几分钟。
                 ProduceService.touch(c.applicationContext, "合成段 ${i + 1}/${toSpeak.size}")
-                val wav = File(work, String.format(if (direct) "direct_%04d.wav" else "chunk_%04d.wav", i))
+                val wav = File(work, String.format("direct_%04d.wav", i))
                 // R22 · 让「这一段到底用什么指令读的」可见：这里是最终 instruct（含身份层/风格层），
-                // 不是 4B 原始产出。voice_design 的 speaker 必须传 null（qwen.h 285-288 行）。
+                // 这里显示的是最终送进声音模型的指令。voice_design 的 speaker 必须传 null。
                 EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
                     "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
                         a.text.take(50).replace('\n', '⏎') + " → " + a.instruct.replace('\n', '｜'),

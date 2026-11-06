@@ -11,10 +11,6 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "app/src/main/java/com/tingben/app/MainActivity.kt",
  "app/src/main/java/com/tingben/app/ProduceService.kt",
  "app/src/main/java/com/tingben/app/diag/EventLog.kt",
- "app/src/main/java/com/tingben/app/diag/AuditLog.kt",
- "app/src/main/java/com/tingben/app/core/JsonSalvage.kt",
- "app/src/main/java/com/tingben/app/core/Adoption.kt",
- "app/src/main/java/com/tingben/app/diag/RawDump.kt",
  "docs/THIRD_PARTY_NOTICES.md",
  "scripts/build_native.sh", "scripts/check_structure.py", ".github/workflows/ci.yml", "keystore.jks",
  "contracts/model-manifest.json", "contracts/pipeline_spec.md",
@@ -22,6 +18,14 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "app/src/main/java/com/tingben/app/core/ParamSpec.kt"]
 for f in REQUIRED:
     if not (ROOT / f).exists(): errs.append("缺少必备文件: " + f)
+
+# R68 · P1b：旧标注管线四个文件已物理删除，不许回潮。
+R68_BANNED_FILES = ["app/src/main/java/com/tingben/app/diag/AuditLog.kt",
+ "app/src/main/java/com/tingben/app/core/JsonSalvage.kt",
+ "app/src/main/java/com/tingben/app/core/Adoption.kt",
+ "app/src/main/java/com/tingben/app/diag/RawDump.kt"]
+for f in R68_BANNED_FILES:
+    if (ROOT / f).exists(): errs.append("R68 回潮：旧标注管线文件仍在 " + f)
 
 # R66 · 语言模型退场：提示词资产不许再进包（源码/契约两处都不留占位）
 for p in list((ROOT / "app/src/main/assets").glob("prompt_zh*")) + list((ROOT / "contracts").glob("prompt_zh*")):
@@ -81,50 +85,48 @@ for p in kt_files:
             errs.append("%s:%d KDoc 正文出现注释收尾符（会提前闭合块注释）"
                         % (p.relative_to(ROOT), no))
 
-# R21 · 标注审计链路的关键符号必须真的在源码里，防止「文档写了、代码没进包」。
-# R67 · P1a：AUDIT_RUN_BEGIN / AUDIT_SUMMARY 两个「每次 run 的落盘入口」已随语言模型退场删除，
-# 从必需列表移除，并改成反向断言（再出现即红），避免把删掉的代码又请回来。
+# R68 · P1b：语言模型退场，审计链路符号一律改成「出现即红」。
 all_src = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in kt_files)
-AUDIT_SYMBOLS = ["ANN_RAW", "ANN_PREVIEW", "ANN_EMPTY", "ANN_AUDIT",
-                 "parseWithMeta", "ruleChecks", "BlockAudit",
-                 "readDetail", "ringTail", "summaryText", "previewText"]
-for sym in AUDIT_SYMBOLS:
-    if sym not in all_src: errs.append("缺少标注审计符号: " + sym)
-for sym in ["AUDIT_RUN_BEGIN", "AUDIT_SUMMARY", "AbGate", "KEY_THINKING", "PROMPT_VERSION"]:
-    if sym in all_src: errs.append("R67 P1a 已删形态回潮: " + sym)
+R68_GONE_A = ["AUDIT_RUN_BEGIN", "AUDIT_SUMMARY", "AbGate", "KEY_THINKING", "PROMPT_VERSION",
+              "parseWithMeta", "ruleChecks", "BlockAudit", "ANN_RAW", "ANN_PREVIEW",
+              "ANN_EMPTY", "ANN_AUDIT", "summaryText", "previewText", "contentText"]
+for sym in R68_GONE_A:
+    if sym in all_src: errs.append("R68 回潮：旧审计符号 " + sym)
+for sym in ["readDetail", "ringTail", "resetEngine", "lastCrash"]:
+    if sym not in all_src: errs.append("缺少软件事件日志符号: " + sym)
 
-# R22 · 核心链路（逐条采纳）与「标注内容可看见」的符号必须真在源码里。
-R22_SYMBOLS = ["ANN_CONTENT", "ANN_DISPOSITION", "TTS_INPUT", "reconcile", "contentJson",
-               "contentLines", "contentText", "annsJson", "disposition", "lang=chinese",
-               "复制标注全文"]
-for sym in R22_SYMBOLS:
-    if sym not in all_src: errs.append("缺少 R22 核心链路符号: " + sym)
+# R68 · 单一路径后仍活的主链符号（不许被顺手删掉）。
+R68_KEEP_A = ["TTS_INPUT", "SPLIT_STATS", "directWithStats", "lang=chinese",
+              "qt_tts_params", "TTS_PARAMS_APPLIED", "chapterIndices"]
+for sym in R68_KEEP_A:
+    if sym not in all_src: errs.append("缺少 R68 主链符号: " + sym)
+R68_GONE_B = ["ANN_CONTENT", "ANN_DISPOSITION", "Annotator.reconcile", "contentJson",
+              "contentLines", "annsJson", "disposition", "复制标注全文"]
+for sym in R68_GONE_B:
+    if sym in all_src: errs.append("R68 回潮：旧逐条采纳符号 " + sym)
 
-# R23 · 主事件流 ANN_CONTENT 必须给逐条全文，不许退回 70 字截取。
-R23_SYMBOLS = ["已截断，全文见诊断页", "16384", "R23 · 主事件流里给人看的逐条内容"]
 pipe_src = (ROOT / "app/src/main/java/com/tingben/app/core/Pipeline.kt").read_text(encoding="utf-8", errors="replace")
-for sym in R23_SYMBOLS:
-    if sym not in pipe_src: errs.append("缺少 R23 主日志全文符号: " + sym)
-if "a.text.take(70)" in pipe_src: errs.append("R23 回退：contentLines 又把正文截成 70 字")
+# R68 · 逐字无损断句仍在，不许退回按字数腰斩。
+if "a.text.take(70)" in pipe_src: errs.append("R68 回退：又把正文截成 70 字")
 
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
 for sym in ["NATIVE_JSON_CLOSE", "jsonDepth", "jsonStarted"]:
     if sym not in cpp_src: errs.append("native 缺少 JSON 闭合早停: " + sym)
 
-# R24 · 三处手搓换成移植件：符号必须真在源码里，旧手搓实现不许残留。
-R24_SYMBOLS = ["JsonSalvage", "Adoption", "RawDump", "ANN_RAW_DUMP", "ANN_ADOPT_DETAIL",
-               "复制最近一块模型原始产出", "cleanInstruct",
-               "THINK_UNCLOSED", "bracket", "DEFAULT_INSTRUCT"]
-for sym in R24_SYMBOLS:
-    if sym not in all_src: errs.append("缺少 R24 移植件符号: " + sym)
+# R68 · 移植件整文件删除，出现即红；旧手搓实现同样不许回来。
+R68_GONE_C = ["JsonSalvage", "Adoption", "RawDump", "ANN_RAW_DUMP", "ANN_ADOPT_DETAIL",
+              "复制最近一块模型原始产出", "cleanInstruct", "THINK_UNCLOSED",
+              "bracket", "DEFAULT_INSTRUCT", "ModelStore.llm", "NativeEngine.llmLoad"]
+for sym in R68_GONE_C:
+    if sym in all_src: errs.append("R68 回潮：旧移植件符号 " + sym)
 if "= raw.lastIndexOf(']')" in pipe_src:
-    errs.append("R24 回退：parseWithMeta 又用 lastIndexOf 找 JSON 闭合")
+    errs.append("R68 回退：又用 lastIndexOf 找 JSON 闭合")
 if "o.optString(\"instruct\", \"平稳叙述\")" in pipe_src:
-    errs.append("R24 回退：又出现手搓解析里的默认指令")
+    errs.append("R68 回退：又出现手搓解析默认指令")
+
 # R25 · 断句移植件 / 设置分层 / 日志不许把零产出写成成功。
 main_src = (ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt").read_text(encoding="utf-8", errors="replace")
-R25_ALL = ["TextSplitter", "SPLIT_STATS", "ANN_PHASE_HINT", "ANN_BLOCK_END",
-           "directWithStats", "用户中断（本次不计产出）"]
+R25_ALL = ["TextSplitter", "SPLIT_STATS", "directWithStats"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
 # R54 · 设置页重设计后不再有圈码分组标题，改验四分区组件与作用域文案。
@@ -173,13 +175,15 @@ if "wl.acquire(UNIT_TIMEOUT_MS)" not in fgs_src:
 if "START_STICKY" in fgs_src:
     errs.append("R26 回退：前台服务变成自动重启")
 
-# R27 · 真机截图定案：模型吐了合规 JSON 却一条没进合成，且三处显示口径混用。
-# 正向：有序子串+缺口补齐、逐条来源、首因、真标注计数、最终逐字相等都要真在源码里。
-R27_ALL = ["ADOPT_0_KEPT", "NOT_FOUND_AFTER_", "srcModel", "adoptFirstDrop",
-           "finalVerbatim", "未采纳首因", "模型产出未被采纳", "模型真标注",
-           "ann_%04d.src", "旧缓存未记来源", "最终进 TTS", "模型候选"]
-for sym in R27_ALL:
-    if sym not in all_src: errs.append("缺少 R27 符号: " + sym)
+# R68 · P1b：R27 那套「模型产出有没有被采纳」的判据随语言模型整套退场。
+R68_GONE_D = ["ADOPT_0_KEPT", "NOT_FOUND_AFTER_", "srcModel", "adoptFirstDrop",
+              "finalVerbatim", "未采纳首因", "模型产出未被采纳",
+              "旧缓存未记来源", "最终进 TTS", "模型候选",
+              "ANN_PHASE_HINT", "ANN_BLOCK_END", "用户中断（本次不计产出）",
+              "已截断，全文见诊断页", "16384"]
+for sym in R68_GONE_D:
+    if sym in all_src: errs.append("R68 回潮：旧标注判据符号 " + sym)
+
 # 反向断言只认代码形态，注释里描述旧 bug 的字面量不该把自己拦下。
 if re.search(r"original\.regionMatches\(\s*cursor", all_src):
     errs.append("R27 回退：又变回「从原文第 0 字严格前缀」")
@@ -504,6 +508,7 @@ if "--selftest" in sys.argv:
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / 审计符号 %d 项 / R22 符号 %d 项 / R23 符号 %d 项 / R24 符号 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / R31 符号 %d 项 / native 早停 3 项"
-      % (len(REQUIRED), len(AUDIT_SYMBOLS), len(R22_SYMBOLS), len(R23_SYMBOLS), len(R24_SYMBOLS),
-         len(R25_ALL) + len(R25_MAIN), len(R26_ALL) + 5 + 5, len(R31_ALL) + 11 + 7 + 4))
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / R68 旧符号零残留 %d 项 / 主链 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / R31 符号 %d 项 / native 早停 3 项"
+      % (len(REQUIRED), len(R68_GONE_A) + len(R68_GONE_B) + len(R68_GONE_C) + len(R68_GONE_D),
+         len(R68_KEEP_A), len(R25_ALL) + len(R25_MAIN),
+         len(R26_ALL) + 5 + 5, len(R31_ALL) + 11 + 7 + 4))

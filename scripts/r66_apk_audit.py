@@ -7,13 +7,13 @@ import base64, hashlib, io, json, os, re, sys, urllib.request, zipfile
 from pathlib import Path
 
 APK = Path('/data/workspace/听本_app-debug.apk')
-EXPECT_VER = '1.1.0+70'
+EXPECT_VER = '1.1.0+'
 NEW = ['合成音频', '调音 ›', '送进声音模型的正文', '章节', '可播', '直接朗读']
 # 只查用户可见中文说法与日志标签；AbGate 等类名属 R66 明确保留的不可达死代码，
 # 编译后会以 Lcom/tingben/app/core/AbGate; 形式留在 dex，不算界面残留（下一轮物理删）。
 BAN = ['语言模型', '数据标注', '文本模型', '标注', 'Huihui', 'no_think',
        'A/B gate', 'MODEL_ID', 'm2507', 'prompt_zh', 'Qwen3-4B']
-DEAD_CLASS_NOTE = 'AbGate/Adoption/Annotator 等保留死代码类名，非界面文案'
+DEAD_CLASS_NOTE = 'R68 起 Adoption/JsonSalvage/RawDump/AuditLog 已物理删除，Annotator 瘦身为断句入口'
 WEIGHT_EXT = ('.gguf', '.safetensors', '.onnx', '.pth', '.tflite')
 
 

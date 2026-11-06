@@ -719,7 +719,7 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **最硬实查**：新权重官方明写「仅非思考、不生成 `<think>` 块、不需要 enable_thinking=False」，而 `Pipeline.kt:287-288` 仍在 user 末尾追加 `/think` / `/no_think`，`Pipeline.kt:819-823` 用 `thinkOn` 决定 temp 0.6 与缓存目录，`MainActivity.kt:1538` 摆着「思考过程」开关 → 换模型后这些全变假开关。据此判定 **R55 项清单 v1 有一半作废**，必须按权重重排。
 - **R57**：11 处联动逐文件逐行（manifest / 下载直链 / ModelStore 白名单 / prompt 装配 / ChatML / 生成参数 / 缓存分桶 / Prefs 旧键 / extractThinking / 设置页拆分 / 诊断加 MODEL_ID），附官方采样口径对照（2507 推荐 0.7/0.8/20/0，native 只实现温度 + 固定 top_p 0.9 + seed 42）、A/B 四项 gate 与回退方案、守恒清单。
 - **R58**：设置页只留外观（夜间模式/字号标「待新增」，不画假开关）、数据与日志、后台与关于、一行「语言模型设置 ›」；语言模型页按新权重给只读模型卡 + 已移除说明 + 主层三项 + 高级五项 + 诊断评测，三态徽标与调音台同套语义，`top_k` / `min_p` / 思考开关等 12 类明确不画。
-- **v8 预览 12 屏**：① 设置首屏 ② 外观 ③ 数据日志 ④ 后台关于 ⑤ 语言模型首屏 ⑥ 高级 ⑦ 提示词只读 ⑧ 换模型项清单对照 ⑨ 三态总览 ⑩ 两页全展开长图 ⑪ 375px + 手势/三键 ⑫ 11 处联动与 A/B 流程。脚本 `mixer_preview/make_settings_v8.py` 自带断言：12/12 无横向溢出、设置页无调音台入口/提交/圈码、「思考/深度」不许渲染成开关行、全展开四组齐全。逐张看图后自己又改掉 7 处评审腔与技术黑话（`enable_thinking=False`、`R33 已修`、`native 只实现…`、`不画假开关` 等）。
+- **v8 预览 12 屏**：① 设置首屏 ② 外观 ③ 数据日志 ④ 后台关于 ⑤ 语言模型首屏 ⑥ 高级 ⑦ 提示词只读 ⑧ 换模型项清单对照 ⑨ 三态总览 ⑩ 两页全展开长图 ⑪ 375px + 手势/三键 ⑫ 11 处联动与 A/B 流程。脚本 `mixer_preview/make_settings_v8.py` 自带断言：14/14 无横向溢出、设置页无调音台入口/提交/圈码、「思考/深度」不许渲染成开关行、全展开四组齐全。逐张看图后自己又改掉 7 处评审腔与技术黑话（`enable_thinking=False`、`R33 已修`、`native 只实现…`、`不画假开关` 等）。
 - **零业务代码、零 CI、零发包**，APK 仍是 `1.0.0+65`；项目状态文件仅追加本条，头部版本未动。⚠️ 新权重仍在下载，未导入、未加载、未跑过一块，「更会写 JSON」需过 A/B gate 才算数。
 - **队列**：预览通过 → 下一轮按 R57 的 11 处联动落代码并单独发版 → 真机验 → V2 目录页+绿勾；性能二期、夜间模式实现不夹带。
 
@@ -879,3 +879,17 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   `r67_apk_audit.py` 全 PASS 且坏包自检拦下；项目文件回填带 `[skip ci]`
 - **如实限定**：P1 未做完——旧合成分支（约 300 行）及 `Adoption` / `JsonSalvage` / `RawDump.write` / `AuditLog.write` 仍在，分支外代码引用分支内变量，硬删会断链，单列 P1b；`AbGate` 类名已消失，其余旧类名因仍有活引用而在包里；真机零证据。
 - **队列**（`ROADMAP.md` 唯一真源）：P1b 剩余死代码 → P2 软件设置补齐 → P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。
+
+
+---
+
+## R68 · P1b 单一路径重构（源码层；未发新包）
+
+- **入口**：用户「继续找活干」。按 `ROADMAP.md` P1b 单独一轮，先列 `docs/R68_P1b_单一路径重构_联动表.md` 再动代码，不夹带 P2/P3/P4。
+- **可达性实查（改动前）**：`Annotator` 20 处引用全在 `Pipeline.kt` 旧 else 分支；`ThinkingStore` 0 引用；`AnnCache.read/write` 仅旧分支；`Adoption` / `JsonSalvage` / `RawDump` / `AuditLog` 只被旧分支 + `MainActivity.DiagnosticsBlock` 7 处引用。而 `SegPlan` / `VoiceCast` / `NonVerbal` / `Workbench` / `EventLog` / `PlayQueue` / `AnnCache.dirFor` / `AudioLibrary.chapterIndices` 仍活，**一个没删**。
+- **11 处联动全签**：`Producer.run` 删 `if (direct)/else` 只留直接朗读主体；删 `ModelStore.llm` / `Annotator.templates` / `nCtx,threads,temp` 读取；删 `segOrigin` / `modelHits` / `resumed` 声明；删 `if (!direct && segOrigin…)` segmap 块；WAV 命名统一 `direct_%04d.wav`；`Annotator` 瘦到只剩 `directWithStats` / `directSegments`；删 `ThinkingStore` / `AnnCache.read,write`；诊断区换精简版（静态快照 + 两次复制 + 清理确认弹层），删 3 秒定时器、6 处旧读取、3 个旧折叠按钮、原始产出复制按钮与 `buildDiag(full)` 里的审计截取；删 2 行 import；**四文件物理删除**；`check_structure.py` 旧「必须存在」断言全部改成零残留反向断言；`ci.yml` 挂 `r68_verify.py`。
+- **一处取舍（如实记）**：`gateFails` 保留为 `val gateFails = 0`，没有把合成/合并段 6 处 `gateFails + synthFails` 算式改写——恒 0 常量会被内联，改写反而增加断链风险。联动表写的是「替换算式」，实际按此取舍执行。
+- **验证**：`python3 -m py_compile scripts/*.py` 通过；17 套 `CI=true` 自检**全绿**（含 `r66_apk_audit` 的 `+70` 硬编码假红修成按版本前缀、`r67_apk_audit` 注释订正）；新增 `r68_verify.py` 正向 6 组 + 反向注入 **14/14 全拦下**；`--selftest` 通过；Kotlin 源码括号平衡 0、类型定义全在、无悬空 import、旧符号全项目引用归零。
+- **自绘自审 4 屏**（`draw_r68_preview.py`）：新版诊断区 / 旧新对照 / 影响面总览 / 375px 三键安全区，横向溢出 0、界面内零禁用词。自己看图改了 3 处：预览画了代码里没有的「夜间模式 / 正文字号」（按 `SettingInfoRow` 真实文案改成「主题 / 字号 · 待新增」）、影响面写「16 套」实际 17 套、③ 是信息卡不是 `.phone` 导致溢出检查索引越界。按 R66 纪律不向用户索取真机验证。
+- **如实限定**：沙盒无 Android SDK / gradle wrapper，`git ls-remote origin` 返回 **403**，**本轮未触发远端 CI、未做真 Kotlin 编译、未出新 APK、未核直链**；`1.1.0+71` 仍是唯一可装包，源码已领先它一轮。CI 脚本已挂好，网络恢复后 push 一次即可补齐「真编译 + 拆包 + 发版」。旧书 / 已做好 WAV / 续跑书签的读取路径全留；真机零证据；诊断区折叠层级仍归 P2。
+- **队列**（`ROADMAP.md` 唯一真源）：网络恢复后补 R68 出包 → P2 软件设置补齐 → P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。

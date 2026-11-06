@@ -555,5 +555,11 @@ release-like 构建。<b>不宣称卡顿归零，真机帧率仍零证据。</b>
 </div>
 <div style="padding:10px 14px;border-top:2px solid #4338CA;background:#EEF0FE;font:14px sans-serif">
 R67 · <b>1.1.0+71</b> P1a 死代码清理｜界面零改动 / 旧数据兼容 / 真删 8 类｜现行队列见 ROADMAP.md（历史快照）
-</div></body>
+</div><div class="card" style="margin-top:14px"><div class="h">㉔ R68 · P1b 单一路径重构（源码层 / 未出包）</div>
+<b>做了：</b>删 <code>if (direct)/else</code> 旧合成分支，<code>Pipeline.kt</code> 1381 → 799 行；物理删除
+<code>Adoption.kt</code> / <code>JsonSalvage.kt</code> / <code>RawDump.kt</code> / <code>AuditLog.kt</code>；
+诊断区 7 处旧读取与 3 秒定时器清除；旧断言改零残留反向断言。<br>
+<b>没删：</b>SegPlan / VoiceCast / NonVerbal / Workbench / EventLog / PlayQueue / chapterIndices / 调音台 / 三列 / 四步 / 抽屉 7 项 / native。<br>
+<b>证据：</b>17 套本地自检全绿、r68 反向注入 14/14、4 屏自绘自审；<b>无 Android SDK + 远端 403 ⇒ 未跑 CI、未出包</b>，最新可装仍是 <code>1.1.0+71</code>。</div>
+</body>
 </html>

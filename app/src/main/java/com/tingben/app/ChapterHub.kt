@@ -30,8 +30,8 @@ import kotlinx.coroutines.launch
  * R61 · 一本书点进去的目录页。
  *
  * 形状来自 v9 全 8 屏预览：同一份按章拆分的目录，平级排成四列左右滑；
- * 第一列勾选 + 底部小条，第二列标注进度，第三列合成状态，第四列成品控制。
- * 播放走软件内悬浮条，不做独立播放器页；看书页与标注结果页是本页的覆盖层，
+ * 三列平级：章节（勾选 + 底部小条）/ 合成 / 可播。
+ * 播放走软件内悬浮条，不做独立播放器页；看书页是本页的覆盖层，
  * 不扩张 Screen 枚举。状态只从磁盘成品 / Producer.state / segmap 取，不画假进度。
  */
 private val HubBg = Color(0xFFF4F6FB)
@@ -244,7 +244,7 @@ internal fun ChapterHubScreen(
             }
         }
 
-        // 覆盖层：看书页 / 标注结果页，都不进 Screen 枚举。
+        // 覆盖层：看书页，不进 Screen 枚举。
         val p = pane
         if (p != null) {
             when (p) {
@@ -339,7 +339,7 @@ private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
     }
 }
 
-/** 第四列：只有标注后合成的章变亮；三个控制，不画倍速/定时这类没有的开关。 */
+/** 可播列：只有已合成的章变亮；三个控制，不画倍速/定时这类没有的开关。 */
 @Composable
 private fun PlayColumn(
     ui: List<ChapterUi>, onAll: () -> Unit, onFrom: (Int) -> Unit, onStop: () -> Unit

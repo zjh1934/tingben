@@ -10,7 +10,7 @@ APK = Path('/data/workspace/听本_app-debug.apk')
 EXPECT_VER = '1.1.0+71'
 NEW = ['合成音频', '调音 ›', '送进声音模型的正文', '章节', '可播', '直接朗读']
 # R66 只查用户可见中文说法；R67 P1a 起，真删掉的调用点/类名也不许再出现在 dex。
-# 注意：Adoption / SegPlan / VoiceCast / Workbench / RawDump / AuditLog 仍有活引用，故意不列入。
+# R68：Adoption / RawDump / AuditLog 已物理删除；SegPlan / VoiceCast / Workbench 仍活，不列入。
 BAN = ['语言模型', '数据标注', '文本模型', '标注', 'Huihui', 'no_think',
        'A/B gate', 'MODEL_ID', 'm2507', 'prompt_zh', 'Qwen3-4B',
        'AbGate', 'AUDIT_RUN_BEGIN', 'AUDIT_SUMMARY', 'PROMPT_VERSION',
