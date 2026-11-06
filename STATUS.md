@@ -5,16 +5,16 @@
 > 已归档的历史文档/脚本位置 → `docs/HISTORY_INDEX.md`。
 > 本文件**不再追加逐轮复盘、不再写第二份队列**，避免头部与文末自相矛盾（R37 的教训）。
 
-**2026-11-06 · R76 幽灵页清理已落地；R74 / R75 / R76 合一次 CI 出包中**
+**2026-11-06 · R76 幽灵页清理已出包（`1.1.0+74`，run 74 全绿）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+73`（run 73 全绿；R73 P2 软件设置补齐） |
-| APK | arm64-v8a / 固定 debug 签名 / **17,997,761 字节** |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `a667b5523550…`，与本地逐字节一致） |
-| CI | run 73 `completed success`（真 Kotlin 编译 + 18 套自检 step + APK 闸门 + Release `v1.1.0-73`） |
-| 源码 | commit `297c4fc5`；`r73_verify` 反向注入 10/10；`r73_apk_audit` 拆包全绿 + 坏包反向自检拦下 |
-| 源码领先 | **R74 P3 + R75 + R76**：逐章进度 / 阅读位置已改并新增 `ReadingState.kt`；R75 把 7 张真机截图归档为界面基准（`真机截图/`），并做 6 处信息对齐（书架空态折叠、缺件写明、模型文件名、音频空态引导、去掉界面内 `v4`、角色页返回文案）。16 套 `CI=true` 自查全绿；**未出包**，可装包仍为 `+73`。用户手机截图显示 `+72`，落后两轮 |
+| 版本 | `1.1.0+74`（run 74 全绿；R74 逐章进度 + R75 真机归档 + R76 幽灵页清理） |
+| APK | arm64-v8a / 固定 debug 签名 / **17,964,995 字节** |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `401cfec9dfce…`，与本地逐字节一致） |
+| CI | run 74 `completed success`（真 Kotlin 编译 + 19 套自检 step + APK 闸门 + Release `v1.1.0-74`） |
+| 源码 | commit `6fe4a97a`；`r76_verify` 反向注入 8/8；本地 `CI=true` 18 套全绿 |
+| 源码领先 | **无**：R74 / R75 / R76 已随 run 74 一次出包，源码与可装包对齐。用户此前截图显示 `+72`，覆盖装后即 `+74` |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk`（旧名自动跳转） |
 
 ## 方向（R66 订正，以本段为准）
