@@ -71,10 +71,9 @@ object EventLog {
                     cause = cause.cause
                 }
                 val ringTail = try { ring.joinToString("\n") } catch (_: Throwable) { "" }
-                val blockTail = try { AuditLog.crashTail() } catch (_: Throwable) { "" }
+                // R67 · P1a：崩溃日志只保留环形缓冲，不再读分段块审计。
                 crashFile?.writeText(
-                    "$ts | thread=${thread.name}\n$stack\n=== 崩溃前事件（环形缓冲）===\n$ringTail\n" +
-                        "=== 最后 10 个分段块 ===\n$blockTail\n")
+                    "$ts | thread=${thread.name}\n$stack\n=== 崩溃前事件（环形缓冲）===\n$ringTail\n")
                 log(Kind.CRASH, "JAVA_CRASH", throwable.javaClass.simpleName + ": " + (throwable.message ?: ""),
                     level = Level.ERROR)
             } catch (_: Throwable) { }

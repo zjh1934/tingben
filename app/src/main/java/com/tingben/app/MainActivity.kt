@@ -621,7 +621,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     val allChunks = split?.second ?: emptyList()
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
-    val thinkOn = remember(refresh) { Prefs.thinking(c) }
+    val thinkOn = false  // R67 · P1a：不再读写思考设置键
     // R17 · 进页面时对齐已有任务：书正以「直接朗读」跑着，别把高亮停在标注档，
     // 否则用户看到的模式和任务页/断点续跑用的不是同一套。
     // R20 · 本次预设也对齐已有任务书签，续跑时界面显示的档位与实际跑的一致。

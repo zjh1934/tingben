@@ -54,7 +54,6 @@ object Prefs {
     private const val FILE = "tingben_settings"
     private const val KEY_SCHEMA = "schema"
 
-    private const val KEY_THINKING = "thinking"
     private const val KEY_NCTX = "nCtx"
     private const val KEY_THREADS = "threads"
     private const val KEY_TEMPERATURE = "temperature"
@@ -87,9 +86,7 @@ object Prefs {
         }
     }
 
-    // ── 语言模型 ──
-    fun thinking(c: Context) = sp(c).getBoolean(KEY_THINKING, false)
-    fun setThinking(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_THINKING, v).apply()
+    // R67 · P1a：旧思考档位设置键随语言模型整套退场，不再读写。
 
     fun nCtx(c: Context) = sp(c).getInt(KEY_NCTX, 4096)
     fun setNCtx(c: Context, v: Int) = sp(c).edit().putInt(KEY_NCTX, v).apply()

@@ -559,48 +559,6 @@ object AnnCache {
         File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}").apply { mkdirs() }
 }
 
-// ─────────────────────────── P0 · JSON 通过率 A/B 统计入口 ───────────────────────────
-/**
- * R57 §4 的四项硬门槛，先给「每次 attempt 一条样本」的统计入口：
- * ① 完整可解析 JSON 率 ② 三字段齐备率 ③ 中文 instruct 有效率 ④ gate 重试率。
- * 口径写死在 summary() 里，避免事后拿不同分母互相糊弄；
- * 「更会写 JSON」必须同语料、同量化、同提示词、同预算与基线对拍才算结论。
- */
-object AbGate {
-    @Volatile private var samples = 0
-    @Volatile private var fullJson = 0
-    @Volatile private var fieldsOk = 0
-    @Volatile private var instructOk = 0
-    @Volatile private var retries = 0
-
-    @Synchronized fun begin() {
-        samples = 0; fullJson = 0; fieldsOk = 0; instructOk = 0; retries = 0
-    }
-
-    @Synchronized fun record(parsed: List<Ann>?, repairLevel: Int, attempt: Int) {
-        samples++
-        val list = parsed.orEmpty()
-        if (parsed != null && list.isNotEmpty() && repairLevel >= 0) fullJson++
-        if (list.isNotEmpty() && list.all {
-                it.text.isNotBlank() && it.speaker.isNotBlank() && it.instruct.isNotBlank()
-            }) fieldsOk++
-        // 有效 = 含中文、不少于 4 字，且不是「平稳叙述」这类兜底占位。
-        val useful = list.count { a ->
-            a.instruct.length >= 4 && a.instruct.any { it.code in 0x4E00..0x9FFF } &&
-                !a.instruct.contains("平稳、清晰地叙述")
-        }
-        if (list.isNotEmpty() && useful * 2 >= list.size) instructOk++
-        if (attempt > 0) retries++
-    }
-
-    fun summary(): String {
-        if (samples == 0) return "样本 0（还没跑过分段块；换权重后需与基线同批语料对拍）"
-        fun pct(n: Int) = "%.1f%%".format(n * 100.0 / samples)
-        return "样本 $samples · 完整 JSON ${pct(fullJson)} · 三字段齐备 ${pct(fieldsOk)}" +
-            " · 中文 instruct 有效 ${pct(instructOk)} · gate 重试 ${pct(retries)}" +
-            "（口径：每次 attempt 一条样本；第三项为启发式，需人工抽听复核）"
-    }
-}
 
 // ─────────────────────────── WAV 合并（Antioch merger） ───────────────────────────
 
@@ -757,8 +715,8 @@ object Producer {
         busy = true
         cancelRequested = false
         appCtx = c.applicationContext
-        // 续跑必须沿用建任务时的思考档：bucket 里含 think，换了档会读到空缓存、全书重跑
-        val thinkOn = thinkOverride ?: Prefs.thinking(c)
+        // R67 · P1a：续跑仍沿用书签里的旧分桶档位；新建任务恒 false，不再读写思考设置键。
+        val thinkOn = thinkOverride ?: false
         // R20 · 本次预设随书签落盘；续跑入口统一传 t.config，风格不因进程重启而断层。
         current = TaskInfo(book.id, book.title, onlyChapters, true, thinkOn,
             0, 0, "running", "正在准备", System.currentTimeMillis(),
@@ -851,7 +809,7 @@ object Producer {
         val miss = mutableListOf<String>()
         if (tk == null) miss.add("声音主文件")
         if (tok == null) miss.add("声音配套文件")
-        if (!direct && llm == null) miss.add("文本处理")
+        // R67 · P1a：只剩声音模型，不再检查第二份权重。
         if (miss.isNotEmpty()) {
             _state.value = Progress(false, "没开始", 0, 0, 0,
                 "还差：" + miss.joinToString("、") + "。去设置页导入。")
@@ -867,50 +825,20 @@ object Producer {
             return
         }
         val (sys, usr) = Annotator.templates(c)
-        // R16 · prompt 是契约，不是文案。哪一版 prompt 出的标注必须能查，
-        // 否则以后 A/B 或回滚时，旧缓存和新结果混在一起说不清。
-        EventLog.log(EventLog.Kind.ENGINE, "PROMPT_VERSION",
-            "v2 sha=" + Integer.toHexString(sys.hashCode()) + " sysChars=" + sys.length)
-        val thinkOn = thinkOverride ?: Prefs.thinking(c)  // 仅续跑兼容，不再影响任何行为
+        // R67 · P1a：提示词版本审计随语言模型退场，不再上报。
+        val thinkOn = thinkOverride ?: false  // R67 · P1a：不再读写思考设置键
         val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
         val nCtx = Prefs.nCtx(c)
         val threads = Prefs.threads(c)
         // P0 · 2507 没有「深度档强制 0.6」这回事，温度只认用户选的值。
         val temp = Prefs.temperature(c)
-        // R57 #11 · 每次跑都写明实际加载的是哪份权重，事后能分清两代结果。
-        val llmFile = ModelStore.llm(c)
-        EventLog.log(EventLog.Kind.MODEL, "ENGINE_INFO",
-            "file=" + (llmFile?.name ?: "缺失") + " bytes=" + (llmFile?.length() ?: 0) +
-                " · 仅非思考 · 原生 262144 / 运行 " + nCtx)
+        // R67 · P1a：不再记录第二份权重信息；下面只保留制作参数日志。
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
             "nCtx=$nCtx threads=$threads temp=$temp chunks=${chunks.size}" +
                 " · 预设=" + config.summary())
-        // R21 · 本次 run 的所有块落进同一个 jsonl：跑半天到底标了几条、长度对不对、
-        // 哪条规则没生效，全部可查。直接朗读也登记，只是如实写「不过语言模型」。
-        AuditLog.beginRun(c, linkedMapOf(
-            "book" to book.title,
-            "mode" to (if (direct) "直接朗读" else "分段后合成"),
-            "model" to (llmFile?.name ?: "缺失"), "nCtx" to nCtx.toString(),
-            "chunks" to chunks.size.toString(),
-            "prompt" to ("v2 sha=" + Integer.toHexString(sys.hashCode()))))
-        // R24 · 移植 Alexandria llm_responses.log 的思路：每次 attempt 的原始产出全文按 run 落盘。
-        RawDump.begin(c, AuditLog.currentRun())
-        EventLog.log(EventLog.Kind.AUDIT, "AUDIT_RUN_BEGIN",
-            "run=${AuditLog.currentRun()} · ${chunks.size} 块 · " +
-                (if (direct) "不过文本处理" else "逐块分段") + " · 原始产出全文目录 " + RawDump.runDir(c),
-            fields = mapOf("runId" to AuditLog.currentRun(), "book" to book.title,
-                "mode" to (if (direct) "直接朗读" else "分段后合成")))
-        AbGate.begin()
         EventLog.resetEngine()
 
-        // R21 · 无论正常跑完、点停止、还是直接朗读，都落一条可复制的审计汇总。
-        // 放在局部函数里，三条出口共用，避免某一分支悄悄不写。
-        fun writeAuditSummary() {
-            EventLog.log(EventLog.Kind.AUDIT, "AUDIT_SUMMARY",
-                AuditLog.summaryText(c).replace('\n', '｜'),
-                fields = mapOf("runId" to AuditLog.currentRun()))
-            AuditLog.endRun()
-        }
+        // R67 · P1a：审计汇总随语言模型退场，不再落盘；事件日志仍照常记录。
 
         // R28 · 必须在 if/else 之外定义：合成阶段在分支外，
         // 放 else 里会 Unresolved reference（CI run 36 真编译错，已修）。
@@ -945,7 +873,6 @@ object Producer {
             EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
                 "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
             emit("正在生成声音", 0, annotated.size, 0, "直接朗读原文，不跑文本处理…")
-            writeAuditSummary()
         } else {
             // ── 标注阶段：只加载 LLM ──
             // 真机 16:23→16:29 prefill 单独花了约 600 秒，期间只有 ANN_WAIT，看着像死机。
@@ -1085,8 +1012,6 @@ object Producer {
                             if (rec.drops.isNotEmpty()) firstDrop = rec.drops.first().reason
                             lastMeta = meta; lastChecks = checks; lastRec = rec
                             lastFailCode = failCode; attemptCount++
-                            // R57 #11 · 四项 A/B 指标逐次 attempt 入账，贴诊断摘要即可对拍。
-                            AbGate.record(parsed, meta.repairLevel, attempt)
                             EventLog.log(EventLog.Kind.AUDIT, "ANN_DISPOSITION",
                                 "块 ${i + 1} 第 $attempt 次 · ${rec.disposition} · 采纳 ${rec.kept} 条" +
                                     " · 程序补齐 ${rec.filled} 条 · 拼回原文 " +
@@ -1247,7 +1172,6 @@ object Producer {
             } finally {
                 try { NativeEngine.llmFree(llmHandle) } catch (_: Throwable) { }
             }
-            writeAuditSummary()
             if (cancelRequested) { _state.value = halted(chunks.size, chunks.size, gateFails); return }
             annotated = collected
         }

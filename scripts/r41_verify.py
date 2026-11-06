@@ -151,7 +151,7 @@ for case in ["drop_commit", "restore_circle", "nine_cards", "empty_input", "pres
 
 # ── 4) 语义守恒：4B / 主链 / 官方字段 / native / manifest / gradle ───────
 CONSERVE_LITERALS = {
-    PREFS: ["fun thinking(c: Context)", "fun nCtx(c: Context)", "fun threads(c: Context)",
+    PREFS: ["const val SCHEMA_VERSION = 2", "fun nCtx(c: Context)", "fun threads(c: Context)",
             "fun temperature(c: Context)", "fun voiceStamp(c: Context)",
             "INSTRUCT_TEMPLATE_VERSION.toString()", "ttsKnobs(c).hash()",
             "KEY_TTS_TEMP", "KEY_SEED", "KEY_DEFAULT_PERF"],

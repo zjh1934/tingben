@@ -410,54 +410,6 @@ private fun ReaderPane(
     }
 }
 
-/**
- * 标注结果页只读：真值来自 SegPlan 的 segmap + Chunk.chapter 映射。
- * 旧缓存没有 segmap 就明写「没有逐段记录」，不把直读块冒充模型标注。
- */
-@Composable
-private fun AnnotatedPane(
-    c: Context, book: Book, chapters: List<Chapter>, chunks: List<Chunk>, i: Int,
-    onClose: () -> Unit, onRedo: (Int) -> Unit
-) {
-    val rows = remember(book, i) {
-        val t = TaskResume.load(c)
-        if (t == null || t.bookId != book.id || t.direct) emptyList()
-        else {
-            val work = AnnCache.dirFor(c, book.id, false, t.think, t.only)
-            val map = SegPlan.readMap(work)
-            if (map == null) emptyList()
-            else map.filter { m ->
-                val ch = chunks.getOrNull(m.block)?.chapter ?: -1
-                ch == i
-            }.map { Triple(it.speaker, it.instruct, it.text) }
-        }
-    }
-    val ch = chapters.getOrNull(i)
-    Column(Modifier.fillMaxSize().background(HubCard)) {
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { Text("‹ 目录") }
-            Text("${ch?.title ?: "第 ${i + 1} 章"} · 分段结果", fontSize = 16.sp,
-                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { onRedo(i) }) { Text("重新分段") }
-        }
-        if (rows.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("旧缓存没有逐段记录，或还没分段完", fontSize = 13.sp, color = HubSub)
-            }
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-                items(rows) { (speaker, instruct, text) ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Text("$speaker · ${instruct.take(40)}", fontSize = 11.sp, color = HubPrimary)
-                        Spacer(Modifier.height(3.dp))
-                        Text(text.take(120), fontSize = 13.sp, color = Color(0xFF1F2430))
-                    }
-                    HubDivider()
-                }
-            }
-        }
-    }
-}
 
 /**
  * 软件内悬浮条：跨页常驻，订阅单例 PlayQueue.state（不新建播放器）。

@@ -862,3 +862,18 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **验证**：本地 `CI=true` 11 步全绿；`r66_verify` 反向注入 10/10 拦下；三个 `--selftest` 全过；远端 tree 127 个候选文件 blob 全一致、12 条删除生效；run 70 `completed success`（真 Kotlin 编译）；拆包硬验全 PASS；直链 blob `0c6720b1710f…` 与本地 **18,063,117 字节**逐字节一致，Release `v1.1.0-70` 同字节数。
 - **如实限定**：`AbGate` / `Adoption` / `Annotator` 等类名仍在 dex（R66 明确保留的不可达死代码）；主流程仍留语言模型时代的审计落盘前置调用（不加载权重、不进标注分支），物理清理列 P1；真机零证据，不向用户索取装机验证；夜间模式 / 字号仍标「待新增」。
 - **队列**（`ROADMAP.md` 唯一真源）：P1 死代码物理清理 → P2 软件设置补齐 → P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。
+
+
+---
+
+## R67 · P1a 死代码物理清理（run 71 / `1.1.0+71`）
+
+- **入口**：`ROADMAP.md` P1，R66 为避免编译连锁保留的不可达类型与主流程审计前置调用。单独一轮，不夹带。
+- **先实查可达性，纠正项目文件自己的失真**：`STATUS.md` 写「保留但不可达」，逐函数统计后发现 `VoiceCast` 23 处 / `AuditLog` 26 处 / `SegPlan` 18 处 / `Workbench` 4 处 / `RawDump` 7 处仍被角色音色页、诊断区、分段看台、看书页引用。一刀切删会编译断链并弄没诊断与看台，故按代码实况重划 P1a / P1b。
+- **真删 8 类**：审计落盘前置调用整块（`beginRun` / `RawDump.begin` / `AUDIT_RUN_BEGIN`）、`AbGate` 对象与 `record`、`writeAuditSummary` 定义与两处调用、`PROMPT_VERSION`、`ENGINE_INFO` / `llmFile` / 第二份权重缺失拦截、`KEY_THINKING` 兼容读（3 处改 false）、`ChapterHub.AnnotatedPane`（零调用）、`EventLog` 的 `AuditLog.crashTail()`。`sys/usr`、`llm`、`AnnCache.dirFor`、`chapterIndices`、`TaskResume.load` 全保留，旧成品仍能读。
+- **验证脚本订正 3 处（假红 / 误报，不是放水）**：`check_structure.py` 把已删的 `AUDIT_RUN_BEGIN` / `AUDIT_SUMMARY` 列为「必须存在」→ 改反向断言并补 5 项零残留；`r41_verify.py` 守恒项 `fun thinking(...)` → 换 `SCHEMA_VERSION`；自审图脚本把清理对照信息图当界面查禁用词 → 只查前三屏真界面。首轮自检挂 2 处，订正后 13 套 `CI=true` 全绿。
+- **新增** `scripts/r67_verify.py`（13 项零残留 + 6 项旧数据兼容 + 8 项守恒 + 反向注入 10/10），`ci.yml` 挂新 step。
+- **自绘自审 4 屏**：三列 / 四步 / 抽屉 7 项 / 底部安全区逐屏比对一致，零横向溢出、界面零禁用词；按 R66 新纪律不向用户索取真机验证。
+- **发布**：**（待 run 71 回填：字节数 / blob / 直链逐字节一致 / Release / 二次同步）**
+- **如实限定**：P1 未做完——旧合成分支（约 300 行）及 `Adoption` / `JsonSalvage` / `RawDump.write` / `AuditLog.write` 仍在，分支外代码引用分支内变量，硬删会断链，单列 P1b；`AbGate` 类名已消失，其余旧类名因仍有活引用而在包里；真机零证据。
+- **队列**（`ROADMAP.md` 唯一真源）：P1b 剩余死代码 → P2 软件设置补齐 → P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。

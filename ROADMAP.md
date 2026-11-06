@@ -33,6 +33,7 @@
 | 性能页 / GPU 占用 / 浮窗保活 | **删除，不排期、不留占位** | R28 / R30 |
 | 系统 TTS 引擎 | **现在不加**，只登记未来候选 | R35 |
 | 「4B 撤主路」「换模型不做」 | **已作废**，见 `STATUS.md` 方向段 | R33 / R37 / R59 |
+| P1 待删清单 | **按代码实况重划**：仍活的不删、真死的 P1a 已删、需重构的 P1b 单列 | R67 |
 
 ---
 
@@ -44,11 +45,18 @@
 **13 处联动全签**：抽屉 8→7 项、`Screen` 11→10 值、进度页四步、三列目录、恒 `direct`、模型清单只留两份声音 GGUF、提示词资产删除、版本号 `1.1.0`、CI 挂 `r66_verify`、旧断言订正、文档方向改写。
 7 屏自绘预览（含 375px 三键安全区）自己逐张看过、修掉 2 处；run 70 真 Kotlin 编译全绿，拆包硬验 + 直链逐字节一致。
 
-### P1 · 死代码物理清理（下一轮）
+### P1a · 死代码物理清理 — **本轮落地（R67）**
 
-- `Adoption` / `SegPlan` / `JsonSalvage` / `VoiceCast` / `NonVerbal` / `Workbench` / `RawDump` / `AuditLog` / `AbGate` 等不可达类型与 `KEY_THINKING` 兼容读
-- 主流程里语言模型时代的审计落盘前置调用（`Annotator.templates` / `ModelStore.llm` / `RawDump.begin` / `AbGate.begin` 等），删前先确认 `index.json` / 旧 WAV / 旧任务仍能读
-- 旧验证脚本里与标注链路绑定的历史断言一并归档，不降低守恒强度
+落地报告 `docs/R67_P1a死代码清理_落地.md`，联动表 `docs/R67_P1a死代码清理_联动表.md`。
+**先实查可达性再删**：R66 待删清单里 `VoiceCast` / `AuditLog` / `SegPlan` / `Workbench` / `RawDump` 仍被角色音色页、诊断区、看台、看书页引用，不是死代码，本轮不删；
+真删的是 `AbGate` 整块、审计落盘前置调用、`writeAuditSummary`、`PROMPT_VERSION` / `ENGINE_INFO`、`KEY_THINKING` 兼容读、`AnnotatedPane` 死函数、`AuditLog.crashTail`。
+界面零改动，13 套 `CI=true` 全绿，`r67_verify` 反向注入 10/10。
+
+### P1b · 剩余死代码（下一轮，需重构，不塞进 P1a）
+
+- `Pipeline.kt` 949–1253 旧合成分支：分支外 1265–1403 的合成代码引用分支内变量，硬删会编译断链，须先重构成单一路径，再连带删 `Adoption.kt` / `JsonSalvage.kt` / `diag/RawDump.kt` / `diag/AuditLog.kt`
+- 「数据与日志」诊断区 6 处旧审计读取 + 3 秒定时器：仍可达但读空/旧数据，与设置页 v7 折叠层级牵连，归 P2 一并收
+- `VoiceCast` / `NonVerbal` / `SegPlan`：若确认角色音色页按新语义报废，须连抽屉 7→6 项一起改，属界面改动
 - **单独一轮**，先验「删完 CI 仍绿 + 旧成品能播」，不跟界面混做
 
 ### P2 · 软件设置补齐

@@ -82,12 +82,16 @@ for p in kt_files:
                         % (p.relative_to(ROOT), no))
 
 # R21 · 标注审计链路的关键符号必须真的在源码里，防止「文档写了、代码没进包」。
+# R67 · P1a：AUDIT_RUN_BEGIN / AUDIT_SUMMARY 两个「每次 run 的落盘入口」已随语言模型退场删除，
+# 从必需列表移除，并改成反向断言（再出现即红），避免把删掉的代码又请回来。
 all_src = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in kt_files)
-AUDIT_SYMBOLS = ["AUDIT_RUN_BEGIN", "ANN_RAW", "ANN_PREVIEW", "ANN_EMPTY", "ANN_AUDIT",
-                 "AUDIT_SUMMARY", "parseWithMeta", "ruleChecks", "BlockAudit",
+AUDIT_SYMBOLS = ["ANN_RAW", "ANN_PREVIEW", "ANN_EMPTY", "ANN_AUDIT",
+                 "parseWithMeta", "ruleChecks", "BlockAudit",
                  "readDetail", "ringTail", "summaryText", "previewText"]
 for sym in AUDIT_SYMBOLS:
     if sym not in all_src: errs.append("缺少标注审计符号: " + sym)
+for sym in ["AUDIT_RUN_BEGIN", "AUDIT_SUMMARY", "AbGate", "KEY_THINKING", "PROMPT_VERSION"]:
+    if sym in all_src: errs.append("R67 P1a 已删形态回潮: " + sym)
 
 # R22 · 核心链路（逐条采纳）与「标注内容可看见」的符号必须真在源码里。
 R22_SYMBOLS = ["ANN_CONTENT", "ANN_DISPOSITION", "TTS_INPUT", "reconcile", "contentJson",
