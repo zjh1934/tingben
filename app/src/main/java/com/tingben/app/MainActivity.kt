@@ -2096,12 +2096,11 @@ private fun ParamRow(
             OutlinedTextField(
                 value = input, onValueChange = onInput,
                 modifier = Modifier.width(72.dp).height(40.dp), singleLine = true,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 6.dp, vertical = 0.dp),
                 isError = err.isNotBlank(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onDone() }),
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 11.sp, lineHeight = 13.sp)
             )
             TextButton(onClick = onReset, modifier = Modifier.width(24.dp)) {
                 Text("⟳", fontSize = 12.sp, color = Sub)
