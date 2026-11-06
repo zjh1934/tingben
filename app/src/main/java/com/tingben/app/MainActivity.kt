@@ -1042,8 +1042,13 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
         if (t == null) {
             CardBox {
                 Text("还没有任务", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Spacer(Modifier.height(10.dp))
-                Button(onClick = onLibrary, Modifier.fillMaxWidth()) { Text("去书架") }
+                Spacer(Modifier.height(6.dp))
+                Text("在书架选一本书，勾选章节后点「合成音频」，这里就会出现进度。",
+                    fontSize = 12.sp, color = Sub)
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("去书架，选一本书")
+                }
             }
         } else {
             CardBox {
@@ -1074,32 +1079,25 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                 Spacer(Modifier.height(5.dp))
                 Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
                     .format(java.util.Date(t.updatedAt)), fontSize = 11.sp, color = Sub)
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
 
                 when {
                     st.running -> {
-                        Button(onClick = onProgress, Modifier.fillMaxWidth().height(46.dp)) {
-                            Text("查看实时进度")
-                        }
-                        Spacer(Modifier.height(6.dp))
+                        TextButton(onClick = onProgress) { Text("看实时进度 ›", fontSize = 12.sp) }
                     }
                     t.phase == "done" -> {
-                        Button(onClick = onAudio, Modifier.fillMaxWidth().height(46.dp)) {
-                            Text("去「我的音频」试听")
-                        }
+                        TextButton(onClick = onAudio) { Text("去「我的音频」试听 ›", fontSize = 12.sp) }
                     }
                     !bookExists -> {
                         Text("这本书已经从书架删掉了，任务没法续跑。", fontSize = 12.sp, color = Warn)
-                        Spacer(Modifier.height(8.dp))
                         TextButton(onClick = {
                             Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
-                        }, Modifier.fillMaxWidth()) { Text("清除这条失效任务") }
+                        }) { Text("清除这条失效任务", fontSize = 12.sp) }
                     }
                     else -> {
-                        Button(onClick = { onResume(t) }, Modifier.fillMaxWidth().height(48.dp)) {
+                        Button(onClick = { onResume(t) }, Modifier.fillMaxWidth().height(46.dp)) {
                             Text("继续制作（接着已做好的块跑）", fontSize = 15.sp)
                         }
-                        Spacer(Modifier.height(7.dp))
                         Row(Modifier.fillMaxWidth()) {
                             TextButton(onClick = {
                                 Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
@@ -1110,24 +1108,10 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                                 Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
                             }, Modifier.weight(1f)) { Text("放弃任务", fontSize = 12.sp, color = Warn) }
                         }
-                        Spacer(Modifier.height(5.dp))
                     }
                 }
             }
-
-            // 最近完成：给「做完了但忘了在哪听」一个落脚点
-            if (t.phase == "done" && t.output != null) {
-                Spacer(Modifier.height(12.dp))
-                CardBox {
-                    Text("最近完成", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Spacer(Modifier.height(5.dp))
-                    Text(t.title, fontSize = 12.sp, color = Sub)
-                    Spacer(Modifier.height(9.dp))
-                    TextButton(onClick = onAudio, Modifier.fillMaxWidth()) { Text("去试听 ›") }
-                }
-            }
         }
-
     }
 }
 
