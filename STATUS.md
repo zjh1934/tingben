@@ -5,15 +5,15 @@
 > 已归档的历史文档/脚本位置 → `docs/HISTORY_INDEX.md`。
 > 本文件**不再追加逐轮复盘、不再写第二份队列**，避免头部与文末自相矛盾（R37 的教训）。
 
-**2026-11-06 · R68 P1b 单一路径重构后（源码层落地；最新可装包仍是 `1.1.0+71`）**
+**2026-11-06 · R68 P1b 单一路径重构已出包（`1.1.0+72`）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+71`（run 71 全绿；R67 P1a 死代码物理清理） |
-| APK | arm64-v8a / 固定 debug 签名 / **18,046,744 字节** |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `63c9230d52b3…`，与本地逐字节一致） |
-| CI | run 71 `completed success`（真 Kotlin 编译 + 12 套自检 step + APK 闸门 + Release `v1.1.0-71`） |
-| 源码 | R68 已落盘：17 套本地自检全绿、`r68_verify` 反向注入 14/14；**本轮未触发远端 CI、未出新 APK** |
+| 版本 | `1.1.0+72`（run 72 全绿；R68 P1b 单一路径重构） |
+| APK | arm64-v8a / 固定 debug 签名 / **17,981,194 字节** |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `5981a878a75f…`，与本地逐字节一致） |
+| CI | run 72 `completed success`（真 Kotlin 编译 + 自检 step + APK 闸门 + Release `v1.1.0-72`） |
+| 源码 | commit `42cbc604`；`r68_verify` 反向注入 14/14；`r72_apk_audit` 拆包全绿 + 坏包反向自检拦下 |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk`（旧名自动跳转） |
 
 ## 方向（R66 订正，以本段为准）
@@ -38,7 +38,7 @@
 ## 证据边界（不夸大）
 
 - **出声已有一次完整链路证据**：旧链路 `PRODUCE_DONE 5,802,284 字节`（约 121 秒 WAV）。**`1.1.0` 的直接朗读链路在真机上仍是零证据**，本轮不向用户索取装机验证，改由自绘预览自审 + CI + 拆包承担。
-- CI 全绿、拆包硬验、静态自检只证明「打进了包且符合断言」，**不等于好用，也不等于编译期 API 一定存在**（run 50/59 都吃过这个亏）。**R68 本轮连 CI 都没跑上**：沙盒无 Android SDK / gradle wrapper，远端 `git ls-remote` 返回 403，所以本轮交付的是源码 + 断言，不是新安装包。
+- CI 全绿、拆包硬验、静态自检只证明「打进了包且符合断言」，**不等于好用，也不等于编译期 API 一定存在**（run 50/59 都吃过这个亏）。R68 的源码层落地曾在 R68 轮卡在网络：沙盒无 Android SDK / gradle wrapper、`git ls-remote` 403；**已在 R72 轮通过 GitHub API 提交 `42cbc604` 补齐**——run 72 真 Kotlin 编译全绿、Release `v1.1.0-72` 与直链 blob 三方一致、`r72_apk_audit` 拆包全绿。
 - R67 P1a 后 `AbGate` 类名已从源码消失；R68 后 `Adoption` / `JsonSalvage` / `RawDump` / `AuditLog` **四文件已从源码树删除**，`Annotator` 瘦身为断句入口。`SegPlan` / `VoiceCast` / `Workbench` 仍活，不删。主流程只剩一条直接朗读路径，`Pipeline.kt` 1381 → 799 行。
 
 ## 现行队列

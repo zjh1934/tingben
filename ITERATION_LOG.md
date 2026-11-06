@@ -893,3 +893,14 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **自绘自审 4 屏**（`draw_r68_preview.py`）：新版诊断区 / 旧新对照 / 影响面总览 / 375px 三键安全区，横向溢出 0、界面内零禁用词。自己看图改了 3 处：预览画了代码里没有的「夜间模式 / 正文字号」（按 `SettingInfoRow` 真实文案改成「主题 / 字号 · 待新增」）、影响面写「16 套」实际 17 套、③ 是信息卡不是 `.phone` 导致溢出检查索引越界。按 R66 纪律不向用户索取真机验证。
 - **如实限定**：沙盒无 Android SDK / gradle wrapper，`git ls-remote origin` 返回 **403**，**本轮未触发远端 CI、未做真 Kotlin 编译、未出新 APK、未核直链**；`1.1.0+71` 仍是唯一可装包，源码已领先它一轮。CI 脚本已挂好，网络恢复后 push 一次即可补齐「真编译 + 拆包 + 发版」。旧书 / 已做好 WAV / 续跑书签的读取路径全留；真机零证据；诊断区折叠层级仍归 P2。
 - **队列**（`ROADMAP.md` 唯一真源）：网络恢复后补 R68 出包 → P2 软件设置补齐 → P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。
+
+## R72 · R68 出包回执（2026-11-06）
+
+- **卡点定位**：`api.github.com` 通（HTTP 200），但 `git ls-remote origin` 403 —— 不是断网，是源码仓已改名 `zjh1934/tingben`，本地 remote 仍指向旧名 `tingben-android`；API 跟随 301 后确认 token 有 `push/admin`。沙盒仍无 Android SDK / gradle wrapper，**本地编不了，必须走远端 CI**。
+- **提交方式**：改用 GitHub Git Data API（blobs → trees → commits → PATCH ref）提交 `42cbc6041839b7ceabbafb29615040d87ed87c56`。按远端 head tree 的 blob sha 逐文件比对，只提交 **15 改 + 4 删**，自动跳过 **135 条本地 HEAD 落后造成的历史假差异**，没误删任何远端文件。首轮 `POST /git/trees` 返回 422 `Must supply a valid tree.mode`，定位为删除条目缺 `mode`，补 `mode/type/sha:null` 后通过。
+- **CI**：run **72** `completed success`（真 Kotlin 编译 + `check_structure` / `r66` / `r67` / `r68_verify` 等自检 step + APK 闸门 + Release `v1.1.0-72` + `publish_apk.py` 同步直链）。这次把 R68 那轮「只有静态自检」的缺口真正补上了。
+- **三方一致**：直链 blob `5981a878a75f38457513a429fe2d977f470d2fbc` / **17,981,194 字节**；`sha1("blob "+len+"\0"+内容)` 自算等于该 blob sha；Release `v1.1.0-72` 资产 17,981,194 字节；本地 `/data/workspace/听本_app-debug.apk` 同字节（旧的 18,046,744 字节 `+71` 已被覆盖）。
+- **拆包硬验**：新增 `scripts/r72_apk_audit.py`（修正 R67 脚本里直链仓名 `tingben-apk` → `ting-ben-apk`，BAN 表补 `Adoption` / `JsonSalvage` / `RawDump` / `AuditLog`）。结果：ZIP CRC 通过 / 7 个 arm64 .so / 权重 0 / 无 INTERNET / 版本号 `1.1.0+72` / 提示词资产零 / 6 个新符号在 / 22 条旧形态零残留 / `TTS_PARAMS_APPLIED` 在 / 直链逐字节一致；坏包反向自检拦下。
+- **文档回填**：`STATUS.md` 头部与证据边界、`ROADMAP.md` 头部与 P1b 段、本日志同步到 `+72`；`docs/R68_P1b_单一路径重构_落地.md` 保留原「未出包」记录作为历史，不回改（历轮如实限定不抹掉）。
+- **如实限定**：真机仍是零证据，按 R66 纪律不向用户索取装机验证；CI 全绿只证明编译 + 断言成立，不证明好用。`VoiceCast` / `NonVerbal` / `SegPlan` 的界面语义报废、诊断区折叠层级仍归 P2。
+- **队列**：P2 软件设置补齐（夜间模式 / 字号 / 诊断区折叠）→ P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。

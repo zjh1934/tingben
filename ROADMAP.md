@@ -1,6 +1,6 @@
 # 听本 · 后续路线图（现行队列唯一真源）
 
-**R68 源码落地后更新 · 2026-11-06 · 最新可装包仍是 `1.1.0+71`（run 71；本轮未发新包）**
+**R68 出包后更新 · 2026-11-06 · 最新可装包 `1.1.0+72`（run 72）**
 
 > 本文件是**唯一**写「下面做什么」的地方。`STATUS.md` 只记现状、`ITERATION_LOG.md` 只记历史，
 > 三份不再互抄队列，避免 R37 那种头部与文末打架。
@@ -52,14 +52,13 @@
 真删的是 `AbGate` 整块、审计落盘前置调用、`writeAuditSummary`、`PROMPT_VERSION` / `ENGINE_INFO`、`KEY_THINKING` 兼容读、`AnnotatedPane` 死函数、`AuditLog.crashTail`。
 界面零改动，13 套 `CI=true` 全绿，`r67_verify` 反向注入 10/10。
 
-### P1b · 剩余死代码 — **源码已落地（R68），待网络恢复后单独出包**
+### P1b · 剩余死代码 — **已落地并单独出包（R68 源码 / `1.1.0+72`）**
 
-- `Pipeline.kt` 949–1253 旧合成分支：分支外 1265–1403 的合成代码引用分支内变量，硬删会编译断链，须先重构成单一路径，再连带删 `Adoption.kt` / `JsonSalvage.kt` / `diag/RawDump.kt` / `diag/AuditLog.kt`
-- 「数据与日志」诊断区 6 处旧审计读取 + 3 秒定时器：仍可达但读空/旧数据，与设置页 v7 折叠层级牵连，归 P2 一并收
-- `VoiceCast` / `NonVerbal` / `SegPlan`：若确认角色音色页按新语义报废，须连抽屉 7→6 项一起改，属界面改动
-- **单独一轮**，先验「删完 CI 仍绿 + 旧成品能播」，不跟界面混做
+- **当时的约束（现已解决）**：`Pipeline.kt` 旧合成分支被分支外代码引用，硬删会编译断链，所以先重构成单一路径、再连带删 `Adoption.kt` / `JsonSalvage.kt` / `diag/RawDump.kt` / `diag/AuditLog.kt`；诊断区旧读取与 3 秒定时器一并清掉。
+- **单独一轮**验收「删完 CI 仍绿 + 旧成品能播」、不跟界面混做 —— run 72 已满足。
 - **R68 实绩**：`if (direct)/else` 收成单一路径、`Pipeline.kt` 1381 → 799 行、四文件物理删、诊断区 7 处旧读取 + 3 秒定时器清除；17 套 `CI=true` 自检全绿、`r68_verify` 反向注入 14/14、4 屏自绘自审。
-- **未做完**：本轮沙盒无 Android SDK、远端 403，**CI 真编译与拆包硬验均未跑**；`ci.yml` 已挂 `r68_verify.py`，下次 push 自动补齐这一环。
+- **R72 出包回执**：源码仓已改名为 `zjh1934/tingben`、旧 remote 名 403，改用 GitHub Git Data API 提交 `42cbc604`（15 改 4 删，135 条历史差异按远端 blob sha 自动排除，未误删）→ run 72 `completed success`（真 Kotlin 编译 + `r68_verify` 等自检 step + APK 闸门 + Release `v1.1.0-72`）。直链 blob `5981a878a75f…` 17,981,194 字节，与 Release 资产、本地 APK **三方逐字节一致**；`scripts/r72_apk_audit.py` 拆包：CRC / 7 个 arm64 .so / 权重 0 / 无 INTERNET / `1.1.0+72` / 6 个新符号 / 22 条旧形态零残留 / `TTS_PARAMS_APPLIED` 在 / 坏包反向自检拦下。
+- **仍未做**：`VoiceCast` / `NonVerbal` / `SegPlan` 若确认角色音色页按新语义报废，须连抽屉 7→6 项一起改，属界面改动；诊断区折叠层级归 P2。
 
 ### P2 · 软件设置补齐
 
