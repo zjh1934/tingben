@@ -28,11 +28,14 @@ import java.io.File
  * 且不会出现两套 MediaPlayer 抢音频焦点。
  */
 /** R100 · startMs：整本成品里这一章的起点，prepared 后 seekTo，点第 5 章不再从头播。 */
-data class Track(val file: File, val label: String, val startMs: Long = 0L)
+/** R103 · id 是稳定身份：跨书、重分段后不再靠「第 N 段」这种显示文字认曲目。 */
+data class Track(val file: File, val label: String, val startMs: Long = 0L,
+                 val id: String = "")
 
 data class PlaybackState(
     val index: Int = -1,
     val label: String = "",
+    val trackId: String = "",
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
@@ -134,8 +137,8 @@ object PlayQueue {
             if (i + 1 < tracks.size) open(i + 1)
             else { _state.value = PlaybackState(speed = speed, ended = true); return }
         }
-        _state.value = PlaybackState(index = i, label = t.label, isPlaying = false,
-            positionMs = from, speed = speed)
+        _state.value = PlaybackState(index = i, label = t.label, trackId = t.id,
+            isPlaying = false, positionMs = from, speed = speed)
         try {
             player = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder()
@@ -155,7 +158,8 @@ object PlayQueue {
                     if (index + 1 < tracks.size) open(index + 1)
                     else {
                         _state.value = _state.value.copy(
-                            isPlaying = false, ended = true, index = -1, label = "")
+                            isPlaying = false, ended = true, index = -1, label = "",
+                            trackId = "")
                     }
                 }
                 setOnErrorListener { failed, _, _ ->

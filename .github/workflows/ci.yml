@@ -100,6 +100,9 @@ jobs:
       - name: R101 任务页 / 章节页二三列同步 / 采样分模式验证
         run: python3 scripts/r101_verify.py --selftest
 
+      - name: R103 播放身份与格子同源验证（稳定 id / 按 id 比较 / 反向注入 / 守恒）
+        run: python3 scripts/r103_verify.py --selftest
+
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 

@@ -17,12 +17,13 @@ def check(files):
 
     # ① 格子本身就是播放开关：点一下读、再点停、点别的段切过去
     for s in [
-        '.clickable(enabled = sg.wav != null) {',
+        '.clickable(enabled = playable) {',
         'if (playing) PlayQueue.pause()',
         'else if (onThis) PlayQueue.resume()',
-        'PlayQueue.setTracks(listOf(Track(sg.wav!!, label)))',
+        'PlayQueue.setTracks(listOf(Track(wav, label, id = segId)))',
         'PlayQueue.playFrom(0)',
         'val playing = onThis && pqSeg.isPlaying',
+        'val onThis = playable && pqSeg.trackId == segId',
     ]:
         if s not in m:
             e.append("格子两态缺失: " + s[:48])
@@ -91,7 +92,7 @@ def main():
                  '            Text("第 1 段 · 送进声音模型的正文")\n            if (segs.isEmpty()) {'))),
             ("格子点击不再判空",
              lambda t: dict(t, main=t["main"].replace(
-                 '.clickable(enabled = sg.wav != null) {', '.clickable {'))),
+                 '.clickable(enabled = playable) {', '.clickable {'))),
             ("再点变成重播而非停",
              lambda t: dict(t, main=t["main"].replace(
                  'if (playing) PlayQueue.pause()', 'if (playing) PlayQueue.playFrom(0)'))),

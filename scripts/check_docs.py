@@ -11,7 +11,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ACTIVE_DOCS = {
     '00_现行契约.md', '01_音频模型调教逻辑.md', '02_模型文件结构.md',
     '03_调音台延迟与一级目录现状.md', 'THIRD_PARTY_NOTICES.md',
+    '修复清单_按优先级.md',
 }
+# 缺陷台账天然要写历史词与过程语，不参与方向词扫描 / docs 引用检查。
+AUDIT_DOC = '修复清单_按优先级.md'
 # 方向变更后不应再出现在「现行」文件里的词：旧方向实体 + 历轮补丁话术
 NOISE = [
     '语言模型', '标注', '4B', 'Huihui', 'no_think', 'A/B gate',
@@ -62,7 +65,7 @@ def checks(base=ROOT):
 
     # 3. 旧方向词与补丁话术零残留
     scanned = ['STATUS.md', 'README.md', 'ROADMAP.md',
-               'contracts/pipeline_spec.md'] + ['docs/' + n for n in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md'})]
+               'contracts/pipeline_spec.md'] + ['docs/' + n for n in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md', AUDIT_DOC})]
     for n in scanned:
         t = read(base / n)
         hit = [w for w in NOISE if w in t]
@@ -70,7 +73,7 @@ def checks(base=ROOT):
             errs.append('%s 残留噪声词：%s' % (n, ', '.join(hit)))
 
     # 4. 现行引用不指已删文件
-    for n in ('STATUS.md', 'README.md', 'ROADMAP.md') + tuple('docs/' + x for x in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md'})):
+    for n in ('STATUS.md', 'README.md', 'ROADMAP.md') + tuple('docs/' + x for x in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md', AUDIT_DOC})):
         for ref in re.findall(r'docs/([\w\u4e00-\u9fff\-_.]+?\.(?:md|png|html))', read(base / n)):
             if not (base / 'docs' / ref).exists():
                 errs.append('%s 引用了不存在的 docs/%s' % (n, ref))
@@ -79,8 +82,8 @@ def checks(base=ROOT):
     for n in ('STATUS.md', 'README.md'):
         if 'ROADMAP.md' not in read(base / n):
             errs.append('%s 未指向唯一队列 ROADMAP.md' % n)
-    if '### P0' not in read(base / 'ROADMAP.md'):
-        errs.append('ROADMAP.md 缺 P0 队列')
+    if 'docs/' + AUDIT_DOC not in read(base / 'ROADMAP.md'):
+        errs.append('ROADMAP.md 未指向唯一排期真源 docs/' + AUDIT_DOC)
 
     # 6. CI 依赖脚本齐全
     ci = read(base / '.github/workflows/ci.yml')
@@ -132,7 +135,8 @@ def selftest():
             else:
                 shutil.copy2(src, dst)
         cases = [
-            ('ROADMAP 删 P0', 'ROADMAP.md', lambda t: t.replace('### P0', '### 随便写写')),
+            ('ROADMAP 丢唯一真源', 'ROADMAP.md',
+             lambda t: t.replace('docs/' + AUDIT_DOC, 'docs/没有这份.md')),
             ('STATUS 版本退回', 'STATUS.md', lambda t: t.replace(current_version(t), '1.0.0+47')),
             ('README 注入旧方向词', 'README.md', lambda t: t + '\n4B 文本模型\n'),
             ('docs 堆一份旧文档', None, None),

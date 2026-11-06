@@ -996,19 +996,23 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         row.forEach { sg ->
                             val label = "第 ${sg.index + 1} 段"
-                            val onThis = pqSeg.label == label
+                            // R103 · F-01：身份按 WAV 绝对路径（跨书唯一），不再拿显示文字当主键；
+                            // F-10：颜色 / 可点 / 角标只认同一个权威判定，不再 hasAudio 与 wav 两套。
+                            val segId = sg.wav?.let { "seg:" + it.absolutePath } ?: ""
+                            val playable = sg.hasAudio && segId.isNotEmpty()
+                            val onThis = playable && pqSeg.trackId == segId
                             val playing = onThis && pqSeg.isPlaying
-                            val base = if (sg.hasAudio) Good else Line
+                            val base = if (playable) Good else Line
                             Box(
                                 Modifier.size(30.dp)
                                     .background(
                                         if (playing) PrimarySoft else base.copy(alpha = 0.18f),
                                         RoundedCornerShape(8.dp))
-                                    .clickable(enabled = sg.wav != null) {
+                                    .clickable(enabled = playable) {
                                         if (playing) PlayQueue.pause()
                                         else if (onThis) PlayQueue.resume()
-                                        else {
-                                            PlayQueue.setTracks(listOf(Track(sg.wav!!, label)))
+                                        else sg.wav?.let { wav ->
+                                            PlayQueue.setTracks(listOf(Track(wav, label, id = segId)))
                                             PlayQueue.playFrom(0)
                                         }
                                     },
@@ -1016,7 +1020,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                             ) {
                                 Text("${sg.index + 1}", fontSize = 10.sp,
                                     color = if (playing) Primary else base)
-                                if (sg.wav != null)
+                                if (playable)
                                     Text(if (playing) "⏸" else "▶", fontSize = 6.sp, color = Good,
                                         modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
                             }
@@ -1195,14 +1199,21 @@ private fun AudioScreen(
     // 音频页与「分段看台」共用一个实例，切页不停播、不会两套 MediaPlayer 抢焦点。
     val pq by PlayQueue.state.collectAsState()
     LaunchedEffect(items) {
-        PlayQueue.setTracks(items.map { Track(it.file, "${it.title} · ${it.scope}") })
+        PlayQueue.setTracks(items.map {
+            Track(it.file, "${it.title} · ${it.scope}",
+                id = "audio:${it.id}:${it.file.absolutePath}")
+        })
     }
     // R79 · tick 统一由跨页常驻的 MiniPlayBar 驱动；本页只订阅 PlayQueue.state，
     // 不再和悬浮条同时驱动同一单例（播放时原本 500ms + 1000ms 双份 tick）。
     val isPlaying = pq.isPlaying
     val posMs = pq.positionMs
     val durMs = pq.durationMs
-    val current = items.getOrNull(pq.index)
+    // R103 · 当前曲目按稳定 id 认；pq.index 是「队列里第几条」，切页换队列后会串。
+    val current = items.firstOrNull {
+        val tid = "audio:${it.id}:${it.file.absolutePath}"
+        pq.trackId.isNotEmpty() && pq.trackId == tid
+    }
 
     val release: () -> Unit = { PlayQueue.release() }
     val step: (Int) -> Unit = { d -> if (d < 0) PlayQueue.previous() else PlayQueue.next() }
@@ -1305,7 +1316,8 @@ private fun AudioScreen(
             }
         } else {
             itemsIndexed(items, key = { _, it -> it.id }) { idx, item ->
-                val on = idx == pq.index
+                val on = pq.trackId.isNotEmpty() &&
+                    pq.trackId == "audio:${item.id}:${item.file.absolutePath}"
                 CardBox(Modifier.padding(bottom = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -1971,7 +1983,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     fun play(path: String) {
         val f = File(path)
         if (!f.isFile) { Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show(); return }
-        PlayQueue.setTracks(listOf(Track(f, "调音台试听")))
+        PlayQueue.setTracks(listOf(Track(f, "调音台试听", id = "trial:${f.absolutePath}")))
         PlayQueue.playFrom(0)
     }
 
