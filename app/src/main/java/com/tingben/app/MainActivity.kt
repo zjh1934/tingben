@@ -1641,7 +1641,7 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
     if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 11.sp, color = Sub)
 }
 
-// ── ⑤b 模型页 ────────────────────────────────────────────────
+// ── ⑤b 模型页（R81 · 缺件态单主卡 / 就绪态不同构） ──────────────
 @Composable
 private fun ModelScreen(c: Context, refresh: Int,
                         importing: String?, importBytes: Long, importError: String?,
@@ -1653,7 +1653,14 @@ private fun ModelScreen(c: Context, refresh: Int,
     val allReady = missing.isEmpty()
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("← 返回") }
+        // R81 · 返回与状态并成一行，不再单独占一整行
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ 返回", fontSize = 12.sp, color = Primary) }
+            Spacer(Modifier.weight(1f))
+            Text(if (allReady) "已就绪 · 2 份" else "还缺 ${missing.size} 份",
+                fontSize = 11.5.sp, color = if (allReady) Good else Warn)
+        }
+        Spacer(Modifier.height(6.dp))
 
         // 导入中：明确告诉用户「别关」，而不是一片静默像死机
         if (importing != null) {
@@ -1674,58 +1681,82 @@ private fun ModelScreen(c: Context, refresh: Int,
                 Spacer(Modifier.height(4.dp))
                 Text(importError, fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(5.dp))
-                Text("文件可能没下完整，重新下载再导入一次；也可以先重启 App。", fontSize = 11.5.sp, color = Sub)
+                Text("重新下载再导入一次，或先重启 App。", fontSize = 11.5.sp, color = Sub)
             }
         }
 
-        // 下一步永远是一个显眼的主按钮，不让用户自己找路
         if (allReady) {
-            Button(onClick = onLibrary, Modifier.fillMaxWidth().height(52.dp)) {
-                Text("回书架，导入一本书", fontSize = 16.sp)
+            // R81 · 就绪态不再与缺件态同构：不列两份「还缺」卡、不摆整宽导入按钮
+            CardBox(Modifier.padding(bottom = 10.dp)) {
+                Text("两份文件都在", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("可以合成音频了。", fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(14.dp))
+                Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("回书架，导入一本书", fontSize = 15.sp)
+                }
             }
-            Spacer(Modifier.height(10.dp))
+        } else {
+            // R81 · 缺件态只留一张主卡：缺哪两份写清，主按钮唯一
+            CardBox(Modifier.padding(bottom = 10.dp)) {
+                Text("还差 ${missing.size} 份文件", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("缺件就出不了声，两份都要放进 App 的模型目录。", fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(14.dp))
+                Button(onClick = onPick, enabled = importing == null,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("导入模型文件", fontSize = 15.sp)
+                }
+                Spacer(Modifier.height(12.dp))
+                val slots = listOf(
+                    "声音主文件" to ModelStore.TALKER,
+                    "声音配套文件" to ModelStore.TOKENIZER
+                )
+                slots.forEach { (label, name) ->
+                    val f = files.find { it.name.equals(name, true) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(label, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(Modifier.height(2.dp))
+                            Text("需要：$name", fontSize = 10.sp, color = Sub, maxLines = 1)
+                        }
+                        if (f != null) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("已导入 ✓", fontSize = 11.sp, color = Good)
+                                Text("%.2f GB".format(f.length() / 1024f / 1024f / 1024f),
+                                    fontSize = 10.sp, color = Sub)
+                            }
+                        } else {
+                            TextButton(onClick = {
+                                val url = when (label) {
+                                    "声音主文件" -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
+                                    else -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
+                                }
+                                clipboard.setText(AnnotatedString(url))
+                                Toast.makeText(c, "地址已复制，用浏览器下载", Toast.LENGTH_SHORT).show()
+                            }) { Text("复制地址 ›", fontSize = 11.5.sp, color = Primary) }
+                        }
+                    }
+                    if (f != null) {
+                        Row {
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) {
+                                Text("删除重试", fontSize = 10.5.sp, color = Sub)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
         }
 
-        val slots = listOf(
-            "声音主文件" to ModelStore.TALKER,
-            "声音配套文件" to ModelStore.TOKENIZER
-        )
-        slots.forEach { (label, name) ->
-            val f = files.find { it.name.equals(name, true) }
-            CardBox(Modifier.padding(bottom = 9.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-                    Text(if (f != null) "已导入 ✓" else "还缺", fontSize = 12.sp,
-                        color = if (f != null) Good else Sub)
-                }
-                if (f != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("%.2f GB".format(f.length() / 1024f / 1024f / 1024f), fontSize = 11.sp, color = Sub)
-                    Spacer(Modifier.height(4.dp))
-                    TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) { Text("删除重试", color = Sub) }
-                } else {
-                    Spacer(Modifier.height(4.dp))
-                    Text("需要：$name", fontSize = 10.5.sp, color = Sub)
-                    Spacer(Modifier.height(2.dp))
-                    TextButton(onClick = {
-                        val url = when (label) {
-                            "声音主文件" -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
-                            else -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
-                        }
-                        clipboard.setText(AnnotatedString(url))
-                        Toast.makeText(c, "地址已复制，用浏览器下载", Toast.LENGTH_SHORT).show()
-                    }) { Text("复制下载地址") }
-                }
+        // R81 · 重新导入在就绪态降级成小文字入口，不再整宽重复
+        if (allReady) {
+            TextButton(onClick = onPick, enabled = importing == null) {
+                Text("重新导入某个文件 ›", fontSize = 11.5.sp, color = Primary)
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Button(onClick = onPick, enabled = importing == null,
-            modifier = Modifier.fillMaxWidth().height(50.dp)) {
-            Text(if (allReady) "重新导入某个文件" else "导入模型文件")
-        }
-        Spacer(Modifier.height(8.dp))
         if (files.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
             Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
         }
     }
