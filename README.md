@@ -11,7 +11,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.1.0+85`，字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.1.0+87`，字节数 / blob / 验证结果见 `STATUS.md`
 - 源码仓 `zjh1934/tingben`、APK 仓 `zjh1934/ting-ben-apk`（旧名自动跳转）
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
@@ -23,12 +23,14 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 | 文件 | 角色 |
 |---|---|
 | `qwen-tokenizer-12hz-Q8_0.gguf` | 共用底座，三种模式都要用，导入一次就够 |
-| `qwen-talker-1.7b-voicedesign-Q8_0.gguf` | 自然语言描述造音色（当前唯一接通合成） |
+| `qwen-talker-1.7b-voicedesign-Q8_0.gguf` | 自然语言描述造音色，`instruct` 必填 |
 | `qwen-talker-1.7b-customvoice-Q8_0.gguf` | 预设音色编号 + 语气指令 |
 | `qwen-talker-1.7b-base-Q8_0.gguf` | 一小段参考音频克隆 |
 
 上游仓库 `Serveurperso/Qwen3-TTS-GGUF`（国内镜像把域名换成 `hf-mirror.com` 即可）。
-`1.1.0+80` 真机截图显示四份均已导入；另两种模式可选中，但合成输入界面还没做，选中会被明确拦住并给一键切回。
+`1.1.0+80` 真机截图显示四份均已导入。自 `1.1.0+87` 起三种模式都能合成：描述造音色用一段文字，
+预设音色从模型自带的音色表里挑一个，参考音频导入一小段 24kHz 单声道 WAV。
+每种模式只画它真实存在的输入，模式由引擎从 GGUF 读出，不靠界面开关决定。
 模型能调什么以随包 `app/src/main/cpp/qwen.h` 为准，详见 `docs/01_音频模型调教逻辑.md`。
 
 ## 用起来
