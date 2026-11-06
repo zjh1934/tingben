@@ -55,6 +55,9 @@ jobs:
       - name: R79 P4 性能二期验证（两处门控 / 音频页 LazyColumn / 组合期 IO / 调音台锚点守恒 / 反向注入）
         run: python3 scripts/r79_verify.py --selftest
 
+      - name: R80 我的音频页收敛验证（空态下一步 / 控制默认收起 / 零播放卡 / 守恒 / 反向注入）
+        run: python3 scripts/r80_verify.py --selftest
+
       - name: R38 参数触达矩阵与反向注入
         run: python3 scripts/r38_param_audit.py
 
