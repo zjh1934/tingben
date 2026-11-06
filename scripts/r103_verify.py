@@ -42,9 +42,8 @@ POS = [
     ("main", 'pq.trackId.isNotEmpty() && pq.trackId == tid'),
     ("main", 'pq.trackId == "audio:${item.id}:${item.file.absolutePath}"'),
     ("main", 'id = "trial:${f.absolutePath}"'),
-    ("hub", 'id = "chapter:${book.id}:${i}:${a.file.absolutePath}"'),
-    ("hub", 'id = "chapter:${book.id}:${idx}:${a.file.absolutePath}"'),
-    ("hub", 'id = "chapter:${book.id}:${j}:${x.file.absolutePath}"'),
+    ("hub", 'id = "chapter:${a.file.absolutePath}"'),
+    ("hub", 'id = "chapter:${x.file.absolutePath}"'),
     ("ci", "r103_verify.py"),
 ]
 
@@ -121,7 +120,7 @@ def selftest():
         ("main", 'if (playable)\n                                    Text(',
                  'if (sg.wav != null)\n                                    Text('),
         ("main", 'pq.trackId.isNotEmpty() && pq.trackId == tid', 'idx2 == pq.index'),
-        ("hub", 'id = "chapter:${book.id}:${i}:${a.file.absolutePath}"', ''),
+        ("hub", 'id = "chapter:${x.file.absolutePath}"', ''),
         ("ci", 'r103_verify.py', 'r103_verify_old.py'),
     ]
     bad = 0

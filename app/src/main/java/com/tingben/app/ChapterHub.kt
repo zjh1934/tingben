@@ -158,7 +158,7 @@ internal fun ChapterHubScreen(
             val a = ui.getOrNull(i)?.audio ?: return
             PlayQueue.setTracks(listOf(Track(a.file, "${book.title} · 第 ${i + 1} 章",
                 AudioLibrary.chapterStartMs(c, a, i),
-                id = "chapter:${book.id}:${i}:${a.file.absolutePath}")))
+                id = "chapter:${a.file.absolutePath}")))
             PlayQueue.playFrom(0)
         } else {
             val list = AudioLibrary.playableItems(c, book.id)
@@ -166,7 +166,7 @@ internal fun ChapterHubScreen(
             PlayQueue.setTracks(list.map { (idx, a) ->
                 Track(a.file, "${book.title} · 第 ${idx + 1} 章",
                     AudioLibrary.chapterStartMs(c, a, idx),
-                    id = "chapter:${book.id}:${idx}:${a.file.absolutePath}")
+                    id = "chapter:${a.file.absolutePath}")
             })
             PlayQueue.playFrom(list.indexOfFirst { it.first == i }.coerceAtLeast(0))
         }
@@ -252,7 +252,7 @@ internal fun ChapterHubScreen(
                                         PlayQueue.setTracks(list.map { (idx, a) ->
                                             Track(a.file, "${book.title} · 第 ${idx + 1} 章",
                                                 AudioLibrary.chapterStartMs(c, a, idx),
-                                                id = "chapter:${book.id}:${idx}:${a.file.absolutePath}")
+                                                id = "chapter:${a.file.absolutePath}")
                                         })
                                         PlayQueue.playFrom(0)
                                         onPlayBook(book.id)
@@ -505,7 +505,7 @@ internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit
                                     PlayQueue.setTracks(list.map { (j, x) ->
                                         Track(x.file, "${x.title} · 第 ${j + 1} 章",
                                             AudioLibrary.chapterStartMs(c, x, j),
-                                            id = "chapter:${book.id}:${j}:${x.file.absolutePath}")
+                                            id = "chapter:${x.file.absolutePath}")
                                     })
                                     PlayQueue.playFrom(list.indexOfFirst { it.first == idx })
                                     showList = false
