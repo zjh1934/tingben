@@ -970,3 +970,51 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **交付**：Git Data API 提交 `dcfd4d11`（11 改 2 删）→ **run 76 `completed success`**（真 Kotlin 编译 + APK 闸门 + Release `v1.1.0-76`）；APK **17,964,991 字节**，直链 blob `bfb72b48c75a…` 与本地 APK 的 git blob sha1 相等；`AndroidManifest.xml` 版本串 `1.1.0+76`。**不做拆包比对**（用户新纪律）。
 - **如实限定**：① 右上角「+」与空态主按钮重复，但「+」是有书态唯一导入入口，保留；② `RefreshStrip` 下拉刷新条保留，未删手势；③ 「上次读到」只记章索引（R74 定义），不记段内偏移；④ 真机仍是零证据，交付的是代码与断言，不宣称手感变好；⑤ 归档两个旧拆包脚本属于验证脚本整理，不是业务代码。
 - **队列**：P4 性能二期（开工前先出 `LazyColumn` 与锚点坐标取舍结论）→ P6 其余软件设置，各自单独发版。
+
+## R79 · P4 性能二期（2026-11-06 · 补记）
+
+> R79 当时已出包、STATUS / ROADMAP / docs 都回填了，**唯独本日志漏了条目**；R80 轮一并补齐，不回改历史。
+
+- **开工前先出取舍结论** `docs/R79_P4性能二期_取舍结论.md`：`LazyColumn` 会破坏 R50 锚点像素语义
+  （`scroll.value` vs 绝对 Y），**调音台不换**；只换音频页这一处「无锚点、N 行随数据增长」的页。
+- **8 处改动**：`MiniPlayBar` 按 `isPlaying` 门控并作唯一 500ms tick 源；删音频页重复 tick；
+  任务中心轮询门控 `st.running`；`AudioLibrary.durationMsOfBytes(bytes)` 让列表行零 stat；
+  音频页 `Column→LazyColumn`；进度页四项磁盘读从每秒解耦到每段（跟 `st.done`）；两条 import。
+- 订正 `r51_verify.py` 两条过时断言（旧形态写死「音频页自己门控 + 自己 tick」）为更严的新形态，反向注入 6→7 例。
+- `r79_verify` 正向 18 / 零残留 8 / 守恒 12 / 反向注入 **40/40**；本地 21 套 `CI=true` 全绿。
+- **交付**：commit `825ddc41` → run 77 `completed success`（真 Kotlin 编译 + APK 闸门 + Release `v1.1.0-77`）；
+  APK 17,965,001 字节，直链 blob `302ba260ee76…` 与仓库 blob / Release 资产同字节（raw 502 走 Git Blob API 等价通道）。
+- 5 屏自绘自审（对拍音频页空态），界面零可见改动；不宣称卡顿归零，真机零证据，不向用户索取装机验证。
+- **按用户要求，本轮不做拆包比对**；该条已从 `ROADMAP.md` 交付协议中删除。
+
+## R80 · 我的音频页收敛（2026-11-06）
+
+- **入口**：用户「继续」。P4 出包后队列只剩可选 P4b / 未定义 P6，自排插队做用户点名过、
+  7 张真机截图里最薄的一页（空态一张孤卡 + 整屏留白）。先列联动表再动代码，只改 2 个文件。
+- **对着代码查出的四件事**：① 空态没有下一步；② 音频页常驻播放大卡与跨页 `MiniPlayBar` 双份曲名/状态；
+  ③ 大卡里拖动 seek / ±15s / 上下条 / 倍速 / 关闭这 5 项悬浮条没有，**直接删卡会丢功能**；
+  ④ 列表行 `Button` + `FilledTonalButton` 两个实心块抢视线，全页无汇总。
+- **终版 7 处联动**：`AudioScreen` 加 `onLibrary` / `onModels` 两个回调；分发处 `modelsFrom = Screen.AUDIO`
+  保证模型页返回仍回本页；`controlsOpen` 默认 false；`now_playing` 改成 `if (current != null && controlsOpen)`
+  才出；空态补两个可点入口；新增 `audio_summary` 汇总行兼「播放控制 ›」入口；列表行只留一个实心主按钮。
+  汇总用 `sumOf { durationMsOfBytes(it.bytes) }`，**零新增磁盘 IO**。
+- **自绘 7 屏自审两轮**：第 1 轮抓到「初版仍留一张常驻小卡，和悬浮条重复曲名/状态」→ 改成把控制入口并入
+  汇总行、首屏零播放卡；另补展开态漏画汇总行 / 悬浮条、信息卡里的实现术语。
+  第 2 轮抓到**自己写错的断言**：按曲名字面量判「双份」会误报（列表当前章本来就该显示章名），
+  改成按播放卡数量 + `播放中` 状态文字判断。终版 7 屏横向溢出 0、界面内实现术语 0、默认态播放卡 0。
+- **验证**：本地 21 套 `CI=true` 全绿；新增 `r80_verify.py` 正向 22 / 旧形态零残留 6 / 守恒 11 / 函数体结构 /
+  `--selftest` 反向注入 **45/45**。首轮注入漏 1 组：`onLibrary = { ... }` 在源码出现两处，注入器只替换第 1 处
+  造成假绿 → 改成全替换，不是放水。`r79_verify` 守的形态全部保留，**无需订正**。
+  `publish_apk.py` 是发布 step（需 `GH_PAT`），不计入本地自检。
+- **交付**：Git Data API 提交 `aa7cd40f36`（5 改 0 删）→ **run 78 `completed success`**（真 Kotlin 编译 +
+  21 套自检 step + `r80_verify` + APK 闸门 + Release `v1.1.0-78` + 同步直链）。
+  APK **17,964,991 字节**，直链 blob `4917a3faaf9555f1e40d7fa3f5fae09eda4091b9`，自算 git blob sha1 相等，
+  与 Release 资产同字节。**不做拆包比对**（用户新纪律）。
+- **守恒**：`PlayQueue` 单实例 / `CreateDocument` 导出 / `AudioLibrary.remove`、`LazyColumn` 容器与 key、
+  R79 的「本页不自行 tick / 行内用 bytes」、`ChapterHub.kt` 整个 `MiniPlayBar`、抽屉 6 项 / `Screen` 9 值、
+  native / 前台服务 / 调音台唯一提交 / 三列目录 / 四步进度 / 主题字号全未动。
+- **如实限定**：真机仍是零证据，不向用户索取装机验证；「合计时长」是按 WAV 字节数推算的估算值，不是解码实测；
+  展开态仍会与悬浮条同时显示曲名（用户主动点开的详细控制，不算首屏双份）；
+  CI 全绿只证明编译与断言成立。
+- **队列**（`ROADMAP.md` 唯一真源）：下一轮 **模型页重排**（真机截图里两张同构「还缺」卡 + 整宽导入按钮，
+  与 R78 修好的书架空态同类病）→ 之后 P4b 可选 / 阅读位置段内偏移，各自单独发版。
