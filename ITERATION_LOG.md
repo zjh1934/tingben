@@ -848,3 +848,17 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
   新语言模型权重仍在 App 外，四项 A/B gate 未测。
 - **队列**（`ROADMAP.md` 唯一真源）：真机验 → 只标注管线 / 逐章进度 / 阅读位置 → 设置页 v7 →
   P4 标注导入 → P5 性能二期 → P6 软件设置补齐。本轮是临时插入轮，不占位次。
+
+
+---
+
+## R66 · `1.1.0` 语言模型整套退场（run 70 / `1.1.0+70`）
+
+- **方向变更**：用户拍板「下一个小版本把语言模型整套拿掉」，「语言模型 / 数据标注 / 文本模型 / 标注」等说法一律放弃；音频模型、首页/书架、左侧抽屉保留。上一轮 R56~R60 的换权重、双页拆分、A/B gate 全部作废；用户已下载的 Huihui GGUF 不再导入。
+- **新纪律**：不再要求用户真机验证；拿不准的真机样子自己画预览、自己看、自己改。本轮 7 屏自审，修掉模型页混进章节小条、三键导航压 dock 两处。
+- **13 处联动**：抽屉 8→7 项、`Screen` 11→10 值、`LlmSettingsScreen` 整页删；进度页删判定卡 + 五步改四步 + 看台改看送进声音模型的正文；`ChapterHub` 四列→三列（章节/合成/可播），底部小条收敛成「调音 › / 合成音频」，调音在点合成之前；模型清单只留 `tts_talker` / `tts_tokenizer`；3 个提示词资产删除；`Producer.start` 恒 `direct`；`versionName` 升 `1.1.0`；CI 挂 `r66_verify`；旧断言订正；三份真值源方向改写。
+- **守恒**：Qwen3-TTS 两份 GGUF、native/JNI 7 个 arm64 .so、`MixerDraft` 唯一提交出口（提交不依赖试听）、两态试听、9 项采样 `ParamSpec`、`PlayQueue` 单实例、悬浮条、`ProduceService`、抽屉推走联动、`chapterIndices` 旧数据兼容、无 INTERNET / 仅 arm64 / <100MB / 首版只 WAV。
+- **收尾查出并修 6 处**：`check_structure.py` 4 条旧字面量假红（换成零残留 + 注入自检）；`r50_verify.py` 读已删 `assets/prompt_zh.txt` 崩溃（守恒换 `sampling-defaults.h`）；ci.yml 漏挂 `r66_verify.py` 且构建报告仍写 `1.0.0+`；3 个提示词资产没真删；`sync_remote.py` 只增不删（补 `sha:null` 删除 + 回读核对）；`r66_apk_audit.py` 把 `DebugProbesKt.bin` 当权重、把 `AbGate` 类名当 UI 残留（两处自身误判订正，不放水）。
+- **验证**：本地 `CI=true` 11 步全绿；`r66_verify` 反向注入 10/10 拦下；三个 `--selftest` 全过；远端 tree 127 个候选文件 blob 全一致、12 条删除生效；run 70 `completed success`（真 Kotlin 编译）；拆包硬验全 PASS；直链 blob `0c6720b1710f…` 与本地 **18,063,117 字节**逐字节一致，Release `v1.1.0-70` 同字节数。
+- **如实限定**：`AbGate` / `Adoption` / `Annotator` 等类名仍在 dex（R66 明确保留的不可达死代码）；主流程仍留语言模型时代的审计落盘前置调用（不加载权重、不进标注分支），物理清理列 P1；真机零证据，不向用户索取装机验证；夜间模式 / 字号仍标「待新增」。
+- **队列**（`ROADMAP.md` 唯一真源）：P1 死代码物理清理 → P2 软件设置补齐 → P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。

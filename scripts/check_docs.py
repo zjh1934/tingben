@@ -50,7 +50,7 @@ def checks(base=ROOT):
     hi = texts['docs/HISTORY_INDEX.md']
     arch |= set(re.findall(r'^- `([^`]+\.(?:md|png|html|py|sh|txt))`$', hi, re.M))
     for n in ('STATUS.md', 'README.md', 'ROADMAP.md', 'docs/ITERATION_LOG.md'):
-        for ref in re.findall(r'docs/([\w\u4e00-\u9fff\-_]+?\.(?:md|png|html))', texts[n]):
+        for ref in re.findall(r'docs/([\w\u4e00-\u9fff\-_.]+?\.(?:md|png|html))', texts[n]):
             if not (DOCS / ref).exists():
                 errs.append('%s 引用了不存在的 docs/%s' % (n, ref))
     notes.append('归档清单登记 %d 个文件' % len(arch))
@@ -60,8 +60,8 @@ def checks(base=ROOT):
         errs.append('STATUS 缺「现行队列」指向段')
     if '## 2. 分轮队列' not in texts['ROADMAP.md']:
         errs.append('ROADMAP 缺分轮队列')
-    if 'P0' not in texts['ROADMAP.md'] or 'R57' not in texts['ROADMAP.md']:
-        errs.append('ROADMAP 未把换模型 11 处联动列为 P0')
+    if 'P0' not in texts['ROADMAP.md'] or '语言模型退场' not in texts['ROADMAP.md']:
+        errs.append('ROADMAP 未把语言模型退场列为 P0')
 
     # 5. CI 依赖脚本
     ci = read(base / '.github/workflows/ci.yml')
