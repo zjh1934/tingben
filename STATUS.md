@@ -2,15 +2,15 @@
 
 > 只记「现在是什么」。下面做什么 → `ROADMAP.md`。本文件不写历史、不写复盘。
 
-**2026-11-06 · 最新可装包 `1.1.0+99`；源码与包对齐**
+**2026-11-07 · 最新可装包 `1.1.0+102`；源码与包对齐**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+99`（run 99 全绿，真 Kotlin 编译 + 原生引擎在包） |
-| APK | arm64-v8a / 固定 debug 签名 / 17,986,129 字节 |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `712151c889729d60…`，与本地逐字节一致；Release `v1.1.0-99` 同字节） |
+| 版本 | `1.1.0+102`（run 102 全绿，真 Kotlin 编译 + 原生引擎在包） |
+| APK | arm64-v8a / 固定 debug 签名 / 18,002,513 字节 |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `3eeab78c67a5…`，与本地逐字节一致；Release `v1.1.0-102` 资产同字节） |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk` |
-| 源码与包 | **对齐**：R101 三处修复打进 `+99` |
+| 源码与包 | **对齐**：R103 的 F-01 / F-10 打进 `1.1.0+102` |
 
 ## 这个软件是什么
 
