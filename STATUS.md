@@ -5,16 +5,16 @@
 > 已归档的历史文档/脚本位置 → `docs/HISTORY_INDEX.md`。
 > 本文件**不再追加逐轮复盘、不再写第二份队列**，避免头部与文末自相矛盾（R37 的教训）。
 
-**2026-11-06 · R77 底层残留清理已出包（`1.1.0+75`，run 75 全绿）**
+**2026-11-06 · R78 书架首屏重排已出包（`1.1.0+76`，run 76 全绿）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+75`（run 75 全绿；R77 角色表底层退场 + 旧 WAV 双指纹迁移） |
-| APK | arm64-v8a / 固定 debug 签名 / **17,948,597 字节** |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `a8d73027f3b8…`，按 git blob sha1 与本地逐字节一致） |
-| CI | run 75 `completed success`（真 Kotlin 编译 + 自检 step + APK 闸门 + Release `v1.1.0-75`） |
-| 源码 | commit `c913141d`；`r77_verify` 反向注入 8/8 + 迁移 8 组对拍；本地 `CI=true` 全绿 |
-| 源码领先 | **无**：R77 已随 run 75 出包，源码与可装包对齐。用户截图显示 `+72`，覆盖装后即 `+75` |
+| 版本 | `1.1.0+76`（run 76 全绿；R78 书架首屏重排） |
+| APK | arm64-v8a / 固定 debug 签名 / **17,964,991 字节** |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `bfb72b48c75a…`，按 git blob sha1 与本地逐字节一致） |
+| CI | run 76 `completed success`（真 Kotlin 编译 + 自检 step + APK 闸门 + Release `v1.1.0-76`） |
+| 源码 | commit `dcfd4d11`；`r78_verify` 正向 12 / 零残留 6 / 守恒 10 / 反向注入 28/28；本地 `CI=true` 全绿 |
+| 源码领先 | **无**：R77 已随 run 75 出包，源码与可装包对齐。用户截图显示 `+72`，覆盖装后即 `+76` |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk`（旧名自动跳转） |
 
 ## 方向（R66 订正，以本段为准）
@@ -77,3 +77,5 @@
 - **R76 订正**：抽屉「角色音色」幽灵页、调音台角色预设/角色映射开关/三个弹层、设置页评审腔话术全部删除；`Screen` 9 值、抽屉 6 项。`Pipepline` 的 `castEnabled` 读取与 `Prefs.voiceStamp` 里的 `VoiceCast.hash` **故意保留**——删了会作废旧 WAV，物理清理单列 P1d。18 套 `CI=true` 全绿、反向注入 8/8。
 
 - **R77 订正**：`CastPresets.kt` / `VoiceCast.kt` 两文件物理删除，`voiceStamp` 收成三项；新增 `legacyVoiceStamp` 双指纹比对，旧手机升级时已合成 WAV **不会误删**，真改了音色/采样仍照常作废。`cast.json` 作为历史数据只读一次、不主动删；`legacyVoiceStamp` 是过渡兼容读，后续版本可删。界面一行未改。
+
+- **R78 订正**：书架首屏重排。空态三张同构卡收成一张主卡（缺件一行细条、48dp 主按钮、粘贴收成文字入口）；有书态书卡整卡可点并补「上次读到 第 N 章」，删除收成小文字按钮。`RefreshStrip`、导入/粘贴/删除逻辑、抽屉 6 项全守恒。真机 7 张截图对拍后自绘 5 屏自审。
