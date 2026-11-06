@@ -11,7 +11,7 @@ BASE = ROOT / "app/src/main/java/com/tingben/app"
 MAIN = BASE / "MainActivity.kt"
 HUB = BASE / "ChapterHub.kt"
 CI = ROOT / ".github/workflows/ci.yml"
-LINK = ROOT / "docs/R80_我的音频页收敛_联动表.md"
+CONTRACT = ROOT / "docs/00_现行契约.md"
 
 M, H = "main", "hub"
 
@@ -109,13 +109,13 @@ def run():
     errs = check(load())
     if "r80_verify.py" not in CI.read_text(encoding="utf-8"):
         errs.append("CI 未挂 r80_verify")
-    if not LINK.exists():
-        errs.append("联动表缺失")
+    if not CONTRACT.exists():
+        errs.append("现行契约缺失")
     if errs:
         print("FAIL")
         for e in errs: print(" -", e)
         return 1
-    print("R80 PASS · 正向 %d / 旧形态零残留 %d / 守恒 %d / 函数体结构 / CI 已挂 / 联动表在"
+    print("R80 PASS · 正向 %d / 旧形态零残留 %d / 守恒 %d / 函数体结构 / CI 已挂 / 现行契约在"
           % (len(POS), len(BAN), len(KEEP)))
     return 0
 

@@ -221,15 +221,17 @@ object Prefs {
     } catch (_: Throwable) { "err" }
 
     fun summary(c: Context) = buildString {
-        // 只报软件自身状态与声音配置。
+        // 只报软件自身状态与声音配置，用用户能核对的词，不暴露内部字段名与 hash。
         append("主题 ").append(when (themeMode(c)) {
             1 -> "浅色"; 2 -> "深色"; else -> "跟随系统"
         })
         append(" · 正文字号 ").append(readerFontScale(c).toInt())
-        append(" · 拟声表达 ").append(if (nonVerbal(c)) "开" else "关")
-        append("\n声音 · ").append(if (voiceDescription(c).isBlank()) "默认身份锚点" else "自定义音色")
-        append(" · instruct v").append(INSTRUCT_TEMPLATE_VERSION)
+        append("\n声音 · 模式 ").append(when (modelMode(c)) {
+            "custom_voice" -> "预设音色"
+            "base" -> "参考音频"
+            else -> "描述造音色"
+        })
+        append(" · 音色 ").append(if (voiceDescription(c).isBlank()) "默认" else "自定义")
         append(" · seed ").append(ttsKnobs(c).seed)
-        append(" · 指纹 ").append(voiceStamp(c))
     }
 }

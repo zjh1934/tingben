@@ -160,7 +160,7 @@ R26_ALL = ["FGS_BEGIN", "FGS_READY", "FGS_FINISH", "FGS_DESTROY", "FGS_WAKELOCK"
            "FGS_CANCEL", "FGS_NOTIF_PERMISSION", "FGS_START_FAIL", "BATTERY_SETTINGS_OPEN",
            "PARTIAL_WAKE_LOCK", "FOREGROUND_SERVICE_TYPE_DATA_SYNC", "UNIT_TIMEOUT_MS",
            "POST_NOTIFICATIONS", "ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS",
-           "ProduceService", "dataSync", "前台服务 "]
+           "ProduceService", "dataSync", "ProduceService.status()"]
 for sym in R26_ALL:
     if sym not in all_src: errs.append("缺少 R26 符号: " + sym)
 for call in ["ProduceService.begin(", "ProduceService.finish(", "ProduceService.update(",

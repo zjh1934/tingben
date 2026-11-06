@@ -97,7 +97,8 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     if got != want: e.append('Screen 不是 9 值: ' + str(got ^ want))
     if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉不是 6 项')
     slots = [x.get('slot') for x in manifest.get('models', [])]
-    if slots != ['tts_talker', 'tts_tokenizer']: e.append('模型清单不是两份声音 GGUF')
+    want_slots = {'tts_tokenizer', 'tts_talker_voice_design', 'tts_talker_custom_voice', 'tts_talker_base'}
+    if set(slots) != want_slots or len(slots) != 4: e.append('模型清单不是 1 底座 + 3 模式: ' + str(slots))
     if 'android.permission.INTERNET' in android: e.append('出现 INTERNET 权限')
     if 'versionName = "1.1.0+"' not in gradle: e.append('版本号不是 1.1.0+')
     return e
@@ -119,8 +120,8 @@ def main():
         ('ThinkingStore 回潮', lambda: check(extra='\nobject ThinkingStore {}\n')),
         ('审计前置回潮', lambda: check(extra='\nAuditLog.summaryText(c)\n')),
         ('原始产出回潮', lambda: check(extra='\nRawDump.latest(c)\n')),
-        ('3 秒定时器回潮', lambda: check(main=MAIN.replace('Text("静态快照"',
-            'LaunchedEffect(Unit) { while (true) { delay(3000); auditTick++ } }\n    Text("静态快照"'),
+        ('3 秒定时器回潮', lambda: check(main=MAIN.replace('Text("当前配置"',
+            'LaunchedEffect(Unit) { while (true) { delay(3000); auditTick++ } }\n    Text("当前配置"'),
             allkt=ALL + '\ndelay(3000); auditTick++\n')),
         ('直接朗读主体被删', lambda: check(pipe=PIPE.replace('val annotated = chunks.flatMap', 'val annotatedX = chunks.flatMap'))),
         ('WAV 双命名回潮', lambda: check(pipe=PIPE.replace('String.format("direct_%04d.wav", i)',

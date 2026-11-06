@@ -61,6 +61,9 @@ jobs:
       - name: R84 模型选择页验证（1 底座 + 3 模式 / 精确识别 / 导出日志零残留 / 守恒 / 反向注入）
         run: python3 scripts/r84_verify.py --selftest
 
+      - name: R87 界面文案净化验证（真入口 / 旧话术零残留 / 守恒 / 反向注入）
+        run: python3 scripts/r87_verify.py --selftest
+
       - name: R38 参数触达矩阵与反向注入
         run: python3 scripts/r38_param_audit.py
 

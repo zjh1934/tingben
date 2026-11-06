@@ -17,7 +17,7 @@ CHROME = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
 MANIFEST = ROOT / "app/src/main/AndroidManifest.xml"
 GRADLE = ROOT / "app/build.gradle.kts"
 CI = ROOT / ".github/workflows/ci.yml"
-LINK = ROOT / "docs/R84_模型选择页_联动表.md"
+CONTRACT = ROOT / "docs/00_现行契约.md"
 
 POS = [
     # ModelStore 结构
@@ -68,12 +68,13 @@ POS = [
     # 合成前拦截：主链 + 两处试音
     'ModelStore.synthesisBlockReason(c)?.let { reason ->',
     'ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }',
-    # 导出日志删干净后的保留项
+    # 导出日志删干净后的现行形态
     'SettingsSection("本机数据", "本机", dataOpen',
-    'fun buildDiag(): String = buildString {',
-    'Text("复制诊断信息（摘要）")',
+    'private fun ClearSegmentsRow(',
+    'Text("当前配置"',
+    'Text("清理分段音频", fontSize = 13.sp)',
+    'Text("清理 ›"',
     'SoundProbeBlock(c, refresh)',
-    'Text("清理制作过程的分段音频"',
     'ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS',
 ]
 
@@ -100,6 +101,15 @@ BAN = [
     'Text("复制进诊断日志"',
     '想复盘就点下面「复制进诊断日志」',
     'Mixer.logProfile(c, "手动导出当前配置到日志")',
+    'fun buildDiag(): String = buildString {',
+    'Text("复制诊断信息（摘要）")',
+    'Text("清理制作过程的分段音频"',
+    'Text("静态快照"',
+    'Text("后台运行设置（系统电池优化）"',
+    'Text("默认身份锚点"',
+    'append(" · instruct v")',
+    'append(" · 指纹 ")',
+    '合成界面下一轮做',
     # 旧缺件口径
     '"还差：" + miss.joinToString("、") + "。去设置页导入。"',
 ]
@@ -116,7 +126,7 @@ KEEP = [
     'private fun SettingsScreen(',
     'private fun SoundProbeBlock(',
     'private fun DiagnosticsBlock(',
-    'EventLog.read().lines().takeLast(60)',
+    'private fun ClearSegmentsRow(',
     # 主链与调音台唯一提交守恒
     'fun commitAll()',
     'NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)',
@@ -185,8 +195,8 @@ def check(files):
             errs.append("合成拦截函数缺失")
     except ValueError:
         errs.append("ModelStore 区块定位失败")
-    if not LINK.exists():
-        errs.append("联动表缺失")
+    if not CONTRACT.exists():
+        errs.append("现行契约缺失")
     if "r84_verify.py" not in ci:
         errs.append("CI 未挂 r84_verify")
     if "r81_verify.py" in ci:
@@ -214,6 +224,9 @@ def main():
             'Text("2 个声音模型都准备好了"',
             'Text("导出与诊断"',
             'Mixer.logProfile(c, "手动导出当前配置到日志")',
+            'Text("复制诊断信息（摘要）")',
+            'Text("静态快照"',
+            '合成界面下一轮做',
         ]
         for bad in bad_forms:
             t = dict(files)

@@ -75,7 +75,7 @@
 - 用途：`app/src/main/java/com/tingben/app/core/TextSplitter.kt`
   （引号栈、source-exact 区间切片：拼回去逐字无损，不在引号中间断）
 - 许可证：MIT License，Copyright (c) 2026 ReaderVoice-Mobile contributors
-  （R26 维护订正：本地 `reference/ReaderVoice-Mobile/LICENSE` 已核实，旧写「未核实」不再成立）
+  （本地 `reference/ReaderVoice-Mobile/LICENSE` 已核实）
 - 说明：算法思路移植，未复制源码文件；若后续引入其源码，保留本节版权声明。
 
 ## 5. Antioch / chunker.rs（断句部分）

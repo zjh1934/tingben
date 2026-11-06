@@ -60,7 +60,8 @@ def check(pipe=None, prefs=None, main=None, hub=None, event=None, chrome=None,
         if k not in allkt: e.append('守恒项缺失: ' + k)
     if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉不是 6 项')
     slots = [x.get('slot') for x in manifest.get('models', [])]
-    if slots != ['tts_talker', 'tts_tokenizer']: e.append('模型清单不是两份声音 GGUF')
+    want_slots = {'tts_tokenizer', 'tts_talker_voice_design', 'tts_talker_custom_voice', 'tts_talker_base'}
+    if set(slots) != want_slots or len(slots) != 4: e.append('模型清单不是 1 底座 + 3 模式: ' + str(slots))
     if 'android.permission.INTERNET' in android: e.append('出现 INTERNET 权限')
     if 'versionName = "1.1.0+"' not in gradle: e.append('版本号没停在 1.1.0')
     return e

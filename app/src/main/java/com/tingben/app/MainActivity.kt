@@ -1368,7 +1368,8 @@ private fun SettingSwitchRow(label: String, checked: Boolean, onChange: (Boolean
 
 /** P0 · 只读信息行：徽标区分「现有 / 待新增 / 只读 / 需确认」，不画假开关。 */
 @Composable
-private fun SettingInfoRow(label: String, badge: String, value: String, note: String = "") {
+private fun SettingInfoRow(label: String, badge: String, value: String, note: String = "",
+                           onClick: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -1377,7 +1378,8 @@ private fun SettingInfoRow(label: String, badge: String, value: String, note: St
         }
         Text(badge, fontSize = 10.sp, color = Sub,
             modifier = Modifier.padding(end = 8.dp))
-        Text(value, fontSize = 11.5.sp, color = Primary)
+        Text(value, fontSize = 11.5.sp, color = Primary,
+            modifier = if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     }
 }
 
@@ -1459,8 +1461,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         }
 
         SettingsSection("本机数据", "本机", dataOpen, { dataOpen = it }) {
-            SettingInfoRow("清理音频缓存", "需确认", "二次确认后清理",
-                "只删制作过程的分段 WAV，不碰原书与模型")
+            ClearSegmentsRow(c)
             SettingsSection("诊断与试音", "按需", diagOpen, { diagOpen = it }) {
                 DiagnosticsBlock(c, refresh)
                 SoundProbeBlock(c, refresh)
@@ -1468,14 +1469,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         }
 
         SettingsSection("后台与关于", "系统", backOpen, { backOpen = it }) {
-            SettingInfoRow("电池优化", "现有", "去系统设置", "让制作时不被锁屏杀掉")
-            SettingInfoRow("前台服务", "只读",
-                if (ProduceService.status().contains("运行")) "运行中" else "未运行", "只显示状态")
-            SettingInfoRow("第三方许可", "现有", "查看 ›", "MIT / Apache-2.0 清单")
-            SettingInfoRow("设备与引擎", "只读",
-                android.os.Build.MODEL,
-                if (NativeEngine.isAvailable()) NativeEngine.version() else "引擎未装载")
-            TextButton(onClick = {
+            SettingInfoRow("电池优化", "现有", "去系统设置", "让制作时不被锁屏杀掉") {
                 try {
                     c.startActivity(android.content.Intent(
                         android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
@@ -1485,44 +1479,39 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 } catch (_: Throwable) {
                     Toast.makeText(c, "这台手机没提供该设置入口", Toast.LENGTH_SHORT).show()
                 }
-            }, Modifier.fillMaxWidth()) { Text("后台运行设置（系统电池优化）", fontSize = 12.sp) }
+            }
+            SettingInfoRow("前台服务", "只读",
+                if (ProduceService.status().contains("运行")) "运行中" else "未运行", "只显示状态")
+            SettingInfoRow("第三方许可", "只读", "MIT / Apache-2.0", "")
+            SettingInfoRow("设备与引擎", "只读",
+                android.os.Build.MODEL,
+                if (NativeEngine.isAvailable()) NativeEngine.version() else "引擎未装载")
         }
 
     }
 }
 
-/** R68 · P1b：旧审计与原始产出退场，诊断区只留软件自身状态与事件日志。 */
+/** 只展示用户能核对的当前配置；日志导出与复制整块退场。 */
 @Composable
 private fun DiagnosticsBlock(c: Context, _refresh: Int) {
-    val clipboard = LocalClipboardManager.current
-    var confirmClear by remember { mutableStateOf(false) }
-
-    fun buildDiag(): String = buildString {
-        append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
-        append("设备 ").append(android.os.Build.MODEL).append(" / Android ")
-            .append(android.os.Build.VERSION.RELEASE).append(" / ")
-            .append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "").append('\n')
-        append("引擎 ").append(if (NativeEngine.isAvailable()) NativeEngine.version() else "未装载").append('\n')
-        append("前台服务 ").append(ProduceService.status()).append('\n')
-        append("设置 ").append(Prefs.summary(c)).append('\n')
-        append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
-        append("引擎 ").append(if (NativeEngine.isAvailable()) "已装载" else "未装载").append('\n')
-        val crash = EventLog.lastCrash()
-        if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
-        append("\n=== 最近事件（不含正文）===\n")
-        append(EventLog.read().lines().takeLast(60).joinToString("\n"))
-    }
-
     Spacer(Modifier.height(10.dp))
-    Text("静态快照", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+    Text("当前配置", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
     Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
-    Spacer(Modifier.height(8.dp))
-    TextButton(onClick = {
-        clipboard.setText(AnnotatedString(buildDiag()))
-        Toast.makeText(c, "已复制诊断摘要，直接贴给我即可", Toast.LENGTH_SHORT).show()
-    }, Modifier.fillMaxWidth()) { Text("复制诊断信息（摘要）") }
-    TextButton(onClick = { confirmClear = true }, Modifier.fillMaxWidth()) {
-        Text("清理制作过程的分段音频", fontSize = 11.5.sp, color = Warn)
+}
+
+/** 本机数据里的真清理入口：明确说清删什么、二次确认、结果可见。 */
+@Composable
+private fun ClearSegmentsRow(c: Context) {
+    var confirmClear by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("清理分段音频", fontSize = 13.sp)
+            Text("只删制作过程的分段 WAV，不碰原书、成品与模型",
+                fontSize = 10.5.sp, color = Sub)
+        }
+        Text("清理 ›", fontSize = 11.5.sp, color = Primary,
+            modifier = Modifier.clickable { confirmClear = true })
     }
     if (confirmClear) {
         AlertDialog(
@@ -1795,7 +1784,7 @@ private fun ModelScreen(c: Context, refresh: Int,
                 Spacer(Modifier.height(4.dp))
                 Text(current.label + " 是当前模式。" + (if (current == ModelStore.Mode.VOICE_DESIGN)
                     "可以合成音频了。"
-                else "这个模式的合成界面还没做完，先切回「描述造音色」再制作。"),
+                else "还不能用来合成音频，切回「描述造音色」后即可继续。"),
                     fontSize = 11.5.sp, color = Sub)
                 Spacer(Modifier.height(12.dp))
                 if (current == ModelStore.Mode.VOICE_DESIGN) {

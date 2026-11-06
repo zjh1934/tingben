@@ -1,76 +1,50 @@
-# 流水线规格 · 四层移植后的可实现版本
+# 流水线规格 · 现行直接朗读版
 
-> 来源：Alexandria（标注契约）+ Antioch（引擎组合/断点/合并）+ ReaderVoice（不变量）+ OfflineLLM（Android 底座）。
-> 这是**加工后的产物**，不是原文摘录。Kotlin 实现逐条对齐这里的编号。
+> 现行加工链，不是历史移植清单。只有一条路径：原文整段送声音模型。
+> 字段边界以 `app/src/main/cpp/qwen.h` 为准，文件结构见 `contracts/model-manifest.json`。
 
-## A. 分块（Alexandria `split_into_chunks` / Antioch `chunker.rs`）
-- A1 章节标题用正则识别成章；章内按字符累加，在句末标点/换行处切块。**⚠️ 首版实现是字符累加，不是严格先分段落再断句**：优先在 500 字或 350 字后的句子边界切开，不改原文、只记 `[start,end)`。
-- A2 单块上限 **500 字**，在段落/句子边界切，不切半个词。
-- A3 每块记 `[start,end)` 字符偏移；偏移必须能在原文精确回取。
+## A · 分块
 
-## B. 标注（Alexandria `generate_script.py`）
-- B1 prompt 见 `prompt_zh.txt`，双段结构 + `---SEPARATOR---`。
-- B2 **跨块上下文注入**：角色表（去重、全书累积）+ 最近 3 条标注，放在 user prompt 头部，不进正文。
-- B3 **JSON 修复四级**（抄 Alexandria `repair_json_array`）：直接 parse → 补 `},{` → 正则捞单条 → 截到最后一个完整 `},` 补 `]`。
-- B4 **字符级 gate（我们加的，Alexandria 没有）**：把结果里所有 `text` 顺序拼接，必须 `== 本块原文`。任何不等 → 整块重试 1 次 → 仍不过 → **降级直读**：原文整块交给 TTS，speaker=旁白，instruct=平稳叙述，绝不静音、绝不跳过。
-- B5 复核 pass 默认不开（Alexandria 的 review 会改写文本，撞红线）。
+- A1 章标题正则识别成章；章内按字符累加，在句末标点 / 换行处切块，上限 500 字（优先 500 / 350 字后的句子边界）。
+- A2 每块记 `[start,end)` 字符偏移，必须能在原文精确回取。**正文一个字不改。**
+- A3 块归属到章（`segChapter`），逐章进度只统计落盘成功的段。
 
-## C. 合成（Antioch `tts/cpp.rs`）
-- C1 两个模型**串行**：标注阶段只加载 LLM，合成阶段先 `llmFree` 再 `ttsLoad`，不同时常驻。
-- C2 每块一次 `ttsSynthesize`，产出 24kHz 单声道 PCM；**逐块写 `chunk_NNNN.wav`**，写完立即落盘。
-- C3 块间按 `instruct` 里的停顿提示插入静音（默认 250ms，句末 400ms）。**⚠️ 首版未实现**：TTS 自身按标点自然停顿，合并器直接拼 PCM。
-- C4 **断点**：抄 Antioch 语义。**⚠️ 首版简化为**：同名 `chunk_NNNN.wav` 已存在且 >44 字节就跳过，不写独立 `checkpoint.json`。
+## B · 模型槽位
 
-## D. 合并与导出（Antioch `merger.rs`）
-- D1 按块序号读 WAV，跳过 44 字节头，拼接 PCM，重写一个 WAV 头（24kHz / mono / 16-bit）。
-- D2 首版**只出 WAV**；M4A/章节 M4B 是二期（MediaCodec 能力需真机查询）。
-- D3 章节信息另写 `chapters.json`。**⚠️ 首版只写章节序号与标题**，未计算起止样本数，不伪造内嵌轨。
+- 共用底座 `qwen-tokenizer-12hz-Q8_0.gguf` 一份，三模式共用。
+- 当前启用的一份 talker 主文件；`ModelStore.pickFor()` 按 `-voicedesign-` / `-customvoice-` / `-base-` 独有关键词精确识别。
+- `missing()` / `ready()` 口径 = 「底座 + 至少 1 份模式主文件都在」。
 
-## E. 不变量（ReaderVoice `AGENTS.md`）
-- E1 原文永不修改，只建 source map。
-- E2 UNKNOWN 是合法结果，禁止强造角色名。
-- E3 播放窗口优先于未来生成（首版简化为：先做完当前章再进下一章）。
-- E4 「能跑」不等于「通过」：最终必须有可听 PCM（finite / 非全零 / 时长 > 0）。
-- E5 进程被杀只丢当前批，已落盘块不重算。
+## C · 合成请求
 
-## F. Android 底座（OfflineLLM）
-- F1 无 `INTERNET`、仅 `arm64-v8a`、`largeHeap`、SAF 导入任意 `.gguf`、JNI 直连 llama.cpp。
-- F2 版本组合采用**旧项目已在 CI 与真机验证过的一套**（AGP 8.x / Gradle 8.9 / JDK 17 / compileSdk 35 / NDK r28），不追 OfflineLLM 的 AGP 9.5 新组合，避免无本地编译环境时踩坑。
-- F3 两个 ggml 只保留一份（llama.cpp 版），`libqwen.so` 共用；CI 做 UND 符号差集自检——这条是旧项目真机 `dlopen failed` 换来的，必须带走。
+```
+NativeEngine.ttsSynthesize(
+  text    = 块原文（一字不动）,
+  instruct= 身份描述 + 风格 / 附加语气 / 拟声 拼成的一条字符串,
+  speaker = 当前 voice_design 下恒 null,
+  lang    = "chinese",
+  knobs   = 9 项采样数值
+)
+```
+- `instruct` voice_design 必填 / custom_voice 可选 / base 拒绝。
+- `speaker` 只有 custom_voice 可用；`ref_audio*` 只有 base 可用且与 `speaker` 互斥。
+- 9 项采样：`seed / max_new_tokens / temperature / top_k / top_p / repetition_penalty /
+  subtalker_temperature / subtalker_top_k / subtalker_top_p`，JNI 逐字段覆盖，默认值见 `sampling-defaults.h`。
+- 当前只有 voice_design 按上述实现接通；另两种模式选中即被 `synthesisBlockReason()` 拦住并给一键切回。
 
-## G. 界面（新写，不抄任何一屏）
-- G1 首版 5 页：书架 / 制作 / 进度 / 我的音频 / 设置。
-- G2 用户第一次听到声音前，不出现任何 `.gguf` 文件名、SHA、token 数、调试页。
-- G3 一屏一个主按钮；做完前不摆结果区。
-- G4 日志 L0 人话 / L3 两步确认脱敏。
+## D · 落盘与合并
 
-## 许可证
-Alexandria MIT、Antioch MIT、OfflineLLM Apache-2.0：移植改编需保留版权声明，见 `reference/精选/*/LICENSE*`。
+- 逐块 WAV 落盘，断点续传；失败段不计入完成数，沿用上一帧快照。
+- 合并按块顺序，成品 WAV 与逐段文件分开管理；清理只删制作过程的分段 WAV，不碰原书与模型。
 
----
+## E · 状态与兼容
 
-## 实现差距（首版 1.0.0+6，如实登记）
+- 声音指纹按「音色描述 + 采样 + instruct 模板」判旧 WAV 是否作废；`legacyVoiceStamp` 双指纹比对保证升级不误删。
+- **当前启用模式不进声音指纹**，切模式不作废已合成音频。
+- 任务书签、阅读位置（章索引）各自独立文件；旧书 / 旧 WAV / 旧任务记录保持可读。
+- 制作运行期间禁止切模式。
 
-| 规格 | 状态 | 说明 |
-|---|---|---|
-| A1 分段 | 简化 | 字符累加 + 句子边界切；未先按 `\n\n` 分段 |
-| A2 500 字上限 | ✅ | 已实现 |
-| A3 字符偏移 | ✅ | 已实现 |
-| B1~B4 prompt / 上下文 / JSON 修复 / 逐字 gate | ✅ | 已实现，gate 不过重试 1 次后降级直读 |
-| B5 复核关掉 | ✅ | 已实现 |
-| C1 串行加载 | ✅ | 标注完 `llmFree` 才 `ttsLoad` |
-| C2 逐块 WAV 落盘 | ✅ | 已实现 |
-| C3 块间静音 | ❌ | 首版未实现，靠 TTS 自身停顿 |
-| C4 checkpoint | 简化 | 按同名 WAV 跳过，无独立 checkpoint 文件 |
-| D1 WAV 拼接 | ✅ | 解析 data chunk、重写 44 字节头 |
-| D2 只出 WAV | ✅ | 已实现 |
-| D3 章节起止样本数 | ❌ | 只写序号与标题 |
-| E1 原文不可改 | ✅ | 字符级 gate |
-| E2 UNKNOWN 合法 | ✅ | prompt 明写拿不准写「旁白」 |
-| E3 播放优先 | 简化 | 首版先做完再听 |
-| E4 PCM Gate | 部分 | 只校验 `>44` 字节，未做 finite / 非全零检测 |
-| E5 断点只丢当前批 | 部分 | 已落盘 WAV 会跳过 |
-| F1 无 INTERNET / arm64 / largeHeap | ✅ | 已实现 |
-| F2 锁旧项目验证过的版本组合 | ✅ | 已实现 |
-| F3 单一 ggml + 符号差集自检 | ✅ | 已实现 |
-| G1~G4 界面纪律 | ✅ | 5 页、无技术词、一屏一主操作、日志折叠 |
+## F · 不做
+
+逐段改写 / 角色切分 / 逐段 `{speaker, instruct}`、联网下载模型、PDF / OCR / DRM、
+M4A/m4b 章节轨（首版只 WAV）、放宽逐字契约。

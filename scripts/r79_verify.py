@@ -8,8 +8,7 @@ MAIN = BASE / "MainActivity.kt"
 HUB = BASE / "ChapterHub.kt"
 LIB = BASE / "core" / "AudioLibrary.kt"
 CI = ROOT / ".github/workflows/ci.yml"
-LINK = ROOT / "docs/R79_P4性能二期_联动表.md"
-TRADEOFF = ROOT / "docs/R79_P4性能二期_取舍结论.md"
+CONTRACT = ROOT / "docs/00_现行契约.md"
 
 M, H, A = "main", "hub", "lib"
 
@@ -101,13 +100,12 @@ def run():
     errs = check(load())
     ci = CI.read_text(encoding="utf-8")
     if "r79_verify.py" not in ci: errs.append("CI 未挂 r79_verify")
-    if not LINK.exists(): errs.append("联动表缺失")
-    if not TRADEOFF.exists(): errs.append("取舍结论缺失")
+    if not CONTRACT.exists(): errs.append("现行契约缺失")
     if errs:
         print("FAIL")
         for e in errs: print(" -", e)
         return 1
-    print("PASS · 正向 %d / 零残留 %d / 守恒 %d / 音频页与调音台函数体结构 / CI 已挂 / 两份定案在"
+    print("PASS · 正向 %d / 零残留 %d / 守恒 %d / 音频页与调音台函数体结构 / CI 已挂 / 现行契约在"
           % (len(POS), len(BAN), len(KEEP)))
     return 0
 

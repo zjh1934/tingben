@@ -102,9 +102,6 @@ object ModelStore {
      * R68 · P1b：旧文本权重整套退场后，下面两个名称常量只作「旧数据白名单」保留——
      * 老用户私有目录里若还躺着旧 GGUF，不主动删、也不再加载。
      */
-    const val LLM = "huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf"
-    const val LLM_LEGACY = "mlabonne_Qwen3-旧权重-abliterated-Q4_K_M.gguf"
-    const val TALKER = "qwen-talker-1.7b-voicedesign-Q8_0.gguf"
     const val TOKENIZER = "qwen-tokenizer-12hz-Q8_0.gguf"
 
     /**
@@ -119,13 +116,13 @@ object ModelStore {
     ) {
         VOICE_DESIGN("voice_design", "描述造音色",
             "qwen-talker-1.7b-voicedesign-Q8_0.gguf", "voicedesign",
-            "一段文字描述造音色，instruct 必填；当前唯一接通合成的模式。"),
+            "用一段文字描述想要的嗓音，可叠加速度、情绪等可调项。"),
         CUSTOM_VOICE("custom_voice", "预设音色",
             "qwen-talker-1.7b-customvoice-Q8_0.gguf", "customvoice",
-            "预设音色编号 + 语气指令；合成界面下一轮做。"),
+            "从模型自带的音色里挑一个，再给它一句念法要求。"),
         BASE("base", "参考音频",
             "qwen-talker-1.7b-base-Q8_0.gguf", "base",
-            "一小段参考音频克隆，拒 instruct；合成界面下一轮做。")
+            "给一小段人声做样本，照着这个声音来念；不再用文字描述。")
     }
 
     fun dir(c: Context) = File(c.filesDir, "models").apply { mkdirs() }
@@ -217,14 +214,14 @@ object ModelStore {
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
     /**
-     * R84 · customvoice 要音色编号、base 要参考音频，输入界面属于下一轮调音台。
+     * customvoice 要音色编号、base 要参考音频，两者都还没有对应的输入界面。
      * 明确拦住比把错误参数丢给引擎好：不画假开关、不静默产出坏音频。
      * ttsLoad 每次合成都重新加载并 ttsFree，切模式后下一次合成自然生效，无需额外卸载。
      */
     fun synthesisBlockReason(c: Context): String? {
         val m = currentMode(c)
         if (m == Mode.VOICE_DESIGN) return null
-        return "当前是「${m.label}」模式，这个模式的合成界面还没做完；先去模型页切回「描述造音色」。"
+        return "「${m.label}」还不能用来合成音频。切回「描述造音色」后即可继续。"
     }
 
     fun missing(c: Context): List<String> {
@@ -833,7 +830,7 @@ object Producer {
         val ok = WavMerger.merge(wavs, outFile, config.gapMs)
         if (!ok || outFile.length() <= 44) {
             _state.value = Progress(false, "没完成", annotated.size, annotated.size,
-                gateFails + synthFails, "没能生成音频，请点设置页复制诊断信息发我")
+                gateFails + synthFails, "没能生成音频，可以回书架重新合成这一本")
             return
         }
         // R61 · 把全书章数带进去：整本成品要展开成 0..n-1，第四列才亮。

@@ -90,7 +90,8 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
 
     # ④ 模型清单与版本
     slots = [x.get('slot') for x in manifest.get('models', [])]
-    if slots != ['tts_talker', 'tts_tokenizer']: e.append('模型清单不是两份声音模型: ' + str(slots))
+    want_slots = {'tts_tokenizer', 'tts_talker_voice_design', 'tts_talker_custom_voice', 'tts_talker_base'}
+    if set(slots) != want_slots or len(slots) != 4: e.append('模型清单不是 1 底座 + 3 模式: ' + str(slots))
     if 'baseline' in manifest: e.append('模型清单仍留对照基线')
     if 'versionName = "1.1.0+"' not in gradle: e.append('版本号没升到 1.1.0')
 

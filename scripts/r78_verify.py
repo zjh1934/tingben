@@ -3,7 +3,7 @@
 import pathlib, sys, re
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
-LINK = ROOT / "docs/R78_书架首屏重排_联动表.md"
+CONTRACT = ROOT / "docs/00_现行契约.md"
 CI = ROOT / ".github/workflows/ci.yml"
 
 POS = [
@@ -47,13 +47,13 @@ def check(text, ok_msg):
 def run():
     t = SRC.read_text()
     errs = check(t, "")
-    if not LINK.exists(): errs.append("联动表缺失")
+    if not CONTRACT.exists(): errs.append("现行契约缺失")
     if "r78_verify.py" not in CI.read_text(): errs.append("CI 未挂 r78_verify")
     if errs:
         print("FAIL")
         for e in errs: print(" -", e)
         return 1
-    print("PASS · 正向 %d / 零残留 %d / 守恒 %d / 联动表在 / CI 已挂" % (len(POS), len(BAN), len(KEEP)))
+    print("PASS · 正向 %d / 零残留 %d / 守恒 %d / 现行契约在 / CI 已挂" % (len(POS), len(BAN), len(KEEP)))
     return 0
 
 def selftest():

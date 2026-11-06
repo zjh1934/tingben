@@ -117,8 +117,8 @@ INJECT = [
             "        val wavs = mutableListOf<File>()", 1), encoding="utf-8")),
     ("设置摘要恢复角色映射", lambda r: (r / CORE / "Prefs.kt").write_text(
         txt(r, CORE + "/Prefs.kt").replace(
-            '        append(" · instruct v")',
-            '        append(" · 角色映射 开")\n        append(" · instruct v")', 1), encoding="utf-8")),
+            '        append(" · 音色 ")',
+            '        append(" · 角色映射 开")\n        append(" · 音色 ")', 1), encoding="utf-8")),
 ]
 
 def selftest():
