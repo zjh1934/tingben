@@ -24,7 +24,9 @@ POS = [
     'Text("从头重做", fontSize = 12.sp)',
     'Text("放弃任务", fontSize = 12.sp, color = Warn)',
     'Text("清除这条失效任务", fontSize = 12.sp)',
-    'if (!st.running) return@LaunchedEffect',
+    # R101 · 轮询门控语义没变，只是停跑时也补一次重读；断言跟着新写法走。
+    'if (!st.running) { loadTick++; return@LaunchedEffect }',
+    'delay(2000); loadTick++',
     'TaskResume.realProgress(c, it)',
 ]
 
@@ -112,7 +114,8 @@ def main():
              lambda t: dict(t, main=t['main'].replace('Text("清除这条失效任务", fontSize = 12.sp)',
                  'Text("清除")'))),
             ('R79 轮询门控被删',
-             lambda t: dict(t, main=t['main'].replace('if (!st.running) return@LaunchedEffect', ''))),
+             lambda t: dict(t, main=t['main'].replace(
+                 'if (!st.running) { loadTick++; return@LaunchedEffect }', ''))),
             ('继续制作被删',
              lambda t: dict(t, main=t['main'].replace('Text("继续制作（接着已做好的块跑）", fontSize = 15.sp)',
                  'Text("继续")'))),

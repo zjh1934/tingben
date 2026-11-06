@@ -213,7 +213,7 @@ internal fun ChapterHubScreen(
                     Text("继续 ›", fontSize = 12.sp, color = HubPrimary)
                 }
             }
-            // R101 · 旧版 showProgressHint 置 true 后永不复位，做完还挂「正在制作 · N/N 块」。
+            // R101 · 旧版那个提示开关置 true 后永不复位，做完还挂「正在制作 · N/N 块」。
             // 现在只由引擎状态派生，且只在这本书自己的任务上显示。
             val barText = when {
                 st.running -> "正在制作 · ${st.done}/${st.total} 块"

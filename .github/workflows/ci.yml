@@ -97,6 +97,9 @@ jobs:
       - name: R100 端到端链路自检（导入→分章→三模式→合成→登记→按章播放）
         run: python3 scripts/r100_chain_verify.py --selftest
 
+      - name: R101 任务页 / 章节页二三列同步 / 采样分模式验证
+        run: python3 scripts/r101_verify.py --selftest
+
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 
