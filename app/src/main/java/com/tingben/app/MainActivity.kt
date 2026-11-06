@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -511,105 +512,139 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
     val missing = remember(refresh) { ModelStore.missing(c) }
-    val lastReads = remember(refresh, books) { books.associate { it.id to ReadingState.last(c, it.id) } }
+    // R96 · 一次批量读、放后台：N 本书从 N 次组合期磁盘读降为 1 次异步读。
+    var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }
+    LaunchedEffect(refresh, books) {
+        lastReads = withContext(Dispatchers.IO) { ReadingState.allLast(c) }
+    }
     val clipboard = LocalClipboardManager.current
     var pasteOpen by remember { mutableStateOf(false) }
     var pasteText by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        // U1 · 下拉刷新条抽到 AppChrome 壳层；手势阈值与旧实现一致
-        RefreshStrip(
-            onRefresh = onChanged,
-            primary = Primary,
-            primarySoft = PrimarySoft,
-            sub = Sub
-        )
-        Spacer(Modifier.height(6.dp))
-        // R78 · 缺件收成一行细条，不跟主操作抢位置
-        if (!ready) {
-            Row(
-                Modifier.fillMaxWidth().clickable { onModels() }.padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("还差：" + missing.joinToString("、"), fontSize = 11.5.sp, color = Warn,
-                    maxLines = 2, modifier = Modifier.weight(1f))
-                Text("去准备 ›", fontSize = 11.5.sp, color = Primary)
+
+    confirmDelete?.let { id ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("删除这本书？") },
+            text = { Text(books.find { it.id == id }?.title ?: "") },
+            confirmButton = {
+                TextButton(onClick = {
+                    BookStore.delete(c, id); confirmDelete = null; onChanged()
+                }) { Text("删除", color = Warn) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) { Text("取消") }
             }
+        )
+    }
+
+    // R96 · 只组合看得见的书卡；各区块各占一个 item，key 稳定，滚动不重排。
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        item(key = "head") {
+            RefreshStrip(
+                onRefresh = onChanged,
+                primary = Primary,
+                primarySoft = PrimarySoft,
+                sub = Sub
+            )
             Spacer(Modifier.height(6.dp))
+        }
+        if (!ready) {
+            item(key = "missing") {
+                Row(
+                    Modifier.fillMaxWidth().clickable { onModels() }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("还差：" + missing.joinToString("、"), fontSize = 11.5.sp, color = Warn,
+                        maxLines = 2, modifier = Modifier.weight(1f))
+                    Text("去准备 ›", fontSize = 11.5.sp, color = Primary)
+                }
+                Spacer(Modifier.height(6.dp))
+            }
         }
 
         // R94 · 失败可恢复：细卡不抢主操作，能直接重选文件，也能关掉。
         if (importError != null) {
-            CardBox(Modifier.padding(bottom = 12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("上次没导进来", fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                        color = Warn, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismissImportError) {
-                        Text("关闭", fontSize = 11.5.sp, color = Sub)
+            item(key = "import-error") {
+                CardBox(Modifier.padding(bottom = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("上次没导进来", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                            color = Warn, modifier = Modifier.weight(1f))
+                        TextButton(onClick = onDismissImportError) {
+                            Text("关闭", fontSize = 11.5.sp, color = Sub)
+                        }
                     }
-                }
-                Spacer(Modifier.height(3.dp))
-                Text(importError, fontSize = 11.5.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
-                TextButton(onClick = onImportBook) {
-                    Text("再选一次文件 ›", fontSize = 12.sp, color = Primary)
+                    Spacer(Modifier.height(3.dp))
+                    Text(importError, fontSize = 11.5.sp, color = Sub)
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(onClick = onImportBook) {
+                        Text("再选一次文件 ›", fontSize = 12.sp, color = Primary)
+                    }
                 }
             }
         }
 
         if (books.isEmpty()) {
-            // R78 · 空态只留一张主卡：主操作最大，粘贴是次级入口
-            CardBox(Modifier.padding(bottom = 12.dp)) {
-                Text("还没有书", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(Modifier.height(4.dp))
-                Text("导入本地 TXT / EPUB，或先粘一段文字试试", fontSize = 11.5.sp, color = Sub)
-                Spacer(Modifier.height(14.dp))
-                Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("导入一本书", fontSize = 15.sp)
-                }
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = { pasteOpen = !pasteOpen }) {
-                    Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
+            item(key = "empty") {
+                // R78 · 空态只留一张主卡：主操作最大，粘贴是次级入口
+                CardBox(Modifier.padding(bottom = 12.dp)) {
+                    Text("还没有书", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("导入本地 TXT / EPUB，或先粘一段文字试试", fontSize = 11.5.sp, color = Sub)
+                    Spacer(Modifier.height(14.dp))
+                    Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
+                        Text("导入一本书", fontSize = 15.sp)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = { pasteOpen = !pasteOpen }) {
+                        Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
+                    }
                 }
             }
         }
         // R78 · 粘贴框只在点开时出现，不占首屏
         if (pasteOpen) {
-            CardBox(Modifier.padding(bottom = 12.dp)) {
-                OutlinedTextField(
-                    value = pasteText,
-                    onValueChange = { pasteText = it },
-                    label = { Text("正文") },
-                    maxLines = 8,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = {
-                        val got = clipboard.getText()?.text ?: ""
-                        if (got.isNotBlank()) pasteText = got
-                        else Toast.makeText(c, "剪贴板里没有文字", Toast.LENGTH_SHORT).show()
-                    }) { Text("粘贴") }
-                    TextButton(onClick = { pasteText = "" }) { Text("清除") }
-                    Spacer(Modifier.weight(1f))
-                    Button(onClick = {
-                        if (pasteText.isBlank()) {
-                            Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
-                        } else {
-                            BookStore.add(c, "粘贴的文字", pasteText)
-                            pasteText = ""; pasteOpen = false
-                            onChanged()
-                            Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
-                        }
-                    }) { Text("建书") }
+            item(key = "paste") {
+                CardBox(Modifier.padding(bottom = 12.dp)) {
+                    OutlinedTextField(
+                        value = pasteText,
+                        onValueChange = { pasteText = it },
+                        label = { Text("正文") },
+                        maxLines = 8,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = {
+                            val got = clipboard.getText()?.text ?: ""
+                            if (got.isNotBlank()) pasteText = got
+                            else Toast.makeText(c, "剪贴板里没有文字", Toast.LENGTH_SHORT).show()
+                        }) { Text("粘贴") }
+                        TextButton(onClick = { pasteText = "" }) { Text("清除") }
+                        Spacer(Modifier.weight(1f))
+                        Button(onClick = {
+                            if (pasteText.isBlank()) {
+                                Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
+                            } else {
+                                BookStore.add(c, "粘贴的文字", pasteText)
+                                pasteText = ""; pasteOpen = false
+                                onChanged()
+                                Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
+                            }
+                        }) { Text("建书") }
+                    }
                 }
             }
         }
         if (books.isNotEmpty()) {
-            // R78 · 有书态：整卡可点，补上次读到的章
-            Text("共 ${books.size} 本", fontSize = 11.5.sp, color = Sub)
-            Spacer(Modifier.height(8.dp))
-            books.forEach { b ->
+            item(key = "count") {
+                Text("共 ${books.size} 本", fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(8.dp))
+            }
+            items(books, key = { it.id }) { b ->
                 val lastRead = lastReads[b.id]
                 CardBox(Modifier.padding(bottom = 10.dp).clickable { onOpen(b.id) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -632,24 +667,11 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     }
                 }
             }
-            TextButton(onClick = { pasteOpen = !pasteOpen }) {
-                Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
-            }
-        }
-        confirmDelete?.let { id ->
-            AlertDialog(
-                onDismissRequest = { confirmDelete = null },
-                title = { Text("删除这本书？") },
-                text = { Text(books.find { it.id == id }?.title ?: "") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        BookStore.delete(c, id); confirmDelete = null; onChanged()
-                    }) { Text("删除", color = Warn) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmDelete = null }) { Text("取消") }
+            item(key = "paste-entry") {
+                TextButton(onClick = { pasteOpen = !pasteOpen }) {
+                    Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
                 }
-            )
+            }
         }
     }
 }

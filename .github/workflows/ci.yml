@@ -91,6 +91,12 @@ jobs:
       - name: R95 落盘预检与阅读位置验证（正向 / 守恒 / 反向注入）
         run: python3 scripts/r95_verify.py --selftest
 
+      - name: R96 阅读位置批量读对拍（8 组：逐本一致 / 读盘 1 次 / 共用 decode）
+        run: python3 scripts/r96_read_parity.py
+
+      - name: R96 书架长列表验证（LazyColumn / 一次异步读 / 结构 / 反向注入 / 守恒）
+        run: python3 scripts/r96_verify.py --selftest
+
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 

@@ -15,24 +15,46 @@ object ReadingState {
 
     data class Pos(val chapter: Int, val para: Int = 0, val offset: Int = 0)
 
+    /** R96 · 单本与批量共用一份兼容解析，避免两套逻辑慢慢漂移。 */
+    private fun decode(v: Any?): Pos? = when (v) {
+        is Number -> v.toInt().takeIf { it >= 0 }?.let { Pos(it) }
+        is JSONObject -> v.optInt("chapter", -1).takeIf { it >= 0 }?.let {
+            Pos(it, v.optInt("para", 0).coerceAtLeast(0),
+                v.optInt("offset", 0).coerceAtLeast(0))
+        }
+        else -> null
+    }
+
     /** 兼容读：旧整数值 = 只记了章，段内位置归零。 */
     fun pos(c: Context, bookId: String): Pos? = try {
         val f = file(c)
         if (!f.exists()) null
-        else when (val v = JSONObject(f.readText()).opt(bookId)) {
-            is Number -> v.toInt().takeIf { it >= 0 }?.let { Pos(it) }
-            is JSONObject -> v.optInt("chapter", -1).takeIf { it >= 0 }?.let {
-                Pos(it, v.optInt("para", 0).coerceAtLeast(0),
-                    v.optInt("offset", 0).coerceAtLeast(0))
-            }
-            else -> null
-        }
+        else decode(JSONObject(f.readText()).opt(bookId))
     } catch (_: Throwable) {
         null
     }
 
     /** 书架只显示章号，沿用旧调用形状。 */
     fun last(c: Context, bookId: String): Int? = pos(c, bookId)?.chapter
+
+    /**
+     * R96 · 书架一次读完所有书的章号：不再对每本书各 readText + 解析一次。
+     * 与 last() 共用 decode，旧整数 / 新对象两种数据结果逐本一致。
+     */
+    fun allLast(c: Context): Map<String, Int> = try {
+        val f = file(c)
+        if (!f.exists()) emptyMap()
+        else {
+            val o = JSONObject(f.readText())
+            val out = HashMap<String, Int>()
+            for (k in o.keys()) {
+                decode(o.opt(k))?.let { out[k] = it.chapter }
+            }
+            out
+        }
+    } catch (_: Throwable) {
+        emptyMap()
+    }
 
     /**
      * openReader 只传章：同章重开保留段内位置，换章自动归零。
