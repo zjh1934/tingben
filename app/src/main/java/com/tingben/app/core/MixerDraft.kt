@@ -7,7 +7,7 @@ import com.tingben.app.diag.EventLog
  * R40 · 调音台唯一编辑态（P0）。
  *
  * 评审实查：旧版有 5 个能写「生效态」的入口（身份保存 / 九项各自提交 / 12 维直接覆盖 /
- * 表演层长期默认 / 预设应用），界面没有「待提交」这一层，于是「选完 12 维以为生效、
+ * 表演层长期默认 / 预设应用），界面没有「未保存」这一层，于是「选完 12 维以为生效、
  * 点旁边网格却直接覆盖了 instruct」。这里把它收成：
  *
  *   active（只从 Prefs 读，唯一真值源）  ←→  draft（唯一编辑态，界面只写它）
@@ -25,8 +25,8 @@ import com.tingben.app.diag.EventLog
  */
 
 /** 生效时机只有两种说法，抽成常量，避免每个分区各写一种（评审第 17 条）。 */
-const val TIMING_NOW = "提交后新合成起生效；正在跑的任务不受影响"
-const val TIMING_NEXT = "提交后对所有新任务生效；正在跑的任务不受影响"
+const val TIMING_NOW = "保存后新合成起生效；正在跑的任务不受影响"
+const val TIMING_NEXT = "保存后对所有新任务生效；正在跑的任务不受影响"
 
 data class MixerDraft(
     val voice: String = "",
@@ -36,6 +36,9 @@ data class MixerDraft(
     // R93 · 三模式各自的输入，仍只经 commit() 写生效态
     val speaker: String = "",
     val refText: String = "",
+    // R98 · custom_voice 的念法/情绪指令，与 voice_design 的身份描述彻底分开，
+    // 切换模式不再互相覆盖。不进 voiceStamp（避免全局误删旧 WAV），进 mode_stamp。
+    val cvStyle: String = "",
     // 以下两项只是生成器工作区，不写 Prefs、不计入「未提交」
     val dims: Map<String, String> = emptyMap(),
     val dimText: String = ""
@@ -48,7 +51,8 @@ data class MixerDraft(
             perf = Prefs.defaultPerf(c),
             nonVerbal = Prefs.nonVerbal(c),
             speaker = Prefs.speakerName(c),
-            refText = Prefs.refText(c)
+            refText = Prefs.refText(c),
+            cvStyle = Prefs.cvStyle(c)
         )
     }
 }
@@ -61,8 +65,8 @@ object MixerCommit {
     private fun onOff(b: Boolean): String = if (b) "开" else "关"
 
     /**
-     * 逐字段 diff，界面顶部「未提交 N 项」直接用它算，不由各控件自己上报。
-     * dims / dimText 不参与，避免「只是拼了句描述」也被算成待提交。
+     * 逐字段 diff，界面顶部「有改动」直接用它算，不由各控件自己上报。
+     * dims / dimText 不参与，避免「只是拼了句描述」也被算成改动。
      */
     fun diff(a: MixerDraft, d: MixerDraft): List<MixerChange> = buildList {
         fun put(label: String, old: String, new: String, timing: String) {
@@ -82,6 +86,7 @@ object MixerCommit {
         put("拟声表达", onOff(a.nonVerbal), onOff(d.nonVerbal), TIMING_NOW)
         put("预设音色", a.speaker, d.speaker, TIMING_NOW)
         put("参考音频转录", a.refText, d.refText, TIMING_NOW)
+        put("预设音色念法", a.cvStyle, d.cvStyle, TIMING_NOW)
     }
 
     /**
@@ -96,11 +101,12 @@ object MixerCommit {
         Prefs.setNonVerbal(c, d.nonVerbal)
         Prefs.setSpeakerName(c, d.speaker)
         Prefs.setRefText(c, d.refText)
+        Prefs.setCvStyle(c, d.cvStyle)
         val after = Prefs.voiceStamp(c)
         EventLog.log(EventLog.Kind.ENGINE, "MIXER_COMMIT",
-            "提交 $n 项变更 · hash=${d.knobs.hash()} · voiceStamp $before → $after · " +
+            "保存 $n 项 · hash=${d.knobs.hash()} · voiceStamp $before → $after · " +
                 "stampChanged=${before != after}")
-        Mixer.logProfile(c, "提交变更（$n 项）")
+        Mixer.logProfile(c, "保存（$n 项）")
         return after
     }
 }

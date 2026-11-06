@@ -92,14 +92,16 @@ def check_sources(main, draft):
     for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
         if any(banned in x for x in lits): errs.append("旧生效动词残留: " + banned)
     # 4) diff 字段表与 Python 对拍一致
-    if draft.count("put(") != 12:  # R93 起 11 次字段调用 + 1 次 put() 定义
-        errs.append("diff 源码调用数 != 11")
+    if draft.count("put(") != 13:  # R98 起 12 次字段调用 + 1 次 put() 定义
+        errs.append("diff 源码调用数 != 13")
     for label in ["音色身份", "朗读档位", "语速倾向", "情绪强度", "段间静音",
                   "失败重做", "附加语气", "拟声表达", "ParamCatalog.SAMPLING.forEach"]:
         if label not in draft: errs.append("diff 缺字段: " + label)
     # 5) 吸顶条 / 差异弹层 / 丢弃 / 载入
-    for sym in ["提交变更", "当前生效全貌", "丢弃待提交", "有未提交变更"]:
+    for sym in ["保存", "改动还没保存", "丢弃并离开", "MixerCommit.commit(c, draft, n)"]:
         if sym not in main: errs.append("缺 P0 界面符号: " + sym)
+    for banned in ["待提交", "提交变更", "有未提交变更"]:
+        if banned in main: errs.append("R99 回退：待提交话术残留 " + banned)
     return errs
 
 
@@ -130,7 +132,7 @@ def main():
     print("=== 2) 反向注入（6 例，内存中改，不落盘）===")
     cases = {
         "删唯一出口": lambda s: s.replace("MixerCommit.commit(c, draft, n)", "0L"),
-        "恢复旧动词设定": lambda s: s.replace('Text("提交变更"', 'Text("设定"'),
+        "恢复旧动词设定": lambda s: s.replace('Text("保存"', 'Text("设定"'),
         "删离开确认": lambda s: s.replace("BackHandler(enabled = dirty)", "BackHandler(enabled = false)"),
         "删编辑态": lambda s: s.replace("var draft by remember", "var tmp by remember"),
         "注入第二写入口": lambda s: s.replace("fun commitAll() {", "fun commitAll() { Prefs.setTtsKnobs(c, draft.knobs)"),

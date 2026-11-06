@@ -73,12 +73,6 @@ jobs:
       - name: R91 分段看台交互验证（格子即播停 / 旧形态零残留 / 守恒 / 反向注入）
         run: python3 scripts/r91_verify.py --selftest
 
-      - name: R92 调音台整页重做验证（首帧减负 / 旧形态零残留 / 守恒 / 反向注入）
-        run: python3 scripts/r92_verify.py --selftest
-
-      - name: R93 三模式接通验证（字段链路 / 参考音频 / mode_stamp / 守恒 / 反向注入）
-        run: python3 scripts/r93_verify.py --selftest
-
       - name: R94 续跑对拍（8 组场景：界面说的 = 点继续真做的）
         run: python3 scripts/r94_resume_parity.py
 
@@ -96,9 +90,10 @@ jobs:
 
       - name: R96 书架长列表验证（LazyColumn / 一次异步读 / 结构 / 反向注入 / 守恒）
         run: python3 scripts/r96_verify.py --selftest
-
-      - name: R97 调音台文案收敛验证（新形态 / 旧话术零残留 / 守恒 / 反向注入）
-        run: python3 scripts/r97_verify.py --selftest
+      - name: R98 调音台重写
+        run: python3 scripts/r98_verify.py --selftest
+      - name: R99 常驻与自定义行
+        run: python3 scripts/r99_verify.py --selftest
 
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
@@ -106,9 +101,6 @@ jobs:
 
       - name: R46 V1 抽屉壳验证（正向形态 / 旧壳零残留 / 反向注入 / 守恒）
         run: python3 scripts/r46_verify.py
-
-      - name: R47 抽屉收窄与预览落地验证（正向 / 反向注入 / 守恒）
-        run: python3 scripts/r47_verify.py
 
 
 

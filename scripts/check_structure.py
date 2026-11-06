@@ -14,7 +14,7 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "docs/THIRD_PARTY_NOTICES.md",
  "scripts/build_native.sh", "scripts/check_structure.py", ".github/workflows/ci.yml", "keystore.jks",
  "contracts/model-manifest.json", "contracts/pipeline_spec.md",
- "contracts/sampling-defaults.h", "scripts/r92_verify.py",
+ "contracts/sampling-defaults.h", "scripts/r98_verify.py",
  "app/src/main/java/com/tingben/app/core/ParamSpec.kt"]
 for f in REQUIRED:
     if not (ROOT / f).exists(): errs.append("缺少必备文件: " + f)
@@ -97,7 +97,7 @@ for sym in ["readDetail", "ringTail", "resetEngine", "lastCrash"]:
 
 # R68 · 单一路径后仍活的主链符号（不许被顺手删掉）。
 R68_KEEP_A = ["TTS_INPUT", "SPLIT_STATS", "directWithStats", "lang=chinese",
-              "qt_tts_params", "TTS_PARAMS_APPLIED", "chapterIndices"]
+              "qt_tts_params", "MIXER_TRIAL", "chapterIndices"]
 for sym in R68_KEEP_A:
     if sym not in all_src: errs.append("缺少 R68 主链符号: " + sym)
 R68_GONE_B = ["ANN_CONTENT", "ANN_DISPOSITION", "Annotator.reconcile", "contentJson",
@@ -203,7 +203,7 @@ if "val base = if (sg.hasAudio) Good else Line" not in main_src:
 mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
 # R41a · A/B 对比换成「草稿 / 已生效」两态一步试听；日志事件同步改名。
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
-           "MIXER_PROFILE", "MIXER_TRIAL", "Mixer.CHAIN", "调音台", "private fun SettingsSection(",
+           "MIXER_PROFILE", "MIXER_TRIAL", "ParamLine(", "调音台", "private fun SettingsSection(",
            "Anatomy-First", "12 维", "试听草稿", "试听已生效",
            "MixerScreen", "Screen.MIXER", "全部恢复默认"]
 for sym in R31_ALL:
@@ -385,14 +385,14 @@ if "statusBarsPadding()" not in main_src:
 
 # ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 ──
 # R77 · 角色卡整套退场：CastPresets / seedIfEmpty 已随文件删除，换成迁移期符号
-R36_ALL = ["MixerSection(", "MixerPresetStore", "MixerPreset(",
+R36_ALL = ["ModeTabs(", "MixerPresetStore", "MixerPreset(",
            "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT",
            "本机数据",
            "单次音频长度上限", "TIMING_NEXT", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
-for sym in ["private fun MixerSection(", "Screen.MIXER -> MixerScreen",
+for sym in ["private fun ModeTabs(", "Screen.MIXER -> MixerScreen",
             "onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER }",
             "t.config else Prefs.defaultPerf(c)"]:
     if sym not in main_src: errs.append("缺少 R36 界面符号: " + sym)
@@ -434,8 +434,8 @@ for sym in ["Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn }
     if sym not in main_src: errs.append("R46 回退：二级页返回没回来源 " + sym)
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
-R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "提交变更",
-           "恢复本组默认", 'MixerSection("采样参数"', "声音描述 · 想要的嗓子"]
+R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "保存",
+           "全部恢复默认", 'Text("采样参数 · 9 项"', "声音描述"]
 for sym in R38_ALL:
     if sym not in all_src: errs.append("缺少 R38 控制台符号: " + sym)
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
@@ -443,20 +443,20 @@ if "TTS_PARAMS_APPLIED" not in cpp_src:
     errs.append("R38 回退：JNI 缺引擎实收参数日志")
 if 'null, "auto"' in main_src:
     errs.append("R38 回退：试音又用 auto，与主链 chinese 不一致")
-if 'MixerSection("音色身份"' in main_src:
+if 'MixerFold("音色身份"' in main_src:
     errs.append("R38 回退：音色身份又藏进折叠组")
-if "ParamCatalog.find(" not in main_src:
-    errs.append("R41 回退：采样参数没有走 ParamCatalog 单一目录")
-if "ParamCatalog.SAMPLING.forEach" in main_src:
-    errs.append("R41 回退：九项又退回一张张平铺卡（没走分组）")
+if "ParamCatalog.SAMPLING.forEach" not in main_src:
+    errs.append("R98 回退：采样参数没走 ParamCatalog 单一目录")
+if "private fun ParamLine(" not in main_src:
+    errs.append("R98 回退：数值控件没走 ParamLine（数字会被裁）")
 
 # ── R40 · 调音台统一提交：唯一编辑态 / 唯一出口 / 旧生效动词零残留 ──────
 draft_path = ROOT / "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
 draft_src = draft_path.read_text(encoding="utf-8", errors="replace") if draft_path.exists() else ""
 R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit(",
-           "TIMING_NOW", "TIMING_NEXT", "active(c: Context)", "提交变更",
-           "丢弃待提交", "BackHandler(enabled = dirty)", "有未提交变更",
-           "当前生效全貌"]
+           "TIMING_NOW", "TIMING_NEXT", "active(c: Context)", "保存",
+           "丢弃并离开", "BackHandler(enabled = dirty)", "改动还没保存",
+           "fun commitAll()"]
 for sym in R40_ALL:
     if sym not in all_src: errs.append("缺少 R40 统一提交符号: " + sym)
 # 唯一出口：MixerScreen 区块里禁止出现任何直接写 Prefs 的调用
@@ -468,10 +468,10 @@ for banned in ["Prefs.setTtsKnobs(", "Prefs.setVoiceDescription(", "Prefs.setDef
         errs.append("R40 回退：界面里出现第二个生效写入口 " + banned)
 if "MixerCommit.commit(c, draft, n)" not in mixer_block:
     errs.append("R40 回退：界面没走唯一出口 MixerCommit.commit")
-if draft_src.count("Prefs.set") != 6:
-    errs.append("R40 回退：commit 写入口不是 6 个（实际 %d）" % draft_src.count("Prefs.set"))
-if draft_src.count("put(") != 12:  # R93 起 11 次字段调用 + 1 次 put() 定义
-    errs.append("R40 回退：diff 源码调用数不是 11（实际 %d）" % (draft_src.count("put(") - 1))
+if draft_src.count("Prefs.set") != 7:
+    errs.append("R98 回退：commit 写入口不是 7 个（实际 %d）" % draft_src.count("Prefs.set"))
+if draft_src.count("put(") != 13:  # R98 起 12 次字段调用 + 1 次 put() 定义
+    errs.append("R98 回退：diff 源码调用数不是 12（实际 %d）" % (draft_src.count("put(") - 1))
 # 旧生效动词（只查字符串字面量，注释里描述旧 bug 不算）
 lits = ui_literals(main_src) + ui_literals(draft_src)
 for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
@@ -481,11 +481,17 @@ for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应
 prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text(encoding="utf-8", errors="replace")
 if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
-# R92 · 调音台整页重做：只守新形态，不再要求已删分区存在
-for sym in ['MixerSection("采样参数", "sampling",',
-            'samplingOpen', 'trialOpen', 'val mode = remember(tick) { ModelStore.currentMode(c) }',
-            'OutlinedTextField(', '提交变更']:
-    if sym not in main_src: errs.append("R92 回退：新调音台缺 " + sym)
+# R99 · 折叠整套退场：采样与试听常驻，顶栏只留一枚「保存」，
+# 预设音色多一行「自定义」。反向断言比旧版更严：旧折叠/待提交话术零残留。
+R99_MUST = ['Text("采样参数 · 9 项"', 'Text("自定义"', 'Text("保存"',
+            'Text("试听"', '改动还没保存', '离开会丢掉这次改动。',
+            'val mode = remember(tick) { ModelStore.currentMode(c) }']
+for sym in R99_MUST:
+    if sym not in main_src: errs.append("R99 回退：新调音台缺 " + sym)
+_mixer99 = main_src[main_src.index("private fun MixerScreen("):]
+for banned in ['MixerFold(', 'samplingOpen', 'trialOpen', '提交变更',
+               '待提交', '查看差异', '丢弃待提交', '有未提交变更', 'showDiff']:
+    if banned in _mixer99: errs.append("R99 回退：旧折叠/待提交话术残留 " + banned)
 # R97 · 真机红圈反馈：教程腔 / 评审腔 / 重复时机提示一律不许以界面文案回潮。
 R97_GONE = ["当前模式 · 只读", "送进模型 · 可随便改", "这段描述和下面 9 项采样同时生效",
             "每次合成会重新采样音色", "改动先进入待提交", "9 项真到模型", "✅ 可调",
