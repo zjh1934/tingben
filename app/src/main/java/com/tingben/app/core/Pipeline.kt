@@ -622,27 +622,32 @@ object Producer {
         // ── 合成阶段：先释放再加载 TTS，绝不同时常驻 ──
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
 
-        // R14 · 声音指纹：音色描述 / 角色表 / 采样 / instruct 模板 任一变化，
-        // 旧 WAV 必须作废，否则「续跑」会跳过旧块、听起来还是旧声音，界面还假装续上了。
+        // 声音指纹：音色描述 / 采样 / instruct 模板 任一变化，旧 WAV 必须作废。
         // 只删 WAV，文本切分结果留着不重算。
-        // 第一次写指纹时不删（默认配置下 instruct 与旧版完全一致，旧 WAV 仍有效）。
+        // 双指纹兼容：旧版指纹含角色表项，命中 legacy 就不作废，只改写成新值，
+        // 避免升级后把用户已经做好的音频一次性删光。
         val knobs = Prefs.ttsKnobs(c)
         val globalVoice = Prefs.voiceDescription(c)
-        val castOn = Prefs.castEnabled(c)
-        val cast = if (castOn) VoiceCast.reconcile(c) else emptyList()
         val voiceStamp = Prefs.voiceStamp(c)
+        val legacyStamp = Prefs.legacyVoiceStamp(c)
         val stampFile = File(work, "voice_stamp.txt")
         try {
-            if (stampFile.exists() && stampFile.readText().trim() != voiceStamp) {
+            val old = if (stampFile.exists()) stampFile.readText().trim() else ""
+            val changed = stampFile.exists() && old != voiceStamp && old != legacyStamp
+            if (changed) {
                 val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
                 killed.forEach { it.delete() }
                 EventLog.log(EventLog.Kind.PIPELINE, "VOICE_INVALIDATE",
                     "声音配置变了，作废 ${killed.size} 段旧音频，分段保留")
             }
+            if (stampFile.exists() && old != voiceStamp && !changed) {
+                EventLog.log(EventLog.Kind.PIPELINE, "VOICE_STAMP_MIGRATE",
+                    "旧指纹迁移到新版，已合成音频保持不变")
+            }
             stampFile.writeText(voiceStamp)
         } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_MODE",
-            "voice_design · 指纹=$voiceStamp · 角色=${cast.size} · seed=${knobs.seed}" +
+            "voice_design · 指纹=$voiceStamp · seed=${knobs.seed}" +
                 " · temp=${knobs.temperature} · lang=chinese（官方 README：目标语言已知时显式传，别用 auto）")
 
         // R20 · 预设指纹：voiceStamp 覆盖「升级 App 导致模板版本变化」，
@@ -684,25 +689,17 @@ object Producer {
 
         // R11 · 拟声表达：只在合成前增强 instruct，正文一字不动
         val nonVerbalOn = Prefs.nonVerbal(c)
-        var unmapped = 0
         var strippedTotal = 0
         val toSpeak = annotated.map { ann ->
             val base = if (nonVerbalOn) NonVerbal.apply(ann) else ann
-            // R14 · 身份层（角色专属 > 全局）由用户/角色表固定，全局音色决定声音。
-            // 不暂停长任务：未映射的角色沿用全局音色，并如实记一条，角色页里能看见待确认。
-            val role = if (castOn) VoiceCast.resolve(c, ann.speaker) else null
-            if (castOn && !VoiceCast.isNarrator(ann.speaker) && role == null) unmapped++
-            val identity = role?.description?.takeIf { it.isNotBlank() } ?: globalVoice
-            // R19 · 程序层兜底：指令里混进的音色身份词在这里剥掉，避免逐段换声。
-            // R20 · 本次风格层（朗读档位/语速/情绪强度）挂到现成的第二层，零签名改动。
-            // 只改 instruct，text 原样，gate 不受影响。
-            val built = VoiceProfile.buildWithReport(identity, config.styleInstruct(), base.instruct)
+            // 声音只由调音台的全局音色决定；拟声表达与本次风格层只改 instruct，正文一字不动。
+            val built = VoiceProfile.buildWithReport(globalVoice, config.styleInstruct(), base.instruct)
             strippedTotal += built.second
             Ann(base.text, base.speaker, built.first)
         }
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_IDENTITY",
             "身份层=${if (globalVoice.isBlank()) "默认锚点" else "自定义"} · " +
-                    "版本=$INSTRUCT_TEMPLATE_VERSION · 角色表=${cast.size} · " +
+                    "版本=$INSTRUCT_TEMPLATE_VERSION · " +
                     "seed=${knobs.seed} · ${annotated.size} 段")
         if (strippedTotal > 0) EventLog.log(EventLog.Kind.PIPELINE, "INSTRUCT_SANITIZED",
             "从 $strippedTotal 处导演指令里剥掉音色身份词；身份由固定层提供，不再逐段重造")
@@ -711,8 +708,6 @@ object Producer {
             EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL",
                 "命中 $hits/${annotated.size} 段，只增强导演指令，正文未改")
         }
-        if (unmapped > 0) EventLog.log(EventLog.Kind.PIPELINE, "VOICE_UNMAPPED",
-            "$unmapped 段角色还没指定音色，暂用全局音色；去设置页「角色音色」确认")
 
         val wavs = mutableListOf<File>()
         var synthFails = 0
@@ -729,8 +724,8 @@ object Producer {
                 // R26 · 合成阶段同样按段刷新唤醒锁；TTS 单次可能几分钟。
                 ProduceService.touch(c.applicationContext, "合成段 ${i + 1}/${toSpeak.size}")
                 val wav = File(work, String.format("direct_%04d.wav", i))
-                // R22 · 让「这一段到底用什么指令读的」可见：这里是最终 instruct（含身份层/风格层），
-                // 这里显示的是最终送进声音模型的指令。voice_design 的 speaker 必须传 null。
+                // 让「这一段到底用什么指令读的」可见：最终 instruct（含身份层/风格层）。
+                // voice_design 的 speaker 必须传 null。
                 EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
                     "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
                         a.text.take(50).replace('\n', '⏎') + " → " + a.instruct.replace('\n', '｜'),
@@ -743,8 +738,7 @@ object Producer {
                     SegPlan.clearRedo(work, "seg:$i")
                 } else {
                     val code = try {
-                        // 官方 Qwen3-TTS README 第 167 行：目标语言已知时显式传，别用 auto。
-                        // 全中文书固定 chinese；lang 参与合成结果，故 INSTRUCT_TEMPLATE_VERSION 升 4 作废旧 WAV。
+                        // 官方 Qwen3-TTS README：目标语言已知时显式传，别用 auto；全中文书固定 chinese。
                         NativeEngine.ttsSynthesize(ttsHandle, a.text, a.instruct, null, "chinese",
                             wav.absolutePath, knobs)
                     } catch (t: Throwable) {

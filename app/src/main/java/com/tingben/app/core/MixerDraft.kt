@@ -20,8 +20,7 @@ import com.tingben.app.diag.EventLog
  *    onDataChanged / onDataSaved 形状（只取状态机语义，不引 ViewModel 依赖）。
  *  - 可复现 profile hash 随配置变化：沿用 R14 的 Prefs.voiceStamp，不新建第二份指纹。
  *
- * 边界（R39 §3 守恒）：不碰 4B 设置、prompt v2、两条制作路径、bucket() 分桶、
- * TaskBookmark 续跑、ProduceService、native/JNI、qt_tts_params 字段、Gradle 依赖。
+ * 边界：不碰任务书签续跑、ProduceService、native/JNI、qt_tts_params 字段、Gradle 依赖。
  * dims / dimText 只是「帮你写描述」的生成器状态，**不进生效态、不参与 diff、不落盘**。
  */
 
@@ -34,7 +33,6 @@ data class MixerDraft(
     val knobs: TtsKnobs = TtsKnobs(),
     val perf: ProduceConfig = ProduceConfig(),
     val nonVerbal: Boolean = true,
-    val castEnabled: Boolean = true,
     // 以下两项只是生成器工作区，不写 Prefs、不计入「未提交」
     val dims: Map<String, String> = emptyMap(),
     val dimText: String = ""
@@ -45,8 +43,7 @@ data class MixerDraft(
             voice = Prefs.voiceDescription(c),
             knobs = Prefs.ttsKnobs(c),
             perf = Prefs.defaultPerf(c),
-            nonVerbal = Prefs.nonVerbal(c),
-            castEnabled = Prefs.castEnabled(c)
+            nonVerbal = Prefs.nonVerbal(c)
         )
     }
 }
@@ -82,7 +79,7 @@ object MixerCommit {
 
     /**
      * 全 App 调音台唯一写生效态的出口。只走既有 Prefs 写入口，写完后重算
-     * voiceStamp（旧 WAV 作废由 R14 既有机制负责），再各写一条可复盘日志。
+     * voiceStamp（旧 WAV 作废由指纹比对负责），再各写一条可复盘日志。
      */
     fun commit(c: Context, d: MixerDraft, n: Int): String {
         val before = Prefs.voiceStamp(c)
@@ -90,7 +87,6 @@ object MixerCommit {
         Prefs.setTtsKnobs(c, d.knobs)
         Prefs.setDefaultPerf(c, d.perf)
         Prefs.setNonVerbal(c, d.nonVerbal)
-        Prefs.setCastEnabled(c, d.castEnabled)
         val after = Prefs.voiceStamp(c)
         EventLog.log(EventLog.Kind.ENGINE, "MIXER_COMMIT",
             "提交 $n 项变更 · hash=${d.knobs.hash()} · voiceStamp $before → $after · " +

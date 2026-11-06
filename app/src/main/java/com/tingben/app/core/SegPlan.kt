@@ -15,7 +15,7 @@ import java.io.File
  * 改写点（不是照抄）：
  *  - 不引 Room / coroutine 状态机：本项目是线性 Producer，脏标记就落 `redo.json` 一个文件
  *  - 「重做」靠删对应文件让既有跳过逻辑自然失效，不改 `Producer.start` 签名 / `bucket()` /
- *    `TaskResume` 书签 / native / prompt v2 —— 这是用户点名过的「改一处联动很多处」
+ *    `TaskResume` 书签 / native —— 这是用户点名过的「改一处联动很多处」
  *  - 段 id 直接用 work 目录里的 wav 索引，因为合成循环本来就用它命名
  *
  * R28 顺带修一个旧账：看台以前把 `ann_%04d`（**块**索引）和
@@ -27,7 +27,7 @@ data class SegMeta(
     val seg: Int,
     val block: Int,
     val ann: Int,
-    /** null = 旧缓存没记来源，不猜、不冒充已标注。 */
+    /** null = 旧缓存没记来源，不猜、不冒充已知。 */
     val fromModel: Boolean?,
     val text: String,
     val speaker: String,
@@ -138,8 +138,8 @@ object SegPlan {
     fun pending(work: File): Set<String> = readRedo(work)
 
     /**
-     * 重合成这一段：只删该段 wav，其余段与标注一律不动。
-     * 合成循环见 wav 不存在就重合成；标注阶段 ann 全在 → 不会重跑 4B。
+     * 重合成这一段：只删该段 wav，其余段一律不动。
+     * 合成循环见 wav 不存在就重合成，其余段直接复用。
      */
     fun redoSynthesize(work: File, s: SegMeta): Boolean {
         val w = File(work, s.wavName)
@@ -149,8 +149,8 @@ object SegPlan {
     }
 
     /**
-     * 重新标注本块：删该块 ann/flag/src + 该块所有段的 wav，其余块不动。
-     * 续跑时该块 ann 不存在 → 重跑 4B；对应段 wav 不存在 → 重合成。
+     * 重做本块：删该块缓存 + 该块所有段的 wav，其余块不动。
+     * 续跑时该块缓存不存在 → 重切；对应段 wav 不存在 → 重合成。
      * 禁整章 / 整本清（Scheduler §5 不变量）。
      */
     fun redoBlock(work: File, block: Int, segs: List<SegMeta>): Int {
@@ -167,7 +167,7 @@ object SegPlan {
         return killed
     }
 
-    /** 一眼判定：模型真标注 / 直读 / 旧缓存未知 各几段。 */
+    /** 一眼判定：直读 / 旧缓存未知 各几段。 */
     data class Verdict(val model: Int, val fill: Int, val unknown: Int, val total: Int) {
         val effective: Boolean get() = model > 0
         val label: String

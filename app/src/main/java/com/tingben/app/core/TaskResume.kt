@@ -13,7 +13,7 @@ import java.io.File
  * 于是「之前跑的任务没有了」。
  *
  * 这里只存**恢复所需的最小信息**：哪本书、用了哪套参数、跑到哪。
- * 真正的进度以磁盘上的 ann_ / chunk_ 文件为准（realProgress 重算），
+ * 真正的进度以磁盘上的分段 WAV 为准（realProgress 重算），
  * 不信任进程死前写下的那个数字。
  */
 data class TaskInfo(
@@ -91,7 +91,7 @@ object TaskResume {
 
     /**
      * 以磁盘实况重算进度，不信任死前记下的 done。
-     * 标注阶段数 ann_，合成阶段数 wav；返回「已完成多少朗读段」的近似值供 UI 显示，
+     * 合成阶段数 wav；返回「已完成多少朗读段」的近似值供 UI 显示，
      * 真正的跳过逻辑在 Producer.run() 里按块判断。
      */
     fun realProgress(c: Context, t: TaskInfo): Int {

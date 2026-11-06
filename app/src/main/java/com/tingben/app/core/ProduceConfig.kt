@@ -55,7 +55,7 @@ data class ProduceConfig(
 
     /**
      * 只含会影响**已合成 WAV** 的项。
-     * gapMs 只在合并时插静音、分段 WAV 内容不变；gateRetries 只影响标注重试 —— 都不进指纹。
+     * gapMs 只在合并时插静音、分段 WAV 内容不变；gateRetries 只影响失败重做 —— 都不进指纹。
      * R50：附加语气会改变 instruct，必须进指纹，否则改了自定义词却沿用旧 WAV。
      */
     fun audioStamp(): String = sha(listOf(

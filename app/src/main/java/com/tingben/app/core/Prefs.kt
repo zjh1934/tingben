@@ -2,6 +2,7 @@ package com.tingben.app.core
 
 import android.content.Context
 import org.json.JSONObject
+import java.io.File
 import java.security.MessageDigest
 
 /**
@@ -60,7 +61,6 @@ object Prefs {
     private const val KEY_NONVERBAL = "nonVerbal"
 
     private const val KEY_VOICE_DESC = "voiceDesc"
-    private const val KEY_CAST_ENABLED = "castEnabled"
     private const val KEY_SEED = "ttsSeed"
     private const val KEY_TTS_MAX = "ttsMax"
     private const val KEY_TTS_TEMP = "ttsTemp"
@@ -71,8 +71,7 @@ object Prefs {
     private const val KEY_TTS_SUBTOPK = "ttsSubTopK"
     private const val KEY_TTS_SUBTOPP = "ttsSubTopP"
     private const val KEY_DEFAULT_PERF = "defaultPerf"
-    private const val KEY_CAST_SEEDED = "castSeeded"
-    // R41 · 纯 UI 偏好：不进 voiceStamp、不进 diff、不碰 4B/任务书签
+    // 纯 UI 偏好：不进 voiceStamp、不进 diff、不碰任务书签
     private const val KEY_MIXER_OPEN = "mixerOpenSections"
     private const val KEY_RECENT_VOICES = "mixerRecentVoices"
     // R73 · P2 软件设置：主题 0 跟随 / 1 浅 / 2 深；正文字号 12–24sp。
@@ -89,7 +88,7 @@ object Prefs {
         }
     }
 
-    // R67 · P1a：旧思考档位设置键随语言模型整套退场，不再读写。
+    // 旧思考档位设置键已退场，不再读写。
 
     fun nCtx(c: Context) = sp(c).getInt(KEY_NCTX, 4096)
     fun setNCtx(c: Context, v: Int) = sp(c).edit().putInt(KEY_NCTX, v).apply()
@@ -113,10 +112,6 @@ object Prefs {
     }
     fun setVoiceDescription(c: Context, v: String) =
         sp(c).edit().putString(KEY_VOICE_DESC, v.trim()).apply()
-
-    /** 角色→音色映射是否参与合成。默认开，但表里没内容时等价于只用全局描述。 */
-    fun castEnabled(c: Context) = sp(c).getBoolean(KEY_CAST_ENABLED, true)
-    fun setCastEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_CAST_ENABLED, v).apply()
 
     // ── 声音：9 个采样参数（默认值来自 qwentts.cpp，不再硬编码在 JNI）──
     fun ttsKnobs(c: Context): TtsKnobs {
@@ -159,10 +154,6 @@ object Prefs {
     fun setDefaultPerf(c: Context, v: ProduceConfig) =
         sp(c).edit().putString(KEY_DEFAULT_PERF, v.toJson().toString()).apply()
 
-    /** 内置卡只 seed 一次，避免覆盖用户后来改过的配置。 */
-    fun castSeeded(c: Context) = sp(c).getBoolean(KEY_CAST_SEEDED, false)
-    fun setCastSeeded(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_CAST_SEEDED, v).apply()
-
     // ── R41 · 调音台 UI 偏好（纯界面，不参与声音指纹）──
     /** R45 · 默认全部折叠；首屏身份卡常驻不折叠。只有用户主动展开过才落盘，
      *  所以改默认值对老用户也立即生效，不覆盖手动记住的展开态。 */
@@ -195,25 +186,40 @@ object Prefs {
     }
 
     /**
-     * 声音指纹：音色描述 / 角色表 / 采样 / instruct 模板 任一变化，旧 WAV 必须作废。
-     * 抄 ReaderVoice 的 profileHash 思路；这是「改一处联动很多处」里最容易漏的一处。
+     * 声音指纹：音色描述 / 采样 / instruct 模板 任一变化，旧 WAV 必须作废。
+     * 抄 ReaderVoice 的 profileHash 思路。角色表整套退场后不再进指纹。
      */
     fun voiceStamp(c: Context): String = sha(listOf(
         INSTRUCT_TEMPLATE_VERSION.toString(),
         voiceDescription(c),
-        if (castEnabled(c)) VoiceCast.hash(c) else "off",
         ttsKnobs(c).hash()
     ).joinToString("||"))
 
+    /**
+     * 迁移专用：旧版四项指纹（含角色表）。只用于识别手机上 voice_stamp.txt 里
+     * 存的旧值 —— 命中就不作废旧 WAV，并把文件改写成新值。算法固定，
+     * 角色表读法内联，不依赖已删除的 VoiceCast。
+     */
+    fun legacyVoiceStamp(c: Context): String = sha(listOf(
+        INSTRUCT_TEMPLATE_VERSION.toString(),
+        voiceDescription(c),
+        if (sp(c).getBoolean("castEnabled", true)) legacyCastHash(c) else "off",
+        ttsKnobs(c).hash()
+    ).joinToString("||"))
+
+    private fun legacyCastHash(c: Context): String = try {
+        val f = File(c.filesDir, "cast.json")
+        if (f.exists()) sha(f.readText()) else "empty"
+    } catch (_: Throwable) { "err" }
+
     fun summary(c: Context) = buildString {
-        // R73 · 只报软件自身状态；语言模型时代的「上下文 / 线程 / 温度 / 仅非思考」整套退场。
+        // 只报软件自身状态与声音配置。
         append("主题 ").append(when (themeMode(c)) {
             1 -> "浅色"; 2 -> "深色"; else -> "跟随系统"
         })
         append(" · 正文字号 ").append(readerFontScale(c).toInt())
         append(" · 拟声表达 ").append(if (nonVerbal(c)) "开" else "关")
         append("\n声音 · ").append(if (voiceDescription(c).isBlank()) "默认身份锚点" else "自定义音色")
-        append(" · 角色映射 ").append(if (castEnabled(c)) "开" else "关")
         append(" · instruct v").append(INSTRUCT_TEMPLATE_VERSION)
         append(" · seed ").append(ttsKnobs(c).seed)
         append(" · 指纹 ").append(voiceStamp(c))

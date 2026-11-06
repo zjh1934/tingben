@@ -19,12 +19,12 @@ import com.tingben.app.diag.EventLog
  *  - 采样链顺序 repetition_penalty → temperature → top-k → top-p → multinomial：
  *    `qwentts-cpp/README.md:22`；主 talker 抽 c0、sub-talker 抽声学码：`qwen.h:303-307`。
  *  - 稳定档取值：Qwen3-TTS-X 公开推荐配置（temperature 0.6 / sub 0.6 / seed 42，
- *    标注「调低 sub_temperature 可减少语速抖动和电音感」）。
+ *    注明「调低 sub_temperature 可减少语速抖动和电音感」）。
  *  - 不可变 synthesis profile + hash 附加到每次请求：Long-form TTS 工程实践
  *    （smallest.ai 长语音一致性指南 Step 2）。本文件只做快照，不新建第二份真值源。
  *
  * 边界：**只读汇总 + 复用既有 Prefs 写入口**。不改 Producer.start 签名、不动缓存分桶、
- * 不动 native、不改 prompt、不新增权限。所有「当前生效值」都从 Prefs/ProduceConfig 读，
+ * 不动 native、不新增权限。所有「当前生效值」都从 Prefs/ProduceConfig 读，
  * 调音台自己不存一份副本 —— 避免出现两份真值源把续跑搞串。
  */
 

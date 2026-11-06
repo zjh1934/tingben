@@ -10,7 +10,7 @@ import java.io.File
  * R28 修一个旧账：以前把 `ann_%04d.json`（**块**索引）和 `chunk_%04d.wav`（**段**索引）
  * 按同一个 i 并排画格。一块常切成好几段，所以「第 N 格」既不是第 N 块也不是第 N 段，
  * 颜色（来自块）和声音（来自段）也永远对不上。现在以 `SegPlan.segmap.json` 为唯一真实
- * 来源；没有 segmap 的旧缓存才降级扫目录，并一律标 UNKNOWN，不冒充已标注。
+ * 来源；没有 segmap 的旧缓存才降级扫目录，并一律标 UNKNOWN。
  */
 data class SegRow(
     val index: Int,
@@ -101,7 +101,7 @@ object Workbench {
         return ((t?.total ?: 1) - 1 - last).coerceAtLeast(0)
     }
 
-    /** 判定条用：模型真标注 / 直读 / 未知。没有 segmap 时返回 null，UI 如实说「还没数据」。 */
+    /** 判定条用：直读 / 未知。没有 segmap 时返回 null，UI 如实说「还没数据」。 */
     fun verdict(c: Context, t: TaskInfo?): SegPlan.Verdict? {
         val work = workDir(c, t) ?: return null
         return SegPlan.readMap(work)?.let { SegPlan.verdict(it) }

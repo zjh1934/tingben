@@ -383,9 +383,10 @@ for src_name, src in [("MainActivity", main_src), ("AppChrome", chrome_src)]:
 if "statusBarsPadding()" not in main_src:
     errs.append("R33 回退：顶栏又贴回状态栏")
 
-# ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 / 角色卡 ──
+# ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 ──
+# R77 · 角色卡整套退场：CastPresets / seedIfEmpty 已随文件删除，换成迁移期符号
 R36_ALL = ["MixerSection(", "Prefs.mixerOpenSections", "MixerPresetStore", "MixerPreset(",
-           "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
+           "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
            "导出与诊断", "预设库", "参数触达与官方资料",
            "单次音频长度上限", "TIMING_NEXT", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
@@ -463,13 +464,13 @@ for sym in R40_ALL:
 blk_i = main_src.find("// ── ⑥ 调音台")
 mixer_block = main_src[blk_i:] if blk_i >= 0 else ""
 for banned in ["Prefs.setTtsKnobs(", "Prefs.setVoiceDescription(", "Prefs.setDefaultPerf(",
-               "Prefs.setNonVerbal(", "Prefs.setCastEnabled(", "Prefs.resetTtsKnobs("]:
+               "Prefs.setNonVerbal(", "Prefs.resetTtsKnobs("]:
     if banned in mixer_block:
         errs.append("R40 回退：界面里出现第二个生效写入口 " + banned)
 if "MixerCommit.commit(c, draft, n)" not in mixer_block:
     errs.append("R40 回退：界面没走唯一出口 MixerCommit.commit")
-if draft_src.count("Prefs.set") != 5:
-    errs.append("R40 回退：commit 写入口不是 5 个（实际 %d）" % draft_src.count("Prefs.set"))
+if draft_src.count("Prefs.set") != 4:
+    errs.append("R40 回退：commit 写入口不是 4 个（实际 %d）" % draft_src.count("Prefs.set"))
 if draft_src.count("put(") != 10:  # R76 起 9 次字段调用 + 1 次 put() 定义
     errs.append("R40 回退：diff 源码调用数不是 9（实际 %d）" % (draft_src.count("put(") - 1))
 # 旧生效动词（只查字符串字面量，注释里描述旧 bug 不算）

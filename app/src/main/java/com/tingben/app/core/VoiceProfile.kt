@@ -8,14 +8,14 @@ package com.tingben.app.core
  * 用来定义一个稳定的声音身份；逐块的情绪则是另一层。
  *
  * 三层：
- *   ① 身份层 = 全局 / 角色的固定描述（用户可编辑，全书复用）
- *   ② 角色风格层 = 该角色稳定的表演习惯（可选）
- *   ③ 本段情绪层 = 4B 逐块产出的 instruct（只描述「此刻怎么说」）
+ *   ① 身份层 = 全局固定描述（用户可编辑，全书复用）
+ *   ② 风格层 = 本次朗读的表演习惯（可选）
+ *   ③ 本段情绪层 = 断句时给的 instruct（只描述「此刻怎么说」）
  *
  * R19 · 用户实测「每一个小段音色都不一样」，两个真因：
  *   A. 全局音色描述默认留空 ⇒ 每段根本没有身份锚点，voice_design 每次重新「造声」；
- *   B. v2 提示词虽明禁音色身份词，abliterated 权重遵循不稳，4B 偶尔仍漏写
- *      「年轻男声 / 低沉沙哑」，叠进本段情绪后等于每段换一个人。
+ *   B. 指令里偶尔仍会混进音色身份词（「年轻男声 / 低沉沙哑」），
+ *      叠进本段情绪后等于每段换一个人。
  * 修法：① 给一个 DEFAULT_IDENTITY 兜底，留空也有锚点；② 程序层 sanitize()
  * 把身份词剥掉，不指望模型自觉。只动 instruct，Ann.text 一个字不碰，逐字 gate 不受影响。
  *
@@ -25,7 +25,7 @@ package com.tingben.app.core
  */
 // R20 · 升 3：instruct 多了「本次风格层」（朗读档位/语速/情绪强度）。
 // R22 · 升 4：TTS 的 lang 由 auto 改成显式 chinese（官方 README 第 167 行建议），
-// 合成结果会变，必须让旧分段 WAV 作废；标注结果（跑了几分钟的 4B 产物）保留复用。
+// 合成结果会变，必须让旧分段 WAV 作废；切分结果保留复用。
 // 版本进 Prefs.voiceStamp ⇒ 复用 R14 既有机制，不新增指纹字段。
 const val INSTRUCT_TEMPLATE_VERSION = 4
 
@@ -48,9 +48,9 @@ object VoiceProfile {
     )
 
     /**
-     * 把 4B 漏写的身份词从「本段情绪」里剥掉。
+     * 把混进来的身份词从「本段情绪」里剥掉。
      * 用替换而不是整段丢弃：情绪词和身份词常写在同一句，丢整段会连「压低质问」一起没了。
-     * @return 清理后的文本 + 命中次数（写进事件日志，便于判断 4B 到底漏了多少）
+     * @return 清理后的文本 + 命中次数（写进事件日志）
      */
     fun sanitize(block: String): Pair<String, Int> {
         var s = block
@@ -67,7 +67,7 @@ object VoiceProfile {
         return s.trim().removeSuffix("。").removeSuffix("，") to hits
     }
 
-    /** 给标注审计用：本段指令里是否混进了音色身份词（只查 4B 原始产出，不做剥离）。 */
+    /** 审计用：本段指令里是否混进了音色身份词（不剥离）。 */
     fun hasIdentityTerms(s: String): Boolean = IDENTITY_TERMS.any { s.contains(it) }
 
     private fun occurrences(s: String, sub: String): Int {
@@ -80,7 +80,7 @@ object VoiceProfile {
     /**
      * @param global    全局固定音色描述（留空 = 用 DEFAULT_IDENTITY，不再「无锚点」）
      * @param roleStyle 角色稳定风格（可空）
-     * @param block     4B 产出的本段情绪指令（先 sanitize）
+     * @param block     本段情绪指令（先 sanitize）
      */
     fun buildWithReport(global: String, roleStyle: String?, block: String): Pair<String, Int> {
         val (b, hits) = sanitize(block)
@@ -97,7 +97,7 @@ object VoiceProfile {
     fun build(global: String, roleStyle: String?, block: String): String =
         buildWithReport(global, roleStyle, block).first
 
-    /** 角色页预览用：只拿身份层 + 角色风格，不带本段情绪。 */
+    /** 试听预览用：只拿身份层 + 风格层，不带本段情绪。 */
     fun identity(global: String, roleStyle: String?): String =
         build(global, roleStyle, "").ifBlank { DEFAULT_IDENTITY }
 }
