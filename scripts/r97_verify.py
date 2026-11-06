@@ -27,7 +27,7 @@ MUST = [
     '.height(34.dp)', '"试听草稿"', '"试听已生效"',
     'trialMsg = if (p != null) "已播放"',
     'Text("丢弃待提交"', 'title = { Text("差异", fontSize = 14.sp) }',
-    'Modifier.width(72.dp).height(40.dp)', 'horizontal = 6.dp, vertical = 0.dp',
+    'horizontal = 4.dp, vertical = 0.dp',
     'MixerCommit.commit(c, draft, n)', 'BackHandler(enabled = dirty)',
     'Text("提交变更", fontSize = 12.sp)', 'mixer_trial_draft.wav', 'mixer_trial_active.wav',
     'ModelStore.Mode.CUSTOM_VOICE -> {', 'ModelStore.Mode.BASE -> {',
@@ -46,6 +46,11 @@ GONE = [
 def check(main_src, ci_src):
     e = []
     mb = mixer(main_src)
+    # ParamRow 定义在 MixerScreen 之前，数值框修复要查全文
+    if 'Modifier.width(72.dp).height(40.dp)' not in main_src:
+        e.append("数值框未放宽到 40dp")
+    if 'lineHeight = 13.sp' not in main_src:
+        e.append("数值框行高未收敛")
     for s in MUST:
         if s not in mb:
             e.append("新形态缺失: " + s[:52])
@@ -68,6 +73,11 @@ def load():
 
 def main():
     m, c = load()
+    base_errs = check(m, c)
+    if base_errs:
+        print("FAIL · 基线未通过，反向注入结果不可信")
+        for x in base_errs: print(" -", x)
+        return 1
     if "--selftest" in sys.argv:
         cases = [
             ("恢复顶栏状态话术", lambda t: t.replace('Spacer(Modifier.weight(1f))',
@@ -82,7 +92,8 @@ def main():
                 'trialMsg = "${File(p).length()} 字节，已自动播放"')),
             ("删唯一提交", lambda t: t.replace("MixerCommit.commit(c, draft, n)", "0L")),
             ("删离开确认", lambda t: t.replace("BackHandler(enabled = dirty)", "BackHandler(enabled = false)")),
-            ("删数值框修复", lambda t: t.replace('horizontal = 6.dp, vertical = 0.dp', 'horizontal = 0.dp')),
+            ("删数值框修复", lambda t: t.replace('Modifier.width(72.dp).height(40.dp)',
+                                           'Modifier.width(72.dp).height(38.dp)')),
             ("CI 摘掉本验证", None),
         ]
         bad = 0
