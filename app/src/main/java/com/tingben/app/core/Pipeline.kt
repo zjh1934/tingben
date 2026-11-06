@@ -772,7 +772,7 @@ object Producer {
             config.summary() + " · 指纹=" + presetStamp)
 
         val ttsHandle = try {
-            NativeEngine.ttsLoad(tk!!.absolutePath, tok!!.absolutePath, null)
+            NativeEngine.ttsLoadGated(tk!!.absolutePath, tok!!.absolutePath, null)
         } catch (t: Throwable) {
             _state.value = Progress(false, "没开始", 0, 0, 0, "音频模型加载失败：" + (t.message ?: ""))
             return
@@ -785,7 +785,7 @@ object Producer {
         try {
             SynthInput.prepare(c, ttsHandle)
         } catch (t: Throwable) {
-            try { NativeEngine.ttsFree(ttsHandle) } catch (_: Throwable) { }
+            try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
             _state.value = Progress(false, "没开始", 0, 0, 0, t.message ?: "模式输入没准备好")
             return
         }
@@ -925,7 +925,7 @@ object Producer {
                     chapterProgress = chapterSnapshot)
             }
         } finally {
-            try { NativeEngine.ttsFree(ttsHandle) } catch (_: Throwable) { }
+            try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
         }
         if (cancelRequested) {
             _state.value = halted(annotated.size, annotated.size, gateFails + synthFails)

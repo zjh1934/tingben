@@ -129,8 +129,8 @@ KEEP = [
     'private fun ClearSegmentsRow(',
     # 主链与调音台唯一提交守恒
     'fun commitAll()',
-    'NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)',
-    'NativeEngine.ttsFree(h)',
+    'NativeEngine.ttsLoadGated(tk.absolutePath, tok.absolutePath, null)',
+    'NativeEngine.ttsFreeGated(h)',
     'fun voiceStamp(c: Context): String',
     # 硬约束
 ]

@@ -44,6 +44,29 @@ object NativeEngine {
 
     external fun ttsLoad(talkerPath: String, codecPath: String, device: String?): Long
 
+    // R105 · 全局单 loader：连点两次试听、或试听与正式制作撞上，不再同时载两份 2GB talker。
+    // 门闩只管「装载」这一段；native 的逐采样取消入口是 nativeCancel()，两者各管一件事。
+    private val loadGate = Any()
+    @Volatile private var loadBusy = false
+
+    fun tryBeginTtsLoad(): Boolean = synchronized(loadGate) {
+        if (loadBusy) false else { loadBusy = true; true }
+    }
+
+    fun endTtsLoad() { synchronized(loadGate) { loadBusy = false } }
+
+    /** 带门闩的装载：已有一次在跑时返回 0L，调用方放弃而不是再载一份。 */
+    fun ttsLoadGated(talkerPath: String, codecPath: String, device: String?): Long {
+        if (!tryBeginTtsLoad()) return 0L
+        return try { ttsLoad(talkerPath, codecPath, device) }
+               catch (t: Throwable) { endTtsLoad(); throw t }
+    }
+
+    /** 与 ttsLoadGated 成对；重复调用是幂等的（门闩是布尔，不是计数）。 */
+    fun ttsFreeGated(handle: Long) {
+        try { ttsFree(handle) } finally { endTtsLoad() }
+    }
+
     /**
      * R14 · 采样参数不再硬编码在 JNI。用 data class 一次传，避免加 8 个裸参数
      * 导致字段顺序漂移（抄 qwentts.cpp 的 qt_tts_default_params → 逐字段覆盖模式）。

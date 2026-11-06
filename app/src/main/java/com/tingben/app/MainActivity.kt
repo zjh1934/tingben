@@ -55,6 +55,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.Job
 import java.io.File
 
 private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }
@@ -1620,7 +1623,7 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
                 val tk = ModelStore.modeFile(c, ModelStore.currentMode(c))
                     ?: throw IllegalStateException("缺这一份模式主文件")
                 val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺共用底座")
-                val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
+                val h = NativeEngine.ttsLoadGated(tk.absolutePath, tok.absolutePath, null)
                 if (h == 0L) throw IllegalStateException("声音模型打不开")
                 try {
                     SynthInput.prepare(c, h)
@@ -1632,7 +1635,7 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
                     if (code != 0 || !f.exists() || f.length() <= 44)
                         throw IllegalStateException("没生成声音，code=$code")
                     f.absolutePath
-                } finally { NativeEngine.ttsFree(h) }
+                } finally { NativeEngine.ttsFreeGated(h) }
             }
             withContext(Dispatchers.Main) {
                 probing = false
@@ -2000,19 +2003,42 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         PlayQueue.playFrom(0)
     }
 
+    /** R105 · 每次试听带唯一 token：新请求 / 离页先取消旧 Job，终态写回前校验 token。 */
+    var trialJob by remember { mutableStateOf<Job?>(null) }
+    var trialToken by remember { mutableStateOf(0L) }
+
+    // 离页只断协程，不发 nativeCancel：全局停止标志会把后台正在跑的正式制作一起停掉。
+    DisposableEffect(Unit) { onDispose { trialJob?.cancel() } }
+
+    fun stopTrial() {
+        trialJob?.cancel()
+        trialJob = null
+        trialToken++
+        try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
+        busyTrial = false
+        trialMsg = "已停止"
+    }
+
     /** 两态试听按传入的 src 完整组装，草稿与已生效各自独立，不写 Prefs。 */
     fun trial(label: String, src: MixerDraft, out: String) {
+        // R105 · 旧请求先取消；native 的逐采样检查点由 nativeCancel 通知。
+        trialJob?.cancel()
+        try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
+        val myToken = trialToken + 1
+        trialToken = myToken
         busyTrial = true
         trialMsg = "合成中…"
-        scope.launch(Dispatchers.IO) {
+        val job = scope.launch(Dispatchers.IO) {
             val res = runCatching {
+                ensureActive()
                 if (!NativeEngine.isAvailable()) throw IllegalStateException("本地引擎没装载，请重启 App")
                 ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }
                 val tk = ModelStore.modeFile(c, mode) ?: throw IllegalStateException("缺这一份模式主文件")
                 val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺共用底座")
-                val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
-                if (h == 0L) throw IllegalStateException("声音模型打不开")
+                val h = NativeEngine.ttsLoadGated(tk.absolutePath, tok.absolutePath, null)
+                if (h == 0L) throw IllegalStateException("声音模型正在装载，稍后再试")
                 try {
+                    ensureActive()
                     when (mode) {
                         ModelStore.Mode.BASE -> {
                             val txt = src.refText.takeIf { it.isNotBlank() }
@@ -2036,18 +2062,22 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         }
                         ModelStore.Mode.BASE -> SynthInput.Params(null, null)
                     }
+                    ensureActive()
                     val f = File(c.filesDir, out)
                     val code = NativeEngine.ttsSynthesize(h, trialText, v.instruct, v.speaker,
                         "chinese", f.absolutePath, src.knobs)
+                    ensureActive()
                     if (code != 0 || !f.exists() || f.length() <= 44)
                         throw IllegalStateException("没生成声音，code=$code")
                     EventLog.log(EventLog.Kind.ENGINE, "MIXER_TRIAL",
                         "来源=$label · mode=${mode.id} · chars=${trialText.length} · " +
                             "seed=${src.knobs.seed} · bytes=${f.length()}")
                     f.absolutePath
-                } finally { NativeEngine.ttsFree(h) }
+                } finally { NativeEngine.ttsFreeGated(h) }
             }
             withContext(Dispatchers.Main) {
+                // 过期请求不写回：连点两下时旧结果不会覆盖新状态。
+                if (myToken != trialToken || !isActive) return@withContext
                 busyTrial = false
                 val p = res.getOrNull()
                 if (!p.isNullOrBlank()) play(p)
@@ -2058,6 +2088,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 }
             }
         }
+        trialJob = job
     }
 
     BackHandler(enabled = dirty) { showLeave = true }
@@ -2151,11 +2182,15 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { trial("草稿", draft, "mixer_trial_draft.wav") },
-                    enabled = canTrial) { Text("试听草稿", fontSize = 11.sp) }
-                Spacer(Modifier.width(10.dp))
-                TextButton(onClick = { trial("已生效", active, "mixer_trial_active.wav") },
-                    enabled = canTrial) { Text("试听已生效", fontSize = 11.sp) }
+                if (busyTrial) {
+                    TextButton(onClick = { stopTrial() }) { Text("停止", fontSize = 11.sp) }
+                } else {
+                    TextButton(onClick = { trial("草稿", draft, "mixer_trial_draft.wav") },
+                        enabled = canTrial) { Text("试听草稿", fontSize = 11.sp) }
+                    Spacer(Modifier.width(10.dp))
+                    TextButton(onClick = { trial("已生效", active, "mixer_trial_active.wav") },
+                        enabled = canTrial) { Text("试听已生效", fontSize = 11.sp) }
+                }
                 Spacer(Modifier.weight(1f))
                 if (busyTrial) Text("合成中…", fontSize = 10.5.sp, color = Sub)
             }
@@ -2263,9 +2298,9 @@ private fun CustomVoicePane(
                         ?: throw IllegalStateException("还没导入「预设音色」那份主文件")
                     val tok = ModelStore.tokenizer(ctx)
                         ?: throw IllegalStateException("还没导入共用底座")
-                    val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
+                    val h = NativeEngine.ttsLoadGated(tk.absolutePath, tok.absolutePath, null)
                     if (h == 0L) throw IllegalStateException("模型打不开")
-                    try { NativeEngine.ttsSpeakers(h) } finally { NativeEngine.ttsFree(h) }
+                    try { NativeEngine.ttsSpeakers(h) } finally { NativeEngine.ttsFreeGated(h) }
                 }
                 withContext(Dispatchers.Main) {
                     onBusy(false)

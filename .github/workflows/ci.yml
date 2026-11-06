@@ -106,6 +106,9 @@ jobs:
       - name: R104 索引原子写验证（统一落盘 / 坏索引不清空 / 报错可见 / 反向注入 / 守恒）
         run: python3 scripts/r104_verify.py --selftest
 
+      - name: R105 试听取消与单 loader 验证（token / 门闩 / 停止入口 / 反向注入 / 守恒）
+        run: python3 scripts/r105_verify.py --selftest
+
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 
