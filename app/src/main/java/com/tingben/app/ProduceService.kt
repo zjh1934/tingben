@@ -68,7 +68,7 @@ class ProduceService : Service() {
             return null
         }
 
-        /** 从可见界面点「开始制作」时调用，必须先于 Producer 的协程启动。 */
+        /** 从可见界面点「合成音频」时调用，必须先于 Producer 的协程启动。 */
         fun begin(c: Context, title: String) {
             val ctx = c.applicationContext
             lastBook = title

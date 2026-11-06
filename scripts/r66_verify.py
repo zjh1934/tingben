@@ -59,7 +59,7 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
         if s not in hub: e.append('目录页缺: ' + s)
     if 'val steps = listOf("拆章", "生成声音", "整理音频", "完成")' not in main:
         e.append('进度页不是四步')
-    if '送进声音模型的正文' not in main: e.append('看台没改成送进声音模型的正文')
+    if '送进声音模型的正文' in main: e.append('看台仍留展开正文旧口径（R91 已改格子即播停）')
     if 'Text("‹ 返回")' in main: pass  # 不强制，避免误伤别处
     if 'NAV_LLM' in chrome or '语言模型' in chrome or '文本处理' in chrome:
         e.append('抽屉仍残留旧模块项')

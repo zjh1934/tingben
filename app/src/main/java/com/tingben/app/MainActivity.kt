@@ -796,9 +796,8 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         ) {
             Text(
                 if (st.running) "正在制作…"
-                else if (hasCached) "继续制作"
-                else if (directMode) "开始直接朗读"
-                else "开始制作",
+                else if (hasCached) "继续合成"
+                else "合成音频",
                 fontSize = 16.sp
             )
         }
@@ -816,12 +815,10 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             Spacer(Modifier.height(10.dp))
             Text(st.message, fontSize = 12.5.sp, color = if (st.output != null) Good else Sub)
         }
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onProgress) { Text("查看进度") }
     }
 }
 
-// ── ③ 进度 · R65 v12：空间重分配 + 看台「小块 → 模型原貌」 ──────────────
+// ── ③ 进度 · 空间重分配 + 看台「点格子即播 / 再点停」 ─────────────────────
 @Composable
 private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit) {
     val st by Producer.state.collectAsState()
@@ -854,10 +851,8 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     val segs = remember(st.done, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
     val rest = remember(st.done, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
     val verdict = remember(st.done, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
-    var segSel by remember { mutableStateOf<Int?>(null) }
     var showCompare by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
-    var lmOpen by remember { mutableStateOf(false) }
     val pqSeg by PlayQueue.state.collectAsState()
     var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(st.running) { if (!st.running) stopping = false }
@@ -909,7 +904,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             }
         }
 
-        // ② 五步横排：做过的下面 3dp 色块，正在做只加粗，没做的没有色块
+        // ② 四步横排：做过的下面 3dp 色块，正在做只加粗，没做的没有色块
         Spacer(Modifier.height(10.dp))
         val steps = listOf("拆章", "生成声音", "整理音频", "完成")
         val curStep = when {
@@ -937,76 +932,47 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             }
         }
 
-        // ④ 分段看台：板块常驻不折叠，8 个一小块；点格子展开送进声音模型的正文
+        // ④ 分段看台：一行 8 格，格子本身就是播放开关；点一下读这一段，再点一下停
         Spacer(Modifier.height(10.dp))
         CardBox {
             Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text("绿=已出声 · 蓝=正在合成 · 灰=未开始 · 点格子看正文",
-                fontSize = 10.sp, color = Sub)
             if (segs.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text("这次还没落盘分段记录；跑一次制作后这里才有点。", fontSize = 11.sp, color = Sub)
+                Text("还没有分段", fontSize = 10.sp, color = Sub)
             } else {
                 Spacer(Modifier.height(9.dp))
                 segs.chunked(8).forEach { row ->
                     Row(Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         row.forEach { sg ->
-                            val base = when {
-                                sg.hasAudio -> Good
-                                sg.wav != null -> Primary
-                                else -> Line
-                            }
+                            val label = "第 ${sg.index + 1} 段"
+                            val onThis = pqSeg.label == label
+                            val playing = onThis && pqSeg.isPlaying
+                            val base = if (sg.hasAudio) Good else Line
                             Box(
                                 Modifier.size(30.dp)
                                     .background(
-                                        if (segSel == sg.index) PrimarySoft else base.copy(alpha = 0.18f),
+                                        if (playing) PrimarySoft else base.copy(alpha = 0.18f),
                                         RoundedCornerShape(8.dp))
-                                    .clickable { segSel = if (segSel == sg.index) null else sg.index },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("${sg.index + 1}", fontSize = 10.sp,
-                                    color = if (segSel == sg.index) Primary else base)
-                                if (sg.hasAudio)
-                                    Text("▶", fontSize = 6.sp, color = Good,
-                                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(5.dp))
-                }
-                segSel?.let { sel ->
-                    val sg = segs.find { it.index == sel }
-                    if (sg != null) {
-                        val label = "第 ${sg.index + 1} 段"
-                        val onThis = pqSeg.label == label
-                        val playing = onThis && pqSeg.isPlaying
-                        Spacer(Modifier.height(10.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${label} · 第 ${sg.block + 1} 块 · 送进声音模型的正文",
-                                fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f))
-                            if (sg.wav != null) {
-                                Box(Modifier.size(32.dp)
-                                    .background(if (playing) Primary else PrimarySoft,
-                                        RoundedCornerShape(8.dp))
-                                    .clickable {
+                                    .clickable(enabled = sg.wav != null) {
                                         if (playing) PlayQueue.pause()
                                         else if (onThis) PlayQueue.resume()
                                         else {
                                             PlayQueue.setTracks(listOf(Track(sg.wav!!, label)))
                                             PlayQueue.playFrom(0)
                                         }
-                                    }, contentAlignment = Alignment.Center) {
-                                    Text(if (playing) "⏸" else "▶", fontSize = 13.sp,
-                                        color = if (playing) Card else Primary)
-                                }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("${sg.index + 1}", fontSize = 10.sp,
+                                    color = if (playing) Primary else base)
+                                if (sg.wav != null)
+                                    Text(if (playing) "⏸" else "▶", fontSize = 6.sp, color = Good,
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
                             }
                         }
-                        Spacer(Modifier.height(7.dp))
-                        Text(if (sg.text.isBlank()) "（这一段没有落盘文字）" else sg.text,
-                            fontSize = 11.sp, color = palette.text, lineHeight = 17.sp)
                     }
+                    Spacer(Modifier.height(5.dp))
                 }
             }
         }

@@ -195,8 +195,8 @@ if "if (i < kept) \"MODEL\"" in pipe_src:
     errs.append("R27 回退：逐条来源又按「前 kept 条」猜")
 if '"已标注 ${i + 1}/${chunks.size} 块"' in pipe_src:
     errs.append("R27 回退：进度又按跑完块数写「已标注」")
-if "sg.hasAudio -> Good" not in main_src:
-    errs.append("R66 回退：看台没按已出声/合成中/未开始着色")
+if "val base = if (sg.hasAudio) Good else Line" not in main_src:
+    errs.append("R91 回退：看台不是绿/灰两态（或退回三态着色）")
 
 # R31 · 调音台：12 维网格 / 4 组采样预设 / 生效快照 / A/B 日志必须真在源码里。
 # 反向断言：不许把参数埋回折叠里当唯一入口、不许出现第二份 TtsKnobs 真值源。
