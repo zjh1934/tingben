@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 errs = []
 REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts",
  "gradle/libs.versions.toml", "gradle.properties", "app/build.gradle.kts",
- "app/src/main/AndroidManifest.xml", "app/src/main/assets/prompt_zh.txt",
+ "app/src/main/AndroidManifest.xml",
  "app/src/main/cpp/CMakeLists.txt", "app/src/main/cpp/tingben_native.cpp",
  "app/src/main/java/com/tingben/app/MainActivity.kt",
  "app/src/main/java/com/tingben/app/ProduceService.kt",
@@ -22,6 +22,10 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "app/src/main/java/com/tingben/app/core/ParamSpec.kt"]
 for f in REQUIRED:
     if not (ROOT / f).exists(): errs.append("缺少必备文件: " + f)
+
+# R66 · 语言模型退场：提示词资产不许再进包（源码/契约两处都不留占位）
+for p in list((ROOT / "app/src/main/assets").glob("prompt_zh*")) + list((ROOT / "contracts").glob("prompt_zh*")):
+    errs.append("R66 回退：仍带语言模型提示词资产 " + p.relative_to(ROOT).as_posix())
 
 SKIP = {".git", ".gradle", "build", ".idea", "__pycache__", "reference"}
 kt_files = []
@@ -88,7 +92,7 @@ for sym in AUDIT_SYMBOLS:
 # R22 · 核心链路（逐条采纳）与「标注内容可看见」的符号必须真在源码里。
 R22_SYMBOLS = ["ANN_CONTENT", "ANN_DISPOSITION", "TTS_INPUT", "reconcile", "contentJson",
                "contentLines", "contentText", "annsJson", "disposition", "lang=chinese",
-               "查看标注内容", "复制标注全文"]
+               "复制标注全文"]
 for sym in R22_SYMBOLS:
     if sym not in all_src: errs.append("缺少 R22 核心链路符号: " + sym)
 
@@ -105,7 +109,7 @@ for sym in ["NATIVE_JSON_CLOSE", "jsonDepth", "jsonStarted"]:
 
 # R24 · 三处手搓换成移植件：符号必须真在源码里，旧手搓实现不许残留。
 R24_SYMBOLS = ["JsonSalvage", "Adoption", "RawDump", "ANN_RAW_DUMP", "ANN_ADOPT_DETAIL",
-               "复制最近一块模型原始产出", "查看模型原始产出", "cleanInstruct",
+               "复制最近一块模型原始产出", "cleanInstruct",
                "THINK_UNCLOSED", "bracket", "DEFAULT_INSTRUCT"]
 for sym in R24_SYMBOLS:
     if sym not in all_src: errs.append("缺少 R24 移植件符号: " + sym)
@@ -116,13 +120,13 @@ if "o.optString(\"instruct\", \"平稳叙述\")" in pipe_src:
 # R25 · 断句移植件 / 设置分层 / 日志不许把零产出写成成功。
 main_src = (ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt").read_text(encoding="utf-8", errors="replace")
 R25_ALL = ["TextSplitter", "SPLIT_STATS", "ANN_PHASE_HINT", "ANN_BLOCK_END",
-           "directWithStats", "零标注 ⚠️ 白跑", "用户中断（本次不计产出）"]
+           "directWithStats", "用户中断（本次不计产出）"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
 # R54 · 设置页重设计后不再有圈码分组标题，改验四分区组件与作用域文案。
 R25_MAIN = ["private fun GroupLabel(", "private fun SettingsSection(",
             "SettingsSection(\"外观与显示\", \"软件\"", "仅本次", "作用域",
-            "ACTION_MAIN 也被当成", "ProduceMode.DIRECT", "标注后合成（实验性）"]
+            "ACTION_MAIN 也被当成", "ProduceMode.DIRECT"]
 for sym in R25_MAIN:
     if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
 # 反向断言：按字符腰斩的旧实现、把标注档当默认的旧写法不许回来
@@ -183,8 +187,8 @@ if "if (i < kept) \"MODEL\"" in pipe_src:
     errs.append("R27 回退：逐条来源又按「前 kept 条」猜")
 if '"已标注 ${i + 1}/${chunks.size} 块"' in pipe_src:
     errs.append("R27 回退：进度又按跑完块数写「已标注」")
-if not re.search(r'\b\w+\.src == "MODEL"', main_src):
-    errs.append("R27 回退：看台没有按真实来源着色")
+if "sg.hasAudio -> Good" not in main_src:
+    errs.append("R66 回退：看台没按已出声/合成中/未开始着色")
 
 # R31 · 调音台：12 维网格 / 4 组采样预设 / 生效快照 / A/B 日志必须真在源码里。
 # 反向断言：不许把参数埋回折叠里当唯一入口、不许出现第二份 TtsKnobs 真值源。
@@ -269,7 +273,7 @@ for sym in [
     if sym not in main_src: errs.append("U1 回退：导航骨架被改动 " + sym)
 # R61 · 目的地随版本增长：白名单显式列出，数量一律由它推算，不再写死 10。
 WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "CAST", "MIXER", "LLM", "CHAPTERS"}
+                "SETTINGS", "MODELS", "CAST", "MIXER", "CHAPTERS"}
 enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
 if enum_m:
     got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))
@@ -317,8 +321,10 @@ else:
     errs.append("U1 回退：找不到 DRAWER_TOP")
 if more_m:
     body2 = more_m.group(1)
-    if body2.count(" to ") != 5 or "调音台" not in body2 or "语言模型" not in body2:
-        errs.append("U1 回退：抽屉设置域不是 5 项或调音台/语言模型不是独立项")
+    if body2.count(" to ") != 4 or "调音台" not in body2:
+        errs.append("U1 回退：抽屉设置域不是 4 项或调音台不是独立项")
+    if "语言模型" in body2 or "文本处理" in body2:
+        errs.append("U1 回退：抽屉仍含已删模块")
 else:
     errs.append("U1 回退：找不到 DRAWER_MORE")
 # 下拉刷新机制保留、阈值不变（必须查代码行，注释里也写了 55f，会被字符串包含骗过）
@@ -476,6 +482,21 @@ if 'MixerSection("哪些能改 · 和模型一一对齐", "mapping",' not in mai
     errs.append("R45 回退：参数对齐只读折叠区缺失")
 if 'MixerSection("音色身份生成器", "identity",\n                openMap.contains("identity")' not in main_src:
     errs.append("R41 回退：身份生成器没走受控 openMap")
+
+# R66 · 1.1.0 语言模型退场：4 条旧说法不许以界面字符串回潮。
+# 注释里描述旧 bug 不算；只认字符串字面量，和 r66_verify.py 的口径一致。
+R66_GONE = ["查看标注内容", "查看模型原始产出", "零标注 ⚠️ 白跑", "标注后合成（实验性）"]
+_all_ui = []
+for p in kt_files:
+    _all_ui += ui_literals(p.read_text(encoding="utf-8", errors="replace"))
+def r66_errs(lits):
+    return ["R66 回退：又出现已退场文案 " + s for s in R66_GONE if any(s in x for x in lits)]
+errs += r66_errs(_all_ui)
+if "--selftest" in sys.argv:
+    probe = ui_literals('Text("标注后合成（实验性）")')
+    ok = bool(r66_errs(_all_ui + probe)) and not r66_errs(_all_ui)
+    print("R66 结构自检注入:", "PASS" if ok else "FAIL")
+    if not ok: sys.exit(1)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)

@@ -4,7 +4,7 @@
 1) 正向符号：紧凑数字框 / 小自定义框 / 表演层 5 项 / 自定义数据落地 / 滚动联动
 2) 数据层对拍：ProduceConfig 的 packExtra / unpackExtra / JSON 往返 / 范围校验
 3) 反向注入 8 例：把源码改回旧形态，断言必须变红
-4) 守恒：9 项采样参数 key·默认值·范围不变、唯一提交出口、prompt v2 / native 未动
+4) 守恒：9 项采样参数 key·默认值·范围不变、唯一提交出口、采样默认值头 / native 未动
 """
 import json
 import pathlib
@@ -17,7 +17,7 @@ FILES = {
     "cfg": ROOT / "app/src/main/java/com/tingben/app/core/ProduceConfig.kt",
     "draft": ROOT / "app/src/main/java/com/tingben/app/core/MixerDraft.kt",
     "spec": ROOT / "app/src/main/java/com/tingben/app/core/ParamSpec.kt",
-    "prompt": ROOT / "app/src/main/assets/prompt_zh.txt",
+    "defaults": ROOT / "contracts/sampling-defaults.h",
     "native": ROOT / "app/src/main/cpp/tingben_native.cpp",
 }
 
@@ -91,7 +91,7 @@ def checks(src):
     ck("固定音色统一入口", 'jumpTo("fixedVoice")' in m)
     ck("AnchorBar 仍只读传入", "selected = key == current" in m)
 
-    # ⑤ 守恒：唯一提交出口 / 参数表 / prompt / native
+    # ⑤ 守恒：唯一提交出口 / 参数表 / 采样默认值头 / native
     ck("唯一提交出口", m.count("MixerCommit.commit(c, draft, n)") == 1)
     ck("两态试听仍在", m.count('trial("未提交参数"') == 1 and m.count('trial("已生效参数"') == 1)
     expected = [
@@ -107,7 +107,8 @@ def checks(src):
         line = next((l for l in sampling_lines if 'ParamSpec("%s"' % key in l), "")
         ck("参数 %s 未变" % key, ('"%s"' % default) in line, "key/default 被改: " + line[:70])
     ck("9 项数量", sampling.count("ParamSpec(") == 9)
-    ck("prompt v2 未动", "逐字" in src["prompt"] or len(src["prompt"]) > 200)
+    ck("采样默认值头未动", "QT_DEFAULT_TEMPERATURE" in src["defaults"] and "0.9f" in src["defaults"])
+    ck("R66 提示词资产已退场", not (ROOT / "app/src/main/assets/prompt_zh.txt").exists())
     ck("native 日志未动", "TTS_PARAMS_APPLIED" in src["native"] or len(src["native"]) > 1000)
     return out
 

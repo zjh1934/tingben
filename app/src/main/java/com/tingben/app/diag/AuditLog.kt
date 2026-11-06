@@ -145,7 +145,7 @@ object AuditLog {
     fun summaryText(c: Context): String {
         val b = load(c)
         val m = loadMeta(c)
-        if (b.isEmpty()) return "本次还没有标注记录（可能走的是直接朗读，或任务刚开工）。"
+        if (b.isEmpty()) return "本次还没有分段记录（可能走的是直接朗读，或任务刚开工）。"
         val pass = b.count { it.status == PASS }
         val cached = b.count { it.status == CACHED }
         val fallback = b.count { it.status == FALLBACK }
@@ -173,7 +173,7 @@ object AuditLog {
         val body = b.sumOf { it.bodyChars }
         val waste = if (raw > 0) ((raw - body) * 100 / raw) else 0
         val sb = StringBuilder()
-        sb.append("本次标注审计 · run=").append(m["run"] ?: runId)
+        sb.append("本次分段审计 · run=").append(m["run"] ?: runId)
             .append(" · ").append(m["mode"] ?: "-").append(" · ").append(m["chunks"] ?: b.size).append(" 块\n")
         sb.append("结果：PASS ").append(pass).append(" / 缓存续上 ").append(cached)
             .append(" / 降级直读 ").append(fallback).append(" / 模型产出未被采纳 ").append(noModel).append('\n')
@@ -194,7 +194,7 @@ object AuditLog {
 
     fun ruleText(c: Context): String {
         val b = load(c).filter { it.rules.isNotEmpty() }
-        if (b.isEmpty()) return "规则生效：本次没有经过语言模型的块。\n"
+        if (b.isEmpty()) return "规则生效：本次没有经过文本处理的块。\n"
         val keys = AnnotatorRules.LABELS.keys
         return buildString {
             append("规则生效（按模型候选的原始产出计，不代表最终采纳）：\n")
@@ -234,7 +234,7 @@ object AuditLog {
      */
     fun contentText(c: Context, n: Int = 6): String {
         val b = recent(c, n)
-        if (b.isEmpty()) return "（暂无标注记录）"
+        if (b.isEmpty()) return "（暂无分段记录）"
         return b.joinToString("\n\n") { a ->
             val sb = StringBuilder()
             sb.append("— 块 ").append(a.block).append('/').append(a.total)
@@ -243,9 +243,9 @@ object AuditLog {
                 .append("（模型 ").append(a.kept).append(" 条 / 程序补齐 ").append(a.filled)
                 .append(" 条）\n")
             if (a.fromCache && a.annsJson.isBlank()) {
-                sb.append("（本块从磁盘续上，未重跑语言模型，无逐条正文）")
+                sb.append("（本块从磁盘续上，未重跑文本处理，无逐条正文）")
             } else if (a.annsJson.isBlank()) {
-                sb.append("（本块没有留下逐条标注全文）")
+                sb.append("（本块没有留下逐条分段全文）")
             } else {
                 try {
                     val arr = JSONArray(a.annsJson)

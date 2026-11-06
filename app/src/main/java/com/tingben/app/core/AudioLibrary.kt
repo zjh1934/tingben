@@ -150,7 +150,7 @@ object AudioLibrary {
             bookId = bookId,
             title = bookTitle,
             scope = scopeLabel(only),
-            mode = if (direct) "直接朗读" else "标注后合成",
+            mode = "直接朗读",
             createdAt = System.currentTimeMillis(),
             bytes = file.length(),
             chapters = chs,
@@ -189,17 +189,16 @@ object AudioLibrary {
             .groupBy { it.first }
             .mapValues { (_, pairs) -> pairs.maxBy { it.second.createdAt }.second }
 
-    /** 第四列准入门槛：标注后合成 + 索引已知。直接朗读的成品只能进第三列。 */
+    /** 第三列门槛：索引已知且成品存在；1.1.0 起不再区分制作档位。 */
     fun playableChapters(c: Context, bookId: String): Set<Int> =
-        list(c).filter { it.bookId == bookId && it.chaptersKnown && it.mode == "标注后合成" }
+        list(c).filter { it.bookId == bookId && it.chaptersKnown }
             .flatMap { it.chapters }.toSet()
 
     /** 按章序返回第四列可播条目，供 PlayQueue 与悬浮条目录共用同一顺序。 */
     fun playableItems(c: Context, bookId: String): List<Pair<Int, AudioItem>> =
-        latestByChapter(c, bookId).filter { (_, a) -> a.mode == "标注后合成" }
-            .toList().sortedBy { it.first }
+        latestByChapter(c, bookId).toList().sortedBy { it.first }
 
-    /** 第三列单章播放：直接朗读成品也算，但未标注。 */
+    /** 第三列单章播放：有成品就能听。 */
     fun audioFor(c: Context, bookId: String, chapterIndex: Int): AudioItem? =
         latestByChapter(c, bookId)[chapterIndex]
 

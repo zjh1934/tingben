@@ -54,10 +54,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER, LLM, CHAPTERS }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER, CHAPTERS }
 
 /** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
-private enum class ProduceMode { ANNOTATE, DIRECT }
+private enum class ProduceMode { DIRECT }
 
 // R11 · 视觉现代化：冷灰底 + 靛蓝主色 + 明确的层级，去掉旧版淡紫调试台观感
 private val Bg = Color(0xFFF4F6FB)
@@ -316,7 +316,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Screen.MIXER -> NAV_MIXER
         Screen.MODELS -> NAV_MODELS
         Screen.CAST -> NAV_CAST
-        Screen.LLM -> NAV_LLM
     }
     // R51 · 联动抽屉：官方 DismissibleNavigationDrawer 展开时把右侧工作页一起推走，
     // 不再是 ModalNavigationDrawer 那种「抽屉盖在内容上 + 全屏遮罩」的覆盖式。
@@ -343,7 +342,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         NAV_MIXER -> Screen.MIXER
                         NAV_MODELS -> Screen.MODELS
                         NAV_CAST -> Screen.CAST
-                        NAV_LLM -> Screen.LLM
                         else -> Screen.LIBRARY
                     }
                     // 原菜单 / 底栏的刷新副作用迁到这里，语义不变
@@ -379,7 +377,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
-                    onPlayBook = { miniBook = it })
+                    onPlayBook = { miniBook = it },
+                    onMixer = { drawerReturn = Screen.CHAPTERS; screen = Screen.MIXER })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
@@ -395,7 +394,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         if (b != null) {
                             val sel = t?.only ?: lastSelection
                             bookId = b.id; lastSelection = sel
-                            Producer.start(ctx, b, sel, t?.direct ?: false,
+                            Producer.start(ctx, b, sel, true,
                                 if (t != null) t.think else null,
                                 t?.config ?: ProduceConfig())
                         }
@@ -408,7 +407,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
                         if (b != null) {
                             bookId = b.id; lastSelection = t.only
-                            Producer.start(ctx, b, t.only, t.direct, t.think, t.config)
+                            Producer.start(ctx, b, t.only, true, t.think, t.config)
                             screen = Screen.PROGRESS
                         } else {
                             Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
@@ -419,10 +418,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
                     onLibrary = { screen = Screen.LIBRARY },
                     onCast = { drawerReturn = Screen.SETTINGS; screen = Screen.CAST },
-                    onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER },
-                    onLlm = { drawerReturn = Screen.SETTINGS; screen = Screen.LLM })
-                Screen.LLM -> LlmSettingsScreen(ctx, refresh,
-                    onModels = { modelsFrom = Screen.LLM; screen = Screen.MODELS })
+                    onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER })
                 Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })
                 Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
@@ -489,7 +485,6 @@ private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.MODELS   -> ChromeSpec("模型")
     Screen.CAST     -> ChromeSpec("角色音色")
     Screen.MIXER    -> ChromeSpec("调音台")
-    Screen.LLM      -> ChromeSpec("语言模型设置")
 }
 
 @Composable
@@ -635,7 +630,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         // R25 · 真机证据：标注档 643 秒 0 条标注，日志还把它写成「通过」。
         // 新书默认走直接朗读；已有任务仍按书签原样恢复，不擅自改正在跑的档。
         mutableStateOf(if (t != null && t.bookId == id)
-            (if (t.direct) ProduceMode.DIRECT else ProduceMode.ANNOTATE)
+            ProduceMode.DIRECT
         else ProduceMode.DIRECT)
     }
     var cfg by remember(book, refresh) {
@@ -694,7 +689,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                     RadioButton(selected = on, onClick = { mode = m })
                     Spacer(Modifier.width(4.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(if (m == ProduceMode.DIRECT) "直接朗读" else "标注后合成（实验性）",
+                        Text("直接朗读",
                             fontSize = 14.sp,
                             fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
                     }
@@ -750,7 +745,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         ExpandGroup("③ 怎么跑 · 仅本次", "") {
             OptionRow("段间静音", "",
                 ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) { cfg = cfg.copy(gapMs = it) }
-            OptionRow("标注失败重做", "",
+            OptionRow("分段失败重做", "",
                 ProduceConfig.RETRY_OPTIONS.map { it to "${it}次" }, cfg.gateRetries) { cfg = cfg.copy(gateRetries = it) }
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Text("思考过程", fontSize = 12.sp, modifier = Modifier.weight(1f))
@@ -778,7 +773,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             onClick = {
                 val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
                 onStarted(sel)
-                Producer.start(c, book, sel, directRead = directMode, config = cfg)
+                Producer.start(c, book, sel, directRead = true, config = cfg)
                 onProgress()
             },
             enabled = !st.running,
@@ -828,7 +823,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
         val age = (EventLog.lastEngineAgeMs() / 1000).coerceAtLeast(0)
         val what = when {
             act.contains("PREFILL") -> "正在把这一段读进模型，手机上这一步可能要一两分钟"
-            act.contains("DECODE") -> "正在逐字生成这一块的朗读标注"
+            act.contains("DECODE") -> "正在逐字生成这一块的朗读分段"
             act.contains("TOKENIZE") || act.contains("ENTER") -> "正在准备文字"
             act.contains("TTS") -> "正在把文字读成声音"
             else -> "正在准备"
@@ -899,14 +894,13 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
 
         // ② 五步横排：做过的下面 3dp 色块，正在做只加粗，没做的没有色块
         Spacer(Modifier.height(10.dp))
-        val steps = listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")
+        val steps = listOf("拆章", "生成声音", "整理音频", "完成")
         val curStep = when {
-            st.output != null -> 5
+            st.output != null -> 4
             st.stage.contains("分章") -> 0
-            st.stage.contains("理解") -> 1
-            st.stage.contains("生成声音") -> 2
-            st.stage.contains("整理") -> 3
-            st.stage == "完成" -> 4
+            st.stage.contains("生成声音") -> 1
+            st.stage.contains("整理") -> 2
+            st.stage == "完成" -> 3
             else -> -1
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -926,41 +920,15 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             }
         }
 
-        // ③ 语言模型：整卡折成一行，结论仍读 Workbench.verdict，不删数据、不画假开关
-        Spacer(Modifier.height(10.dp))
-        CardBox {
-            val vText = when {
-                seenTask?.direct == true -> "本次是「直接朗读」，没有使用语言模型"
-                verdict == null -> "还没落盘段映射"
-                else -> verdict.label
-            }
-            Row(Modifier.clickable { lmOpen = !lmOpen },
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("语言模型是否生效", fontWeight = FontWeight.Bold, fontSize = 12.sp,
-                    modifier = Modifier.weight(1f))
-                Text(if (lmOpen) "⌃" else "⌄", fontSize = 12.sp, color = Sub)
-            }
-            Text(vText, fontSize = 11.sp, maxLines = if (lmOpen) Int.MAX_VALUE else 1,
-                color = when {
-                    seenTask?.direct == true -> Sub
-                    verdict == null -> Sub
-                    verdict.effective -> Good
-                    else -> Warn
-                })
-            if (lmOpen && verdict != null)
-                Text("其余段走直接朗读或来源未记，可在分段看台逐格查看。",
-                    fontSize = 10.5.sp, color = Sub)
-        }
-
-        // ④ 分段看台：板块常驻不折叠，8 个一小块；点格子展开「模型吐出来的原貌」
+        // ④ 分段看台：板块常驻不折叠，8 个一小块；点格子展开送进声音模型的正文
         Spacer(Modifier.height(10.dp))
         CardBox {
             Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text("绿=声音 · 蓝=模型标 · 黄=直读 · 灰=未记 · 点格子看模型原貌",
+            Text("绿=已出声 · 蓝=正在合成 · 灰=未开始 · 点格子看正文",
                 fontSize = 10.sp, color = Sub)
             if (segs.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text("这次还没落盘段映射；跑一次制作后这里才有点。", fontSize = 11.sp, color = Sub)
+                Text("这次还没落盘分段记录；跑一次制作后这里才有点。", fontSize = 11.sp, color = Sub)
             } else {
                 Spacer(Modifier.height(9.dp))
                 segs.chunked(8).forEach { row ->
@@ -969,8 +937,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         row.forEach { sg ->
                             val base = when {
                                 sg.hasAudio -> Good
-                                sg.src == "MODEL" -> Primary
-                                sg.src == "FILL" -> Warn
+                                sg.wav != null -> Primary
                                 else -> Line
                             }
                             Box(
@@ -991,29 +958,17 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                     }
                     Spacer(Modifier.height(5.dp))
                 }
-                if (rest > 0)
-                    Text("后面还有约 $rest 段待处理", fontSize = 10.5.sp, color = Sub)
-
                 segSel?.let { sel ->
                     val sg = segs.find { it.index == sel }
                     if (sg != null) {
-                        // segmap.block 是 0-based，RawDump 文件名是 1-based（Pipeline 写 i + 1）。
-                        val raws = remember(sg.block, tick, redoNonce) {
-                            RawDump.forBlock(c, sg.block + 1)
-                        }
-                        var attemptSel by remember(sg.index) { mutableStateOf(-1) }
-                        val rawIdx = if (attemptSel in raws.indices) attemptSel
-                                     else raws.lastIndex.coerceAtLeast(0)
                         val label = "第 ${sg.index + 1} 段"
                         val onThis = pqSeg.label == label
                         val playing = onThis && pqSeg.isPlaying
-
                         Spacer(Modifier.height(10.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("第 ${sg.index + 1} 段 · 第 ${sg.block + 1} 块 · 模型原始产出",
+                            Text("${label} · 第 ${sg.block + 1} 块 · 送进声音模型的正文",
                                 fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f))
-                            // 纯图标两态：点一下播、再点一下停；没声音不画假按钮
                             if (sg.wav != null) {
                                 Box(Modifier.size(32.dp)
                                     .background(if (playing) Primary else PrimarySoft,
@@ -1031,93 +986,9 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                                 }
                             }
                         }
-
-                        if (raws.size > 1) {
-                            Spacer(Modifier.height(6.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                raws.forEachIndexed { k, pair ->
-                                    Text("第 ${pair.first} 次", fontSize = 10.sp,
-                                        color = if (k == rawIdx) Card else Sub,
-                                        modifier = Modifier
-                                            .background(if (k == rawIdx) Primary else PrimarySoft,
-                                                RoundedCornerShape(12.dp))
-                                            .clickable { attemptSel = k }
-                                            .padding(horizontal = 8.dp, vertical = 3.dp))
-                                }
-                            }
-                        }
-
-                        val pair = raws.getOrNull(rawIdx)
                         Spacer(Modifier.height(7.dp))
-                        if (pair == null) {
-                            Text(
-                                if (seenTask?.direct == true)
-                                    "这次是直接朗读，没有模型原始产出。"
-                                else "这一块的原始产出已被清理（只保留最近 3 次运行）。",
-                                fontSize = 11.sp, color = Sub)
-                        } else {
-                            Text("来自 block_%04d_attempt%d.txt · 未经清洗，原样显示"
-                                .format(sg.block + 1, pair.first),
-                                fontSize = 10.sp, color = Sub)
-                            Spacer(Modifier.height(5.dp))
-                            Text(pair.second, fontSize = 11.sp, lineHeight = 16.sp,
-                                fontFamily = FontFamily.Monospace, color = Color(0xFF20242E))
-                        }
-
-                        // s.text 降级为默认收起的「对照」，不再冒充模型原貌
-                        Spacer(Modifier.height(8.dp))
-                        Text("对照：实际送去合成的这句 ›", fontSize = 11.sp, color = Primary,
-                            modifier = Modifier.clickable { showCompare = !showCompare })
-                        if (showCompare) {
-                            Text(if (sg.text.isBlank()) "（这一格没有落盘文字）" else sg.text,
-                                fontSize = 11.sp, color = Sub, lineHeight = 17.sp)
-                            if (sg.instruct.isNotBlank())
-                                Text("${sg.speaker}｜${sg.instruct}", fontSize = 10.5.sp,
-                                    color = Primary)
-                        }
-
-                        // 段级重做 / 关掉预览一个不丢，收进「更多操作」
-                        Spacer(Modifier.height(6.dp))
-                        Text("更多操作 ›", fontSize = 11.sp, color = Sub,
-                            modifier = Modifier.clickable { showMore = !showMore })
-                        if (showMore) {
-                            if (sg.pendingRedo)
-                                Text("已标记待重做，去任务页点「继续制作」",
-                                    fontSize = 10.5.sp, color = Warn)
-                            Row {
-                                if (sg.wav != null)
-                                    TextButton(onClick = { PlayQueue.release() }) {
-                                        Text("关掉预览", fontSize = 11.sp, color = Sub)
-                                    }
-                            }
-                            if (seenTask?.direct != true && sg.wavName.isNotBlank()) {
-                                Row {
-                                    TextButton(onClick = {
-                                        val w = Workbench.workDir(c, seenTask)
-                                        val ok = w?.let {
-                                            SegPlan.redoSynthesize(it,
-                                                SegMeta(sg.index, sg.block, sg.ann,
-                                                    sg.fromModel, sg.text, sg.speaker,
-                                                    sg.instruct, sg.wavName))
-                                        } ?: false
-                                        Toast.makeText(c,
-                                            if (ok) "已删这段声音，去任务页点「继续制作」重合成"
-                                            else "没找到这段文件", Toast.LENGTH_SHORT).show()
-                                        redoNonce++
-                                    }) { Text("重合成这一段", fontSize = 11.sp, color = Primary) }
-                                    Spacer(Modifier.width(6.dp))
-                                    TextButton(onClick = {
-                                        val w = Workbench.workDir(c, seenTask)
-                                        val all = w?.let { SegPlan.readMap(it) } ?: emptyList()
-                                        val killed = w?.let { SegPlan.redoBlock(it, sg.block, all) } ?: 0
-                                        Toast.makeText(c,
-                                            "已清第 ${sg.block + 1} 块标注和 $killed 段声音，点「继续制作」重跑语言模型",
-                                            Toast.LENGTH_LONG).show()
-                                        redoNonce++
-                                    }) { Text("重新标注本块", fontSize = 11.sp, color = Warn) }
-                                }
-                            }
-                        }
+                        Text(if (sg.text.isBlank()) "（这一段没有落盘文字）" else sg.text,
+                            fontSize = 11.sp, color = Color(0xFF20242E), lineHeight = 17.sp)
                     }
                 }
             }
@@ -1142,12 +1013,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
     val bookExists = remember(t, refresh) {
         t?.let { BookStore.list(c).any { b -> b.id == it.bookId } } ?: false
     }
-    val modeText = when {
-        t == null -> ""
-        t.direct -> "直接朗读"
-        t.think -> "标注 · 思考档"
-        else -> "标注 · 快速档"
-    }
+    val modeText = if (t == null) "" else "直接朗读"
     val scopeText = t?.let {
         if (it.only == null) "整本" else "选中 ${it.only!!.size} 章"
     } ?: ""
@@ -1218,7 +1084,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                             TextButton(onClick = {
                                 Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
                                 val b = BookStore.list(c).find { x -> x.id == t.bookId }
-                                if (b != null) { Producer.start(c, b, t.only, t.direct, t.think, t.config); onProgress() }
+                                if (b != null) { Producer.start(c, b, t.only, true, t.think, t.config); onProgress() }
                             }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
                             TextButton(onClick = {
                                 Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
@@ -1460,7 +1326,7 @@ private fun SettingInfoRow(label: String, badge: String, value: String, note: St
 }
 
 /**
- * P0 · 设置页只管软件：外观、数据与日志、后台与关于、一行语言模型入口。
+ * R66 · 设置页只管软件：外观、数据与日志、后台与关于；模型参数不再有独立页。
  * 三套作用域守恒：设置页拨动即写 Prefs（长期默认），无草稿、无差异、无提交按钮；
  * 调音台是草稿 → 唯一 commitAll()，制作准备页是「仅本次」。
  */
@@ -1468,7 +1334,7 @@ private fun SettingInfoRow(label: String, badge: String, value: String, note: St
 @Suppress("UNUSED_PARAMETER")
 private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                            onLibrary: () -> Unit, onCast: () -> Unit,
-                           onMixer: () -> Unit, onLlm: () -> Unit) {
+                           onMixer: () -> Unit) {
     // R54 · onLibrary / onCast / onMixer 保留签名但零调用：抽屉已有独立目的地，
     // 设置页不再画第二遍跳转卡。
     val missing = remember(refresh) { ModelStore.missing(c) }
@@ -1479,7 +1345,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (missing.isEmpty()) "3 个模型文件都准备好了"
+            Text(if (missing.isEmpty()) "2 个声音模型都准备好了"
                  else "还差：" + missing.joinToString("、"),
                 fontSize = 12.5.sp, color = if (missing.isEmpty()) Good else Warn,
                 modifier = Modifier.weight(1f))
@@ -1500,7 +1366,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 
         SettingsSection("数据与日志", "本机", dataOpen, { dataOpen = it }) {
             SettingInfoRow("诊断全文", "现有", "复制全文", "事件、审计、TTS 参数、设备信息")
-            SettingInfoRow("原始产出", "现有", "按 run 分目录", "每次标注一块落一份全文")
+            SettingInfoRow("分段记录", "现有", "按 run 分目录", "每次制作落一份段映射")
             SettingInfoRow("清理音频缓存", "需确认", "二次确认后清理",
                 "只删制作过程的分段 WAV，不碰原书与模型")
             DiagnosticsBlock(c, refresh)
@@ -1528,12 +1394,6 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }, Modifier.fillMaxWidth()) { Text("后台运行设置（系统电池优化）", fontSize = 12.sp) }
         }
 
-        SettingsSection("更多", "独立页", moreOpen, { moreOpen = it }) {
-            TextButton(onClick = onLlm, Modifier.fillMaxWidth()) {
-                Text("语言模型设置 ›", fontSize = 13.sp, color = Primary)
-            }
-        }
-
         Text("改动立即保存 · 对所有新任务生效 · 正在跑的任务不受影响",
             fontSize = 11.sp, color = Sub)
     }
@@ -1559,7 +1419,7 @@ private fun DiagnosticsBlock(c: Context, refresh: Int) {
     val previewText = remember(auditTick) { AuditLog.previewText(c, 3) }
     val contentText = remember(auditTick) { AuditLog.contentText(c, 6) }
     val rawText = remember(auditTick) { RawDump.latest(c) }
-    val hasEmpty = auditText.contains("零标注 ") && !auditText.contains("零标注 0")
+    val hasEmpty = auditText.contains("零分段 ") && !auditText.contains("零分段 0")
 
     fun buildDiag(full: Boolean): String = buildString {
         append("听本 ").append(com.tingben.app.BuildConfig.VERSION_NAME).append('\n')
@@ -1570,17 +1430,7 @@ private fun DiagnosticsBlock(c: Context, refresh: Int) {
         append("前台服务 ").append(ProduceService.status()).append('\n')
         append("设置 ").append(Prefs.summary(c)).append('\n')
         append("模型 ").append(ModelStore.files(c).joinToString("、") { it.name }).append('\n')
-        append("语言模型 ").append(ModelStore.LLM).append('\n')
-        append("JSON 通过率 ").append(AbGate.summary()).append('\n')
-        append("\n=== 标注审计 ===\n").append(AuditLog.summaryText(c)).append('\n')
-        append("\n=== 标注结果（最近 3 块 · 逐条 text/speaker/instruct）===\n")
-            .append(AuditLog.contentText(c, 3)).append('\n')
-        append("\n=== 规则生效 ===\n").append(AuditLog.ruleText(c)).append('\n')
-        append("\n=== 模型原始产出（未经清洗，最近一块）===\n")
-        if (rawText.isBlank()) append("（暂无；标注后合成才有）\n")
-        else append(if (full) rawText else rawText.take(400)).append('\n')
-        append("原始产出全文目录：").append(RawDump.runDir(c)).append('\n')
-        append("\n=== 逐块明细（最近 12 块）===\n").append(AuditLog.blocksText(c, 12)).append('\n')
+        append("引擎 ").append(if (NativeEngine.isAvailable()) "已装载" else "未装载").append('\n')
         val crash = EventLog.lastCrash()
         if (crash.isNotBlank()) append("\n=== 最近一次崩溃 ===\n").append(crash).append('\n')
         append("\n=== 最近事件（不含正文）===\n")
@@ -1597,35 +1447,6 @@ private fun DiagnosticsBlock(c: Context, refresh: Int) {
     Text("静态快照", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
     Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
     Spacer(Modifier.height(10.dp))
-    Text("标注审计 · 这次到底标了没有", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-    Spacer(Modifier.height(4.dp))
-    Text(auditText, fontSize = 11.sp, color = if (hasEmpty) Warn else Sub)
-    if (hasEmpty) {
-        Spacer(Modifier.height(4.dp))
-        Text("⚠ 有块跑完却没标出条目，展开「产出截取」看模型吐了什么",
-            fontSize = 11.sp, color = Warn)
-    }
-    Spacer(Modifier.height(6.dp))
-    TextButton(onClick = { showContent = !showContent }, Modifier.fillMaxWidth()) {
-        Text(if (showContent) "收起标注内容" else "查看标注内容（每条 text / speaker / instruct）",
-            fontSize = 12.sp, color = Primary)
-    }
-    if (showContent) {
-        Text("〈模型标注〉= 语言模型真标出来的；〈程序补齐〉= 没标完的尾部由程序补成旁白。",
-            fontSize = 10.sp, color = Warn)
-        Text(contentText, fontSize = 10.5.sp, color = Sub)
-        TextButton(onClick = {
-            clipboard.setText(AnnotatedString(AuditLog.contentText(c, 20)))
-            Toast.makeText(c, "已复制标注全文（最近 20 块），仅本机保存", Toast.LENGTH_SHORT).show()
-        }, Modifier.fillMaxWidth()) { Text("复制标注全文（最近 20 块）", fontSize = 11.5.sp) }
-    }
-    TextButton(onClick = { showRaw = !showRaw }, Modifier.fillMaxWidth()) {
-        Text(if (showRaw) "收起模型原始产出" else "查看模型原始产出（未经清洗，最近一块）",
-            fontSize = 11.5.sp, color = Primary)
-    }
-    if (showRaw) Text(rawText.ifBlank { "（暂无；标注后合成才有）" },
-        fontSize = 10.sp, color = Sub)
-    Spacer(Modifier.height(6.dp))
     Row(Modifier.fillMaxWidth()) {
         TextButton(onClick = { showBlocks = !showBlocks }) {
             Text(if (showBlocks) "收起逐块" else "逐块明细", fontSize = 11.5.sp)
@@ -1764,122 +1585,6 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
     if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 11.sp, color = Sub)
 }
 
-/**
- * P0 · 语言模型设置页：只管「标注后合成」那份 GGUF 与它的参数。
- * 项清单按 R58 v2 / 新权重 2507 重排：不画思考开关、快速深度、top_k 等物理不存在的项。
- */
-@Composable
-private fun LlmSettingsScreen(c: Context, refresh: Int, onModels: () -> Unit) {
-    val clipboard = LocalClipboardManager.current
-    var cfg by remember { mutableStateOf(0) }
-    var upperOpen by rememberSaveable { mutableStateOf(true) }
-    var advOpen by rememberSaveable { mutableStateOf(false) }
-    var evalOpen by rememberSaveable { mutableStateOf(false) }
-    val nv = remember(cfg) { Prefs.nonVerbal(c) }
-    val castOn = remember(cfg) { Prefs.castEnabled(c) }
-    val nCtx = remember(cfg) { Prefs.nCtx(c) }
-    val threads = remember(cfg) { Prefs.threads(c) }
-    val temp = remember(cfg) { Prefs.temperature(c) }
-    val llmFile = remember(refresh) { ModelStore.llm(c) }
-    val sys = remember { try { Annotator.templates(c).first } catch (_: Throwable) { "" } }
-
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        // 只读模型卡：能力口径全部来自新权重，不写「可切换思考」这类旧假设。
-        CardBox(Modifier.padding(bottom = 10.dp)) {
-            Text("本地标注模型 · Huihui Qwen3-4B-Instruct-2507 abliterated",
-                fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Spacer(Modifier.height(5.dp))
-            Text("Q4_K_M · 仅非思考（权重决定） · 纯 CPU · llama.cpp",
-                fontSize = 11.sp, color = Sub)
-            Spacer(Modifier.height(4.dp))
-            Text("原生 262,144 ｜ 当前运行 ${nCtx} ｜ 文件 " +
-                 (llmFile?.let { "%.2f GB".format(it.length() / 1024f / 1024f / 1024f) } ?: "待导入"),
-                fontSize = 11.sp, color = Sub)
-            Spacer(Modifier.height(4.dp))
-            Text("只用于「标注后合成」；新书默认「直接朗读」不加载它",
-                fontSize = 11.sp, color = Sub)
-            TextButton(onClick = onModels) { Text("导入 / 查看 ›", fontSize = 11.5.sp) }
-        }
-        // R58 · 已移除项只在这一处说明，不渲染成开关行。
-        CardBox(Modifier.padding(bottom = 8.dp)) {
-            Text("换模型后已移除", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Warn)
-            Spacer(Modifier.height(4.dp))
-            Text("思考过程开关、快速 / 深度两档、思考指令、深度档的固定温度、两套缓存分桶。",
-                fontSize = 11.sp, color = Warn)
-            Spacer(Modifier.height(4.dp))
-            Text("新权重本来就不思考，也不会输出思考内容；这些开关留着就是摆设。",
-                fontSize = 11.sp, color = Sub)
-        }
-
-        SettingsSection("标注与上层", "长期默认", upperOpen, { upperOpen = it }) {
-            SettingInfoRow("标注方式", "上层", "想用就用", "不想用直接朗读；在制作准备页选")
-            SettingSwitchRow("原文拟声提示", nv) {
-                Prefs.setNonVerbal(c, it); cfg++
-                EventLog.log(EventLog.Kind.PIPELINE, "NONVERBAL_MODE", if (it) "on" else "off")
-            }
-            Text("程序规则：只给 instruct 加一句，正文一字不动", fontSize = 10.5.sp, color = Sub)
-            SettingSwitchRow("角色映射", castOn) {
-                Prefs.setCastEnabled(c, it); cfg++
-            }
-            Text("表里没内容时仍用全局音色", fontSize = 10.5.sp, color = Sub)
-        }
-
-        SettingsSection("高级", "按需", advOpen, { advOpen = it }) {
-            SettingOption("上下文上限", listOf("4096", "6144", "8192"),
-                listOf(4096, 6144, 8192).indexOf(nCtx).coerceAtLeast(0)) { i ->
-                Prefs.setNCtx(c, listOf(4096, 6144, 8192)[i]); cfg++
-            }
-            Text("运行时上限，不是模型原生窗口；手机上开太大内存会不够",
-                fontSize = 10.5.sp, color = Sub)
-            SettingOption("运算线程", listOf("2", "4", "6", "8"),
-                listOf(2, 4, 6, 8).indexOf(threads).coerceAtLeast(0)) { i ->
-                Prefs.setThreads(c, listOf(2, 4, 6, 8)[i]); cfg++
-            }
-            Text("默认自动；拉满会降频", fontSize = 10.5.sp, color = Sub)
-            SettingOption("随机度", listOf("0 稳", "0.3", "0.6"),
-                listOf(0f, 0.3f, 0.6f).indexOf(temp).coerceAtLeast(0)) { i ->
-                Prefs.setTemperature(c, listOf(0f, 0.3f, 0.6f)[i]); cfg++
-            }
-            Text("官方 2507 建议 0.7；默认最稳的一档是为逐字 JSON 稳定的有意偏离",
-                fontSize = 10.5.sp, color = Sub)
-            SettingInfoRow("实际采样链", "只读",
-                "temp $temp · top_p 0.9 · seed 42",
-                "官方 0.7 / 0.8 / 20 / 0；native 只实现温度一个自由度")
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(sys))
-                Toast.makeText(c, "已复制系统提示词全文（只读）", Toast.LENGTH_SHORT).show()
-            }, Modifier.fillMaxWidth()) {
-                Text("系统提示词 v2 · ${sys.length} 字 · 点开复制全文", fontSize = 11.5.sp)
-            }
-            Text("只读：改它会联动 9 处，当前不给编辑框", fontSize = 10.5.sp, color = Sub)
-        }
-
-        SettingsSection("诊断与评测", "按需", evalOpen, { evalOpen = it }) {
-            Text("JSON 通过率 A/B · 换权重硬门槛", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            Spacer(Modifier.height(4.dp))
-            Text(AbGate.summary(), fontSize = 11.sp, color = Sub)
-            Spacer(Modifier.height(4.dp))
-            Text("同一批小说块、同量化同提示词同预算：完整 JSON 率 / 三字段齐备率 / " +
-                 "中文 instruct 语义有效率 / gate 重试率；四项均不劣于基线才替换线上。",
-                fontSize = 10.5.sp, color = Sub)
-            Spacer(Modifier.height(6.dp))
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(AuditLog.summaryText(c)))
-                Toast.makeText(c, "已复制标注审计", Toast.LENGTH_SHORT).show()
-            }, Modifier.fillMaxWidth()) { Text("复制标注审计", fontSize = 11.5.sp) }
-            TextButton(onClick = {
-                clipboard.setText(AnnotatedString(RawDump.latest(c)))
-                Toast.makeText(c, "已复制模型原始产出", Toast.LENGTH_SHORT).show()
-            }, Modifier.fillMaxWidth()) { Text("复制模型原始产出（最近一块）", fontSize = 11.5.sp) }
-            Text("原始产出全文目录：" + RawDump.runDir(c), fontSize = 10.sp, color = Sub)
-        }
-
-        Text("改动立即保存 · 对所有新任务生效 · 正在跑的任务不受影响",
-            fontSize = 11.sp, color = Sub)
-    }
-}
-
-
 // ── ⑤b 模型页 ────────────────────────────────────────────────
 @Composable
 private fun ModelScreen(c: Context, refresh: Int,
@@ -1926,7 +1631,6 @@ private fun ModelScreen(c: Context, refresh: Int,
         }
 
         val slots = listOf(
-            "语言模型" to ModelStore.LLM,
             "声音主文件" to ModelStore.TALKER,
             "声音配套文件" to ModelStore.TOKENIZER
         )
@@ -1947,7 +1651,6 @@ private fun ModelScreen(c: Context, refresh: Int,
                     Spacer(Modifier.height(5.dp))
                     TextButton(onClick = {
                         val url = when (label) {
-                            "语言模型" -> "https://hf-mirror.com/kuronekkko/Huihui-Qwen3-4B-Instruct-2507-abliterated-Q4_K_M-GGUF/resolve/main/huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf"
                             "声音主文件" -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
                             else -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-tokenizer-12hz-Q8_0.gguf"
                         }
@@ -2975,7 +2678,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     }
                     clearPerfCustom("静音")
                 }
-                ChipRow("失败重做", "标注不通过时重试次数；可填 0~10 之间任意次数",
+                ChipRow("失败重做", "分段不通过时重试次数；可填 0~10 之间任意次数",
                     ProduceConfig.RETRY_OPTIONS.map { "${it} 次" }, "${draft.perf.gateRetries} 次",
                     allowCustom = true, customValue = perfText("重做"),
                     onCustom = { setPerfCustom("重做", it) }) { v ->
@@ -3056,8 +2759,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     TextButton(onClick = {
                         val list = VoiceCast.reconcile(c)
                         castTick++
-                        EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "扫描标注角色，表内 ${list.size} 人")
-                    }) { Text("扫描标注里的角色", fontSize = 11.sp) }
+                        EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "扫描分段角色，表内 ${list.size} 人")
+                    }) { Text("扫描分段里的角色", fontSize = 11.sp) }
                 }
                 TimingHint(TIMING_NOW)
             }

@@ -86,9 +86,10 @@ def baseline(chrome, main, spec):
     pr = paramrow(main)
     ck("Slider(" in pr and "onInput(s)" in pr, "滑块双模被破坏")
     ck(not re.findall(r"Prefs\.set\w+\(", pr), "ParamRow 内出现直接写生效态")
-    # P0 · 设置页改 v8 双页；外观与显示须排在「更多」之前（入口不倒置）。
-    ck(main.find('SettingsSection("外观与显示"') <
-       main.find('SettingsSection("更多"'), "设置页分区顺序被顺手挪动")
+    # R66 · 设置页只管软件：旧模块入口与「更多」分区都不许回来。
+    ck('SettingsSection("更多"' not in main and 'TextButton(onClick = onLlm' not in main,
+       "设置页仍留已删模块入口")
+    ck('SettingsSection("外观与显示"' in main, "设置页软件分区被顺手挪动")
     return e
 
 

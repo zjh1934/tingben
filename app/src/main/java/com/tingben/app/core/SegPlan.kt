@@ -173,9 +173,9 @@ object SegPlan {
         val label: String
             get() = when {
                 total == 0 -> "还没落盘，跑起来后这里会给出结论"
-                model == 0 && fill > 0 -> "语言模型没起作用：${fill} 段全是按原文直读"
+                model == 0 && fill > 0 -> "文本处理没起作用：${fill} 段全是按原文直读"
                 model == 0 && unknown > 0 -> "${unknown} 段是旧缓存，没记来源，无法判定"
-                model > 0 -> "语言模型已生效：${model}/${total} 段用了模型标注"
+                model > 0 -> "文本处理已生效：${model}/${total} 段用了模型分段"
                 else -> "暂无数据"
             }
     }

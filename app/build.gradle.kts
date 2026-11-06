@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = if (buildNumber != null) 100 + buildNumber else 1
-        versionName = "1.0.0+" + (buildNumber?.toString() ?: "local")
+        versionName = "1.1.0+" + (buildNumber?.toString() ?: "local")
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     signingConfigs {

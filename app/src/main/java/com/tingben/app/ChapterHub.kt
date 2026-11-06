@@ -44,14 +44,13 @@ private val HubLine = Color(0xFFE7EAF2)
 private val HubWarn = Color(0xFFB45309)
 private val HubGrey = Color(0xFFB9BFCB)
 
-private val HubTitles = listOf("原始", "标注", "合成", "可播")
+private val HubTitles = listOf("章节", "合成", "可播")
 
 private sealed class Pane {
     data class Reader(val i: Int) : Pane()
-    data class Annotated(val i: Int) : Pane()
 }
 
-private enum class HubAction { ANNOTATE, DIRECT, ANNOTATE_SYNTH }
+private enum class HubAction { SYNTH }
 
 /** 一章在四列里的全部状态；null 进度 = 没有可信来源，界面只画灰。 */
 private data class ChapterUi(
@@ -78,13 +77,13 @@ private fun chapterStates(
         ChapterUi(
             index = ch.index,
             title = ch.title,
-            annotated = if (a != null && a.mode == "标注后合成") 1f
+            annotated = if (a != null) 1f
                         else if (live != null && inScope(ch.index)) live else 0f,
             synthesized = if (a != null) 1f
                           else if (live != null && inScope(ch.index)) live else 0f,
             audio = a,
             playable = ch.index in playable,
-            unannotatedAudio = a != null && a.mode != "标注后合成"
+            unannotatedAudio = false
         )
     }
 }
@@ -94,7 +93,8 @@ internal fun ChapterHubScreen(
     c: Context, id: String?, refresh: Int,
     onBack: () -> Unit,
     onProgress: () -> Unit,
-    onPlayBook: (String) -> Unit
+    onPlayBook: (String) -> Unit,
+    onMixer: () -> Unit
 ) {
     val book = remember(id, refresh) { id?.let { BookStore.list(c).find { b -> b.id == it } } }
     if (book == null) {
@@ -158,17 +158,16 @@ internal fun ChapterHubScreen(
     fun startAction(a: HubAction) {
         if (selected.isEmpty()) return
         val n = selected.size
-        val direct = a == HubAction.DIRECT
-        Producer.start(c, book, selected, directRead = direct, config = ProduceConfig())
+        Producer.start(c, book, selected, directRead = true, config = ProduceConfig())
         selected = emptySet()
         showProgressHint = true
         EventLog.log(EventLog.Kind.PIPELINE, "HUB_ACTION",
-            "书=${book.title} 章数=$n 档=${if (direct) "直接朗读" else "标注后合成"}")
+            "书=${book.title} 章数=$n 档=直接朗读")
     }
 
     Box(Modifier.fillMaxSize().background(HubBg)) {
         Column(Modifier.fillMaxSize()) {
-            // 顶部四个文字标签：当前列下划线，不画圆点；滚动反向联动 current。
+            // 顶部三个文字标签：当前列下划线，不画圆点；滚动反向联动 current。
             Row(Modifier.fillMaxWidth().background(HubCard).padding(horizontal = 8.dp)) {
                 HubTitles.forEachIndexed { col, t ->
                     val on = current == col
@@ -198,14 +197,13 @@ internal fun ChapterHubScreen(
             }
 
             Row(Modifier.fillMaxSize().horizontalScroll(hScroll)) {
-                repeat(4) { col ->
+                repeat(3) { col ->
                     Column(Modifier.width(colWidth).fillMaxHeight()) {
                         when (col) {
                             0 -> RawColumn(ui, selected, { i, on ->
                                 selected = if (on) selected + i else selected - i
                             }, { i -> pane = Pane.Reader(i) })
-                            1 -> AnnColumn(ui, { i -> pane = Pane.Annotated(i) })
-                            2 -> SynColumn(ui, { i -> playChapter(i, single = true) })
+                            1 -> SynColumn(ui, { i -> playChapter(i, single = true) })
                             else -> PlayColumn(ui,
                                 onAll = {
                                     val list = AudioLibrary.playableItems(c, book.id)
@@ -234,17 +232,14 @@ internal fun ChapterHubScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
                 Column(Modifier.padding(12.dp)) {
-                    Text("已选 ${selected.size} 章", fontSize = 12.sp, color = HubSub)
-                    Spacer(Modifier.height(6.dp))
-                    Row(Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { startAction(HubAction.ANNOTATE) },
-                            modifier = Modifier.weight(1f)) { Text("去标注", fontSize = 12.sp) }
-                        TextButton(onClick = { startAction(HubAction.DIRECT) },
-                            modifier = Modifier.weight(1f)) { Text("直接合成音频", fontSize = 12.sp) }
-                        TextButton(onClick = { startAction(HubAction.ANNOTATE_SYNTH) },
-                            modifier = Modifier.weight(1f)) { Text("标注并合成音频", fontSize = 12.sp) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("已选 ${selected.size} 章", fontSize = 12.sp, color = HubSub,
+                            modifier = Modifier.weight(1f))
+                        TextButton(onClick = onMixer) { Text("调音 ›", fontSize = 12.sp) }
+                        TextButton(onClick = { startAction(HubAction.SYNTH) }) {
+                            Text("合成音频", fontSize = 12.sp)
+                        }
                     }
-                    Text("这一档跑完会一并出音频", fontSize = 10.5.sp, color = HubSub)
                 }
             }
         }
@@ -256,13 +251,6 @@ internal fun ChapterHubScreen(
                 is Pane.Reader -> ReaderPane(c, book, chapters, p.i, { pane = null }) { next ->
                     pane = Pane.Reader(next)
                 }
-                is Pane.Annotated -> AnnotatedPane(c, book, chapters, chunks, p.i,
-                    onClose = { pane = null },
-                    onRedo = { i ->
-                        selected = setOf(i)
-                        pane = null
-                        jumpTo(0)
-                    })
             }
         }
     }
@@ -311,7 +299,7 @@ private fun AnnColumn(ui: List<ChapterUi>, onOpen: (Int) -> Unit) {
                         color = if (done) Color.Unspecified else HubGrey,
                         modifier = Modifier.weight(1f))
                     Text(when {
-                        done -> "已标注"
+                        done -> "已分段"
                         p > 0f -> "${(p * 100).toInt()}%"
                         else -> "未开始"
                     }, fontSize = 11.sp, color = if (done) HubGood else HubSub)
@@ -339,8 +327,7 @@ private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
                             color = if (done || p > 0f) Color.Unspecified else HubGrey)
-                        if (r.unannotatedAudio) Text("未标注 · 可单章听", fontSize = 10.sp, color = HubWarn)
-                        else if (!done && p > 0f) Text("整本进度 ${(p * 100).toInt()}%", fontSize = 10.sp, color = HubSub)
+                        if (!done && p > 0f) Text("整本进度 ${(p * 100).toInt()}%", fontSize = 10.sp, color = HubSub)
                     }
                     if (done) {
                         TextButton(onClick = { onPlay(r.index) }) { Text("▶ 播放", fontSize = 12.sp) }
@@ -449,13 +436,13 @@ private fun AnnotatedPane(
     Column(Modifier.fillMaxSize().background(HubCard)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onClose) { Text("‹ 目录") }
-            Text("${ch?.title ?: "第 ${i + 1} 章"} · 标注结果", fontSize = 16.sp,
+            Text("${ch?.title ?: "第 ${i + 1} 章"} · 分段结果", fontSize = 16.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { onRedo(i) }) { Text("重新标注") }
+            TextButton(onClick = { onRedo(i) }) { Text("重新分段") }
         }
         if (rows.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("旧缓存没有逐段记录，或还没标注完", fontSize = 13.sp, color = HubSub)
+                Text("旧缓存没有逐段记录，或还没分段完", fontSize = 13.sp, color = HubSub)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {

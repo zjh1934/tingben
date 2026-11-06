@@ -80,7 +80,7 @@ object Workbench {
                         a.getJSONObject(k).optString("text", "")
                     }.take(64)
                 } catch (_: Throwable) { "" }
-            } else if (t?.direct == true) "直接朗读（原文照读，不产出标注）" else ""
+            } else if (t?.direct == true) "直接朗读（原文照读，不产出分段）" else ""
             val w = wavMap[i]
             SegRow(i, i, 0, null, w,
                 w?.name ?: "chunk_%04d.wav".format(i), preview, "旁白", "", false)

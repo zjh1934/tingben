@@ -107,7 +107,7 @@ object ModelStore {
      * 但新权重优先匹配，避免两代标注混用。
      */
     const val LLM = "huihui-qwen3-4b-instruct-2507-abliterated-q4_k_m.gguf"
-    const val LLM_LEGACY = "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf"
+    const val LLM_LEGACY = "mlabonne_Qwen3-旧权重-abliterated-Q4_K_M.gguf"
     const val TALKER = "qwen-talker-1.7b-voicedesign-Q8_0.gguf"
     const val TOKENIZER = "qwen-tokenizer-12hz-Q8_0.gguf"
 
@@ -184,7 +184,6 @@ object ModelStore {
 
     fun missing(c: Context): List<String> {
         val m = mutableListOf<String>()
-        if (llm(c) == null) m.add("语言模型")
         if (talker(c) == null) m.add("声音主文件")
         if (tokenizer(c) == null) m.add("声音配套文件")
         return m
@@ -270,7 +269,7 @@ object Annotator {
     const val THINK_CLOSE = "</think>"
 
     fun templates(c: Context): Pair<String, String> = try {
-        val raw = c.assets.open("prompt_zh.txt").bufferedReader().use { it.readText() }
+        val raw = c.assets.open("prompt.txt").bufferedReader().use { it.readText() }
         val parts = raw.split("---SEPARATOR---", limit = 2)
         parts[0].trim() to parts[1].trim()
     } catch (_: Throwable) {
@@ -427,7 +426,7 @@ object Annotator {
                 .put("src", if (srcModel.getOrElse(i) { false }) "MODEL" else "FILL"))
         }
         val s = arr.toString()
-        if (s.length > 8192) s.substring(0, 8192) + "…（本块标注全文超长，已截断）" else s
+        if (s.length > 8192) s.substring(0, 8192) + "…（本块分段全文超长，已截断）" else s
     } catch (_: Throwable) { "[]" }
 
     /**
@@ -441,7 +440,7 @@ object Annotator {
             append(i + 1).append(". [").append(a.speaker).append("] ")
                 .append(a.text.replace('\n', '⏎'))
                 .append("\n   → ").append(a.instruct)
-                .append("  〈").append(if (srcModel.getOrElse(i) { false }) "模型标注" else "程序补齐")
+                .append("  〈").append(if (srcModel.getOrElse(i) { false }) "模型分段" else "程序补齐")
                 .append("〉\n")
         }
     }.let { if (it.length > 16384) it.substring(0, 16384) + "…（已截断，全文见诊断页）" else it.trimEnd() }
@@ -493,7 +492,7 @@ object ThinkingStore {
 /**
  * 标注结果按块落盘。4B 在手机上一块要几分钟，不缓存就永远别想「接着跑」。
  * P0 · 2507 仅非思考：think 形参保留兼容调用点但不再参与分桶，
- * 统一前缀 "m2507/" 让初版权重的 fast / think 两套旧缓存一次作废，
+ * 统一前缀 "v11/" 让初版权重的 fast / think 两套旧缓存一次作废，
  * 不会把两代模型标出的结果混进同一本书。
  */
 object AnnCache {
@@ -553,7 +552,7 @@ object AnnCache {
     }
 
     fun bucket(direct: Boolean, think: Boolean, only: Set<Int>?) =
-        "m2507/" + (if (direct) "direct" else "annotated") + "/" +
+        "v11/" + (if (direct) "direct" else "annotated") + "/" +
                 (only?.sorted()?.joinToString("_") ?: "all")
 
     fun dirFor(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) =
@@ -595,7 +594,7 @@ object AbGate {
     }
 
     fun summary(): String {
-        if (samples == 0) return "样本 0（还没跑过标注块；换权重后需与基线同批语料对拍）"
+        if (samples == 0) return "样本 0（还没跑过分段块；换权重后需与基线同批语料对拍）"
         fun pct(n: Int) = "%.1f%%".format(n * 100.0 / samples)
         return "样本 $samples · 完整 JSON ${pct(fullJson)} · 三字段齐备 ${pct(fieldsOk)}" +
             " · 中文 instruct 有效 ${pct(instructOk)} · gate 重试 ${pct(retries)}" +
@@ -761,18 +760,18 @@ object Producer {
         // 续跑必须沿用建任务时的思考档：bucket 里含 think，换了档会读到空缓存、全书重跑
         val thinkOn = thinkOverride ?: Prefs.thinking(c)
         // R20 · 本次预设随书签落盘；续跑入口统一传 t.config，风格不因进程重启而断层。
-        current = TaskInfo(book.id, book.title, onlyChapters, directRead, thinkOn,
+        current = TaskInfo(book.id, book.title, onlyChapters, true, thinkOn,
             0, 0, "running", "正在准备", System.currentTimeMillis(),
             config = config)
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
         // 上一次点过「停止」的话，native 的 g_cancel 还是 true；整次制作开始才复位。
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
-        AnnCache.cleanup(AnnCache.dirFor(c, book.id, directRead, thinkOn, onlyChapters))
+        AnnCache.cleanup(AnnCache.dirFor(c, book.id, true, thinkOn, onlyChapters))
         // R17 · 制作方式从 UI 小按钮升成正式选择后，所有入口（制作页 / 任务页 / 进度页续跑）
         // 都汇到 start，在这里记一条，诊断里能直接看出这一本是过了语言模型还是没过。
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_MODE",
-            (if (directRead) "直接朗读（不过语言模型）" else "标注后合成") +
+            "直接朗读" +
                 " · think=" + thinkOn +
                 " · " + (onlyChapters?.let { "选中 ${it.size} 章" } ?: "整本") +
                 " · 本次预设=" + config.summary())
@@ -795,7 +794,7 @@ object Producer {
         ProduceService.begin(c, book.title)
         scope.launch {
             try {
-                run(c, book, onlyChapters, directRead, thinkOverride, config)
+                run(c, book, onlyChapters, true, thinkOverride, config)
             } catch (t: Throwable) {
                 if (t !is kotlinx.coroutines.CancellationException) {
                     EventLog.log(EventLog.Kind.CRASH, "PRODUCE_EXCEPTION", t.message ?: "")
@@ -852,7 +851,7 @@ object Producer {
         val miss = mutableListOf<String>()
         if (tk == null) miss.add("声音主文件")
         if (tok == null) miss.add("声音配套文件")
-        if (!direct && llm == null) miss.add("语言模型")
+        if (!direct && llm == null) miss.add("文本处理")
         if (miss.isNotEmpty()) {
             _state.value = Progress(false, "没开始", 0, 0, 0,
                 "还差：" + miss.joinToString("、") + "。去设置页导入。")
@@ -880,7 +879,7 @@ object Producer {
         val temp = Prefs.temperature(c)
         // R57 #11 · 每次跑都写明实际加载的是哪份权重，事后能分清两代结果。
         val llmFile = ModelStore.llm(c)
-        EventLog.log(EventLog.Kind.MODEL, "MODEL_ID",
+        EventLog.log(EventLog.Kind.MODEL, "ENGINE_INFO",
             "file=" + (llmFile?.name ?: "缺失") + " bytes=" + (llmFile?.length() ?: 0) +
                 " · 仅非思考 · 原生 262144 / 运行 " + nCtx)
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
@@ -890,7 +889,7 @@ object Producer {
         // 哪条规则没生效，全部可查。直接朗读也登记，只是如实写「不过语言模型」。
         AuditLog.beginRun(c, linkedMapOf(
             "book" to book.title,
-            "mode" to (if (direct) "直接朗读" else "标注后合成"),
+            "mode" to (if (direct) "直接朗读" else "分段后合成"),
             "model" to (llmFile?.name ?: "缺失"), "nCtx" to nCtx.toString(),
             "chunks" to chunks.size.toString(),
             "prompt" to ("v2 sha=" + Integer.toHexString(sys.hashCode()))))
@@ -898,9 +897,9 @@ object Producer {
         RawDump.begin(c, AuditLog.currentRun())
         EventLog.log(EventLog.Kind.AUDIT, "AUDIT_RUN_BEGIN",
             "run=${AuditLog.currentRun()} · ${chunks.size} 块 · " +
-                (if (direct) "不过语言模型" else "逐块标注") + " · 原始产出全文目录 " + RawDump.runDir(c),
+                (if (direct) "不过文本处理" else "逐块分段") + " · 原始产出全文目录 " + RawDump.runDir(c),
             fields = mapOf("runId" to AuditLog.currentRun(), "book" to book.title,
-                "mode" to (if (direct) "直接朗读" else "标注后合成")))
+                "mode" to (if (direct) "直接朗读" else "分段后合成")))
         AbGate.begin()
         EventLog.resetEngine()
 
@@ -944,8 +943,8 @@ object Producer {
                     "hardCuts" to "0", "lossless" to
                         (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
             EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
-                "${chunks.size} 块跳过标注，切成 ${annotated.size} 段直接朗读")
-            emit("正在生成声音", 0, annotated.size, 0, "直接朗读原文，不跑语言模型…")
+                "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
+            emit("正在生成声音", 0, annotated.size, 0, "直接朗读原文，不跑文本处理…")
             writeAuditSummary()
         } else {
             // ── 标注阶段：只加载 LLM ──
@@ -955,15 +954,15 @@ object Producer {
                 "这一块先把提示词读进模型（NATIVE_PREFILL_*），再逐 token 生成；" +
                     "预读期间块进度不会动，手机 CPU 上可能好几分钟，不是死机。",
                 fields = mapOf("nCtx" to nCtx.toString(), "chunks" to chunks.size.toString()))
-            emit("正在理解文字", 0, chunks.size, 0, "语言模型正在逐块标注谁说的、怎么读…")
+            emit("正在理解文字", 0, chunks.size, 0, "文本处理正在逐块分段谁说的、怎么读…")
             val llmHandle = try {
                 NativeEngine.llmLoad(llm!!.absolutePath, nCtx, threads)
             } catch (t: Throwable) {
-                _state.value = Progress(false, "没开始", 0, 0, 0, "语言模型加载失败：" + (t.message ?: ""))
+                _state.value = Progress(false, "没开始", 0, 0, 0, "文本处理加载失败：" + (t.message ?: ""))
                 return
             }
             if (llmHandle == 0L) {
-                _state.value = Progress(false, "没开始", 0, 0, 0, "语言模型打不开，请确认文件完整")
+                _state.value = Progress(false, "没开始", 0, 0, 0, "文本处理打不开，请确认文件完整")
                 return
             }
 
@@ -979,7 +978,7 @@ object Producer {
                     }
                     // R26 · 每块重新申请一次带 30 分钟硬超时的唤醒锁，
                     // 不整轮常驻；结束由 Producer.finally 统一释放。
-                    ProduceService.touch(c.applicationContext, "标注块 ${i + 1}/${chunks.size}")
+                    ProduceService.touch(c.applicationContext, "分段块 ${i + 1}/${chunks.size}")
                     // 断点续传：这一块之前标过就直接读盘，不重跑 4B；
                     // 同时照样喂进 roster / recent，保证后面块的上下文是连贯的。
                     var result = AnnCache.read(work, i)
@@ -996,7 +995,7 @@ object Producer {
                             speakers = result.map { it.speaker }.distinct().joinToString("、"),
                             instructEmpty = result.count { it.instruct.isBlank() },
                             status = AuditLog.CACHED, failCode = "-", rules = emptyMap(),
-                            previewHead = "（本块从磁盘续上，未重跑语言模型）", previewTail = "",
+                            previewHead = "（本块从磁盘续上，未重跑文本处理）", previewTail = "",
                             elapsedMs = 0L, fromCache = true,
                             finalVerbatim = Annotator.gate(result, chunk.text)))
                         EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_BEGIN",
@@ -1123,7 +1122,7 @@ object Producer {
                                 level = EventLog.Level.TRACE)
                             if (parsed == null) {
                                 EventLog.log(EventLog.Kind.AUDIT, "ANN_EMPTY",
-                                    "⚠ 块 ${i + 1} 跑完却没解析出任何标注条目（模型可能只吐了废话或推理）",
+                                    "⚠ 块 ${i + 1} 跑完却没解析出任何分段条目（模型可能只吐了废话或推理）",
                                     level = EventLog.Level.WARN,
                                     fields = mapOf("block" to (i + 1).toString(),
                                         "rawChars" to meta.rawChars.toString()))
@@ -1219,13 +1218,13 @@ object Producer {
                             val endStatus = when {
                                 cancelRequested -> "用户中断（本次不计产出）"
                                 result == null -> "无结果（生成失败或被停止）"
-                                endCount == 0 -> "零标注 ⚠️ 白跑"
+                                endCount == 0 -> "零分段 ⚠️ 白跑"
                                 usedFallback -> "降级直读"
                                 else -> "通过"
                             }
                             val bad = cancelRequested || result == null || endCount == 0 || usedFallback
                             EventLog.log(EventLog.Kind.PIPELINE, "ANN_BLOCK_END",
-                                "块 ${i + 1}/${chunks.size} 结束 · $endCount 条标注 · $endStatus" +
+                                "块 ${i + 1}/${chunks.size} 结束 · $endCount 条分段 · $endStatus" +
                                     " · 耗时 ${System.currentTimeMillis() - blockStartAt}ms",
                                 level = if (bad) EventLog.Level.WARN else EventLog.Level.INFO,
                                 fields = mapOf("block" to (i + 1).toString(),
@@ -1241,7 +1240,7 @@ object Producer {
                     recent.addAll(safe)
                     while (recent.size > 3) recent.removeAt(0)
                     emit("正在理解文字", i + 1, chunks.size, gateFails,
-                        "已完成 ${i + 1}/${chunks.size} 块 · 模型真标注 $modelHits 块" +
+                        "已完成 ${i + 1}/${chunks.size} 块 · 模型真分段 $modelHits 块" +
                             " · 改走直读 $gateFails 块" +
                             (if (resumed > 0) " · 磁盘续上 $resumed 块（旧缓存未记来源）" else ""))
                 }
@@ -1271,7 +1270,7 @@ object Producer {
                 val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
                 killed.forEach { it.delete() }
                 EventLog.log(EventLog.Kind.PIPELINE, "VOICE_INVALIDATE",
-                    "声音配置变了，作废 ${killed.size} 段旧音频，标注保留")
+                    "声音配置变了，作废 ${killed.size} 段旧音频，分段保留")
             }
             stampFile.writeText(voiceStamp)
         } catch (_: Throwable) { }
@@ -1298,7 +1297,7 @@ object Producer {
                 } ?: emptyList()
                 killed.forEach { it.delete() }
                 EventLog.log(EventLog.Kind.PIPELINE, "PRESET_INVALIDATE",
-                    "本次预设变了（$presetStamp），作废 ${killed.size} 段旧音频，标注保留")
+                    "本次预设变了（$presetStamp），作废 ${killed.size} 段旧音频，分段保留")
             }
             presetFile.writeText(presetStamp)
         } catch (_: Throwable) { }

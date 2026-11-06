@@ -74,7 +74,7 @@ object EventLog {
                 val blockTail = try { AuditLog.crashTail() } catch (_: Throwable) { "" }
                 crashFile?.writeText(
                     "$ts | thread=${thread.name}\n$stack\n=== 崩溃前事件（环形缓冲）===\n$ringTail\n" +
-                        "=== 最后 10 个标注块 ===\n$blockTail\n")
+                        "=== 最后 10 个分段块 ===\n$blockTail\n")
                 log(Kind.CRASH, "JAVA_CRASH", throwable.javaClass.simpleName + ": " + (throwable.message ?: ""),
                     level = Level.ERROR)
             } catch (_: Throwable) { }

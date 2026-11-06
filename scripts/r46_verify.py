@@ -92,7 +92,7 @@ def check(main, chrome, tag):
     b = main.find("BackHandler(enabled = drawerState.isOpen)")
     ck(a >= 0 and b > a, "抽屉 BackHandler 没排在原 BackHandler 之后")
     EXPECTED_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                        "SETTINGS", "MODELS", "CAST", "MIXER", "LLM", "CHAPTERS"}
+                        "SETTINGS", "MODELS", "CAST", "MIXER", "CHAPTERS"}
     n = len(EXPECTED_SCREENS)
     ck(enum_count(main) == n, "Screen 枚举不是 %d 值" % n)
     ck(dispatch_count(main) == n, "when(screen) 分发不是 %d 分支" % n)

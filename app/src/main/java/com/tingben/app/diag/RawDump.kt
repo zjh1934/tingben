@@ -40,7 +40,7 @@ object RawDump {
         val f = File(d, "block_%04d_attempt%d.txt".format(block, attempt))
         val ts = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
         f.writeText(buildString {
-            append("=== 听本 · 语言模型原始产出全文（未经任何清洗）===\n")
+            append("=== 听本 · 文本处理原始产出全文（未经任何清洗）===\n")
             append("时间 ").append(ts).append('\n')
             append("block=").append(block).append(" attempt=").append(attempt).append('\n')
             append("promptChars=").append(promptChars).append(" outChars=").append(raw.length)
