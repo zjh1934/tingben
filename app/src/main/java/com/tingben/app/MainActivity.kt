@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER, CHAPTERS }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }
 
 /** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
 private enum class ProduceMode { DIRECT }
@@ -317,7 +317,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Screen.SETTINGS -> NAV_SETTINGS
         Screen.MIXER -> NAV_MIXER
         Screen.MODELS -> NAV_MODELS
-        Screen.CAST -> NAV_CAST
     }
     // R51 · 联动抽屉：官方 DismissibleNavigationDrawer 展开时把右侧工作页一起推走，
     // 不再是 ModalNavigationDrawer 那种「抽屉盖在内容上 + 全屏遮罩」的覆盖式。
@@ -343,7 +342,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         NAV_SETTINGS -> Screen.SETTINGS
                         NAV_MIXER -> Screen.MIXER
                         NAV_MODELS -> Screen.MODELS
-                        NAV_CAST -> Screen.CAST
                         else -> Screen.LIBRARY
                     }
                     // 原菜单 / 底栏的刷新副作用迁到这里，语义不变
@@ -385,8 +383,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
                     onDone = { screen = Screen.AUDIO; refresh++ },
-                    onStarted = { lastSelection = it },
-                    onGoCast = { drawerReturn = Screen.PRODUCE; screen = Screen.CAST })
+                    onStarted = { lastSelection = it })
                 Screen.PROGRESS -> ProgressScreen(ctx,
                     onBack = { screen = Screen.LIBRARY },
                     onResume = {
@@ -419,9 +416,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
                     onLibrary = { screen = Screen.LIBRARY },
-                    onCast = { drawerReturn = Screen.SETTINGS; screen = Screen.CAST },
                     onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER })
-                Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })
                 Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
@@ -473,7 +468,7 @@ private fun queryName(c: Context, uri: Uri): String {
 
 /**
  * U1 · 全 App 唯一的「目的地 → 壳规格」映射（Now in Android 的 TopLevelDestination 思路）。
- * 原先 4 处 screen == ... 判断散在顶栏和底栏里，Screen.CAST 还漏了高亮；这里一次定义。
+ * 原先 4 处 screen == ... 判断散在顶栏和底栏里；这里一次定义。
  * ⚠️ 只描述显示，不改导航：when(screen) 分发、refresh 计数、modelsFrom、BackHandler 全不动。
  */
 private fun chromeOf(s: Screen): ChromeSpec = when (s) {
@@ -485,7 +480,6 @@ private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.AUDIO    -> ChromeSpec("我的音频", TAB_AUDIO)
     Screen.SETTINGS -> ChromeSpec("设置")
     Screen.MODELS   -> ChromeSpec("模型")
-    Screen.CAST     -> ChromeSpec("角色音色")
     Screen.MIXER    -> ChromeSpec("调音台")
 }
 
@@ -505,8 +499,9 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                            onChanged: () -> Unit) {
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
+    val missing = remember(refresh) { ModelStore.missing(c) }
     val clipboard = LocalClipboardManager.current
-    var pasteOpen by remember { mutableStateOf(true) }
+    var pasteOpen by remember { mutableStateOf(false) }
     var pasteText by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -520,7 +515,7 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         Spacer(Modifier.height(6.dp))
         if (!ready) {
             CardBox(Modifier.padding(bottom = 12.dp)) {
-                Text("还差模型文件", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("还差：" + missing.joinToString("、"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
                 FilledTonalButton(onClick = onModels, Modifier.fillMaxWidth()) { Text("去准备") }
             }
@@ -613,8 +608,7 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
 @Composable
 private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> Unit,
                           onProgress: () -> Unit, onDone: () -> Unit,
-                          onStarted: (Set<Int>?) -> Unit,
-                          onGoCast: () -> Unit = {}) {
+                          onStarted: (Set<Int>?) -> Unit) {
     val book = remember(id, refresh) { id?.let { BookStore.list(c).find { b -> b.id == it } } }
     val st by Producer.state.collectAsState()
     // R20 · 一次 split 同时拿章节与全部块，用来显示「预计几块」，不再只取 .first。
@@ -741,7 +735,6 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 Pace.values().map { it to it.label }, cfg.pace) { cfg = cfg.copy(pace = it) }
             OptionRow("情绪强度", "",
                 Intensity.values().map { it to it.label }, cfg.intensity) { cfg = cfg.copy(intensity = it) }
-            TextButton(onClick = onGoCast) { Text("给角色单独指定音色 →", fontSize = 12.sp) }
         }
 
         ExpandGroup("③ 怎么跑 · 仅本次", "") {
@@ -1208,6 +1201,9 @@ private fun AudioScreen(c: Context, refresh: Int) {
         if (items.isEmpty()) {
             CardBox {
                 Text("还没有音频", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Text("在书架导入一本书，选中章节合成后，成品会出现在这里。",
+                    fontSize = 11.sp, color = Sub)
             }
         } else items.forEachIndexed { idx, item ->
             val on = idx == pq.index
@@ -1331,9 +1327,9 @@ private fun SettingInfoRow(label: String, badge: String, value: String, note: St
 @Composable
 @Suppress("UNUSED_PARAMETER")
 private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
-                           onLibrary: () -> Unit, onCast: () -> Unit,
+                           onLibrary: () -> Unit,
                            onMixer: () -> Unit) {
-    // R54 · onLibrary / onCast / onMixer 保留签名但零调用：抽屉已有独立目的地，
+    // R54 · onLibrary / onMixer 保留签名但零调用：抽屉已有独立目的地，
     // 设置页不再画第二遍跳转卡。
     val missing = remember(refresh) { ModelStore.missing(c) }
     var lookOpen by rememberSaveable { mutableStateOf(false) }
@@ -1431,8 +1427,6 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }, Modifier.fillMaxWidth()) { Text("后台运行设置（系统电池优化）", fontSize = 12.sp) }
         }
 
-        Text("改动立即保存 · 对所有新任务生效 · 正在跑的任务不受影响",
-            fontSize = 11.sp, color = Sub)
     }
 }
 
@@ -1648,7 +1642,9 @@ private fun ModelScreen(c: Context, refresh: Int,
                     Spacer(Modifier.height(4.dp))
                     TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) { Text("删除重试", color = Sub) }
                 } else {
-                    Spacer(Modifier.height(5.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Text("需要：$name", fontSize = 10.5.sp, color = Sub)
+                    Spacer(Modifier.height(2.dp))
                     TextButton(onClick = {
                         val url = when (label) {
                             "声音主文件" -> "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
@@ -1669,84 +1665,6 @@ private fun ModelScreen(c: Context, refresh: Int,
         if (files.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
-        }
-    }
-}
-
-// ── ⑤b 角色音色：字段抄 ReaderVoice CharacterManagerActivity / CharacterProfileStore，
-//      别名检测抄 novel-voice-studio/generate_personas.py ──────────────────────
-@Composable
-private fun CastScreen(c: Context, onBack: () -> Unit) {
-    var ver by remember { mutableStateOf(0) }
-    // 每次进来扫一遍已落盘的分段文件，自动把「李寻欢 / 小李探花」并成同一角色
-    val entries = remember(ver) { VoiceCast.reconcile(c) }
-    val global = remember(ver) { Prefs.voiceDescription(c) }
-    val observedCount = remember(ver) { VoiceCast.collect(c).size }
-
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onBack) { Text("返回设置", fontSize = 12.sp) }
-        }
-        Spacer(Modifier.height(8.dp))
-
-        if (entries.isEmpty()) {
-            CardBox {
-                Text("还没有可分配的角色", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(Modifier.height(5.dp))
-            }
-        }
-
-        entries.forEach { e ->
-            var draft by remember(e.id, ver) { mutableStateOf(e.description) }
-            var mergeOpen by remember(e.id) { mutableStateOf(false) }
-            CardBox(Modifier.padding(bottom = 11.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(e.canonical, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                        modifier = Modifier.weight(1f))
-                    if (e.locked) Text("已锁定", fontSize = 11.sp, color = Good)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text("出场约 ${e.count} 段" +
-                        if (e.aliases.isEmpty()) "" else " · 别名：" + e.aliases.joinToString("、"),
-                    fontSize = 11.sp, color = Sub)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = draft, onValueChange = { draft = it },
-                    modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3,
-                    placeholder = { Text("例如：清亮的少女声，语速偏快，尾音上扬", fontSize = 12.sp) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
-                )
-                Spacer(Modifier.height(6.dp))
-                Text("实际生效：" + VoiceProfile.identity(
-                    if (draft.isBlank()) global else draft, null),
-                    fontSize = 11.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = {
-                        VoiceCast.setOverride(c, e.id, draft, true); ver++
-                        EventLog.log(EventLog.Kind.ENGINE, "VOICE_CAST", "${e.canonical} 已保存并锁定")
-                    }) { Text("保存并锁定", fontSize = 12.sp) }
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = { mergeOpen = !mergeOpen }) { Text("并入其他角色", fontSize = 12.sp) }
-                }
-                if (mergeOpen) {
-                    Spacer(Modifier.height(5.dp))
-                    entries.filter { it.id != e.id }.forEach { t ->
-                        TextButton(onClick = {
-                            VoiceCast.merge(c, e.id, t.id); mergeOpen = false; ver++
-                            EventLog.log(EventLog.Kind.ENGINE, "VOICE_ALIAS", "${e.canonical} → ${t.canonical}")
-                        }) { Text("并入「${t.canonical}」", fontSize = 12.sp, color = Primary) }
-                    }
-                }
-            }
-        }
-
-        if (entries.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            TextButton(onClick = { VoiceCast.clear(c); ver++ }) {
-                Text("清空角色表", fontSize = 12.sp, color = Warn)
-            }
         }
     }
 }
@@ -2072,7 +1990,7 @@ private fun ParamRow(
     }
 }
 
-/** R41 · 共用音色选择器：搜索 + 最近使用 + 网格，身份生成器与角色预设不再各写一套控件。 */
+/** R41 · 共用音色选择器：搜索 + 最近使用 + 网格，身份生成器不再另写一套控件。 */
 @Composable
 private fun VoicePicker(
     query: String,
@@ -2176,14 +2094,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var paramErr by remember { mutableStateOf(emptyMap<String, String>()) }
     var dimEdited by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
-    var castTick by remember { mutableStateOf(0) }
-    val casts = remember(castTick) { VoiceCast.load(c) }
-    var newCastName by remember { mutableStateOf("") }
-    var newCastGrid by remember { mutableStateOf("P02") }
-    var editCastId by remember { mutableStateOf("") }
-    var editCastText by remember { mutableStateOf("") }
-    var gridTargetId by remember { mutableStateOf("") }
-    var confirmDeleteId by remember { mutableStateOf("") }
     // R41 · 锚点 / 展开态 / 音色选择器 / 预设三弹层（全部是界面态，不写生效态）
     val scroll = rememberScrollState()
     val anchors = remember { mutableStateMapOf<String, Int>() }
@@ -2202,7 +2112,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     // R50 · 真机第 3 问：旧版 activeAnchor 只在点 chip 时赋值，滚动没有任何回写，
     // 所以「往下扒标签页不跟着变」。这里补反向联动；点击跳转期间锁住，避免动画抖动。
     var jumpLock by remember { mutableStateOf(false) }
-    val anchorShown = listOf("identity", "sampling", "perf", "casts", "presets", "fixedVoice", "mapping")
+    val anchorShown = listOf("identity", "sampling", "perf", "presets", "fixedVoice", "mapping")
     fun jumpTo(k: String) {
         activeAnchor = k
         // R49 · v5 第 6 条：锚点点击先展开目标折叠区，再滚过去
@@ -2237,13 +2147,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var busyDraftTrial by remember { mutableStateOf(false) }
     var busyActiveTrial by remember { mutableStateOf(false) }
     var trialMsg by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        if (CastPresets.seedIfEmpty(c)) {
-            EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "内置角色卡已写入 4 张")
-            castTick++
-        }
-    }
 
     /** R49 · 身份描述逐维差异：按「；」拆段比不同项，只给界面高亮，不参与提交判定。 */
     fun voiceFieldDiff(old: String, new: String): List<Pair<String, String>> {
@@ -2356,7 +2259,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         draft.dims.filter { it.value != "不指定" }, "").render()
     val preview = if (dimEdited) draft.dimText else autoText
     val voiceChange = changes.firstOrNull { it.label.startsWith("音色身份") }
-    val unbound = casts.count { it.description.isBlank() }
 
     // 有未提交变更时，系统返回键先问一次，别让草稿静默丢失。
     BackHandler(enabled = dirty) { showLeave = true }
@@ -2372,7 +2274,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 Text("‹ 返回", fontSize = 11.5.sp)
             }
             Column(Modifier.weight(1f)) {
-                Text("已生效 v$INSTRUCT_TEMPLATE_VERSION",
+                Text("已生效",
                     fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text(if (dirty) "未提交 ${changes.size} 项" else "无待提交变更",
                     fontSize = 10.5.sp, color = if (dirty) Warn else Good)
@@ -2400,7 +2302,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
         AnchorBar(listOf(
             "identity" to "身份", "sampling" to "采样", "perf" to "表演",
-            "casts" to "角色", "presets" to "预设",
+            "presets" to "预设",
             "fixedVoice" to "固定音色", "mapping" to "高级"
         ), activeAnchor) { jumpTo(it) }
         Spacer(Modifier.height(4.dp))
@@ -2690,77 +2592,11 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 TimingHint(TIMING_NEXT)
             }
 
-            // ── 音频开关：只写 draft，角色未绑定给可见提示 ───────────────────
+            // ── 音频开关：只写 draft ───────────────────
             MixerSection("音频开关", "switches", openMap.contains("switches"),
                 { toggleSection("switches", it) }, badge = "上层", anchor = { anchors["switches"] = it }) {
                 SwitchRow("拟声表达", draft.nonVerbal, TIMING_NOW) {
                     draft = draft.copy(nonVerbal = it)
-                }
-                SwitchRow("角色映射", draft.castEnabled, TIMING_NOW) {
-                    draft = draft.copy(castEnabled = it)
-                }
-                if (draft.castEnabled && unbound > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("有 $unbound 个角色未绑定音色：会沿用全书音色，不会静默变成另一个旁白声。",
-                        fontSize = 10.5.sp, color = Warn)
-                }
-                TimingHint(TIMING_NOW)
-            }
-
-            // ── 角色预设：补音色 chip / 未绑定 / 删除二次确认 ─────────────────
-            MixerSection("角色预设", "casts", openMap.contains("casts"), { toggleSection("casts", it) },
-                badge = "配置", anchor = { anchors["casts"] = it }) {
-                if (casts.isEmpty()) Text("暂无角色卡", fontSize = 11.sp, color = Sub)
-                casts.forEach { e ->
-                    val bound = VoicePresets.ALL.firstOrNull { it.render() == e.description }
-                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(e.canonical, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text(
-                                when {
-                                    e.description.isBlank() -> "未绑定音色"
-                                    bound != null -> "${bound.id} ${bound.name}"
-                                    else -> "自定义音色"
-                                },
-                                fontSize = 10.sp,
-                                color = if (e.description.isBlank()) Warn else Good)
-                        }
-                        TextButton(onClick = { editCastId = e.id; editCastText = e.description }) {
-                            Text("编辑", fontSize = 11.sp)
-                        }
-                        TextButton(onClick = { gridTargetId = e.id }) { Text("换音色", fontSize = 11.sp) }
-                        TextButton(onClick = { confirmDeleteId = e.id }) {
-                            Text("删除", fontSize = 11.sp, color = Warn)
-                        }
-                    }
-                }
-                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = Line)
-                OutlinedTextField(
-                    value = newCastName, onValueChange = { newCastName = it },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("新角色名", fontSize = 11.sp) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
-                )
-                Text("新角色的初始音色", fontSize = 11.sp, color = Sub)
-                VoicePicker(voiceQuery, { voiceQuery = it }, recentVoices, newCastGrid) { p ->
-                    newCastGrid = p.id
-                    Prefs.pushRecentVoice(c, p.id)
-                    recentVoices = Prefs.recentVoices(c)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = {
-                        if (CastPresets.add(c, newCastName, newCastGrid)) {
-                            EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "新增角色 ${newCastName.trim()}")
-                            newCastName = ""; castTick++
-                        } else Toast.makeText(c, "名字为空或已存在", Toast.LENGTH_SHORT).show()
-                    }) { Text("添加角色", fontSize = 11.5.sp) }
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = {
-                        val list = VoiceCast.reconcile(c)
-                        castTick++
-                        EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "扫描分段角色，表内 ${list.size} 人")
-                    }) { Text("扫描分段里的角色", fontSize = 11.sp) }
                 }
                 TimingHint(TIMING_NOW)
             }
@@ -2875,7 +2711,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 Text("⚠️ 上层（能改，但模型只看到文字或 App 流程）", fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold, color = Warn)
                 Text("12 维生成器只是帮你写描述；朗读档位、语速倾向、情绪强度拼进描述；"
-                    + "段间静音是 WAV 合并；角色映射与预设是 App 自己的配置。",
+                    + "段间静音是 WAV 合并。",
                     fontSize = 11.sp)
                 Spacer(Modifier.height(7.dp))
                 Text("🔒 结构上没有（不画开关）", fontSize = 11.5.sp,
@@ -2964,65 +2800,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 }
             },
             dismissButton = { TextButton(onClick = { showLeave = false }) { Text("继续编辑") } }
-        )
-    }
-
-    if (confirmDeleteId.isNotEmpty()) {
-        val target = casts.firstOrNull { it.id == confirmDeleteId }
-        AlertDialog(
-            onDismissRequest = { confirmDeleteId = "" },
-            title = { Text("删除角色", fontSize = 14.sp) },
-            text = { Text("确定删除「${target?.canonical ?: ""}」？此角色的音色绑定会一起移除。",
-                fontSize = 12.sp) },
-            confirmButton = {
-                TextButton(onClick = {
-                    CastPresets.remove(c, confirmDeleteId)
-                    EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST",
-                        "删除角色 ${target?.canonical ?: confirmDeleteId}")
-                    confirmDeleteId = ""; castTick++
-                }) { Text("删除", fontSize = 12.sp, color = Warn) }
-            },
-            dismissButton = { TextButton(onClick = { confirmDeleteId = "" }) { Text("取消") } }
-        )
-    }
-
-    if (editCastId.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { editCastId = "" },
-            title = { Text("角色音色描述", fontSize = 14.sp) },
-            text = {
-                OutlinedTextField(value = editCastText, onValueChange = { editCastText = it },
-                    modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    VoiceCast.setOverride(c, editCastId, editCastText, false)
-                    EventLog.log(EventLog.Kind.ENGINE, "MIXER_CAST", "编辑角色 $editCastId")
-                    editCastId = ""; castTick++
-                }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { editCastId = "" }) { Text("取消") } }
-        )
-    }
-    if (gridTargetId.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { gridTargetId = "" },
-            title = { Text("换一个现成音色", fontSize = 14.sp) },
-            text = {
-                Column {
-                    VoicePresets.ALL.forEach { p ->
-                        Row(Modifier.fillMaxWidth().clickable {
-                            CastPresets.applyGrid(c, gridTargetId, p.id)
-                            gridTargetId = ""; castTick++
-                        }.padding(vertical = 5.dp)) {
-                            Text("${p.id} ${p.name}", fontSize = 12.sp, modifier = Modifier.weight(1f))
-                            Text(p.chips(), fontSize = 10.sp, color = Sub)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { gridTargetId = "" }) { Text("关闭") } }
         )
     }
 

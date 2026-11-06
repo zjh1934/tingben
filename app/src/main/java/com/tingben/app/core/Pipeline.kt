@@ -393,7 +393,10 @@ data class Progress(
     val total: Int = 0,
     val failed: Int = 0,
     val message: String = "",
-    val output: String? = null
+    val output: String? = null,
+    // R74 · 逐章真实进度：章索引 -> 该章已生成段数 / 该章总段数。
+    // 只有合成循环填它；其余阶段保持空表，界面不许拿整本 done/total 冒充逐章。
+    val chapterProgress: Map<Int, Float> = emptyMap()
 )
 
 object Producer {
@@ -537,8 +540,9 @@ object Producer {
         _resume.value = fixed.copy(done = TaskResume.realProgress(c, fixed))
     }
 
-    private fun emit(stage: String, done: Int, total: Int, failed: Int, msg: String, out: String? = null) {
-        _state.value = Progress(true, stage, done, total, failed, msg, out)
+    private fun emit(stage: String, done: Int, total: Int, failed: Int, msg: String,
+                     out: String? = null, chapterProgress: Map<Int, Float> = emptyMap()) {
+        _state.value = Progress(true, stage, done, total, failed, msg, out, chapterProgress)
         // 每完成一块就落一次书签：进程被杀时，最坏只丢当前这一块，前面全留着
         val c = appCtx
         val t = current
@@ -591,9 +595,13 @@ object Producer {
         val gateFails = 0
         // R68 · 单一路径：原文按标点/段落边界切段后直接交给 TTS，不跑任何文本管线。
         val stats = mutableListOf<TextSplitter.Stats>()
+        // R74 · 段 -> 章 的归属表：flatMap 会让段丢掉 chapter，这里按块补齐，
+        // 合成循环才知道「这一段属于第几章」，逐章进度才有真值来源。
+        val segChapter = mutableListOf<Int>()
         val annotated = chunks.flatMap { ch ->
             val (segs, s) = Annotator.directWithStats(ch.text)
             stats.add(s)
+            repeat(segs.size) { segChapter.add(ch.chapter) }
             segs
         }
         // R25 · 用户原话「起码按符号断，不能按字符段」：把断句结果写进日志，
@@ -708,12 +716,16 @@ object Producer {
 
         val wavs = mutableListOf<File>()
         var synthFails = 0
+        // R74 · 每章总段数 / 已生成段数；只统计真正落盘成功的段，失败段不算完成。
+        val perChapterTotal = segChapter.groupingBy { it }.eachCount()
+        val perChapterDone = mutableMapOf<Int, Int>()
         try {
             for ((i, a) in toSpeak.withIndex()) {
                 if (cancelRequested) {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
                     return
                 }
+                val segStart = wavs.size
                 // R26 · 合成阶段同样按段刷新唤醒锁；TTS 单次可能几分钟。
                 ProduceService.touch(c.applicationContext, "合成段 ${i + 1}/${toSpeak.size}")
                 val wav = File(work, String.format("direct_%04d.wav", i))
@@ -744,8 +756,18 @@ object Producer {
                         SegPlan.clearRedo(work, "seg:$i")
                     } else { synthFails++; wav.delete() }
                 }
+                // R74 · 只有这一段真的落了 WAV 才推进该章；续跑跳过已有 WAV 也算完成。
+                val chapterSnapshot = if (wavs.size > segStart) {
+                    val ci = segChapter.getOrElse(i) { -1 }
+                    if (ci >= 0) perChapterDone[ci] = (perChapterDone[ci] ?: 0) + 1
+                    perChapterDone.mapValues { (k, v) ->
+                        (v.toFloat() / (perChapterTotal[k] ?: 1).coerceAtLeast(1).toFloat())
+                            .coerceIn(0f, 1f)
+                    }
+                } else _state.value.chapterProgress
                 emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
-                    "已生成 ${i + 1}/${annotated.size} 段声音")
+                    "已生成 ${i + 1}/${annotated.size} 段声音",
+                    chapterProgress = chapterSnapshot)
             }
         } finally {
             try { NativeEngine.ttsFree(ttsHandle) } catch (_: Throwable) { }

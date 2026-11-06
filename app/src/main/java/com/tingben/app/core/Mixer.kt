@@ -174,7 +174,6 @@ object Mixer {
         val voice = Prefs.voiceDescription(c).trim().ifBlank { DEFAULT_IDENTITY }
         return buildList {
             add(MixerRow("身份层", "音色描述（instruct ①）", voice))
-            add(MixerRow("身份层", "角色映射", if (Prefs.castEnabled(c)) "开" else "关"))
             add(MixerRow("身份层", "拟声表达", if (Prefs.nonVerbal(c)) "开" else "关"))
             // R38 · 这里读的是 ProduceConfig() 默认值，不是当前任务书签，别冒充「本次」。
             add(MixerRow("表演层", "跨书默认风格（新任务）", cfg.summary().substringBefore(" · 段间")))
@@ -231,7 +230,7 @@ object Mixer {
         ParamCatalog.UPPER.filter { it.kind == ParamKind.UPPER }
             .forEach { add(Triple("上层 · 不进模型 API", it.label, "上层")) }
         ParamCatalog.LOCKED.forEach { add(Triple("结构 · 换模型才有", it.label, "结构")) }
-        listOf("角色预设（增删改）", "预设库（自定义加/删/覆盖）")
+        listOf("预设库（自定义加/删/覆盖）")
             .forEach { add(Triple("预设", it, "可编辑")) }
     }
 

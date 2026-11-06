@@ -93,9 +93,9 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
     got = set(re.findall(r'[A-Z_]+', m.group(1))) if m else set()
     want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'AUDIO', 'SETTINGS',
-            'MODELS', 'CAST', 'MIXER', 'CHAPTERS'}
-    if got != want: e.append('Screen 不是 10 值: ' + str(got ^ want))
-    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 7: e.append('抽屉不是 7 项')
+            'MODELS', 'MIXER', 'CHAPTERS'}
+    if got != want: e.append('Screen 不是 9 值: ' + str(got ^ want))
+    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉不是 6 项')
     slots = [x.get('slot') for x in manifest.get('models', [])]
     if slots != ['tts_talker', 'tts_tokenizer']: e.append('模型清单不是两份声音 GGUF')
     if 'android.permission.INTERNET' in android: e.append('出现 INTERNET 权限')

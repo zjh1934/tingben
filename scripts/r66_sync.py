@@ -13,10 +13,10 @@ def rw(p, fn):
     if n != t: p.write_text(n, encoding='utf-8'); print('订正', p.name)
     else: print('无需改', p.name)
 
-# ① 基础结构自检：Screen 10 值、抽屉 7 项、旧模块不许回潮
+# ① 基础结构自检：Screen 9 值、抽屉 6 项、旧模块不许回潮
 def cs(t):
-    t = t.replace('"SETTINGS", "MODELS", "CAST", "MIXER", "LLM", "CHAPTERS"}',
-                  '"SETTINGS", "MODELS", "CAST", "MIXER", "CHAPTERS"}')
+    t = t.replace('"SETTINGS", "MODELS", "MIXER", "LLM", "CHAPTERS"}',
+                  '"SETTINGS", "MODELS", "MIXER", "CHAPTERS"}')
     t = t.replace('    if body2.count(" to ") != 5 or "调音台" not in body2 or "语言模型" not in body2:\n'
                   '        errs.append("U1 回退：抽屉设置域不是 5 项或调音台/语言模型不是独立项")',
                   '    if body2.count(" to ") != 4 or "调音台" not in body2:\n'
@@ -28,8 +28,8 @@ rw(S / 'check_structure.py', cs)
 
 # ② R46 抽屉壳：枚举白名单去掉 LLM
 def r46(t):
-    return t.replace('"SETTINGS", "MODELS", "CAST", "MIXER", "LLM", "CHAPTERS"}',
-                     '"SETTINGS", "MODELS", "CAST", "MIXER", "CHAPTERS"}')
+    return t.replace('"SETTINGS", "MODELS", "MIXER", "LLM", "CHAPTERS"}',
+                     '"SETTINGS", "MODELS", "MIXER", "CHAPTERS"}')
 rw(S / 'r46_verify.py', r46)
 
 # ③ R47 抽屉收窄：分区顺序断言换成「旧模块入口必须消失」

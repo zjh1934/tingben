@@ -159,7 +159,7 @@ object Prefs {
     fun setDefaultPerf(c: Context, v: ProduceConfig) =
         sp(c).edit().putString(KEY_DEFAULT_PERF, v.toJson().toString()).apply()
 
-    /** 角色预设只 seed 一次，避免覆盖用户后来改过的角色表。 */
+    /** 内置卡只 seed 一次，避免覆盖用户后来改过的配置。 */
     fun castSeeded(c: Context) = sp(c).getBoolean(KEY_CAST_SEEDED, false)
     fun setCastSeeded(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_CAST_SEEDED, v).apply()
 

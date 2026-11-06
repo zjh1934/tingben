@@ -92,14 +92,14 @@ def check_sources(main, draft):
     for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
         if any(banned in x for x in lits): errs.append("旧生效动词残留: " + banned)
     # 4) diff 字段表与 Python 对拍一致
-    if draft.count("put(") != 11:  # R50 起 10 次字段调用（含附加语气）+ 1 次 put() 定义
-        errs.append("diff 源码调用数 != 10")
+    if draft.count("put(") != 10:  # R76 起 9 次字段调用 + 1 次 put() 定义
+        errs.append("diff 源码调用数 != 9")
     for label in ["音色身份", "朗读档位", "语速倾向", "情绪强度", "段间静音",
-                  "失败重做", "附加语气", "拟声表达", "角色映射", "ParamCatalog.SAMPLING.forEach"]:
+                  "失败重做", "附加语气", "拟声表达", "ParamCatalog.SAMPLING.forEach"]:
         if label not in draft: errs.append("diff 缺字段: " + label)
-    # 5) 吸顶条 / 差异弹层 / 角色 chip / 删除确认
+    # 5) 吸顶条 / 差异弹层 / 丢弃 / 载入
     for sym in ["未提交变更", "查看差异", "提交变更", "当前生效全貌",
-                "未绑定音色", "confirmDeleteId", "丢弃全部待提交", "载入为待提交"]:
+                "丢弃全部待提交", "载入为待提交"]:
         if sym not in main: errs.append("缺 P0 界面符号: " + sym)
     return errs
 

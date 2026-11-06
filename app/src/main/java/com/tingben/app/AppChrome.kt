@@ -17,9 +17,9 @@ package com.tingben.app
  * 详见 docs/R46_V1抽屉壳_联动表.md。
  *
  * R51 · 外层 Drawer 改 DismissibleNavigationDrawer：抽屉展开时右侧工作页一起推走（联动），
- * 不再是 ModalNavigationDrawer 的覆盖式。本文件的 Sheet 与 7 个条目一行未改。
+ * 不再是 ModalNavigationDrawer 的覆盖式。本文件的 Sheet 与 6 个条目一行未改。
  *
- * R47 · 抽屉收窄：M3 ModalDrawerSheet 默认 320dp 对 7 个三五字标签过宽，
+ * R47 · 抽屉收窄：M3 ModalDrawerSheet 默认 320dp 对 6 个三五字标签过宽，
  * 用 requiredWidth(240.dp) 覆盖（社区常用 250dp / M2 上限 280dp 之间取值），
  * 条目字号、padding 同步收紧；左滑手势与返回键优先行为一行不动。
  *
@@ -59,7 +59,6 @@ internal const val NAV_AUDIO = 2
 internal const val NAV_SETTINGS = 3
 internal const val NAV_MIXER = 4
 internal const val NAV_MODELS = 5
-internal const val NAV_CAST = 6
 
 /**
  * 一屏的「壳」描述。由 App() 里的 chromeOf(Screen) 生成，本层只消费。
@@ -81,7 +80,6 @@ private val DRAWER_MORE = listOf(
     NAV_SETTINGS to "设置",
     NAV_MIXER to "调音台",
     NAV_MODELS to "模型",
-    NAV_CAST to "角色音色",
 )
 
 /**

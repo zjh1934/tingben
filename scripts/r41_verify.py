@@ -45,7 +45,7 @@ POS = {
                   'MixerPresetStore.safeName(presetName) == "untitled"', "重命名预设",
                   "删除预设二次确认"],
     "12 音色选择器合并": ["fun VoicePicker(", "搜索音色（编号 / 名称 / 特征）", "最近使用",
-                    "Prefs.pushRecentVoice(c, p.id)", "Prefs.recentVoices(c)", "newCastGrid"],
+                    "Prefs.pushRecentVoice(c, p.id)", "Prefs.recentVoices(c)", "VoicePicker(voiceQuery"],
 }
 for group, syms in POS.items():
     for s in syms:

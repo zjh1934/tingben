@@ -42,7 +42,6 @@ MAIN_POS = [
     "onMenu = { scope.launch { drawerState.open() } }",
     ".navigationBarsPadding()",
     "var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }",
-    "Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })",
     "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })",
     "BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }",
     "var refresh by remember { mutableStateOf(0) }",
@@ -92,7 +91,7 @@ def check(main, chrome, tag):
     b = main.find("BackHandler(enabled = drawerState.isOpen)")
     ck(a >= 0 and b > a, "抽屉 BackHandler 没排在原 BackHandler 之后")
     EXPECTED_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                        "SETTINGS", "MODELS", "CAST", "MIXER", "CHAPTERS"}
+                        "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
     n = len(EXPECTED_SCREENS)
     ck(enum_count(main) == n, "Screen 枚举不是 %d 值" % n)
     ck(dispatch_count(main) == n, "when(screen) 分发不是 %d 分支" % n)
@@ -117,7 +116,7 @@ INJECT = [
     ("去掉底部安全区", MAIN, ".statusBarsPadding().navigationBarsPadding()", ".statusBarsPadding()"),
     ("调音台返回写死设置页", MAIN, "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })", "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = Screen.SETTINGS })"),
     ("调音台不再是独立项", CHROME, 'NAV_MIXER to "调音台",\n', ""),
-    ("删一个分发分支", MAIN, "                Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })\n", ""),
+    ("删一个分发分支", MAIN, "                Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })\n", ""),
     ("抽屉 BackHandler 排到原条之前", MAIN,
      "    BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }\n    // V1 · 后注册的 callback 优先：抽屉开着时先收抽屉，不误退回书架。\n    BackHandler(enabled = drawerState.isOpen) {\n        scope.launch { drawerState.close() }\n    }",
      "    BackHandler(enabled = drawerState.isOpen) {\n        scope.launch { drawerState.close() }\n    }\n    BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }"),

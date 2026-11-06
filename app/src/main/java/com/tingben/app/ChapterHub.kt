@@ -29,10 +29,10 @@ import kotlinx.coroutines.launch
 /**
  * R61 · 一本书点进去的目录页。
  *
- * 形状来自 v9 全 8 屏预览：同一份按章拆分的目录，平级排成四列左右滑；
- * 三列平级：章节（勾选 + 底部小条）/ 合成 / 可播。
+ * 三列平级：章节（勾选 + 底部小条）/ 合成 / 可播，左右滑切换。
  * 播放走软件内悬浮条，不做独立播放器页；看书页是本页的覆盖层，
- * 不扩张 Screen 枚举。状态只从磁盘成品 / Producer.state / segmap 取，不画假进度。
+ * 不扩张 Screen 枚举。状态只从磁盘成品 / Producer.state 取，不画假进度；
+ * R74 起进行中逐章进度来自 Producer.state.chapterProgress，不再用整本比值冒充。
  */
 // R73 · 跟随主题，调用点一行不动。
 private val HubBg: Color get() = palette.bg
@@ -53,38 +53,33 @@ private sealed class Pane {
 
 private enum class HubAction { SYNTH }
 
-/** 一章在四列里的全部状态；null 进度 = 没有可信来源，界面只画灰。 */
+/** 一章在三列里的全部状态；null 进度 = 没有可信来源，界面只画灰。 */
 private data class ChapterUi(
     val index: Int,
     val title: String,
-    val annotated: Float?,
     val synthesized: Float?,
     val audio: AudioItem?,
-    val playable: Boolean,
-    val unannotatedAudio: Boolean
+    val playable: Boolean
 )
 
 private fun chapterStates(
     finished: Map<Int, AudioItem>, playable: Set<Int>, chapters: List<Chapter>,
     running: Boolean, runningBook: String?, runningOnly: Set<Int>?,
-    done: Int, total: Int
+    chapterProgress: Map<Int, Float>
 ): List<ChapterUi> {
-    // 进行中只有「整本进度」这一个真值：不做逐章假拆分，界面上标清楚。
-    val live = if (running && runningBook != null && total > 0)
-        (done.toFloat() / total.toFloat()).coerceIn(0f, 1f) else null
+    // R74 · 逐章真值：只认合成循环按段上报的 chapterProgress。
+    // 没上报的章一律 null（灰 + 等待中），不拿整本 done/total 摊到每章。
     val inScope: (Int) -> Boolean = { i -> runningOnly == null || i in runningOnly }
     return chapters.map { ch ->
         val a = finished[ch.index]
+        val live = if (running && runningBook != null && inScope(ch.index))
+            chapterProgress[ch.index] else null
         ChapterUi(
             index = ch.index,
             title = ch.title,
-            annotated = if (a != null) 1f
-                        else if (live != null && inScope(ch.index)) live else 0f,
-            synthesized = if (a != null) 1f
-                          else if (live != null && inScope(ch.index)) live else 0f,
+            synthesized = if (a != null) 1f else live,
             audio = a,
-            playable = ch.index in playable,
-            unannotatedAudio = false
+            playable = ch.index in playable
         )
     }
 }
@@ -116,14 +111,23 @@ internal fun ChapterHubScreen(
     // R51 · 叶子级订阅，不把高频引擎状态挂到 App() 根上。
     val st by Producer.state.collectAsState()
     val task by Producer.resume.collectAsState()
-    val ui = remember(book, refresh, st.done, st.total, st.running, task) {
+    val ui = remember(book, refresh, st.done, st.total, st.running, task,
+                      st.chapterProgress) {
         chapterStates(finished, playable, chapters,
-            st.running, task?.bookId, task?.only, st.done, st.total)
+            st.running, task?.bookId, task?.only, st.chapterProgress)
     }
 
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by remember(book) { mutableStateOf<Pane?>(null) }
     var showProgressHint by remember(book) { mutableStateOf(false) }
+    // R74 · 看书页不写位置 → 改由打开/翻章时落盘，纯 UI 状态，不进声音指纹与任务书签。
+    fun openReader(i: Int) {
+        if (i in chapters.indices) {
+            ReadingState.save(c, book.id, i)
+            pane = Pane.Reader(i)
+        }
+    }
+    val lastRead = remember(book, refresh) { ReadingState.last(c, book.id) }
 
     // 覆盖层内的返回键优先于 App 层的「回书架」。
     BackHandler(enabled = pane != null) { pane = null }
@@ -134,7 +138,8 @@ internal fun ChapterHubScreen(
     val hScroll = rememberScrollState()
     val current by remember {
         derivedStateOf {
-            if (pagePx <= 0f) 0 else ((hScroll.value + pagePx / 2f) / pagePx).toInt().coerceIn(0, 3)
+            // R74 · 三列只有 0/1/2；写 3 会让滑到「可播」时高亮跑进不存在的第四列。
+            if (pagePx <= 0f) 0 else ((hScroll.value + pagePx / 2f) / pagePx).toInt().coerceIn(0, 2)
         }
     }
 
@@ -187,6 +192,18 @@ internal fun ChapterHubScreen(
                     }
                 }
             }
+            // R74 · 上次读到哪：一条细提示，不占常驻高度，点了才跳；制作中不抢位置。
+            if (!st.running && lastRead != null && lastRead in chapters.indices) {
+                Row(Modifier.fillMaxWidth().background(HubCard)
+                    .clickable { openReader(lastRead) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("上次读到 第 ${lastRead + 1} 章 · ${chapters[lastRead].title}",
+                        fontSize = 12.sp, color = HubSub, maxLines = 1,
+                        modifier = Modifier.weight(1f))
+                    Text("继续 ›", fontSize = 12.sp, color = HubPrimary)
+                }
+            }
             if (showProgressHint || st.running) {
                 Row(Modifier.fillMaxWidth().background(HubSoft)
                     .padding(horizontal = 14.dp, vertical = 7.dp),
@@ -203,7 +220,7 @@ internal fun ChapterHubScreen(
                         when (col) {
                             0 -> RawColumn(ui, selected, { i, on ->
                                 selected = if (on) selected + i else selected - i
-                            }, { i -> pane = Pane.Reader(i) })
+                            }, { i -> openReader(i) })
                             1 -> SynColumn(ui, { i -> playChapter(i, single = true) })
                             else -> PlayColumn(ui,
                                 onAll = {
@@ -249,9 +266,8 @@ internal fun ChapterHubScreen(
         val p = pane
         if (p != null) {
             when (p) {
-                is Pane.Reader -> ReaderPane(c, book, chapters, p.i, { pane = null }) { next ->
-                    pane = Pane.Reader(next)
-                }
+                is Pane.Reader -> ReaderPane(c, book, chapters, p.i, { pane = null },
+                    { next -> openReader(next) })
             }
         }
     }
@@ -281,45 +297,16 @@ private fun RawColumn(
     }
 }
 
-/** 第二列：半透明进度条衬在章名行上；没标完点不进。 */
-@Composable
-private fun AnnColumn(ui: List<ChapterUi>, onOpen: (Int) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(ui, key = { it.index }) { r ->
-            val p = (r.annotated ?: 0f).coerceIn(0f, 1f)
-            val done = r.annotated != null && r.annotated >= 1f
-            Box(Modifier.fillMaxWidth().height(52.dp)
-                .then(if (done) Modifier.clickable { onOpen(r.index) } else Modifier)) {
-                if (p > 0f && p < 1f) {
-                    Box(Modifier.fillMaxWidth(p).fillMaxHeight()
-                        .background(HubPrimary.copy(alpha = 0.14f)))
-                }
-                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
-                        color = if (done) Color.Unspecified else HubGrey,
-                        modifier = Modifier.weight(1f))
-                    Text(when {
-                        done -> "已分段"
-                        p > 0f -> "${(p * 100).toInt()}%"
-                        else -> "未开始"
-                    }, fontSize = 11.sp, color = if (done) HubGood else HubSub)
-                }
-            }
-            HubDivider()
-        }
-    }
-}
-
-/** 第三列：灰=没合 / 进度条=正在合 / 右侧播放暂停=完成。 */
+/** 第二列：灰=没合 / 逐章进度条=正在合 / 右侧播放暂停=完成。 */
 @Composable
 private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp)) {
         items(ui, key = { it.index }) { r ->
-            val p = (r.synthesized ?: 0f).coerceIn(0f, 1f)
+            // R74 · null = 本轮还没轮到这章；0f..1f = 该章已生成占比，不是整本比值。
+            val p = r.synthesized?.coerceIn(0f, 1f)
             val done = r.audio != null
             Box(Modifier.fillMaxWidth().height(52.dp)) {
-                if (p > 0f && p < 1f) {
+                if (p != null && p > 0f && p < 1f) {
                     Box(Modifier.fillMaxWidth(p).fillMaxHeight()
                         .background(HubGood.copy(alpha = 0.16f)))
                 }
@@ -327,8 +314,11 @@ private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
-                            color = if (done || p > 0f) Color.Unspecified else HubGrey)
-                        if (!done && p > 0f) Text("整本进度 ${(p * 100).toInt()}%", fontSize = 10.sp, color = HubSub)
+                            color = if (done || (p ?: 0f) > 0f) Color.Unspecified else HubGrey)
+                        if (!done && p != null && p > 0f)
+                            Text("本章已生成 ${(p * 100).toInt()}%", fontSize = 10.sp, color = HubSub)
+                        if (!done && p == null)
+                            Text("等待中", fontSize = 10.sp, color = HubSub)
                     }
                     if (done) {
                         TextButton(onClick = { onPlay(r.index) }) { Text("▶ 播放", fontSize = 12.sp) }

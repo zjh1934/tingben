@@ -73,7 +73,7 @@ GONE = [
 
 # ③ 守恒：R66/R68 之后不该被这轮碰坏
 KEEP = [
-    ('Screen 10 值', 'ALLKT', 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, CAST, MIXER, CHAPTERS }'),
+    ('Screen 9 值', 'ALLKT', 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }'),
     ('抽屉推走', 'ALLKT', 'DismissibleNavigationDrawer'),
     ('三列目录', 'ChapterHub.kt', 'HubTitles = listOf("章节", "合成", "可播")'),
     ('四步进度', 'ALLKT', 'val steps = listOf("拆章", "生成声音", "整理音频", "完成")'),

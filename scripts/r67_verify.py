@@ -58,7 +58,7 @@ def check(pipe=None, prefs=None, main=None, hub=None, event=None, chrome=None,
     # ③ 守恒
     for k in KEEP:
         if k not in allkt: e.append('守恒项缺失: ' + k)
-    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 7: e.append('抽屉不是 7 项')
+    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉不是 6 项')
     slots = [x.get('slot') for x in manifest.get('models', [])]
     if slots != ['tts_talker', 'tts_tokenizer']: e.append('模型清单不是两份声音 GGUF')
     if 'android.permission.INTERNET' in android: e.append('出现 INTERNET 权限')

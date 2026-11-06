@@ -257,7 +257,7 @@ chrome_src = chrome_path.read_text(encoding="utf-8", errors="replace") if chrome
 for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip", "ChromeSpec",
             "TAB_LIBRARY", "TAB_TASKS", "TAB_AUDIO", "TAB_NONE",
             "NAV_LIBRARY", "NAV_TASKS", "NAV_AUDIO", "NAV_SETTINGS",
-            "NAV_MIXER", "NAV_MODELS", "NAV_CAST",
+            "NAV_MIXER", "NAV_MODELS",
             "ModalDrawerSheet(", "NavigationDrawerItem("]:
     if sym not in chrome_src: errs.append("U1 缺壳层符号: " + sym)
 for sym in ["chromeOf(screen)",
@@ -281,7 +281,7 @@ for sym in [
     if sym not in main_src: errs.append("U1 回退：导航骨架被改动 " + sym)
 # R61 · 目的地随版本增长：白名单显式列出，数量一律由它推算，不再写死 10。
 WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "CAST", "MIXER", "CHAPTERS"}
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
 enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
 if enum_m:
     got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))
@@ -318,7 +318,7 @@ if co_m:
     if covered != WANT_SCREENS: errs.append("U1 回退：chromeOf 没覆盖全部目的地 " + str(covered ^ WANT_SCREENS))
 else:
     errs.append("U1 回退：找不到 chromeOf 映射")
-# V1 · 抽屉一列：顶层 3 个（不含设置）+ 设置域 5 个（调音台 / 语言模型必须是独立项）
+# V1 · 抽屉一列：顶层 3 个（不含设置）+ 设置域 3 个（调音台必须是独立项）
 tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 if tabs_m:
@@ -329,8 +329,8 @@ else:
     errs.append("U1 回退：找不到 DRAWER_TOP")
 if more_m:
     body2 = more_m.group(1)
-    if body2.count(" to ") != 4 or "调音台" not in body2:
-        errs.append("U1 回退：抽屉设置域不是 4 项或调音台不是独立项")
+    if body2.count(" to ") != 3 or "调音台" not in body2:
+        errs.append("U1 回退：抽屉设置域不是 3 项或调音台不是独立项")
     if "语言模型" in body2 or "文本处理" in body2:
         errs.append("U1 回退：抽屉仍含已删模块")
 else:
@@ -386,8 +386,8 @@ if "statusBarsPadding()" not in main_src:
 # ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 / 角色卡 ──
 R36_ALL = ["MixerSection(", "Prefs.mixerOpenSections", "MixerPresetStore", "MixerPreset(",
            "CastPresets", "seedIfEmpty", "MIXER_PRESET", "MIXER_COMMIT", "MIXER_DIM",
-           "MIXER_CAST", "导出与诊断", "预设库", "角色预设", "参数触达与官方资料",
-           "单次音频长度上限", "TIMING_NEXT", "添加角色", "同名覆盖",
+           "导出与诊断", "预设库", "参数触达与官方资料",
+           "单次音频长度上限", "TIMING_NEXT", "同名覆盖",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
@@ -429,8 +429,7 @@ for sym in ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS",
     if sym in main_src or sym in chrome_src:
         errs.append("R46 回退：旧壳残留 " + sym)
 # 二级页返回回「进入前的那一页」，不再写死 SETTINGS
-for sym in ["Screen.CAST -> CastScreen(ctx, onBack = { screen = drawerReturn })",
-            "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })"]:
+for sym in ["Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })"]:
     if sym not in main_src: errs.append("R46 回退：二级页返回没回来源 " + sym)
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
@@ -457,7 +456,7 @@ draft_src = draft_path.read_text(encoding="utf-8", errors="replace") if draft_pa
 R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit(",
            "TIMING_NOW", "TIMING_NEXT", "active(c: Context)", "查看差异", "提交变更",
            "未提交变更", "载入为待提交", "丢弃全部待提交", "TimingHint(", "有未提交变更",
-           "未绑定音色", "填入草稿", "当前生效全貌"]
+           "填入草稿", "当前生效全貌"]
 for sym in R40_ALL:
     if sym not in all_src: errs.append("缺少 R40 统一提交符号: " + sym)
 # 唯一出口：MixerScreen 区块里禁止出现任何直接写 Prefs 的调用
@@ -471,8 +470,8 @@ if "MixerCommit.commit(c, draft, n)" not in mixer_block:
     errs.append("R40 回退：界面没走唯一出口 MixerCommit.commit")
 if draft_src.count("Prefs.set") != 5:
     errs.append("R40 回退：commit 写入口不是 5 个（实际 %d）" % draft_src.count("Prefs.set"))
-if draft_src.count("put(") != 11:  # R50 起 10 次字段调用（含附加语气）+ 1 次 put() 定义
-    errs.append("R40 回退：diff 源码调用数不是 10（实际 %d）" % (draft_src.count("put(") - 1))
+if draft_src.count("put(") != 10:  # R76 起 9 次字段调用 + 1 次 put() 定义
+    errs.append("R40 回退：diff 源码调用数不是 9（实际 %d）" % (draft_src.count("put(") - 1))
 # 旧生效动词（只查字符串字面量，注释里描述旧 bug 不算）
 lits = ui_literals(main_src) + ui_literals(draft_src)
 for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:

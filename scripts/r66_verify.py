@@ -49,8 +49,8 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
     got = set(re.findall(r'[A-Z_]+', m.group(1))) if m else set()
     want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'AUDIO', 'SETTINGS',
-            'MODELS', 'CAST', 'MIXER', 'CHAPTERS'}
-    if got != want: e.append('Screen 枚举不是 10 值或仍含旧页: ' + str(got ^ want))
+            'MODELS', 'MIXER', 'CHAPTERS'}
+    if got != want: e.append('Screen 枚举不是 9 值或仍含旧页: ' + str(got ^ want))
     if 'private enum class ProduceMode { DIRECT }' not in main: e.append('制作档位没收敛成一种')
     if 'HubTitles = listOf("章节", "合成", "可播")' not in hub: e.append('目录页不是三列')
     if 'repeat(3) { col ->' not in hub: e.append('目录页仍渲染四列')
@@ -63,7 +63,7 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'Text("‹ 返回")' in main: pass  # 不强制，避免误伤别处
     if 'NAV_LLM' in chrome or '语言模型' in chrome or '文本处理' in chrome:
         e.append('抽屉仍残留旧模块项')
-    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 7: e.append('抽屉目的地不是 7 项')
+    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉目的地不是 6 项')
 
     # ② 制作入口恒直接朗读
     if 'run(c, book, onlyChapters, true, thinkOverride, config)' not in pipe:
@@ -117,7 +117,7 @@ def main():
         ('枚举退回 11 值', lambda: check(main=MAIN.replace(
             'MIXER, CHAPTERS }', 'MIXER, LLM, CHAPTERS }'))),
         ('抽屉旧项回潮', lambda: check(chrome=CHROME.replace(
-            'NAV_CAST to "角色音色",', 'NAV_CAST to "角色音色",\n    NAV_LLM to "语言模型",'))),
+            '    NAV_MODELS to "模型",', '    NAV_MODELS to "模型",\n    NAV_LLM to "语言模型",'))),
         ('四列回潮', lambda: check(hub=HUB.replace(
             'listOf("章节", "合成", "可播")', 'listOf("原始", "标注", "合成", "可播")'))),
         ('五步回潮', lambda: check(main=MAIN.replace(
