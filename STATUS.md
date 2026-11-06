@@ -5,24 +5,26 @@
 > 已归档的历史文档/脚本位置 → `docs/HISTORY_INDEX.md`。
 > 本文件**不再追加逐轮复盘、不再写第二份队列**，避免头部与文末自相矛盾（R37 的教训）。
 
-**2026-11-06 · R81 模型页重排已出包（`1.1.0+79`，run 79 全绿）**
+**2026-11-06 · R84 模型选择页已出包（`1.1.0+80`，run 80 全绿）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+79`（run 79 全绿；R81 模型页重排） |
-| APK | arm64-v8a / 固定 debug 签名 / **17,964,999 字节** |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `a5bf45e9a06d…`，逐字节一致） |
-| CI | run 79 `completed success`（真 Kotlin 编译 + 22 套自检 step + `r81_verify` + APK 闸门 + Release `v1.1.0-79`） |
-| 源码 | commit `f390534a0f`；`r81_verify` 正向 11 / 零残留 6 / 守恒 12 / 反向注入 3/3；本地 21 套 `CI=true` 全绿 |
+| 版本 | `1.1.0+80`（run 80 全绿；R84 模型选择页） |
+| APK | arm64-v8a / 固定 debug 签名 / **17,981,388 字节** |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `072c649631172d3e…`，逐字节一致） |
+| CI | run 80 `completed success`（真 Kotlin 编译 + 22 套自检 step + `r84_verify` + APK 闸门 + Release `v1.1.0-80`） |
+| 源码 | commit `648f40f5e5`；`r84_verify` 正向 50 / 零残留 20 / 守恒 14 / 反向注入 8/8；本地 22 套 `CI=true` 全绿 |
 | 源码领先 | **无**：源码与可装包对齐（文档二次同步带 `[skip ci]`，不改代码） |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk`（旧名自动跳转） |
 
 ## 方向（R66 订正，以本段为准）
 
 - **只有一个模型**：Qwen3-TTS 1.7B voicedesign 主文件 + 12Hz tokenizer 两份 GGUF。语言模型（含 4B / Huihui 权重、提示词、标注、文本处理、数据标注等说法）**整套退场**：不再有第二份权重、不再加载、不再有独立设置页，也不再保留相关界面入口。
-- **音频模型不换**：CustomVoice / Base / 3.0-TTS / 换 1.7B 以上权重，全部不做。发力点是把可调参数调好 + 控制台显示清楚。
+- **R84 订正**：上面「音频模型不换」只对**换更大权重**成立，不再是不做 CustomVoice / Base。
+  现行结构是 **1 份共用底座 + 3 份模式主文件**（voicedesign / customvoice / base），各自单独导入、单选启用；
+  `ModelStore` 按模式独有关键词精确识别。目前只有 voicedesign 接通合成，另两种明确拦住等下一轮调音台。
 - **制作只有一条路径**：原文整段直接送声音模型；声音表现由调音台全局音色 + 9 项采样决定。逐段 `{speaker, instruct}`、角色映射、按角色换音色一起失效。
-- **界面形状**：左侧抽屉 6 项（角色音色幽灵页已删）；点书进三列横滑目录（章节 / 合成 / 可播）；勾选章后底部小条「调音 › / 合成音频」，**调音在点合成之前，调完直接合成，不要求先试听**；进度页四步 + 分段看台看送进声音模型的正文；设置页只管软件；模型页只列两份声音 GGUF。
+- **界面形状**：左侧抽屉 6 项（角色音色幽灵页已删）；点书进三列横滑目录（章节 / 合成 / 可播）；勾选章后底部小条「调音 › / 合成音频」，**调音在点合成之前，调完直接合成，不要求先试听**；进度页四步 + 分段看台看送进声音模型的正文；设置页只管软件；模型页是底座 + 三模式选择页（导出日志板块已砍掉）。
 - **零残留词表**：语言模型 / 数据标注 / 文本模型 / 标注 / 4B / Qwen3-4B / Huihui / no_think / A/B gate / MODEL_ID / AbGate / m2507 / prompt_zh —— 用户可见字符串逐文件查零残留，提示词资产从包里删除。
 - **R67 订正**：上面这句「保留但不可达」对一半类型不成立——`VoiceCast` / `AuditLog` / `SegPlan` / `Workbench` / `RawDump` 仍被角色音色页、诊断区、看台、看书页引用，**保留且仍可达**；`AbGate` 等真死代码已在 P1a 删除。
 - **R68 订正**：P1b 把 `if (direct)/else` 重构成单一路径后，`Adoption.kt` / `JsonSalvage.kt` / `diag/RawDump.kt` / `diag/AuditLog.kt` **四个文件物理删除**，诊断区 7 处旧读取与 3 秒定时器一并清掉；仍活的 `SegPlan` / `VoiceCast` / `NonVerbal` / `Workbench` / `EventLog` / `AnnCache.dirFor` 一个没动。旧 `index.json`、旧 WAV、旧任务记录仍能读。

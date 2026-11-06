@@ -9,7 +9,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.1.0+79`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.1.0+80`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
 - 仓库已改名：源码仓 `tingben-android→tingben`，APK 仓 `tingben-apk→ting-ben-apk`，旧地址自动跳转
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
@@ -18,7 +18,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 
 ## 用起来四步
 
-1. 左上角 ☰（或从左边缘右滑）开抽屉 →「模型」→ 导入**两份**声音 GGUF（App 自己不联网）
+1. 左上角 ☰（或从左边缘右滑）开抽屉 →「模型」→ 导入**共用底座 + 至少 1 份模式主文件**（三模式各自单独导入，App 自己不联网）
 2. 顶栏右上「＋」导入 txt / md / epub，或书架默认展开的输入框粘贴文字；也支持在其他 App 里「打开方式 → 听本」
 3. 点书进三列目录 → 勾选要做的章 → 底部小条「调音 ›」调声音（**在点合成之前**）→「合成音频」
 4. 进度页看四步与分段看台 →「任务」管长任务 →「我的音频」完整播放器试听 / 保存
