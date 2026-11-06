@@ -85,6 +85,12 @@ jobs:
       - name: R94 导入失败可恢复与续跑对拍验证（正向 / 守恒 / 反向注入）
         run: python3 scripts/r94_verify.py --selftest
 
+      - name: R95 落盘预检对拍（8 组场景 + 合并边界 + 公式常量一致）
+        run: python3 scripts/r95_space_parity.py
+
+      - name: R95 落盘预检与阅读位置验证（正向 / 守恒 / 反向注入）
+        run: python3 scripts/r95_verify.py --selftest
+
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 

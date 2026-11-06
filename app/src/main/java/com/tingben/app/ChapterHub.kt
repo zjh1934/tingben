@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
 import com.tingben.app.diag.EventLog
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -378,6 +380,20 @@ private fun ReaderPane(
         text.substring(s, e).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
     }
     var size by remember { mutableStateOf(Prefs.readerFontScale(c)) }
+    // R95 · 章内滚动位置：打开时恢复，滚动时落盘。
+    // 只在这一章自己的位置有效；换章由 ReadingState.save 自动归零。
+    val saved = remember(book, i) { ReadingState.pos(c, book.id)?.takeIf { it.chapter == i } }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = saved?.para ?: 0,
+        initialFirstVisibleItemScrollOffset = saved?.offset ?: 0
+    )
+    LaunchedEffect(book.id, i, listState) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }.distinctUntilChanged().collect { (p, off) ->
+            ReadingState.save(c, book.id, i, p, off)
+        }
+    }
     Column(Modifier.fillMaxSize().background(HubCard)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onClose) { Text("‹ 目录") }
@@ -392,7 +408,8 @@ private fun ReaderPane(
                 Prefs.setReaderFontScale(c, size)
             }) { Text("A+") }
         }
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 18.dp)) {
+        LazyColumn(state = listState,
+            modifier = Modifier.weight(1f).padding(horizontal = 18.dp)) {
             items(body) { p ->
                 Text(p, fontSize = size.sp, lineHeight = (size * 1.7f).sp,
                     modifier = Modifier.padding(bottom = 10.dp))

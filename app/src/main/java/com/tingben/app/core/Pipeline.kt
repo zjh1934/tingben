@@ -803,7 +803,34 @@ object Producer {
         // R74 · 每章总段数 / 已生成段数；只统计真正落盘成功的段，失败段不算完成。
         val perChapterTotal = segChapter.groupingBy { it }.eachCount()
         val perChapterDone = mutableMapOf<Int, Int>()
+        // R95 · 落盘预检：磁盘满时逐段失败只会留半成品，合并还会静默失败。
+        // 估算只用来判断「够不够」，不进任何指纹、不改声音内容、不改正文。
+        val pending = (0 until toSpeak.size).count { i ->
+            val f = File(work, String.format("direct_%04d.wav", i))
+            !(f.exists() && f.length() > 44)
+        }
+        val sample = (0 until toSpeak.size).mapNotNull { i ->
+            File(work, String.format("direct_%04d.wav", i))
+                .takeIf { it.exists() && it.length() > 44 }?.length()
+        }
+        // 24kHz / 16bit / mono，按 60 秒一段保守估；有真实成品样本就用均值。
+        val segBytes = if (sample.isNotEmpty()) sample.average().toLong()
+                       else 24_000L * 2L * 60L
+        val mergeBytes = toSpeak.size.toLong() * segBytes
+        val needBytes = pending * segBytes * 3L / 2L + mergeBytes + 16L * 1024 * 1024
+        val freeBytes = minOf(work.usableSpace, AudioLibrary.dir(c).usableSpace)
         try {
+            if (needBytes > freeBytes) {
+                val needMb = (needBytes + 1024 * 1024 - 1) / (1024 * 1024)
+                val freeMb = freeBytes / (1024 * 1024)
+                _state.value = Progress(false, "没完成", 0, annotated.size,
+                    gateFails + synthFails,
+                    "存储空间不够，这次大约要 " + needMb + " MB、可用 " + freeMb +
+                        " MB；清出空间后在任务里点「继续制作」，已生成的段都留着")
+                EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_SHORT",
+                    "need=$needBytes free=$freeBytes pending=$pending seg=$segBytes")
+                return
+            }
             for ((i, a) in toSpeak.withIndex()) {
                 if (cancelRequested) {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
@@ -868,6 +895,17 @@ object Producer {
         // R18 · 旧版写死 audio/<bookId>.wav：做第 1 章和第 3 章会互相覆盖，
         // 音频页又把文件名当 bookId，一章的成品显示成整本书。改成每次独立成品 id。
         val outFile = File(AudioLibrary.dir(c), "${UUID.randomUUID()}.wav")
+        // R95 · 成品还要占一份空间：分段够、合并不够时给明确原因，而不是笼统「没能生成音频」。
+        val finalBytes = wavs.sumOf { it.length() } + 16L * 1024 * 1024
+        if (finalBytes > outFile.parentFile!!.usableSpace) {
+            _state.value = Progress(false, "没完成", annotated.size, annotated.size,
+                gateFails + synthFails,
+                "存储空间不够，音频接不起来；已生成的 ${wavs.size} 段都留着，" +
+                    "清出空间后点「继续制作」")
+            EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_SHORT_MERGE",
+                "need=$finalBytes free=${outFile.parentFile!!.usableSpace} parts=${wavs.size}")
+            return
+        }
         val ok = WavMerger.merge(wavs, outFile, config.gapMs)
         if (!ok || outFile.length() <= 44) {
             _state.value = Progress(false, "没完成", annotated.size, annotated.size,
