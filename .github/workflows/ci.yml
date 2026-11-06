@@ -76,6 +76,9 @@ jobs:
       - name: R92 调音台整页重做验证（首帧减负 / 旧形态零残留 / 守恒 / 反向注入）
         run: python3 scripts/r92_verify.py --selftest
 
+      - name: R93 三模式接通验证（字段链路 / 参考音频 / mode_stamp / 守恒 / 反向注入）
+        run: python3 scripts/r93_verify.py --selftest
+
 
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py

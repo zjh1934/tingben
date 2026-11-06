@@ -66,7 +66,7 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     if 'val annotated = chunks.flatMap' not in pipe: e.append('直接朗读主体被删')
     if 'val gateFails = 0' not in pipe: e.append('恒 0 降级计数被删')
     if 'String.format("direct_%04d.wav", i)' not in pipe: e.append('WAV 命名没收敛')
-    if pipe.count('\n') > 900: e.append('Pipeline 仍超 900 行，旧分支疑似未删干净')
+    if pipe.count('\n') > 980: e.append('Pipeline 仍超 980 行，旧分支疑似未删干净')
     if 'R68 · P1b' not in pipe: e.append('缺 R68 重构注记')
 
     # ③ 零残留

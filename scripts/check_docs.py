@@ -111,7 +111,8 @@ def checks(base=ROOT):
         for key in ('qwen-tokenizer-12hz-Q8_0.gguf', 'voicedesign', 'customvoice', 'base'):
             if not any(key in f for f in files):
                 errs.append('model-manifest 缺 %s' % key)
-        if m.get('current_mode') != 'voice_design' or m.get('synthesis_ready_modes') != ['voice_design']:
+        if m.get('current_mode') != 'voice_design' or set(m.get('synthesis_ready_modes', [])) != {
+                'voice_design', 'custom_voice', 'base'}:
             errs.append('model-manifest 的当前模式 / 接通模式与现状不符')
     except Exception as e:
         errs.append('model-manifest 解析失败：%s' % e)

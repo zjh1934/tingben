@@ -79,6 +79,10 @@ object Prefs {
     private const val KEY_FONT_SCALE = "readerFontScale"
     // R84 · 当前启用的音频模式 id；不进 voiceStamp，切模式不误删旧 WAV。
     private const val KEY_MODEL_MODE = "modelMode"
+    // R93 · 三模式各自的输入。模式 id 本身不进 voiceStamp；这两项进独立 mode_stamp。
+    private const val KEY_SPEAKER = "speakerName"
+    private const val KEY_SPEAKER_NAMES = "speakerNames"
+    private const val KEY_REF_TEXT = "refText"
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -173,6 +177,22 @@ object Prefs {
     fun setModelMode(c: Context, v: String) =
         sp(c).edit().putString(KEY_MODEL_MODE, v).apply()
 
+    // R93 · custom_voice 选中的预设音色编号，与运行时读出的音色表缓存。
+    fun speakerName(c: Context): String = sp(c).getString(KEY_SPEAKER, "") ?: ""
+    fun setSpeakerName(c: Context, v: String) =
+        sp(c).edit().putString(KEY_SPEAKER, v.trim()).apply()
+
+    fun speakerNames(c: Context): List<String> =
+        (sp(c).getString(KEY_SPEAKER_NAMES, "") ?: "")
+            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    fun setSpeakerNames(c: Context, names: List<String>) =
+        sp(c).edit().putString(KEY_SPEAKER_NAMES, names.joinToString(",")).apply()
+
+    // R93 · base 参考音频里念的原文；空 = 只走克隆模式 A，不填 = ICL 模式 B。
+    fun refText(c: Context): String = sp(c).getString(KEY_REF_TEXT, "") ?: ""
+    fun setRefText(c: Context, v: String) =
+        sp(c).edit().putString(KEY_REF_TEXT, v.trim()).apply()
+
     fun themeMode(c: Context) = sp(c).getInt(KEY_THEME_MODE, 0)
 
     fun setThemeMode(c: Context, v: Int) =
@@ -232,6 +252,10 @@ object Prefs {
             else -> "描述造音色"
         })
         append(" · 音色 ").append(if (voiceDescription(c).isBlank()) "默认" else "自定义")
+        when (modelMode(c)) {
+            "custom_voice" -> append(" · 预设音色 ").append(speakerName(c).ifBlank { "未选" })
+            "base" -> append(" · 参考音频 ").append(if (VoiceRef.exists(c)) "已导入" else "未导入")
+        }
         append(" · seed ").append(ttsKnobs(c).seed)
     }
 }

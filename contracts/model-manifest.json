@@ -1,9 +1,9 @@
 {
   "project": "听本",
-  "note": "现行结构：1 份共用底座 + 3 份模式主文件，四份各自单独导入、单选启用。模型文件不进 APK。",
-  "runtime_policy": "只加载共用底座 + 当前启用的一份 talker 主文件；正文整段直接送声音模型。没有文本模型，没有标注管线。",
+  "note": "现行结构：1 份共用底座 + 3 份模式主文件；三种模式都能合成，各自按 qwen.h 字段语义供料。",
+  "runtime_policy": "只加载共用底座 + 当前启用的一份 talker 主文件；模式由 qt_init 从 GGUF 读出的 model_type 决定。voice_design 用 instruct、custom_voice 用 speaker、base 用参考音频。没有文本模型。",
   "current_mode": "voice_design",
-  "synthesis_ready_modes": ["voice_design"],
+  "synthesis_ready_modes": ["voice_design", "custom_voice", "base"],
   "models": [
     {
       "slot": "tts_tokenizer",
@@ -28,7 +28,7 @@
         "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf",
         "https://hf-mirror.com/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-voicedesign-Q8_0.gguf"
       ],
-      "status": "已导入（真机 1.90 GiB），当前启用，唯一接通合成"
+      "status": "已导入，描述造音色，instruct 必填"
     },
     {
       "slot": "tts_talker_custom_voice",
@@ -40,7 +40,7 @@
         "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-customvoice-Q8_0.gguf",
         "https://hf-mirror.com/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-customvoice-Q8_0.gguf"
       ],
-      "status": "已导入，可选中；speaker 输入界面与引擎传参未接通"
+      "status": "已导入；speaker 编号已接通，音色表运行时从模型读出并缓存"
     },
     {
       "slot": "tts_talker_base",
@@ -52,9 +52,9 @@
         "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-base-Q8_0.gguf",
         "https://hf-mirror.com/Serveurperso/Qwen3-TTS-GGUF/resolve/main/qwen-talker-1.7b-base-Q8_0.gguf"
       ],
-      "status": "已导入，可选中；ref_audio 输入界面与引擎传参未接通"
+      "status": "已导入；24kHz 单声道 WAV 参考音频已接通（ref_audio_24k + ref_text）"
     }
   ],
   "mode_rules_source": "app/src/main/cpp/qwen.h（第三方 GGUF 仓库 README 把 base / customvoice 用途写反了，不采用）",
-  "status_verified_by": "1.1.0+80 真机模型页截图：已就绪 · 3 个模式 / 已导入 4 个文件"
+  "status_verified_by": "1.1.0+80 真机模型页截图：已就绪 · 3 个模式 / 已导入 4 个文件；R93 字段链路接通"
 }

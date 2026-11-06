@@ -33,6 +33,9 @@ data class MixerDraft(
     val knobs: TtsKnobs = TtsKnobs(),
     val perf: ProduceConfig = ProduceConfig(),
     val nonVerbal: Boolean = true,
+    // R93 · 三模式各自的输入，仍只经 commit() 写生效态
+    val speaker: String = "",
+    val refText: String = "",
     // 以下两项只是生成器工作区，不写 Prefs、不计入「未提交」
     val dims: Map<String, String> = emptyMap(),
     val dimText: String = ""
@@ -43,7 +46,9 @@ data class MixerDraft(
             voice = Prefs.voiceDescription(c),
             knobs = Prefs.ttsKnobs(c),
             perf = Prefs.defaultPerf(c),
-            nonVerbal = Prefs.nonVerbal(c)
+            nonVerbal = Prefs.nonVerbal(c),
+            speaker = Prefs.speakerName(c),
+            refText = Prefs.refText(c)
         )
     }
 }
@@ -75,6 +80,8 @@ object MixerCommit {
         // R50 · 表演层三枚自定义小框合并后的附加语气，进 diff 才能出现在顶部计数与差异弹层。
         put("附加语气", a.perf.extraInstruct, d.perf.extraInstruct, TIMING_NEXT)
         put("拟声表达", onOff(a.nonVerbal), onOff(d.nonVerbal), TIMING_NOW)
+        put("预设音色", a.speaker, d.speaker, TIMING_NOW)
+        put("参考音频转录", a.refText, d.refText, TIMING_NOW)
     }
 
     /**
@@ -87,6 +94,8 @@ object MixerCommit {
         Prefs.setTtsKnobs(c, d.knobs)
         Prefs.setDefaultPerf(c, d.perf)
         Prefs.setNonVerbal(c, d.nonVerbal)
+        Prefs.setSpeakerName(c, d.speaker)
+        Prefs.setRefText(c, d.refText)
         val after = Prefs.voiceStamp(c)
         EventLog.log(EventLog.Kind.ENGINE, "MIXER_COMMIT",
             "提交 $n 项变更 · hash=${d.knobs.hash()} · voiceStamp $before → $after · " +

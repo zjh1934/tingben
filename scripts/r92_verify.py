@@ -19,7 +19,7 @@ def check(f):
     m, mb = f["main"], mixer(f["main"])
     # ① 首帧减负：8 处同步读 → 3 处；重读挪后台
     sync = [x for x in ["MixerDraft.active(c)", "ModelStore.currentMode(c)",
-                        "val tick by remember"] if x in mb]
+                        "var tick by remember"] if x in mb]
     for s in ["Mixer.snapshot(c)", "ModelStore.missing(c)"]:
         # 这两处只允许出现在 LaunchedEffect 后台块里（边界缺失时按失败处理，不抛异常）
         i0 = mb.find("LaunchedEffect(tick) {")
@@ -39,13 +39,14 @@ def check(f):
               'MixerCommit.commit(c, draft, n)', 'BackHandler(enabled = dirty)',
               'verticalScroll(scroll)']:
         if s not in mb: e.append("新形态缺失: " + s[:44])
-    # ③ 物理不存在的项不画：另两个模式只有说明，没有输入控件
-    if mb.count("ModelStore.Mode.CUSTOM_VOICE") != 2 or mb.count("ModelStore.Mode.BASE") != 2:
-        e.append("三模式分支不完整")
-    for s in ["ref_audio_24k", "speaker =", "音色编号下拉", "参考音频选择"]:
-        if s in mb: e.append("画了未接通的输入控件: " + s)
+    # ③ R93 · 三模式各自真实输入；只禁「物理上不存在的假开关」形态
+    for s in ['ModelStore.Mode.CUSTOM_VOICE -> {', 'ModelStore.Mode.BASE -> {',
+              '读取模型自带的音色表', '导入一小段人声']:
+        if s not in mb: e.append("三模式输入分支缺: " + s)
+    for s in ["这个模式还不能合成", "到「模型」页切回", "音色编号下拉", "参考音频选择"]:
+        if s in mb: e.append("旧未接通形态残留: " + s)
     # ④ 旧形态零残留
-    for s in ["音色身份生成器", "表演层", "预设库", "固定音色", "哪些能改",
+    for s in ["音色身份生成器", "表演层", "固定音色", "哪些能改",
               "参数触达与官方资料", "openMap", "showVoiceEdit", "AnchorBar(",
               "snapshotFlow", "jumpTo(", "VoiceDimension", "12 维",
               "音色身份（全书固定）", "TimingHint(TIMING_NEXT)"]:
@@ -80,7 +81,7 @@ if __name__ == "__main__":
             ("恢复 openMap", "main", lambda t: t + '\nopenMap.contains("sampling")\n'),
             ("删掉自定义描述框", "main", lambda t: t.replace('Text("声音描述"', 'Text("X"')),
             ("删掉后台加载", "main", lambda t: t.replace('LaunchedEffect(tick) {', '// x')),
-            ("画假开关", "main", lambda t: t + '\nref_audio_24k\n'),
+            ("恢复旧未接通话术", "main", lambda t: t + '\n这个模式还不能合成\n'),
             ("CI 挂回旧脚本", "ci", lambda t: t + '\npython3 scripts/r49_verify.py\n'),
         ]
         bad = 0

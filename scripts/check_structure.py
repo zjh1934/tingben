@@ -468,10 +468,10 @@ for banned in ["Prefs.setTtsKnobs(", "Prefs.setVoiceDescription(", "Prefs.setDef
         errs.append("R40 回退：界面里出现第二个生效写入口 " + banned)
 if "MixerCommit.commit(c, draft, n)" not in mixer_block:
     errs.append("R40 回退：界面没走唯一出口 MixerCommit.commit")
-if draft_src.count("Prefs.set") != 4:
-    errs.append("R40 回退：commit 写入口不是 4 个（实际 %d）" % draft_src.count("Prefs.set"))
-if draft_src.count("put(") != 10:  # R76 起 9 次字段调用 + 1 次 put() 定义
-    errs.append("R40 回退：diff 源码调用数不是 9（实际 %d）" % (draft_src.count("put(") - 1))
+if draft_src.count("Prefs.set") != 6:
+    errs.append("R40 回退：commit 写入口不是 6 个（实际 %d）" % draft_src.count("Prefs.set"))
+if draft_src.count("put(") != 12:  # R93 起 11 次字段调用 + 1 次 put() 定义
+    errs.append("R40 回退：diff 源码调用数不是 11（实际 %d）" % (draft_src.count("put(") - 1))
 # 旧生效动词（只查字符串字面量，注释里描述旧 bug 不算）
 lits = ui_literals(main_src) + ui_literals(draft_src)
 for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:

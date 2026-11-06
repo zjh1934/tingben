@@ -74,6 +74,10 @@ object NativeEngine {
         subTemperature: Float, subTopK: Int, subTopP: Float
     ): Int
 
+    /** R93 · base 模式：把 24kHz 单声道 PCM 与转录文本交给引擎，整个合成期间有效。 */
+    external fun ttsSetVoiceRef(handle: Long, pcm: FloatArray, refText: String?): Boolean
+    external fun ttsClearVoiceRef(handle: Long)
+
     external fun ttsSpeakers(handle: Long): String
     external fun ttsFree(handle: Long)
 }

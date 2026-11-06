@@ -214,14 +214,21 @@ object ModelStore {
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
     /**
-     * customvoice 要音色编号、base 要参考音频，两者都还没有对应的输入界面。
-     * 明确拦住比把错误参数丢给引擎好：不画假开关、不静默产出坏音频。
-     * ttsLoad 每次合成都重新加载并 ttsFree，切模式后下一次合成自然生效，无需额外卸载。
+     * R93 · 三种模式都能合成，只拦「这一份输入还没准备齐」。
+     * 严格按当前模式取主文件，不回退到 voicedesign —— 否则会拿 A 权重配 B 参数。
+     * 引擎侧由 qt_model_type 再校验一次字段合法性，这里只管用户能补上的部分。
      */
     fun synthesisBlockReason(c: Context): String? {
         val m = currentMode(c)
-        if (m == Mode.VOICE_DESIGN) return null
-        return "「${m.label}」还不能用来合成音频。切回「描述造音色」后即可继续。"
+        if (modeFile(c, m) == null)
+            return "「${m.label}」的模式主文件还没导入。到「模型」页导入，或切回「描述造音色」。"
+        return when (m) {
+            Mode.VOICE_DESIGN -> null
+            Mode.CUSTOM_VOICE ->
+                if (Prefs.speakerName(c).isBlank()) "先在调音台挑一个预设音色，再合成。" else null
+            Mode.BASE ->
+                if (!VoiceRef.exists(c)) "先在调音台导入一小段参考音频，再合成。" else null
+        }
     }
 
     fun missing(c: Context): List<String> {
@@ -616,7 +623,9 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, reason)
             return
         }
-        val tk = ModelStore.talker(c); val tok = ModelStore.tokenizer(c)
+        // R93 · 严格取当前模式的主文件，不再用带 voicedesign 回退的 talker()
+        val tk = ModelStore.modeFile(c, ModelStore.currentMode(c))
+        val tok = ModelStore.tokenizer(c)
         val miss = mutableListOf<String>()
         if (tk == null) miss.add("模式主文件")
         if (tok == null) miss.add("共用底座（12Hz）")
@@ -698,8 +707,25 @@ object Producer {
             stampFile.writeText(voiceStamp)
         } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_MODE",
-            "voice_design · 指纹=$voiceStamp · seed=${knobs.seed}" +
+            "${SynthInput.label(c)} · 指纹=$voiceStamp · seed=${knobs.seed}" +
                 " · temp=${knobs.temperature} · lang=chinese（官方 README：目标语言已知时显式传，别用 auto）")
+
+        // R93 · 模式 / 音色编号 / 参考音频变化时不作废旧版 voiceStamp（旧 WAV 兼容照旧），
+        // 但必须作废这一本已合成的 WAV：否则续跑跳过旧 WAV，切了模式仍听旧声音。
+        val modeStamp = sha(listOf(
+            ModelStore.currentMode(c).id, Prefs.speakerName(c), VoiceRef.fingerprint(c)
+        ).joinToString("||"))
+        val modeStampFile = File(work, "mode_stamp.txt")
+        try {
+            val oldMode = if (modeStampFile.exists()) modeStampFile.readText().trim() else ""
+            if (modeStampFile.exists() && oldMode != modeStamp) {
+                val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
+                killed.forEach { it.delete() }
+                EventLog.log(EventLog.Kind.PIPELINE, "MODE_INVALIDATE",
+                    "模式输入变了（$oldMode → $modeStamp），作废 ${killed.size} 段旧音频，分段保留")
+            }
+            modeStampFile.writeText(modeStamp)
+        } catch (_: Throwable) { }
 
         // R20 · 预设指纹：voiceStamp 覆盖「升级 App 导致模板版本变化」，
         // 这里覆盖「同一版本内用户把叙事改成广播剧」。两者都只删 WAV、保留切分结果：
@@ -735,6 +761,14 @@ object Producer {
         }
         if (ttsHandle == 0L) {
             _state.value = Progress(false, "没开始", 0, 0, 0, "音频模型打不开，请确认两个文件都导入了")
+            return
+        }
+        // R93 · base 的参考音频只在这里交给引擎一次，整次合成的 PCM 指针由 native 持锁保住。
+        try {
+            SynthInput.prepare(c, ttsHandle)
+        } catch (t: Throwable) {
+            try { NativeEngine.ttsFree(ttsHandle) } catch (_: Throwable) { }
+            _state.value = Progress(false, "没开始", 0, 0, 0, t.message ?: "模式输入没准备好")
             return
         }
 
@@ -777,20 +811,23 @@ object Producer {
                 val wav = File(work, String.format("direct_%04d.wav", i))
                 // 让「这一段到底用什么指令读的」可见：最终 instruct（含身份层/风格层）。
                 // voice_design 的 speaker 必须传 null。
+                // R93 · 字段按引擎读出的 model_type 供料，不再恒传 null。
+                val v = SynthInput.params(c, a.instruct, config.styleInstruct())
                 EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
                     "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
-                        a.text.take(50).replace('\n', '⏎') + " → " + a.instruct.replace('\n', '｜'),
+                        a.text.take(50).replace('\n', '⏎') + " → " + (v.instruct ?: "（无指令）"),
                     level = EventLog.Level.TRACE,
                     fields = mapOf("seg" to (i + 1).toString(), "speaker" to a.speaker,
-                        "textChars" to a.text.length.toString(), "instructChars" to a.instruct.length.toString(),
-                        "lang" to "chinese", "speakerParam" to "null"))
+                        "textChars" to a.text.length.toString(), "instructChars" to (v.instruct?.length ?: 0).toString(),
+                        "lang" to "chinese", "mode" to ModelStore.currentMode(c).id,
+                        "speakerParam" to (v.speaker ?: "null")))
                 if (wav.exists() && wav.length() > 44) {
                     wavs.add(wav)
                     SegPlan.clearRedo(work, "seg:$i")
                 } else {
                     val code = try {
                         // 官方 Qwen3-TTS README：目标语言已知时显式传，别用 auto；全中文书固定 chinese。
-                        NativeEngine.ttsSynthesize(ttsHandle, a.text, a.instruct, null, "chinese",
+                        NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, "chinese",
                             wav.absolutePath, knobs)
                     } catch (t: Throwable) {
                         EventLog.log(EventLog.Kind.ENGINE, "TTS_ERROR", t.message ?: "")

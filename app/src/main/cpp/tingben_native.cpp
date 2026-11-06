@@ -19,6 +19,7 @@
 #include <vector>
 #include <atomic>
 #include <mutex>
+#include <map>
 
 #include "llama.h"
 #include "qwen.h"
@@ -381,6 +382,17 @@ Java_com_tingben_app_engine_NativeEngine_llmFree(JNIEnv *, jobject, jlong handle
 // ── TTS ─────────────────────────────────────────────────────
 static bool ttsCancelCb(void *) { return g_cancel.load(); }
 
+// R93 · base 模式参考音频。qwen.h:294-301 要 mono float PCM @24kHz；
+// ref_audio_24k 与 ref_text 一起给 = ICL（模式 B），只给 PCM = clone（模式 A）。
+// 指针在整个 qt_synthesize 阻塞期间必须有效，因此按 handle 存一份并持锁到合成结束；
+// ttsFree 里 erase。上游 max_batch=1、制作中禁切模式，不存在并发改写。
+struct VoiceRefState {
+    std::vector<float> pcm;
+    std::string        text;
+};
+static std::mutex g_refMu;
+static std::map<qt_context *, VoiceRefState> g_refs;
+
 JNIEXPORT jlong JNICALL
 Java_com_tingben_app_engine_NativeEngine_ttsLoad(
         JNIEnv * env, jobject, jstring jTalker, jstring jCodec, jstring jDevice) {
@@ -430,6 +442,7 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     auto * q = (qt_context *)(intptr_t)handle;
     if (!q) { throwJava(env, "TTS 未加载"); return -1; }
     g_cancel.store(false);
+    std::unique_lock<std::mutex> refLock(g_refMu, std::defer_lock);
 
     const char * text     = env->GetStringUTFChars(jText, nullptr);
     const char * instruct = jInstruct ? env->GetStringUTFChars(jInstruct, nullptr) : nullptr;
@@ -440,11 +453,30 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     qt_tts_params tp;
     qt_tts_default_params(&tp);   // 先拿上游完整默认，再逐字段覆盖，不手搓字段顺序
     tp.text     = text;
-    tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;
     tp.lang     = (lang && lang[0]) ? lang : "auto";
-    // R23 · A4/E2：custom_voice 靠 speaker 真换声；voicedesign 只吃 instruct。
-    // 上游 qt_synthesize 会按 model_type 校验，传错模式返回 QT_STATUS_MODE_INVALID。
-    tp.speaker  = (speaker && speaker[0]) ? speaker : nullptr;
+
+    // R93 · 模式由 qt_init 从 talker GGUF 读出的 model_type 决定，不是界面开关。
+    // 按 qwen.h:280-301 的字段语义供料，绝不把上层的模式判断硬塞进引擎。
+    const char * mt = qt_model_type ? qt_model_type(q) : nullptr;
+    const bool isBase   = mt && std::strcmp(mt, "base") == 0;
+    const bool isCustom = mt && std::strcmp(mt, "custom_voice") == 0;
+    if (isBase) {
+        tp.instruct = nullptr;               // base 拒绝 instruct
+        tp.speaker  = nullptr;               // 与 ref_audio 互斥
+        refLock.lock();                      // 持锁到 qt_synthesize 结束，保住 PCM 指针
+        auto it = g_refs.find(q);
+        if (it != g_refs.end() && !it->second.pcm.empty()) {
+            tp.ref_audio_24k = it->second.pcm.data();
+            tp.ref_n_samples = (int)it->second.pcm.size();
+            tp.ref_text = it->second.text.empty() ? nullptr : it->second.text.c_str();
+        }
+    } else if (isCustom) {
+        tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;  // 可选风格指令
+        tp.speaker  = (speaker && speaker[0]) ? speaker : nullptr;      // 预设音色编号
+    } else {
+        tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;  // voice_design 必填
+        tp.speaker  = nullptr;
+    }
 
     tp.seed                = (int64_t)seed;
     tp.max_new_tokens      = (int)maxNewTokens;
@@ -458,11 +490,12 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
 
     // R38 · 触达证据：打印 qt_tts_params 的实收值，与 Kotlin 侧 TTS_PARAMS 事件逐项对照。
     // 只截 instruct 前 40 字符，不把长正文写进 logcat。
-    LOGI("TTS_PARAMS_APPLIED seed=%lld max=%d temp=%.3f top_k=%d top_p=%.3f rep=%.3f "
-         "subTemp=%.3f subTopK=%d subTopP=%.3f lang=%s instruct=%.40s",
-         (long long)tp.seed, tp.max_new_tokens, tp.temperature, tp.top_k, tp.top_p,
+    LOGI("TTS_PARAMS_APPLIED mode=%s seed=%lld max=%d temp=%.3f top_k=%d top_p=%.3f rep=%.3f "
+         "subTemp=%.3f subTopK=%d subTopP=%.3f lang=%s speaker=%s refN=%d instruct=%.40s",
+         mt ? mt : "?", (long long)tp.seed, tp.max_new_tokens, tp.temperature, tp.top_k, tp.top_p,
          tp.repetition_penalty, tp.subtalker_temperature, tp.subtalker_top_k,
          tp.subtalker_top_p, tp.lang ? tp.lang : "auto",
+         tp.speaker ? tp.speaker : "(null)", tp.ref_n_samples,
          tp.instruct ? tp.instruct : "(null)");
 
     tp.cancel   = ttsCancelCb;      // 设计系统 §11：长任务必须有可取消入口
@@ -471,6 +504,7 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     qt_audio audio;
     memset(&audio, 0, sizeof(audio));
     int status = qt_synthesize(q, &tp, &audio);
+    if (refLock.owns_lock()) refLock.unlock();   // PCM 指针不再被引用
 
     int ret = status;
     if (status == 0 && audio.n_samples > 0) {
@@ -498,6 +532,45 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     return ret;
 }
 
+// R93 · 把一段 24kHz 单声道 float PCM 交给 base 模式作参考音频。
+// 只在 qt_synthesize 的阻塞期间读，ttsFree 里清掉，不做预编码 latent 缓存。
+JNIEXPORT jboolean JNICALL
+Java_com_tingben_app_engine_NativeEngine_ttsSetVoiceRef(
+        JNIEnv * env, jobject, jlong handle, jfloatArray jPcm, jstring jRefText) {
+    auto * q = (qt_context *)(intptr_t)handle;
+    if (!q || !jPcm) return JNI_FALSE;
+    const jsize n = env->GetArrayLength(jPcm);
+    if (n <= 0) return JNI_FALSE;
+    jfloat * arr = env->GetFloatArrayElements(jPcm, nullptr);
+    if (!arr) return JNI_FALSE;
+    std::vector<float> pcm((size_t)n);
+    for (jsize i = 0; i < n; ++i) pcm[(size_t)i] = arr[i];
+    env->ReleaseFloatArrayElements(jPcm, arr, JNI_ABORT);
+
+    std::string txt;
+    if (jRefText) {
+        const char * s = env->GetStringUTFChars(jRefText, nullptr);
+        if (s) { txt = s; env->ReleaseStringUTFChars(jRefText, s); }
+    }
+    const size_t nchars = txt.size();
+    {
+        std::lock_guard<std::mutex> lk(g_refMu);
+        VoiceRefState & st = g_refs[q];
+        st.pcm = std::move(pcm);
+        st.text = std::move(txt);
+    }
+    LOGI("ttsSetVoiceRef: %d samples, refText chars=%zu", (int)n, nchars);
+    return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_tingben_app_engine_NativeEngine_ttsClearVoiceRef(JNIEnv *, jobject, jlong handle) {
+    auto * q = (qt_context *)(intptr_t)handle;
+    if (!q) return;
+    std::lock_guard<std::mutex> lk(g_refMu);
+    g_refs.erase(q);
+}
+
 // R23 · 运行时读出 customvoice 的真实音色表（不硬编码 9 个名字）。
 // 返回逗号分隔字符串，Kotlin 侧按 ',' 拆；base / voice_design 返回空串。
 JNIEXPORT jstring JNICALL
@@ -521,6 +594,7 @@ JNIEXPORT void JNICALL
 Java_com_tingben_app_engine_NativeEngine_ttsFree(JNIEnv *, jobject, jlong handle) {
     auto * q = (qt_context *)(intptr_t)handle;
     if (!q) return;
+    { std::lock_guard<std::mutex> lk(g_refMu); g_refs.erase(q); }
     qt_free(q);
     LOGI("ttsFree done");
 }

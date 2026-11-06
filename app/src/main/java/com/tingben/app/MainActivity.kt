@@ -1509,9 +1509,11 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
                 val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
                 if (h == 0L) throw IllegalStateException("声音模型打不开")
                 try {
+                    SynthInput.prepare(c, h)
+                    val v = SynthInput.params(c, instruct, null)
                     val f = File(c.filesDir, outName)
                     // R38 · 目标语言已知时显式传 chinese，主链 / 两态试听 / 试音口径统一。
-                    val code = NativeEngine.ttsSynthesize(h, text, instruct, null, "chinese",
+                    val code = NativeEngine.ttsSynthesize(h, text, v.instruct, v.speaker, "chinese",
                         f.absolutePath, Prefs.ttsKnobs(c))
                     if (code != 0 || !f.exists() || f.length() <= 44)
                         throw IllegalStateException("没生成声音，code=$code")
@@ -2193,6 +2195,27 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var busyActiveTrial by remember { mutableStateOf(false) }
     var trialMsg by remember { mutableStateOf("") }
 
+    // R93 · 三模式各自的输入态；参考音频是资产，导入即存，参数仍走 commitAll()。
+    var refState by remember(tick) { mutableStateOf(VoiceRef.status(c)) }
+    var speakerList by remember(tick) { mutableStateOf(Prefs.speakerNames(c)) }
+    var speakerBusy by remember { mutableStateOf(false) }
+    val pickRef = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch(Dispatchers.IO) {
+            val r = runCatching {
+                val b = c.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("打不开这个文件")
+                VoiceRef.save(c, b)
+            }
+            withContext(Dispatchers.Main) {
+                refState = VoiceRef.status(c)
+                tick++
+                Toast.makeText(c, r.exceptionOrNull()?.message ?: "参考音频已导入",
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     /** 全页唯一生效动作。写完重读真值源。 */
     fun commitAll() {
         val n = changes.size
@@ -2229,11 +2252,13 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
                 if (h == 0L) throw IllegalStateException("声音模型打不开")
                 try {
+                    SynthInput.prepare(c, h)
                     val identity = src.voice.trim().ifBlank { DEFAULT_IDENTITY }
-                    val instruct = VoiceProfile.build(
+                    val instructVD = VoiceProfile.build(
                         identity, src.perf.styleInstruct(), "平稳、清晰地叙述，句间自然停顿。")
+                    val v = SynthInput.params(c, instructVD, src.perf.styleInstruct())
                     val f = File(c.filesDir, out)
-                    val code = NativeEngine.ttsSynthesize(h, trialText, instruct, null, "chinese",
+                    val code = NativeEngine.ttsSynthesize(h, trialText, v.instruct, v.speaker, "chinese",
                         f.absolutePath, src.knobs)
                     if (code != 0 || !f.exists() || f.length() <= 44)
                         throw IllegalStateException("没生成声音，code=$code")
@@ -2308,9 +2333,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         ModelStore.Mode.VOICE_DESIGN ->
                             "一段声音描述 + 9 项采样，一起送进模型。到「模型」页可切换别的模式。"
                         ModelStore.Mode.CUSTOM_VOICE ->
-                            "这个模式用音色编号挑声音，还不能合成。到「模型」页切回「描述造音色」即可继续。"
+                            "从模型自带的音色里挑一个，再给它一句念法要求；9 项采样照常生效。"
                         ModelStore.Mode.BASE ->
-                            "这个模式用一小段参考音频克隆声音，还不能合成。到「模型」页切回「描述造音色」即可继续。"
+                            "用一小段人声样本克隆音色，描述与音色编号都不参与；9 项采样照常生效。"
                     },
                     fontSize = 10.5.sp, color = Sub
                 )
@@ -2318,34 +2343,124 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             HorizontalDivider(color = Line)
             Spacer(Modifier.height(8.dp))
 
-            // ── 声音描述：voicedesign 唯一身份输入（instruct 可随便改）──
-            if (mode == ModelStore.Mode.VOICE_DESIGN) {
-                Text("声音描述", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text("送进模型 · 可随便改", fontSize = 10.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = draft.voice, onValueChange = { draft = draft.copy(voice = it) },
-                    modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
-                    label = { Text("想要的嗓子", fontSize = 11.sp) },
-                    placeholder = { Text("例如：温和的中年女声，吐字清晰，语速偏慢，无明显口音", fontSize = 11.sp) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
-                )
-                Spacer(Modifier.height(5.dp))
-                Text("这段描述和下面 9 项采样同时生效、互不覆盖。", fontSize = 10.5.sp, color = Sub)
-                Text("每次合成会重新采样音色；固定种子只收敛漂移，不保证跨段完全一致。",
-                    fontSize = 10.5.sp, color = Sub)
-                Spacer(Modifier.height(4.dp))
-                Row {
-                    TextButton(onClick = { draft = draft.copy(voice = "") }) {
-                        Text("恢复默认描述", fontSize = 10.5.sp, color = Primary)
+            // ── R93 · 每种模式只画它真实存在的输入 ──
+            when (mode) {
+                ModelStore.Mode.VOICE_DESIGN -> {
+                    Text("声音描述", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("送进模型 · 可随便改", fontSize = 10.sp, color = Sub)
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = draft.voice, onValueChange = { draft = draft.copy(voice = it) },
+                        modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
+                        label = { Text("想要的嗓子", fontSize = 11.sp) },
+                        placeholder = { Text("例如：温和的中年女声，吐字清晰，语速偏慢，无明显口音", fontSize = 11.sp) },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text("这段描述和下面 9 项采样同时生效、互不覆盖。", fontSize = 10.5.sp, color = Sub)
+                    Text("每次合成会重新采样音色；固定种子只收敛漂移，不保证跨段完全一致。",
+                        fontSize = 10.5.sp, color = Sub)
+                    Spacer(Modifier.height(4.dp))
+                    Row {
+                        TextButton(onClick = { draft = draft.copy(voice = "") }) {
+                            Text("恢复默认描述", fontSize = 10.5.sp, color = Primary)
+                        }
                     }
+                    TimingHint(TIMING_NOW)
                 }
-                TimingHint(TIMING_NOW)
-            } else {
-                Text("这个模式还不能合成", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text("到「模型」页切回「描述造音色」，就能继续做音频。",
-                    fontSize = 10.5.sp, color = Sub)
+                ModelStore.Mode.CUSTOM_VOICE -> {
+                    Text("预设音色", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("模型自带的音色编号 · 点一下选中", fontSize = 10.sp, color = Sub)
+                    Spacer(Modifier.height(6.dp))
+                    if (speakerList.isEmpty()) {
+                        TextButton(onClick = {
+                            speakerBusy = true
+                            scope.launch(Dispatchers.IO) {
+                                val r = runCatching {
+                                    val tk = ModelStore.modeFile(c, ModelStore.Mode.CUSTOM_VOICE)
+                                        ?: throw IllegalStateException("还没导入「预设音色」那份主文件")
+                                    val tok = ModelStore.tokenizer(c)
+                                        ?: throw IllegalStateException("还没导入共用底座")
+                                    val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
+                                    if (h == 0L) throw IllegalStateException("模型打不开")
+                                    try { NativeEngine.ttsSpeakers(h) } finally { NativeEngine.ttsFree(h) }
+                                }
+                                withContext(Dispatchers.Main) {
+                                    speakerBusy = false
+                                    val names = r.getOrNull()?.split(',')?.map { it.trim() }
+                                        ?.filter { it.isNotEmpty() }?.distinct() ?: emptyList()
+                                    if (names.isNotEmpty()) {
+                                        Prefs.setSpeakerNames(c, names)
+                                        speakerList = names
+                                        tick++
+                                    }
+                                    Toast.makeText(c, r.exceptionOrNull()?.message
+                                        ?: if (names.isEmpty()) "这份模型没有读到音色表" else "读到 ${names.size} 个音色",
+                                        Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }, enabled = !speakerBusy) {
+                            Text(if (speakerBusy) "正在读模型…（约 1 分钟）" else "读取模型自带的音色表 ›",
+                                fontSize = 11.sp)
+                        }
+                        Text("第一次要载入一次模型，之后音色表会记住。", fontSize = 10.sp, color = Sub)
+                    } else {
+                        speakerList.chunked(2).forEach { row ->
+                            Row(Modifier.fillMaxWidth()) {
+                                row.forEach { name ->
+                                    TextButton(modifier = Modifier.weight(1f),
+                                        onClick = { draft = draft.copy(speaker = name) }) {
+                                        Text(if (draft.speaker == name) "● $name" else "○ $name",
+                                            fontSize = 11.sp,
+                                            color = if (draft.speaker == name) Primary else Sub)
+                                    }
+                                }
+                                if (row.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = draft.voice, onValueChange = { draft = draft.copy(voice = it) },
+                        modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4,
+                        label = { Text("念法要求 · 可留空", fontSize = 11.sp) },
+                        placeholder = { Text("例如：语速放慢，句尾别上扬", fontSize = 11.sp) },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
+                    )
+                    Text("这里只影响「怎么念」，不换音色；换音色是上面那个编号。",
+                        fontSize = 10.5.sp, color = Sub)
+                    TimingHint(TIMING_NOW)
+                }
+                ModelStore.Mode.BASE -> {
+                    Text("参考音频", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("24kHz · 单声道 · 16-bit WAV · 最长 30 秒", fontSize = 10.sp, color = Sub)
+                    Spacer(Modifier.height(6.dp))
+                    Text(refState, fontSize = 11.5.sp,
+                        color = if (VoiceRef.exists(c)) Good else Warn)
+                    Spacer(Modifier.height(4.dp))
+                    Row {
+                        Button(onClick = { pickRef.launch(arrayOf("audio/*", "*/*")) }) {
+                            Text("导入一小段人声 ›", fontSize = 11.sp)
+                        }
+                        if (VoiceRef.exists(c)) {
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = {
+                                VoiceRef.clear(c); refState = VoiceRef.status(c); tick++
+                            }) { Text("删掉", fontSize = 10.5.sp, color = Warn) }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = draft.refText,
+                        onValueChange = { draft = draft.copy(refText = it) },
+                        modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4,
+                        label = { Text("这段录音念的是什么 · 可留空", fontSize = 11.sp) },
+                        placeholder = { Text("填上原文克隆更准；留空就只按声音克隆", fontSize = 11.sp) },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
+                    )
+                    Text("这个模式不接受文字描述，也不接受音色编号。", fontSize = 10.5.sp, color = Sub)
+                    TimingHint(TIMING_NOW)
+                }
             }
             Spacer(Modifier.height(6.dp))
 
