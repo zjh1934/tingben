@@ -1834,11 +1834,8 @@ private fun ModelScreen(c: Context, refresh: Int,
 // 预设一键覆盖）各自握着生效权，界面没有「未保存」这一层。R40 收成：
 //   active（Prefs 唯一真值源） ←→ draft（唯一编辑态） → 唯一出口 MixerCommit.commit()
 // 不手搓依据见 docs/R39_调音台统一提交_联动表与分轮.md §6 与 core/MixerDraft.kt 头注。
-// 折叠分组沿用 R36 的 MixerSection（rememberSaveable 跨旋转保留展开态）。
-@Composable
-
-// R98 · 调音台整页重写：旧 MixerScreen 与配套控件（1837-2620）整段删除，
-// 新实现见本文件下方 R98 段。三种模式并列、数值完整可见，不再在旧形态上增删。
+// R98 · 调音台整页重写：旧 MixerScreen 与配套控件整段删除。
+// R99 · 折叠分组整套退场，采样与试听常驻；三种模式并列、数值完整可见。
 
 /**
  * R98 · 调音台整页重写（不是在旧形态上增删）。
