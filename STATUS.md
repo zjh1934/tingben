@@ -3,15 +3,15 @@
 > 唯一用途：记录「现在是什么」。下面做什么 → `ROADMAP.md`（唯一真源）。
 > 本文件不写历史、不写复盘、不写第二份队列。
 
-**2026-11-06 · 最新可装包 `1.1.0+95`；源码与包对齐**
+**2026-11-06 · 最新可装包 `1.1.0+97`；源码与包对齐**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+95`（run 95 全绿，真 Kotlin 编译 + 原生引擎重编） |
-| APK | arm64-v8a / 固定 debug 签名 / 17,986,131 字节 |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `40ff90761cc33144b9d1863a28bdaed34921b0fa`，与本地逐字节一致；Release `v1.1.0-95` 同字节） |
+| 版本 | `1.1.0+97`（run 97 全绿，真 Kotlin 编译 + 原生引擎在包） |
+| APK | arm64-v8a / 固定 debug 签名 / 17,986,126 字节 |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `2bd0249340b92670a12156513889c59cc540ce2f`，与本地逐字节一致；Release `v1.1.0-97` 同字节） |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk`（旧名自动跳转） |
-| 源码与包 | **对齐**：R98 三模式并列 + R99 收口一起打进 `+95`（源码 `f083198a0f`） |
+| 源码与包 | **对齐**：R100 端到端链路修复打进 `+97`（源码 `7e0a970b60`） |
 
 ## 这个软件是什么
 
