@@ -500,12 +500,13 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
     val missing = remember(refresh) { ModelStore.missing(c) }
+    val lastReads = remember(refresh, books) { books.associate { it.id to ReadingState.last(c, it.id) } }
     val clipboard = LocalClipboardManager.current
     var pasteOpen by remember { mutableStateOf(false) }
     var pasteText by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        // U1 · 下拉刷新条抽到 AppChrome 壳层；手势阈值与旧实现一致，删掉「点右上角」注释
+        // U1 · 下拉刷新条抽到 AppChrome 壳层；手势阈值与旧实现一致
         RefreshStrip(
             onRefresh = onChanged,
             primary = Primary,
@@ -513,21 +514,36 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             sub = Sub
         )
         Spacer(Modifier.height(6.dp))
+        // R78 · 缺件收成一行细条，不跟主操作抢位置
         if (!ready) {
-            CardBox(Modifier.padding(bottom = 12.dp)) {
-                Text("还差：" + missing.joinToString("、"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                FilledTonalButton(onClick = onModels, Modifier.fillMaxWidth()) { Text("去准备") }
+            Row(
+                Modifier.fillMaxWidth().clickable { onModels() }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("还差：" + missing.joinToString("、"), fontSize = 11.5.sp, color = Warn,
+                    maxLines = 2, modifier = Modifier.weight(1f))
+                Text("去准备 ›", fontSize = 11.5.sp, color = Primary)
             }
+            Spacer(Modifier.height(6.dp))
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("粘贴文字", fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f))
-            TextButton(onClick = { pasteOpen = !pasteOpen }) {
-                Text(if (pasteOpen) "收起" else "展开", fontSize = 12.sp, color = Primary)
+        if (books.isEmpty()) {
+            // R78 · 空态只留一张主卡：主操作最大，粘贴是次级入口
+            CardBox(Modifier.padding(bottom = 12.dp)) {
+                Text("还没有书", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("导入本地 TXT / EPUB，或先粘一段文字试试", fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(14.dp))
+                Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
+                    Text("导入一本书", fontSize = 15.sp)
+                }
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = { pasteOpen = !pasteOpen }) {
+                    Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
+                }
             }
         }
+        // R78 · 粘贴框只在点开时出现，不占首屏
         if (pasteOpen) {
             CardBox(Modifier.padding(bottom = 12.dp)) {
                 OutlinedTextField(
@@ -559,31 +575,35 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                 }
             }
         }
-        if (books.isEmpty()) {
-            CardBox {
-                Text("书架还是空的", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("导入一本书", fontSize = 15.sp)
-                }
-            }
-        } else {
+        if (books.isNotEmpty()) {
+            // R78 · 有书态：整卡可点，补上次读到的章
+            Text("共 ${books.size} 本", fontSize = 11.5.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
             books.forEach { b ->
-                CardBox(Modifier.padding(bottom = 10.dp)) {
-                    Text(b.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Spacer(Modifier.height(3.dp))
-                    Text("${b.chars} 字", fontSize = 11.5.sp, color = Sub)
-                    Spacer(Modifier.height(8.dp))
+                val lastRead = lastReads[b.id]
+                CardBox(Modifier.padding(bottom = 10.dp).clickable { onOpen(b.id) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(b.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                            Spacer(Modifier.height(3.dp))
+                            Text("${b.chars} 字", fontSize = 11.5.sp, color = Sub)
+                            if (lastRead != null) {
+                                Spacer(Modifier.height(3.dp))
+                                Text("上次读到 第 ${lastRead + 1} 章", fontSize = 11.sp, color = Primary)
+                            }
+                        }
+                        Text("›", fontSize = 18.sp, color = Sub)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { confirmDelete = b.id }) {
-                            Text("✕", fontSize = 16.sp, color = Sub)
-                        }
-                        IconButton(onClick = { onOpen(b.id) }) {
-                            Text("▶", fontSize = 16.sp, color = Primary)
+                        TextButton(onClick = { confirmDelete = b.id }) {
+                            Text("删除", fontSize = 11.sp, color = Sub)
                         }
                     }
                 }
+            }
+            TextButton(onClick = { pasteOpen = !pasteOpen }) {
+                Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
             }
         }
         confirmDelete?.let { id ->

@@ -944,3 +944,16 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 
 | R76 | 幽灵页与无意义项清理：抽屉 7→6 项、Screen 9 值、调音台角色 UI 与设置页话术全删；主链/voiceStamp 为旧 WAV 兼容保留；18 套 CI=true 全绿、反向 8/8、4 屏自绘预览自审 |
 | R76-出包 | run 74 `completed success`；`1.1.0+74` / 17,964,995 字节 / 直链 blob `401cfec9dfce`；源码 commit `6fe4a97a`（29 上传 + 13 删除）；不做拆包比对，只核直链逐字节一致 |
+
+
+## R77 · P1d 角色表底层退场（2026-11-06）
+
+- **入口**：R76 删幽灵页后，`voiceStamp` 仍含角色表 hash、合成循环仍逐段 resolve 角色表。按 R77 联动表物理清掉，**界面零改动**。
+- **核心风险与方案**：直接删 hash 项会让旧 `voice_stamp.txt` 失配 → 用户已合成 WAV 被一次性删光。改为双指纹：`changed = old != voiceStamp && old != legacyVoiceStamp(c)`；旧手机命中 legacy 不作废、只把 stamp 改写成新值；真改音色/采样仍照常作废。
+- **11 处联动**：`CastPresets.kt` / `VoiceCast.kt` 物理删；`Prefs` 删两个键与四个函数、`voiceStamp` 三项、新增 `legacyVoiceStamp` + 私有 legacy 读法；`MixerDraft` 删 `castEnabled`；`Pipeline` 删逐段角色解析、身份层直接用 `globalVoice`、日志去角色数；5 个文件注释旧词清理；`ci.yml` 挂 `r77_verify` / `r77_stamp_migration`。
+- **验证**：迁移 8 组对拍全过；`r77_verify` 正向断言 + 反向注入 8/8 拦下；本地 `CI=true` 全套回归全绿；4 屏自绘自审（旧音频不删 / 迁移流程 / 代码层删了什么 / 界面零变化对拍），横向溢出 0。
+- **交付**：Git Data API 提交 `c913141d` → **run 75 `completed success`**（真 Kotlin 编译 + APK 闸门 + Release `v1.1.0-75`）；APK **17,948,597 字节**，直链 blob `a8d73027f3b881aad0686025545b74f35c4645cf` 与本地 APK 的 git blob sha1 相等（等价逐字节一致）。按用户新纪律**不做拆包比对**。
+- **如实限定**：`cast.json` 作为历史数据不主动删；`legacyVoiceStamp` 是过渡兼容读，未假装一次清干净；真机零证据，不向用户索取装机验证。
+- **队列**：P1e 书架首屏重排 → P4 性能二期，各自单独发版。
+
+| R78 | 书架首屏重排：空态主卡 / 有书态整卡可点 + 上次读到 / 缺件与粘贴收成小入口；自绘 5 屏自审 |

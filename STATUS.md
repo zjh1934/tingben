@@ -5,16 +5,16 @@
 > 已归档的历史文档/脚本位置 → `docs/HISTORY_INDEX.md`。
 > 本文件**不再追加逐轮复盘、不再写第二份队列**，避免头部与文末自相矛盾（R37 的教训）。
 
-**2026-11-06 · R76 幽灵页清理已出包（`1.1.0+74`，run 74 全绿）**
+**2026-11-06 · R77 底层残留清理已出包（`1.1.0+75`，run 75 全绿）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+74`（run 74 全绿；R74 逐章进度 + R75 真机归档 + R76 幽灵页清理） |
-| APK | arm64-v8a / 固定 debug 签名 / **17,964,995 字节** |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `401cfec9dfce…`，与本地逐字节一致） |
-| CI | run 74 `completed success`（真 Kotlin 编译 + 19 套自检 step + APK 闸门 + Release `v1.1.0-74`） |
-| 源码 | commit `6fe4a97a`；`r76_verify` 反向注入 8/8；本地 `CI=true` 18 套全绿 |
-| 源码领先 | **无**：R74 / R75 / R76 已随 run 74 一次出包，源码与可装包对齐。用户此前截图显示 `+72`，覆盖装后即 `+74` |
+| 版本 | `1.1.0+75`（run 75 全绿；R77 角色表底层退场 + 旧 WAV 双指纹迁移） |
+| APK | arm64-v8a / 固定 debug 签名 / **17,948,597 字节** |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `a8d73027f3b8…`，按 git blob sha1 与本地逐字节一致） |
+| CI | run 75 `completed success`（真 Kotlin 编译 + 自检 step + APK 闸门 + Release `v1.1.0-75`） |
+| 源码 | commit `c913141d`；`r77_verify` 反向注入 8/8 + 迁移 8 组对拍；本地 `CI=true` 全绿 |
+| 源码领先 | **无**：R77 已随 run 75 出包，源码与可装包对齐。用户截图显示 `+72`，覆盖装后即 `+75` |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk`（旧名自动跳转） |
 
 ## 方向（R66 订正，以本段为准）
@@ -32,7 +32,7 @@
 
 ## 现状要点
 
-- 导航：无底栏；☰ / 从左边缘右滑开左侧抽屉（240dp，**7 个目的地**），`DismissibleNavigationDrawer` 展开时右侧工作页一起推走（R51）。
+- 导航：无底栏；☰ / 从左边缘右滑开左侧抽屉（240dp，**6 个目的地**），`DismissibleNavigationDrawer` 展开时右侧工作页一起推走（R51）。
 - 调音台：`MixerDraft` 唯一编辑态 + `commitAll()` 唯一生效出口；**提交不需要先试听**；两态试听（未提交 / 已生效）点一下即出声；9 项采样真到 `qt_tts_params`，12 维 / 表演层 / 静音是上层，结构不可调项不画开关。
 - 制作：`Producer.start` 恒 `direct`；逐块落盘断点续传、前台服务 `dataSync` + 通知 + 按块唤醒锁；旧成品统一按「已合成」处理。
 - 目录页：三列复用同一份章列表，`AudioLibrary.chapterIndices` 兼容旧数据；播放走软件内悬浮条，不做独立播放器页。
@@ -75,3 +75,5 @@
 预览图通过才落代码；每轮单独发版不夹带；交付前核直链 blob 与本地逐字节一致；静态自检 ≠ CI 真编译；「收敛」不许写成「根治」；真机零证据不宣称、不转嫁给用户；不确定的界面自己画出来自己看自己改。
 
 - **R76 订正**：抽屉「角色音色」幽灵页、调音台角色预设/角色映射开关/三个弹层、设置页评审腔话术全部删除；`Screen` 9 值、抽屉 6 项。`Pipepline` 的 `castEnabled` 读取与 `Prefs.voiceStamp` 里的 `VoiceCast.hash` **故意保留**——删了会作废旧 WAV，物理清理单列 P1d。18 套 `CI=true` 全绿、反向注入 8/8。
+
+- **R77 订正**：`CastPresets.kt` / `VoiceCast.kt` 两文件物理删除，`voiceStamp` 收成三项；新增 `legacyVoiceStamp` 双指纹比对，旧手机升级时已合成 WAV **不会误删**，真改了音色/采样仍照常作废。`cast.json` 作为历史数据只读一次、不主动删；`legacyVoiceStamp` 是过渡兼容读，后续版本可删。界面一行未改。

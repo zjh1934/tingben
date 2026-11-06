@@ -49,6 +49,9 @@ jobs:
       - name: R77 指纹迁移 8 组对拍
         run: python3 scripts/r77_stamp_migration.py
 
+      - name: R78 书架首屏重排验证（空态主卡 / 整卡可点 / 上次读到 / 守恒 / 反向注入）
+        run: python3 scripts/r78_verify.py --selftest
+
       - name: R38 参数触达矩阵与反向注入
         run: python3 scripts/r38_param_audit.py
 
