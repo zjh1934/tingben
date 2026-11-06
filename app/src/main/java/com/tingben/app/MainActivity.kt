@@ -17,6 +17,8 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -843,11 +845,13 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
         "$what$extra"
     }
 
-    val seenTask = remember(tick) { TaskResume.load(c) }
     var redoNonce by remember { mutableStateOf(0) }
-    val segs = remember(tick, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
-    val rest = remember(tick, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
-    val verdict = remember(tick, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
+    // R79 · 心跳 remember(tick) 是纯内存；这四项都要读磁盘（segmap / 最多 60 次 stat /
+    // 整本书重切章），原来跟 tick 走＝每秒一整轮。改跟「完成的段数」走＝每段一整轮。
+    val seenTask = remember(st.done, redoNonce) { TaskResume.load(c) }
+    val segs = remember(st.done, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
+    val rest = remember(st.done, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
+    val verdict = remember(st.done, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
     var segSel by remember { mutableStateOf<Int?>(null) }
     var showCompare by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
@@ -1014,10 +1018,13 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                              onAudio: () -> Unit, onLibrary: () -> Unit,
                              onResume: (TaskInfo) -> Unit) {
     val st by Producer.state.collectAsState()
-    // R51 · 旧版每秒 tick 一次（整页重组 1 次/秒），tick/2 每 2 秒同步读磁盘。
-    // 合成一次 2 秒信号：重组次数减半，磁盘读频率不变。
+    // R79 · 旧版 LaunchedEffect(Unit) 无条件每 2 秒整页重组 + 三次磁盘读，
+    // 哪怕「还没有任务」也照跑。改成只在制作中轮询，静止页零定时器。
     var loadTick by remember { mutableStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { delay(2000); loadTick++ } }
+    LaunchedEffect(st.running) {
+        if (!st.running) return@LaunchedEffect
+        while (true) { delay(2000); loadTick++ }
+    }
     val saved = remember(refresh, loadTick) { TaskResume.load(c) }
     val t = saved
     val real = remember(t, refresh) { t?.let { TaskResume.realProgress(c, it) } ?: 0 }
@@ -1144,12 +1151,8 @@ private fun AudioScreen(c: Context, refresh: Int) {
     LaunchedEffect(items) {
         PlayQueue.setTracks(items.map { Track(it.file, "${it.title} · ${it.scope}") })
     }
-    // R51 · 旧版无条件每 300ms tick，即使没播放也把整页重组 3.3 次/秒。
-    // 只在播放时刷新进度，500ms 足够人眼读进度条。
-    LaunchedEffect(pq.isPlaying) {
-        if (!pq.isPlaying) return@LaunchedEffect
-        while (true) { delay(500); PlayQueue.tick() }
-    }
+    // R79 · tick 统一由跨页常驻的 MiniPlayBar 驱动；本页只订阅 PlayQueue.state，
+    // 不再和悬浮条同时驱动同一单例（播放时原本 500ms + 1000ms 双份 tick）。
     val isPlaying = pq.isPlaying
     val posMs = pq.positionMs
     val durMs = pq.durationMs
@@ -1167,98 +1170,105 @@ private fun AudioScreen(c: Context, refresh: Int) {
         }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
 
         // 顶部「现在播放」：控件集合取自 MiniPlayingBar 与 Media3 的
         // PreviousButton / PlayPauseButton / NextButton 语义；状态由 PlayQueue 单向驱动。
         if (current != null) {
-            CardBox(Modifier.padding(bottom = 12.dp)) {
-                Text(if (pq.ended) "已播完" else if (isPlaying) "播放中" else "已暂停",
-                    fontSize = 11.5.sp, color = Primary)
-                Spacer(Modifier.height(4.dp))
-                Text("${current.title} · ${current.scope}", fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold, maxLines = 2)
-                Text("${current.mode} · ${fmtTime(AudioLibrary.durationMs(current.file))}",
-                    fontSize = 11.5.sp, color = Sub)
-                Spacer(Modifier.height(12.dp))
-                Slider(
-                    value = if (durMs > 0) posMs.toFloat() / durMs.toFloat() else 0f,
-                    onValueChange = { v -> PlayQueue.seekTo((v * durMs.toFloat()).toLong()) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(fmtTime(posMs), fontSize = 11.sp, color = Sub)
-                    Spacer(Modifier.weight(1f))
-                    Text(fmtTime(durMs), fontSize = 11.sp, color = Sub)
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { step(-1) }) { Text("⏮ 上一条", fontSize = 12.sp) }
-                    TextButton(onClick = { PlayQueue.seekTo((posMs - 15000).coerceAtLeast(0)) }) {
-                        Text("−15s", fontSize = 12.sp)
+            item(key = "now_playing") {
+                CardBox(Modifier.padding(bottom = 12.dp)) {
+                    Text(if (pq.ended) "已播完" else if (isPlaying) "播放中" else "已暂停",
+                        fontSize = 11.5.sp, color = Primary)
+                    Spacer(Modifier.height(4.dp))
+                    Text("${current.title} · ${current.scope}", fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold, maxLines = 2)
+                    Text("${current.mode} · ${fmtTime(AudioLibrary.durationMsOfBytes(current.bytes))}",
+                        fontSize = 11.5.sp, color = Sub)
+                    Spacer(Modifier.height(12.dp))
+                    Slider(
+                        value = if (durMs > 0) posMs.toFloat() / durMs.toFloat() else 0f,
+                        onValueChange = { v -> PlayQueue.seekTo((v * durMs.toFloat()).toLong()) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(fmtTime(posMs), fontSize = 11.sp, color = Sub)
+                        Spacer(Modifier.weight(1f))
+                        Text(fmtTime(durMs), fontSize = 11.sp, color = Sub)
                     }
-                    Button(onClick = { PlayQueue.toggle() }) {
-                        Text(if (isPlaying) "⏸ 暂停" else "▶ 播放", fontSize = 13.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { step(-1) }) { Text("⏮ 上一条", fontSize = 12.sp) }
+                        TextButton(onClick = { PlayQueue.seekTo((posMs - 15000).coerceAtLeast(0)) }) {
+                            Text("−15s", fontSize = 12.sp)
+                        }
+                        Button(onClick = { PlayQueue.toggle() }) {
+                            Text(if (isPlaying) "⏸ 暂停" else "▶ 播放", fontSize = 13.sp)
+                        }
+                        TextButton(onClick = { PlayQueue.seekTo((posMs + 15000).coerceAtMost(durMs)) }) {
+                            Text("+15s", fontSize = 12.sp)
+                        }
+                        TextButton(onClick = { step(1) }) { Text("下一条 ⏭", fontSize = 12.sp) }
                     }
-                    TextButton(onClick = { PlayQueue.seekTo((posMs + 15000).coerceAtMost(durMs)) }) {
-                        Text("+15s", fontSize = 12.sp)
+                    // ensemble-reads PlaybackController.setSpeed 的同款档位
+                    TextButton(onClick = {
+                        val nextSpeed = when (pq.speed) {
+                            1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f
+                        }
+                        PlayQueue.setSpeed(nextSpeed)
+                    }) { Text("倍速 ${"%.2f".format(pq.speed).trimEnd('0').trimEnd('.')}x", fontSize = 11.5.sp, color = Sub) }
+                    TextButton(onClick = release, Modifier.fillMaxWidth()) {
+                        Text("关闭播放器", fontSize = 11.5.sp, color = Sub)
                     }
-                    TextButton(onClick = { step(1) }) { Text("下一条 ⏭", fontSize = 12.sp) }
-                }
-                // ensemble-reads PlaybackController.setSpeed 的同款档位
-                TextButton(onClick = {
-                    val nextSpeed = when (pq.speed) {
-                        1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f
-                    }
-                    PlayQueue.setSpeed(nextSpeed)
-                }) { Text("倍速 ${"%.2f".format(pq.speed).trimEnd('0').trimEnd('.')}x", fontSize = 11.5.sp, color = Sub) }
-                TextButton(onClick = release, Modifier.fillMaxWidth()) {
-                    Text("关闭播放器", fontSize = 11.5.sp, color = Sub)
                 }
             }
         }
 
         if (items.isEmpty()) {
-            CardBox {
-                Text("还没有音频", fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
-                Text("在书架导入一本书，选中章节合成后，成品会出现在这里。",
-                    fontSize = 11.sp, color = Sub)
-            }
-        } else items.forEachIndexed { idx, item ->
-            val on = idx == pq.index
-            CardBox(Modifier.padding(bottom = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
-                            fontSize = 14.5.sp, maxLines = 2)
-                        Text("${item.mode} · ${fmtTime(AudioLibrary.durationMs(item.file))} · %.1f MB"
-                            .format(item.bytes / 1024f / 1024f), fontSize = 11.5.sp, color = Sub)
-                    }
-                    if (on) Text("●", color = Primary, fontSize = 13.sp)
+            item(key = "audio_empty") {
+                CardBox {
+                    Text("还没有音频", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Text("在书架导入一本书，选中章节合成后，成品会出现在这里。",
+                        fontSize = 11.sp, color = Sub)
                 }
-                Spacer(Modifier.height(9.dp))
-                Row {
-                    Button(onClick = {
-                        if (!on || pq.ended) PlayQueue.playFrom(idx) else PlayQueue.toggle()
-                    }) {
-                        Text(if (on && isPlaying) "暂停" else if (on) "继续" else "试听", fontSize = 12.sp)
+            }
+        } else {
+            itemsIndexed(items, key = { _, it -> it.id }) { idx, item ->
+                val on = idx == pq.index
+                CardBox(Modifier.padding(bottom = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
+                                fontSize = 14.5.sp, maxLines = 2)
+                            Text("${item.mode} · ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))} · %.1f MB"
+                                .format(item.bytes / 1024f / 1024f), fontSize = 11.5.sp, color = Sub)
+                        }
+                        if (on) Text("●", color = Primary, fontSize = 13.sp)
                     }
-                    Spacer(Modifier.width(8.dp))
-                    FilledTonalButton(onClick = {
-                        exportId = item.id
-                        export.launch("${item.title}_${item.scope}.wav")
-                    }) { Text("保存到手机", fontSize = 12.sp) }
-                    Spacer(Modifier.width(4.dp))
-                    TextButton(onClick = {
-                        if (on) release()
-                        AudioLibrary.remove(c, item.id); localTick++
-                    }) { Text("删除", fontSize = 11.5.sp, color = Warn) }
+                    Spacer(Modifier.height(9.dp))
+                    Row {
+                        Button(onClick = {
+                            if (!on || pq.ended) PlayQueue.playFrom(idx) else PlayQueue.toggle()
+                        }) {
+                            Text(if (on && isPlaying) "暂停" else if (on) "继续" else "试听", fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        FilledTonalButton(onClick = {
+                            exportId = item.id
+                            export.launch("${item.title}_${item.scope}.wav")
+                        }) { Text("保存到手机", fontSize = 12.sp) }
+                        Spacer(Modifier.width(4.dp))
+                        TextButton(onClick = {
+                            if (on) release()
+                            AudioLibrary.remove(c, item.id); localTick++
+                        }) { Text("删除", fontSize = 11.5.sp, color = Warn) }
+                    }
                 }
             }
         }
     }
 }
+
 
 // ── ⑤ 设置（只管软件） ──
 /** R25 · 历史分组小标题组件，R54 起不再调用，保留定义避免动别处引用。 */

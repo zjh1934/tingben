@@ -62,12 +62,22 @@ for name in ["producing", "progressText", "onProgress", "pendingTask", "onTasks"
          "LibraryScreen 仍引用已删参数 " + name)
 
 # 三个 tick 收敛
+# R79 订正：R51 把「音频页自己门控 + 自己 500ms tick」写死成正断言；R79 起 tick 统一由
+# 跨页常驻的 MiniPlayBar 驱动，音频页只订阅 state。旧两条断言已过时，改成更严的新形态：
+# 悬浮条必须门控且是唯一 tick 源，音频页内不许再出现第二处 PlayQueue.tick()。
+hub_path = ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt"
+hub = hub_path.read_text()
+audio = s[s.index("private fun AudioScreen"):s.index("// ── ⑤ 设置（只管软件） ──")]
 need("delay(300)" not in s, "音频页 300ms 无条件 tick 还在")
-need("LaunchedEffect(pq.isPlaying)" in s, "音频页没按播放态门控")
-need("delay(500); PlayQueue.tick()" in s, "音频页进度刷新不是 500ms")
-need("delay(2000); loadTick++" in s, "任务页没合成 2 秒信号")
+need("if (!st.isPlaying) return@LaunchedEffect" in hub, "悬浮条 tick 没按播放态门控")
+need("delay(500L)" in hub and "delay(1000L)" not in hub, "悬浮条不是唯一 500ms tick 源")
+need("PlayQueue.tick()" in hub, "悬浮条没驱动 PlayQueue.tick")
+need("PlayQueue.tick()" not in audio, "音频页又出现第二处 tick 驱动")
+need("LaunchedEffect(Unit) { while (true) { delay(2000); loadTick++ } }" not in s,
+     "任务页 2 秒轮询退回无条件")
+need("delay(2000); loadTick++" in s, "任务页 2 秒信号丢了")
+need("LaunchedEffect(st.running) {" in s, "任务页/进度页心跳没按 running 门控")
 need("tick.value / 2" not in s, "任务页旧的 tick/2 磁盘读还在")
-need("LaunchedEffect(st.running) {" in s, "进度页心跳没按 running 门控")
 need("snapshotFlow { scroll.value }" in s, "锚点流仍每帧复制 map")
 need("scroll.value to anchors.toMap()" not in s, "旧锚点流还在")
 
@@ -104,8 +114,18 @@ def inject_root(x):
     return x[:a] + body + x[k:]
 blocked(inject_root, "根上恢复订阅",
         lambda m: "Producer.state.collectAsState()" not in app_body(m))
-blocked(lambda x: x.replace("LaunchedEffect(pq.isPlaying)", "LaunchedEffect(Unit)"),
-        "音频页取消播放门控", lambda m: "LaunchedEffect(pq.isPlaying)" in m)
+def blocked_h(mut, label, probe):
+    m = mut(hub)
+    need(not probe(m), "反向注入没拦下：" + label)
+blocked_h(lambda x: x.replace("if (!st.isPlaying) return@LaunchedEffect", ""),
+          "悬浮条取消播放门控", lambda m: "if (!st.isPlaying) return@LaunchedEffect" in m)
+blocked(lambda x: x.replace(
+            "    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {",
+            "    LaunchedEffect(Unit) { while (true) { delay(500); PlayQueue.tick() } }\n"
+            "    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {"),
+        "音频页又出现第二处 tick",
+        lambda m: "PlayQueue.tick()" not in m[m.index("private fun AudioScreen"):
+                                              m.index("// ── ⑤ 设置（只管软件） ──")])
 blocked(lambda x: x.replace("delay(2000); loadTick++", "delay(1000); tick.value++"),
         "任务页退回 1 秒 tick", lambda m: "delay(2000); loadTick++" in m)
 blocked(lambda x: x.replace("snapshotFlow { scroll.value }", "snapshotFlow { scroll.value to anchors.toMap() }"),
@@ -143,4 +163,4 @@ if errs:
     print("R51 FAIL")
     for e in errs: print("  -", e)
     sys.exit(1)
-print("R51 PASS · 正向 %d 项 / 反向注入 6 例 / 守恒与括号全过" % 14)
+print("R51 PASS · 正向 %d 项 / 反向注入 7 例 / 守恒与括号全过（R79 tick 源订正）" % 14)

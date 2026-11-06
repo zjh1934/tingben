@@ -209,6 +209,9 @@ object AudioLibrary {
     }
 
     /** WAV 24kHz / 16bit / mono：48000 字节 = 1 秒。 */
-    fun durationMs(f: File): Long =
-        ((f.length() - 44).coerceAtLeast(0) * 1000L / 48000L)
+    /** R79 · index 里已有 bytes，列表行内不再做 f.length() 的磁盘 stat。 */
+    fun durationMsOfBytes(bytes: Long): Long =
+        ((bytes - 44).coerceAtLeast(0) * 1000L / 48000L)
+
+    fun durationMs(f: File): Long = durationMsOfBytes(f.length())
 }

@@ -418,10 +418,12 @@ internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit
     if (st.index < 0 && st.label.isEmpty()) return
     var showList by remember { mutableStateOf(false) }
     val list = remember(bookId) { bookId?.let { AudioLibrary.playableItems(c, it) } ?: emptyList() }
+    // R79 · 悬浮条跨页常驻，是唯一 tick 源：暂停时不再每秒写全局 state、拖所有订阅页重组。
     LaunchedEffect(st.isPlaying) {
+        if (!st.isPlaying) return@LaunchedEffect
         while (isActive) {
             PlayQueue.tick()
-            delay(1000L)
+            delay(500L)
         }
     }
     val frac = if (st.durationMs > 0)

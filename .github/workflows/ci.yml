@@ -52,6 +52,9 @@ jobs:
       - name: R78 书架首屏重排验证（空态主卡 / 整卡可点 / 上次读到 / 守恒 / 反向注入）
         run: python3 scripts/r78_verify.py --selftest
 
+      - name: R79 P4 性能二期验证（两处门控 / 音频页 LazyColumn / 组合期 IO / 调音台锚点守恒 / 反向注入）
+        run: python3 scripts/r79_verify.py --selftest
+
       - name: R38 参数触达矩阵与反向注入
         run: python3 scripts/r38_param_audit.py
 

@@ -1,0 +1,145 @@
+# -*- coding: utf-8 -*-
+"""R79 · P4 性能二期验证：正向 / 零残留 / 守恒 / 函数体结构 / 反向注入。"""
+import pathlib, sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+BASE = ROOT / "app/src/main/java/com/tingben/app"
+MAIN = BASE / "MainActivity.kt"
+HUB = BASE / "ChapterHub.kt"
+LIB = BASE / "core" / "AudioLibrary.kt"
+CI = ROOT / ".github/workflows/ci.yml"
+LINK = ROOT / "docs/R79_P4性能二期_联动表.md"
+TRADEOFF = ROOT / "docs/R79_P4性能二期_取舍结论.md"
+
+M, H, A = "main", "hub", "lib"
+
+# (文件, 字面量)
+POS = [
+    (M, 'import androidx.compose.foundation.lazy.LazyColumn'),
+    (M, 'import androidx.compose.foundation.lazy.itemsIndexed'),
+    (M, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {'),
+    (M, 'itemsIndexed(items, key = { _, it -> it.id })'),
+    (M, 'item(key = "now_playing")'),
+    (M, 'item(key = "audio_empty")'),
+    (M, 'AudioLibrary.durationMsOfBytes(current.bytes)'),
+    (M, 'AudioLibrary.durationMsOfBytes(item.bytes)'),
+    (M, 'LaunchedEffect(st.running) {\n        if (!st.running) return@LaunchedEffect\n        while (true) { delay(2000); loadTick++ }\n    }'),
+    (M, 'val seenTask = remember(st.done, redoNonce) { TaskResume.load(c) }'),
+    (M, 'val segs = remember(st.done, seenTask, redoNonce)'),
+    (M, 'val rest = remember(st.done, seenTask, redoNonce)'),
+    (M, 'val verdict = remember(st.done, seenTask, redoNonce)'),
+    (M, 'val heartbeat = remember(tick) {'),
+    (H, 'if (!st.isPlaying) return@LaunchedEffect'),
+    (H, 'delay(500L)'),
+    (A, 'fun durationMsOfBytes(bytes: Long): Long ='),
+    (A, 'fun durationMs(f: File): Long = durationMsOfBytes(f.length())'),
+]
+BAN = [
+    (M, 'LaunchedEffect(Unit) { while (true) { delay(2000); loadTick++ } }'),
+    (M, 'LaunchedEffect(pq.isPlaying) {\n        if (!pq.isPlaying) return@LaunchedEffect\n        while (true) { delay(500); PlayQueue.tick() }\n    }'),
+    (M, 'AudioLibrary.durationMs(current.file)'),
+    (M, 'AudioLibrary.durationMs(item.file)'),
+    (M, 'items.forEachIndexed { idx, item ->'),
+    (M, 'remember(tick, seenTask, redoNonce)'),
+    (M, 'val seenTask = remember(tick)'),
+    (H, 'delay(1000L)'),
+]
+KEEP = [
+    (M, 'val scroll = rememberScrollState()'),
+    (M, 'snapshotFlow { scroll.value }.collect'),
+    (M, 'scroll.animateScrollTo(anchors[k] ?: 0)'),
+    (M, 'Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp))'),
+    (M, 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }'),
+    (M, 'MiniPlayBar(ctx, miniBook'),
+    (M, 'val pq by PlayQueue.state.collectAsState()'),
+    (M, 'PlayQueue.setTracks(items.map'),
+    (M, 'commitAll()'),
+    (H, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp))'),
+    (H, 'PlayQueue.tick()'),
+    (H, 'internal fun MiniPlayBar'),
+]
+
+FILES = {M: MAIN, H: HUB, A: LIB}
+
+def audio_body(text):
+    """AudioScreen 函数体：从函数签名到下一个 '// ── ⑤' 之前。"""
+    s = text.index("private fun AudioScreen")
+    e = text.index("// ── ⑤ 设置（只管软件） ──", s)
+    return text[s:e]
+
+def check(files):
+    errs = []
+    for f, s in POS:
+        if s not in files[f]: errs.append("缺正向[%s]: %s" % (f, s[:52]))
+    for f, s in BAN:
+        if s in files[f]: errs.append("旧形态残留[%s]: %s" % (f, s[:52]))
+    for f, s in KEEP:
+        if s not in files[f]: errs.append("守恒丢失[%s]: %s" % (f, s[:52]))
+    # 函数体结构：音频页必须换成 LazyColumn，且块内不再有 verticalScroll / forEachIndexed
+    try:
+        body = audio_body(files[M])
+        if "LazyColumn(" not in body: errs.append("AudioScreen 内没有 LazyColumn")
+        if "verticalScroll" in body: errs.append("AudioScreen 内仍有 verticalScroll")
+        if "forEachIndexed" in body: errs.append("AudioScreen 内仍有 forEachIndexed")
+        if body.count("itemsIndexed(") != 1: errs.append("AudioScreen 内 itemsIndexed 数量不是 1")
+        if "PlayQueue.tick()" in body: errs.append("AudioScreen 内仍在自行 tick")
+    except ValueError:
+        errs.append("AudioScreen 函数体边界定位失败")
+    # 调音台锚点整块不动：MixerScreen 内仍是 Column + scroll
+    try:
+        ms = files[M].index("private fun MixerScreen")
+        mb = files[M][ms:]
+        if "verticalScroll(scroll)" not in mb: errs.append("调音台 verticalScroll(scroll) 被破坏")
+    except ValueError:
+        errs.append("MixerScreen 定位失败")
+    return errs
+
+def load():
+    return {k: p.read_text(encoding="utf-8") for k, p in FILES.items()}
+
+def run():
+    errs = check(load())
+    ci = CI.read_text(encoding="utf-8")
+    if "r79_verify.py" not in ci: errs.append("CI 未挂 r79_verify")
+    if not LINK.exists(): errs.append("联动表缺失")
+    if not TRADEOFF.exists(): errs.append("取舍结论缺失")
+    if errs:
+        print("FAIL")
+        for e in errs: print(" -", e)
+        return 1
+    print("PASS · 正向 %d / 零残留 %d / 守恒 %d / 音频页与调音台函数体结构 / CI 已挂 / 两份定案在"
+          % (len(POS), len(BAN), len(KEEP)))
+    return 0
+
+def selftest():
+    files = load()
+    n = 0
+    fails = 0
+    for f, s in POS:
+        n += 1
+        b = dict(files); b[f] = b[f].replace(s, "___INJECTED___")
+        if not check(b): fails += 1; print("未拦下正向缺失:", s[:46])
+    for f, s in BAN:
+        n += 1
+        b = dict(files); b[f] = b[f] + "\n/*\n" + s + "\n*/\n"
+        if not check(b): fails += 1; print("未拦下旧形态:", s[:46])
+    for f, s in KEEP:
+        n += 1
+        b = dict(files); b[f] = b[f].replace(s, "___GONE___")
+        if not check(b): fails += 1; print("未拦下守恒丢失:", s[:46])
+    # 函数体结构注入：把音频页换回 Column、把调音台 verticalScroll 抹掉
+    n += 1
+    b = dict(files)
+    b[M] = b[M].replace("LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {",
+                        "Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {")
+    if not check(b): fails += 1; print("未拦下音频页退回 Column")
+    n += 1
+    b = dict(files)
+    b[M] = b[M].replace("Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp)) {",
+                        "LazyColumn(Modifier.weight(1f)) {")
+    if not check(b): fails += 1; print("未拦下调音台 verticalScroll 被破坏")
+    print("反向注入 %d 组，拦下 %d，漏 %d" % (n, n - fails, fails))
+    return 1 if fails else 0
+
+if __name__ == "__main__":
+    sys.exit(selftest() if "--selftest" in sys.argv else run())
