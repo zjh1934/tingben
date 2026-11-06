@@ -1190,6 +1190,8 @@ private fun AudioScreen(
 ) {
     var localTick by remember { mutableStateOf(0) }
     val items = remember(refresh, localTick) { AudioLibrary.list(c) }
+    // R104 · 索引损坏 / 写入失败不再静默：给用户一行能看懂的原因
+    val indexError = AudioLibrary.readError ?: AudioLibrary.writeError
     var exportId by remember { mutableStateOf<String?>(null) }
     // R80 · 详细播放控制默认收起：拖动 seek / ±15s / 上下条 / 倍速 / 关闭播放器
     // 这 5 项跨页悬浮条里没有，收起来但不删；曲名与状态归悬浮条，本页不再重复一张播放卡。
@@ -1228,6 +1230,13 @@ private fun AudioScreen(
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+
+        if (indexError != null) {
+            item(key = "audio_index_warning") {
+                Text(indexError, fontSize = 12.sp, color = Warn,
+                    modifier = Modifier.padding(bottom = 8.dp))
+            }
+        }
 
         // R80 · 汇总行兼播放控制入口：曲名与播放状态归跨页悬浮条，本页不再重复一张播放卡。
         if (items.isNotEmpty()) {
@@ -1342,7 +1351,11 @@ private fun AudioScreen(
                         }) { Text("保存到手机", fontSize = 11.sp, color = Sub) }
                         TextButton(onClick = {
                             if (on) release()
-                            AudioLibrary.remove(c, item.id); localTick++
+                            if (!AudioLibrary.remove(c, item.id)) {
+                                Toast.makeText(c, AudioLibrary.writeError ?: "删除失败，记录未改动",
+                                    Toast.LENGTH_SHORT).show()
+                            }
+                            localTick++
                         }) { Text("删除", fontSize = 11.sp, color = Warn) }
                     }
                 }

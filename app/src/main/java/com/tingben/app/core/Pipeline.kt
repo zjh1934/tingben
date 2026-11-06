@@ -956,6 +956,7 @@ object Producer {
         }
         // R61 · 把全书章数带进去：整本成品要展开成 0..n-1，第四列才亮。
         val item = AudioLibrary.register(c, book.id, book.title, only, direct, outFile, chapters.size)
+        val regWarn = AudioLibrary.writeError
         EventLog.log(EventLog.Kind.PIPELINE, "AUDIO_REGISTER",
             "${item.title} · ${item.scope} · ${item.mode} · ${item.bytes} 字节")
         // 章节信息跟着成品 id 走，不再被下一次制作覆盖
@@ -976,7 +977,9 @@ object Producer {
         } catch (_: Throwable) { }
 
         _state.value = Progress(false, "完成", annotated.size, annotated.size,
-            gateFails + synthFails, "做好了，可以去「我的音频」听", outFile.absolutePath)
+            gateFails + synthFails,
+            if (regWarn != null) "音频已生成，但记录没写上：$regWarn；文件仍在「我的音频」里"
+            else "做好了，可以去「我的音频」听", outFile.absolutePath)
         // 任务中心要能显示「最近完成」，所以 done 也留一条记录（active() 会自动过滤掉它）
         val c = appCtx
         val t = current

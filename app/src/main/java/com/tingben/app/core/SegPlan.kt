@@ -36,16 +36,17 @@ data class SegMeta(
 )
 
 object SegPlan {
+    /** R104 · 最近一次落盘失败，成功后清空；写失败不再被静默吞掉。 */
+    @Volatile var lastWriteError: String? = null
+        private set
+
     private const val MAP = "segmap.json"
     private const val REDO = "redo.json"
     private const val FLAG = "flag_%04d.json"
 
     private fun atomic(f: File, s: String) {
-        try {
-            val p = File(f.parentFile, f.name + ".part")
-            p.writeText(s)
-            if (!p.renameTo(f)) { f.writeText(s); p.delete() }
-        } catch (_: Throwable) { }
+        val ok = AtomicJson.write(f, s)
+        lastWriteError = if (ok) null else "制作记录写入失败：" + f.name
     }
 
     /** 每块「逐条来源」落盘。R27 只在内存里算 srcFlags，续跑后全变 UNKNOWN。 */
@@ -56,13 +57,16 @@ object SegPlan {
         } catch (_: Throwable) { }
     }
 
-    fun readFlags(work: File, block: Int): List<Boolean>? = try {
-        val f = File(work, FLAG.format(block))
-        if (!f.exists()) null else {
-            val a = JSONArray(f.readText())
-            (0 until a.length()).map { a.getBoolean(it) }
+    fun readFlags(work: File, block: Int): List<Boolean>? {
+        val body = when (val r = AtomicJson.read(File(work, FLAG.format(block)))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return null
         }
-    } catch (_: Throwable) { null }
+        return try {
+            val a = JSONArray(body)
+            (0 until a.length()).map { a.getBoolean(it) }
+        } catch (_: Throwable) { null }
+    }
 
     /** 整块级兜底：MODEL 块里也可能夹补齐段，所以优先用 flags。 */
     private fun blockSrc(work: File, block: Int): Boolean? = try {
@@ -95,10 +99,13 @@ object SegPlan {
         } catch (_: Throwable) { }
     }
 
-    fun readMap(work: File): List<SegMeta>? = try {
-        val f = File(work, MAP)
-        if (!f.exists()) null else {
-            val a = JSONArray(f.readText())
+    fun readMap(work: File): List<SegMeta>? {
+        val body = when (val r = AtomicJson.read(File(work, MAP))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return null
+        }
+        return try {
+            val a = JSONArray(body)
             (0 until a.length()).map { k ->
                 val o = a.getJSONObject(k)
                 val fm = if (o.isNull("fromModel")) null else o.optBoolean("fromModel", false)
@@ -106,17 +113,21 @@ object SegPlan {
                     o.optString("text", ""), o.optString("speaker", "旁白"),
                     o.optString("instruct", ""), o.optString("wav", ""))
             }
-        }
-    } catch (_: Throwable) { null }
+        } catch (_: Throwable) { null }
+    }
 
     // ── 脏标记：语义等同 Scheduler.invalidate(unitIds)，只标脏、不删别人的缓存 ──
-    fun readRedo(work: File): MutableSet<String> = try {
-        val f = File(work, REDO)
-        if (!f.exists()) mutableSetOf() else {
-            val a = JSONArray(f.readText())
-            (0 until a.length()).map { a.getString(it) }.toMutableSet()
+    /** redo 只是「只标脏」的可再生状态，损坏时返回空集会重做，不会丢成品。 */
+    fun readRedo(work: File): MutableSet<String> {
+        val body = when (val r = AtomicJson.read(File(work, REDO))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return mutableSetOf()
         }
-    } catch (_: Throwable) { mutableSetOf() }
+        return try {
+            val a = JSONArray(body)
+            (0 until a.length()).map { a.getString(it) }.toMutableSet()
+        } catch (_: Throwable) { mutableSetOf() }
+    }
 
     private fun writeRedo(work: File, s: Set<String>) {
         val a = JSONArray(); s.sorted().forEach { a.put(it) }

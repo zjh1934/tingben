@@ -59,19 +59,19 @@ object TaskResume {
             t.only?.sorted()?.forEach { a.put(it) }
             o.put("only", a)
             o.put("onlyNull", t.only == null)
-            // 原子落位：写一半被杀不会留下坏 JSON，下次读到的是上一次的完整书签
-            part(c).writeText(o.toString())
-            if (!part(c).renameTo(file(c))) {
-                file(c).writeText(o.toString())
-                part(c).delete()
-            }
+            // R104 · 统一原子落盘：写失败保留旧书签，不覆写、不吞异常
+            AtomicJson.write(file(c), o.toString())
         } catch (_: Throwable) { }
     }
 
-    fun load(c: Context): TaskInfo? = try {
-        val f = file(c)
-        if (!f.exists()) null else {
-            val o = JSONObject(f.readText())
+    /** R104 · 坏书签回退到 .bak / .part，读不出来才返回 null。 */
+    fun load(c: Context): TaskInfo? {
+        val body = when (val r = AtomicJson.read(file(c))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return null
+        }
+        return try {
+            val o = JSONObject(body)
             val arr = o.optJSONArray("only")
             val only = if (o.optBoolean("onlyNull", true) || arr == null) null else
                 (0 until arr.length()).map { arr.getInt(it) }.toSet()
@@ -84,8 +84,8 @@ object TaskResume {
                 o.optLong("updatedAt", 0L), out,
                 ProduceConfig.fromJson(o.optJSONObject("config")),
                 o.optString("modeId", ""))
-        }
-    } catch (_: Throwable) { null }
+        } catch (_: Throwable) { null }
+    }
 
     fun clear(c: Context) {
         try { file(c).delete(); part(c).delete() } catch (_: Throwable) { }

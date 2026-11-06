@@ -102,7 +102,6 @@ data class MixerPreset(
 
 object MixerPresetStore {
     private fun file(c: Context) = File(c.filesDir, "mixer_presets.json")
-    private fun part(c: Context) = File(c.filesDir, "mixer_presets.json.part")
 
     /** 抄 safe_preset_name：只留能当文件名的字符，空名兜底，同名覆盖靠它对齐。 */
     fun safeName(raw: String): String {
@@ -126,14 +125,18 @@ object MixerPresetStore {
             ProduceConfig(), true)
     )
 
-    private fun readUser(c: Context): List<MixerPreset> = try {
-        val f = file(c)
-        if (!f.exists()) emptyList() else {
-            val root = JSONObject(f.readText())
+    /** R104 · 坏预设库回退到上一次成功版本，不再当成「没有预设」。 */
+    private fun readUser(c: Context): List<MixerPreset> {
+        val body = when (val r = AtomicJson.read(file(c))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return emptyList()
+        }
+        return try {
+            val root = JSONObject(body)
             val arr = root.optJSONArray("presets") ?: JSONArray()
             (0 until arr.length()).mapNotNull { MixerPreset.fromJson(arr.optJSONObject(it)) }
-        }
-    } catch (_: Throwable) { emptyList() }
+        } catch (_: Throwable) { emptyList() }
+    }
 
     /** 内置在前、用户自定义在后；未知 schema 与坏条目一律跳过，不崩。 */
     fun list(c: Context): List<MixerPreset> = builtins() + readUser(c)
@@ -150,14 +153,12 @@ object MixerPresetStore {
         return if (n == "untitled") null else n
     }
 
-    /** 一份原子落盘逻辑，save / delete / rename 共用（.part 写一半被杀不留坏 JSON）。 */
-    private fun writeAll(c: Context, list: List<MixerPreset>): Boolean = try {
+    /** R104 · 一份原子落盘逻辑，save / delete / rename 共用；写失败保留旧库并返回 false。 */
+    private fun writeAll(c: Context, list: List<MixerPreset>): Boolean {
         val arr = JSONArray(); list.forEach { arr.put(it.toJson()) }
         val root = JSONObject().put("schema", PRESET_SCHEMA).put("presets", arr)
-        val tmp = part(c); tmp.writeText(root.toString(1))
-        if (!tmp.renameTo(file(c))) { file(c).writeText(root.toString(1)); tmp.delete() }
-        true
-    } catch (_: Throwable) { false }
+        return AtomicJson.write(file(c), root.toString(1))
+    }
 
     /** 同名覆盖（抄 IndexTTS「存为预设（同名覆盖）」）。 */
     fun save(c: Context, p: MixerPreset): Boolean {

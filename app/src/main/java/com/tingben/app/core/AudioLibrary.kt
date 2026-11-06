@@ -37,6 +37,13 @@ data class AudioItem(
 )
 
 object AudioLibrary {
+    /** R104 · 最近一次读取异常，界面显示；每次 list() 重新判定。 */
+    @Volatile var readError: String? = null
+        private set
+    /** R104 · 最近一次写入失败；写入成功后清空，不被读取清空。 */
+    @Volatile var writeError: String? = null
+        private set
+
     fun dir(c: Context) = File(c.filesDir, "audio").apply { mkdirs() }
     private fun index(c: Context) = File(dir(c), "index.json")
 
@@ -82,11 +89,24 @@ object AudioLibrary {
         return s.toSet() to s.isNotEmpty()
     }
 
-    private fun readIndex(c: Context): MutableList<AudioItem> {
-        val f = index(c)
-        if (!f.exists()) return mutableListOf()
+    /**
+     * R104 · F-02：区分「不存在 / 正常 / 损坏」。损坏时不再静默返回空列表，
+     * 而是返回 null，由 list() 走磁盘 WAV 兜底，并把原因交给界面显示。
+     */
+    private fun readIndex(c: Context): MutableList<AudioItem>? {
+        val body = when (val r = AtomicJson.read(index(c))) {
+            is AtomicJson.Read.Missing -> { readError = null; return mutableListOf() }
+            is AtomicJson.Read.Corrupt -> {
+                readError = "音频记录损坏，已按文件恢复"
+                return null
+            }
+            is AtomicJson.Read.Ok -> {
+                readError = if (r.from.isEmpty()) null else "音频记录已从上一次保存恢复"
+                r.text
+            }
+        }
         return try {
-            val a = JSONArray(f.readText())
+            val a = JSONArray(body)
             (0 until a.length()).mapNotNull { i ->
                 val o = a.getJSONObject(i)
                 val file = File(o.getString("file"))
@@ -106,34 +126,35 @@ object AudioLibrary {
                     )
                 }
             }.toMutableList()
-        } catch (_: Throwable) { mutableListOf() }
+        } catch (_: Throwable) {
+            readError = "音频记录内容不全，已按文件恢复"
+            null
+        }
     }
 
-    private fun writeIndex(c: Context, items: List<AudioItem>) {
-        try {
-            val a = JSONArray()
-            items.forEach { it ->
-                val o = JSONObject()
-                    .put("id", it.id)
-                    .put("file", it.file.absolutePath)
-                    .put("bookId", it.bookId ?: "")
-                    .put("title", it.title)
-                    .put("scope", it.scope)
-                    .put("mode", it.mode)
-                    .put("createdAt", it.createdAt)
-                    .put("bytes", it.bytes)
-                if (it.chaptersKnown) {
-                    val arr = JSONArray()
-                    it.chapters.sorted().forEach { arr.put(it) }
-                    o.put("chapterIndices", arr)
-                }
-                a.put(o)
+    /** R104 · F-02：写失败保留旧正式文件并明确报错，绝不覆写、绝不吞掉。 */
+    private fun writeIndex(c: Context, items: List<AudioItem>): Boolean {
+        val a = JSONArray()
+        items.forEach { it ->
+            val o = JSONObject()
+                .put("id", it.id)
+                .put("file", it.file.absolutePath)
+                .put("bookId", it.bookId ?: "")
+                .put("title", it.title)
+                .put("scope", it.scope)
+                .put("mode", it.mode)
+                .put("createdAt", it.createdAt)
+                .put("bytes", it.bytes)
+            if (it.chaptersKnown) {
+                val arr = JSONArray()
+                it.chapters.sorted().forEach { arr.put(it) }
+                o.put("chapterIndices", arr)
             }
-            val f = index(c)
-            val tmp = File(f.parentFile, "index.json.part")
-            tmp.writeText(a.toString())
-            if (!tmp.renameTo(f)) { f.writeText(a.toString()); tmp.delete() }
-        } catch (_: Throwable) { }
+            a.put(o)
+        }
+        val ok = AtomicJson.write(index(c), a.toString())
+        writeError = if (ok) null else "音频记录写入失败，旧记录已保留"
+        return ok
     }
 
     fun register(c: Context, bookId: String, bookTitle: String, only: Set<Int>?,
@@ -157,6 +178,11 @@ object AudioLibrary {
             chaptersKnown = chs.isNotEmpty()
         )
         val all = readIndex(c)
+        if (all == null) {
+            // 记录损坏时不拿单条新数据覆盖旧文件，交给 list() 按磁盘恢复
+            writeError = "音频记录损坏，本次成品已保留但未登记"
+            return item
+        }
         all.removeAll { it.id == item.id }
         all.add(0, item)
         writeIndex(c, all)
@@ -165,7 +191,9 @@ object AudioLibrary {
 
     /** 兼容旧版 audio/<bookId>.wav：没在 index 里的按 bookId 查书名，标成「整本（旧版）」。 */
     fun list(c: Context): List<AudioItem> {
-        val items = readIndex(c).toMutableList()
+        // R104 · 记录损坏时 items 为空，但下面的目录扫描会把磁盘 WAV 全部兜回来，
+        // 不会出现「WAV 还在、列表却空了」。
+        val items = (readIndex(c) ?: mutableListOf()).toMutableList()
         val known = items.map { it.file.name }.toSet()
         try {
             dir(c).listFiles()
@@ -218,10 +246,15 @@ object AudioLibrary {
         } catch (_: Throwable) { 0L }
     }
 
-    fun remove(c: Context, id: String) {
+    /** R104 · 记录损坏时不删文件也不写索引，返回 false 让界面给明确提示。 */
+    fun remove(c: Context, id: String): Boolean {
         val all = readIndex(c)
+        if (all == null) {
+            writeError = "音频记录损坏，删除暂不可用"
+            return false
+        }
         all.find { it.id == id }?.file?.delete()
-        writeIndex(c, all.filter { it.id != id })
+        return writeIndex(c, all.filter { it.id != id })
     }
 
     /** WAV 24kHz / 16bit / mono：48000 字节 = 1 秒。 */
