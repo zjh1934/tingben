@@ -204,8 +204,8 @@ mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text
 # R41a · A/B 对比换成「草稿 / 已生效」两态一步试听；日志事件同步改名。
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "Mixer.CHAIN", "调音台", "private fun SettingsSection(",
-           "Anatomy-First", "12 维", "试听未提交参数", "试听已生效参数",
-           "MixerScreen", "Screen.MIXER", "恢复上游默认"]
+           "Anatomy-First", "12 维", "试听草稿", "试听已生效",
+           "MixerScreen", "Screen.MIXER", "全部恢复默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
 for sym in ["GENDER", "PITCH", "TIMBRE", "BREATH", "PERSONA",
@@ -435,7 +435,7 @@ for sym in ["Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn }
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
 R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "提交变更",
-           "恢复本组官方默认", "采样参数 · 9 项真到模型", "声音描述"]
+           "恢复本组默认", 'MixerSection("采样参数"', "声音描述 · 想要的嗓子"]
 for sym in R38_ALL:
     if sym not in all_src: errs.append("缺少 R38 控制台符号: " + sym)
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
@@ -454,8 +454,8 @@ if "ParamCatalog.SAMPLING.forEach" in main_src:
 draft_path = ROOT / "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
 draft_src = draft_path.read_text(encoding="utf-8", errors="replace") if draft_path.exists() else ""
 R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit(",
-           "TIMING_NOW", "TIMING_NEXT", "active(c: Context)", "查看差异", "提交变更",
-           "未提交变更", "丢弃全部待提交", "TimingHint(", "有未提交变更",
+           "TIMING_NOW", "TIMING_NEXT", "active(c: Context)", "提交变更",
+           "丢弃待提交", "BackHandler(enabled = dirty)", "有未提交变更",
            "当前生效全貌"]
 for sym in R40_ALL:
     if sym not in all_src: errs.append("缺少 R40 统一提交符号: " + sym)
@@ -482,10 +482,21 @@ prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text
 if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
 # R92 · 调音台整页重做：只守新形态，不再要求已删分区存在
-for sym in ['MixerSection("采样参数 · 9 项真到模型", "sampling",',
+for sym in ['MixerSection("采样参数", "sampling",',
             'samplingOpen', 'trialOpen', 'val mode = remember(tick) { ModelStore.currentMode(c) }',
-            'OutlinedTextField(', 'submit' if False else '提交变更']:
+            'OutlinedTextField(', '提交变更']:
     if sym not in main_src: errs.append("R92 回退：新调音台缺 " + sym)
+# R97 · 真机红圈反馈：教程腔 / 评审腔 / 重复时机提示一律不许以界面文案回潮。
+R97_GONE = ["当前模式 · 只读", "送进模型 · 可随便改", "这段描述和下面 9 项采样同时生效",
+            "每次合成会重新采样音色", "改动先进入待提交", "9 项真到模型", "✅ 可调",
+            "改完直接提交，不必先试听", "试听未提交参数", "试听已生效参数",
+            "丢弃全部待提交", "查看差异", "提交不依赖试听", "当前生效 / 待提交差异",
+            "出声了 ✓", "已自动播放", "TimingHint("]
+_mixer97 = main_src[main_src.find("private fun MixerScreen("):]
+_ui97 = ui_literals(_mixer97)
+for gone in R97_GONE:
+    if any(gone in x for x in _ui97):
+        errs.append("R97 回退：旧话术回潮 " + gone)
 _mixer = main_src[main_src.index("private fun MixerScreen("):]
 for banned in ["音色身份生成器", "固定音色 · 官方模式说明", "哪些能改 · 和模型一一对齐",
                "参数触达与官方资料", "openMap.contains", "showVoiceEdit", "AnchorBar(",

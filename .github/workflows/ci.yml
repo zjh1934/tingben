@@ -97,6 +97,9 @@ jobs:
       - name: R96 书架长列表验证（LazyColumn / 一次异步读 / 结构 / 反向注入 / 守恒）
         run: python3 scripts/r96_verify.py --selftest
 
+      - name: R97 调音台文案收敛验证（新形态 / 旧话术零残留 / 守恒 / 反向注入）
+        run: python3 scripts/r97_verify.py --selftest
+
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py
 

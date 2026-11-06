@@ -31,11 +31,11 @@ def check(f):
         e.append("重读没挪到后台")
     if len(sync) != 3: e.append("首帧同步读数量异常")
     # ② 新形态：自定义描述框 / 模式只读 / 9 项 / 两态试听 / 唯一提交
-    for s in ['Text("当前模式 · 只读"', 'Text("声音描述"',
-              'label = { Text("想要的嗓子"',
-              'MixerSection("采样参数 · 9 项真到模型", "sampling",',
+    for s in ['Text(mode.label, fontSize = 11.sp, color = Sub)',
+              'label = { Text("声音描述 · 想要的嗓子"',
+              'MixerSection("采样参数", "sampling",',
               'MixerSection("试听", "trial"',
-              '"试听未提交参数"', '"试听已生效参数"',
+              '"试听草稿"', '"试听已生效"', '.height(34.dp)',
               'MixerCommit.commit(c, draft, n)', 'BackHandler(enabled = dirty)',
               'verticalScroll(scroll)']:
         if s not in mb: e.append("新形态缺失: " + s[:44])
@@ -47,6 +47,7 @@ def check(f):
         if s in mb: e.append("旧未接通形态残留: " + s)
     # ④ 旧形态零残留
     for s in ["音色身份生成器", "表演层", "固定音色", "哪些能改",
+               'Text("已生效"', "TimingHint(", 'badge = "两态"',
               "参数触达与官方资料", "openMap", "showVoiceEdit", "AnchorBar(",
               "snapshotFlow", "jumpTo(", "VoiceDimension", "12 维",
               "音色身份（全书固定）", "TimingHint(TIMING_NEXT)"]:
@@ -79,7 +80,12 @@ if __name__ == "__main__":
             ("恢复旧制作器", "main", lambda t: t + '\n// 音色身份生成器\n'),
             ("恢复锚点流", "main", lambda t: t + '\nsnapshotFlow { scroll.value }\n'),
             ("恢复 openMap", "main", lambda t: t + '\nopenMap.contains("sampling")\n'),
-            ("删掉自定义描述框", "main", lambda t: t.replace('Text("声音描述"', 'Text("X"')),
+            ("删掉自定义描述框", "main", lambda t: t.replace('声音描述 · 想要的嗓子', 'X')),
+            ("恢复顶栏生效态", "main", lambda t: t + '\nText("已生效", fontSize = 11.sp)\n'),
+            ("恢复时机提示", "main", lambda t: t + '\nTimingHint(TIMING_NOW)\n'),
+            ("恢复整宽试听按钮", "main", lambda t: t.replace('.height(34.dp)', '')),
+            ("恢复两态 badge", "main", lambda t: t.replace('MixerSection("试听", "trial", trialOpen, { trialOpen = it })',
+                                                     'MixerSection("试听", "trial", trialOpen, { trialOpen = it }, badge = "两态")')),
             ("删掉后台加载", "main", lambda t: t.replace('LaunchedEffect(tick) {', '// x')),
             ("恢复旧未接通话术", "main", lambda t: t + '\n这个模式还不能合成\n'),
             ("CI 挂回旧脚本", "ci", lambda t: t + '\npython3 scripts/r49_verify.py\n'),

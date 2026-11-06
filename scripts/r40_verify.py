@@ -98,8 +98,7 @@ def check_sources(main, draft):
                   "失败重做", "附加语气", "拟声表达", "ParamCatalog.SAMPLING.forEach"]:
         if label not in draft: errs.append("diff 缺字段: " + label)
     # 5) 吸顶条 / 差异弹层 / 丢弃 / 载入
-    for sym in ["未提交变更", "查看差异", "提交变更", "当前生效全貌",
-                "丢弃全部待提交"]:
+    for sym in ["提交变更", "当前生效全貌", "丢弃待提交", "有未提交变更"]:
         if sym not in main: errs.append("缺 P0 界面符号: " + sym)
     return errs
 

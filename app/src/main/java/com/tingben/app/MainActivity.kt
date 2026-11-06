@@ -2020,13 +2020,6 @@ private fun AdvancedDrawer(rows: List<MixerRow>, stamp: String) {
 }
 // R42_ADVANCED_END
 
-/** R40 · 时机提示统一组件（评审第 17 条：别每处各写一种说法）。 */
-@Composable
-private fun TimingHint(timing: String) {
-    Text("改动先进入待提交，按顶部「提交变更」写入；$timing",
-        fontSize = 10.sp, color = Sub)
-}
-
 /**
  * R49 · v5 第 2 条：锚点自动换行 + 当前区高亮。
  * R48 真机截图里 7 个标签被横向裁成「固…」；改用官方 FlowRow + FilterChip，
@@ -2102,7 +2095,9 @@ private fun ParamRow(
             Spacer(Modifier.width(2.dp))
             OutlinedTextField(
                 value = input, onValueChange = onInput,
-                modifier = Modifier.width(72.dp).height(38.dp), singleLine = true,
+                modifier = Modifier.width(72.dp).height(40.dp), singleLine = true,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 6.dp, vertical = 0.dp),
                 isError = err.isNotBlank(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onDone() }),
@@ -2228,7 +2223,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
     var showDiff by remember { mutableStateOf(false) }
     var showLeave by remember { mutableStateOf(false) }
-    var msg by remember { mutableStateOf("") }
     var samplingOpen by rememberSaveable { mutableStateOf(false) }
     var trialOpen by rememberSaveable { mutableStateOf(false) }
     var paramDrafts by remember { mutableStateOf(emptyMap<String, String>()) }
@@ -2272,12 +2266,10 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         draft = active
         paramDrafts = emptyMap(); paramErr = emptyMap()
         tick++
-        msg = "已提交 $n 项变更"
     }
     fun discardAll() {
         draft = active
         paramDrafts = emptyMap(); paramErr = emptyMap()
-        msg = "已丢弃待提交变更"
     }
     /** 复用全局播放内核，不手搓第二套 MediaPlayer。 */
     fun play(path: String) {
@@ -2290,7 +2282,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     fun trial(label: String, src: MixerDraft, out: String, busy: (Boolean) -> Unit) {
         busy(true)
         val tag = if (label == "未提交参数" && !dirty) "未提交参数（与已生效一致）" else label
-        trialMsg = "正在用${label}合成…（手机 CPU 慢，约 1~3 分钟）"
+        trialMsg = "合成中…"
         scope.launch(Dispatchers.IO) {
             val res = runCatching {
                 if (!NativeEngine.isAvailable()) throw IllegalStateException("本地引擎没装载，请重启 App")
@@ -2324,8 +2316,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 busy(false)
                 val p = res.getOrNull()
                 if (!p.isNullOrBlank()) play(p)
-                trialMsg = if (p != null) "${label} 出声了 ✓ ${File(p).length()} 字节，已自动播放"
-                           else "${label} 失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
+                trialMsg = if (p != null) "已播放"
+                           else "试听失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
                 res.exceptionOrNull()?.let {
                     EventLog.log(EventLog.Kind.CRASH, "MIXER_TRIAL_FAIL", it.message ?: "")
                 }
@@ -2336,7 +2328,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     BackHandler(enabled = dirty) { showLeave = true }
 
     Column(Modifier.fillMaxSize()) {
-        // ── 状态条：返回 / 生效态 / 差异 / 唯一提交 ──
+        // R97 · 顶栏只留返回与唯一提交；生效态、回执、丢弃常驻行全部收起。
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -2344,25 +2336,11 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             TextButton(onClick = { if (dirty) showLeave = true else onBack() }) {
                 Text("‹ 返回", fontSize = 11.5.sp)
             }
-            Column(Modifier.weight(1f)) {
-                Text("已生效", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(if (dirty) "未提交 ${changes.size} 项" else "无待提交变更",
-                    fontSize = 10.5.sp, color = if (dirty) Warn else Good)
-            }
-            TextButton(onClick = { showDiff = true }) { Text("查看差异", fontSize = 11.sp) }
-            Button(onClick = { commitAll() }, enabled = dirty) {
-                Text("提交变更", fontSize = 11.sp)
-            }
-        }
-        if (msg.isNotBlank() || dirty) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                if (msg.isNotBlank()) Text(msg, fontSize = 10.sp, color = Sub)
-                if (dirty) {
-                    Spacer(Modifier.width(10.dp))
-                    TextButton(onClick = { discardAll() }) {
-                        Text("丢弃全部待提交", fontSize = 10.sp, color = Warn)
-                    }
+            Spacer(Modifier.weight(1f))
+            if (dirty) {
+                TextButton(onClick = { showDiff = true }) { Text("差异", fontSize = 11.sp) }
+                Button(onClick = { commitAll() }) {
+                    Text("提交 ${changes.size} 项", fontSize = 11.sp)
                 }
             }
         }
@@ -2371,55 +2349,26 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(8.dp))
 
-            // ── 当前模式：只读，切换去「模型」页；不在这里画第二个模式开关 ──
-            Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                Text("当前模式 · 只读", fontSize = 10.5.sp, color = Sub)
-                Spacer(Modifier.height(3.dp))
-                Text(mode.label, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    when (mode) {
-                        ModelStore.Mode.VOICE_DESIGN ->
-                            "一段声音描述 + 9 项采样，一起送进模型。到「模型」页可切换别的模式。"
-                        ModelStore.Mode.CUSTOM_VOICE ->
-                            "从模型自带的音色里挑一个，再给它一句念法要求；9 项采样照常生效。"
-                        ModelStore.Mode.BASE ->
-                            "用一小段人声样本克隆音色，描述与音色编号都不参与；9 项采样照常生效。"
-                    },
-                    fontSize = 10.5.sp, color = Sub
-                )
-            }
-            HorizontalDivider(color = Line)
+            // R97 · 模式只留一行名字；切换去「模型」页，不在这里堆说明。
+            Text(mode.label, fontSize = 11.sp, color = Sub)
             Spacer(Modifier.height(8.dp))
 
             // ── R93 · 每种模式只画它真实存在的输入 ──
             when (mode) {
                 ModelStore.Mode.VOICE_DESIGN -> {
-                    Text("声音描述", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Text("送进模型 · 可随便改", fontSize = 10.sp, color = Sub)
-                    Spacer(Modifier.height(6.dp))
                     OutlinedTextField(
                         value = draft.voice, onValueChange = { draft = draft.copy(voice = it) },
                         modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
-                        label = { Text("想要的嗓子", fontSize = 11.sp) },
+                        label = { Text("声音描述 · 想要的嗓子", fontSize = 11.sp) },
                         placeholder = { Text("例如：温和的中年女声，吐字清晰，语速偏慢，无明显口音", fontSize = 11.sp) },
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
                     )
-                    Spacer(Modifier.height(5.dp))
-                    Text("这段描述和下面 9 项采样同时生效、互不覆盖。", fontSize = 10.5.sp, color = Sub)
-                    Text("每次合成会重新采样音色；固定种子只收敛漂移，不保证跨段完全一致。",
-                        fontSize = 10.5.sp, color = Sub)
                     Spacer(Modifier.height(4.dp))
-                    Row {
-                        TextButton(onClick = { draft = draft.copy(voice = "") }) {
-                            Text("恢复默认描述", fontSize = 10.5.sp, color = Primary)
-                        }
+                    TextButton(onClick = { draft = draft.copy(voice = "") }) {
+                        Text("恢复默认描述", fontSize = 10.5.sp, color = Primary)
                     }
-                    TimingHint(TIMING_NOW)
                 }
                 ModelStore.Mode.CUSTOM_VOICE -> {
-                    Text("预设音色", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Text("模型自带的音色编号 · 点一下选中", fontSize = 10.sp, color = Sub)
-                    Spacer(Modifier.height(6.dp))
                     if (speakerList.isEmpty()) {
                         TextButton(onClick = {
                             speakerBusy = true
@@ -2451,7 +2400,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                             Text(if (speakerBusy) "正在读模型…（约 1 分钟）" else "读取模型自带的音色表 ›",
                                 fontSize = 11.sp)
                         }
-                        Text("第一次要载入一次模型，之后音色表会记住。", fontSize = 10.sp, color = Sub)
                     } else {
                         speakerList.chunked(2).forEach { row ->
                             Row(Modifier.fillMaxWidth()) {
@@ -2475,13 +2423,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         placeholder = { Text("例如：语速放慢，句尾别上扬", fontSize = 11.sp) },
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
                     )
-                    Text("这里只影响「怎么念」，不换音色；换音色是上面那个编号。",
-                        fontSize = 10.5.sp, color = Sub)
-                    TimingHint(TIMING_NOW)
                 }
                 ModelStore.Mode.BASE -> {
-                    Text("参考音频", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Text("24kHz · 单声道 · 16-bit WAV · 最长 30 秒", fontSize = 10.sp, color = Sub)
+                    Text("24kHz 单声道 WAV · 最长 30 秒", fontSize = 10.sp, color = Sub)
                     Spacer(Modifier.height(6.dp))
                     Text(refState, fontSize = 11.5.sp,
                         color = if (VoiceRef.exists(c)) Good else Warn)
@@ -2506,15 +2450,13 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                         placeholder = { Text("填上原文克隆更准；留空就只按声音克隆", fontSize = 11.sp) },
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.5.sp)
                     )
-                    Text("这个模式不接受文字描述，也不接受音色编号。", fontSize = 10.5.sp, color = Sub)
-                    TimingHint(TIMING_NOW)
                 }
             }
             Spacer(Modifier.height(6.dp))
 
             // ── 采样 9 项：真到 native，默认折叠 ──
-            MixerSection("采样参数 · 9 项真到模型", "sampling",
-                samplingOpen, { samplingOpen = it }, badge = "✅ 可调") {
+            MixerSection("采样参数", "sampling",
+                samplingOpen, { samplingOpen = it }, badge = "9 项") {
                 HelpNote("采样顺序", Mixer.CHAIN)
                 Spacer(Modifier.height(4.dp))
                 val groups = listOf(
@@ -2572,31 +2514,32 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                             paramDrafts = paramDrafts - key
                             paramErr = paramErr - key
                         }
-                    }) { Text("恢复本组官方默认（待提交）", fontSize = 10.5.sp) }
+                    }) { Text("恢复本组默认", fontSize = 10.5.sp) }
                 }
                 TextButton(onClick = {
                     draft = draft.copy(knobs = TtsKnobs())
                     paramDrafts = emptyMap(); paramErr = emptyMap()
-                }) { Text("全部恢复上游默认（待提交）", fontSize = 11.5.sp) }
-                TimingHint(TIMING_NOW)
+                }) { Text("全部恢复默认", fontSize = 11.5.sp) }
             }
 
             // ── 两态试听：默认折叠，提交不依赖试听 ──
-            MixerSection("试听", "trial", trialOpen, { trialOpen = it }, badge = "两态") {
-                Text("改完直接提交，不必先试听。", fontSize = 10.5.sp, color = Sub)
-                Spacer(Modifier.height(6.dp))
+            MixerSection("试听", "trial", trialOpen, { trialOpen = it }) {
                 val canTrial = missing.isEmpty() && !busyDraftTrial && !busyActiveTrial
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(onClick = {
                         trial("未提交参数", draft, "mixer_trial_draft.wav") { busyDraftTrial = it }
-                    }, enabled = canTrial, modifier = Modifier.weight(1f)) {
-                        Text(if (busyDraftTrial) "合成中…" else "试听未提交参数", fontSize = 11.sp)
+                    }, enabled = canTrial, modifier = Modifier.weight(1f).height(34.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 4.dp, vertical = 0.dp)) {
+                        Text(if (busyDraftTrial) "合成中…" else "试听草稿", fontSize = 10.5.sp)
                     }
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = {
                         trial("已生效参数", active, "mixer_trial_active.wav") { busyActiveTrial = it }
-                    }, enabled = canTrial, modifier = Modifier.weight(1f)) {
-                        Text(if (busyActiveTrial) "合成中…" else "试听已生效参数", fontSize = 11.sp)
+                    }, enabled = canTrial, modifier = Modifier.weight(1f).height(34.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 4.dp, vertical = 0.dp)) {
+                        Text(if (busyActiveTrial) "合成中…" else "试听已生效", fontSize = 10.5.sp)
                     }
                 }
                 OutlinedTextField(
@@ -2623,11 +2566,14 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     if (showDiff) {
         AlertDialog(
             onDismissRequest = { showDiff = false },
-            title = { Text("当前生效 / 待提交差异", fontSize = 14.sp) },
+            title = { Text("差异", fontSize = 14.sp) },
             text = {
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                    Text("提交不依赖试听：改完直接点「提交变更」即可生效。", fontSize = 10.5.sp, color = Sub)
-                    Spacer(Modifier.height(6.dp))
+                    if (dirty) {
+                        TextButton(onClick = { discardAll(); showDiff = false }) {
+                            Text("丢弃待提交", fontSize = 10.5.sp, color = Warn)
+                        }
+                    }
                     Text("当前生效全貌", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                     rows.forEach { r ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
