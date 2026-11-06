@@ -5,15 +5,15 @@
 > 已归档的历史文档/脚本位置 → `docs/HISTORY_INDEX.md`。
 > 本文件**不再追加逐轮复盘、不再写第二份队列**，避免头部与文末自相矛盾（R37 的教训）。
 
-**2026-11-06 · R80 我的音频页收敛已出包（`1.1.0+78`，run 78 全绿）**
+**2026-11-06 · R81 模型页重排已出包（`1.1.0+79`，run 79 全绿）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.0+78`（run 78 全绿；R80 我的音频页收敛） |
-| APK | arm64-v8a / 固定 debug 签名 / **17,964,991 字节** |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `4917a3faaf95…`，按 git blob sha1 与本地逐字节一致；raw 不通时走 Git Blob API 等价通道） |
-| CI | run 78 `completed success`（真 Kotlin 编译 + 21 套自检 step + `r80_verify` + APK 闸门 + Release `v1.1.0-78`） |
-| 源码 | commit `aa7cd40f36`；`r80_verify` 正向 22 / 旧形态零残留 6 / 守恒 11 / 反向注入 45/45；本地 21 套 `CI=true` 全绿 |
+| 版本 | `1.1.0+79`（run 79 全绿；R81 模型页重排） |
+| APK | arm64-v8a / 固定 debug 签名 / **17,964,999 字节** |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk`（blob `a5bf45e9a06d…`，逐字节一致） |
+| CI | run 79 `completed success`（真 Kotlin 编译 + 22 套自检 step + `r81_verify` + APK 闸门 + Release `v1.1.0-79`） |
+| 源码 | commit `f390534a0f`；`r81_verify` 正向 11 / 零残留 6 / 守恒 12 / 反向注入 3/3；本地 21 套 `CI=true` 全绿 |
 | 源码领先 | **无**：源码与可装包对齐（文档二次同步带 `[skip ci]`，不改代码） |
 | 源码仓 / APK 仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk`（旧名自动跳转） |
 
@@ -85,3 +85,5 @@
 - **R78 订正**：书架首屏重排。空态三张同构卡收成一张主卡（缺件一行细条、48dp 主按钮、粘贴收成文字入口）；有书态书卡整卡可点并补「上次读到 第 N 章」，删除收成小文字按钮。`RefreshStrip`、导入/粘贴/删除逻辑、抽屉 6 项全守恒。真机 7 张截图对拍后自绘 5 屏自审。
 
 - **R79 订正**：P4 性能二期，**界面零可见改动**。tick 统一由跨页常驻的 `MiniPlayBar` 按 `isPlaying` 门控、500ms 单源驱动，删掉音频页重复 tick；任务中心 2 秒轮询门控到 `st.running`；音频页 `Column → LazyColumn`（唯一无锚点的长列表），时长改用 `AudioItem.bytes`、行内零 stat；进度页四项磁盘读从「每秒」解耦到「每完成一段」。`LazyColumn` **不碰调音台**——R50 锚点依赖 `scroll.value` 像素语义，换容器会全错，开工前取舍结论已单列文档。`r51_verify` 两条过时断言订正成更严的新形态。不做拆包比对，只核直链 blob。
+
+- **R81 订正**：模型页重排。缺件态两张同构「还缺」卡收成一张主卡（唯一 48dp 导入按钮 + 两行文件清单 + 行内「复制地址 ›」）；就绪态换一套内容，不列「还缺」卡、不摆整宽导入按钮，「重新导入」降为小文字入口；返回与状态并成一行细状态条。`ModelStore` / 导入白名单 / 两条 huggingface 直链 / 抽屉 6 项 / `Screen` 9 值全守恒。6 屏自绘预览逐张看过两轮，修掉「已导入 0 个文件」与源码不一致、两态同屏、对照文案失实三处。**不做拆包比对**。
