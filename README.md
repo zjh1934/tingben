@@ -9,7 +9,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.1.0+78`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.1.0+79`（跟 CI run 号），字节数 / blob / 验证结果见 `STATUS.md`
 - 仓库已改名：源码仓 `tingben-android→tingben`，APK 仓 `tingben-apk→ting-ben-apk`，旧地址自动跳转
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
