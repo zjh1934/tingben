@@ -874,6 +874,8 @@ ProduceConfig → ③ A/B 结果落盘成可复用预设 → ④ 端侧 4B 标�
 - **验证脚本订正 3 处（假红 / 误报，不是放水）**：`check_structure.py` 把已删的 `AUDIT_RUN_BEGIN` / `AUDIT_SUMMARY` 列为「必须存在」→ 改反向断言并补 5 项零残留；`r41_verify.py` 守恒项 `fun thinking(...)` → 换 `SCHEMA_VERSION`；自审图脚本把清理对照信息图当界面查禁用词 → 只查前三屏真界面。首轮自检挂 2 处，订正后 13 套 `CI=true` 全绿。
 - **新增** `scripts/r67_verify.py`（13 项零残留 + 6 项旧数据兼容 + 8 项守恒 + 反向注入 10/10），`ci.yml` 挂新 step。
 - **自绘自审 4 屏**：三列 / 四步 / 抽屉 7 项 / 底部安全区逐屏比对一致，零横向溢出、界面零禁用词；按 R66 新纪律不向用户索取真机验证。
-- **发布**：**（待 run 71 回填：字节数 / blob / 直链逐字节一致 / Release / 二次同步）**
+- **发布**：源码仓 API 提交 `8ac3cb8fa0`（15 文件）触发 **run 71 `completed success`**；Release `v1.1.0-71`；
+  从 APK 仓 `git/blobs` 取回 **18,046,744 字节 / blob `63c9230d52b3…`** 与本地逐字节一致，raw 直链前 64KB 比对一致；
+  `r67_apk_audit.py` 全 PASS 且坏包自检拦下；项目文件回填带 `[skip ci]`
 - **如实限定**：P1 未做完——旧合成分支（约 300 行）及 `Adoption` / `JsonSalvage` / `RawDump.write` / `AuditLog.write` 仍在，分支外代码引用分支内变量，硬删会断链，单列 P1b；`AbGate` 类名已消失，其余旧类名因仍有活引用而在包里；真机零证据。
 - **队列**（`ROADMAP.md` 唯一真源）：P1b 剩余死代码 → P2 软件设置补齐 → P3 逐章进度 / 阅读位置 → P4 性能二期，各自单独发版。
