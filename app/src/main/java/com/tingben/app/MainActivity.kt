@@ -2268,7 +2268,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                             "topP=${src.knobs.topP} · subTopK=${src.knobs.subTopK} · subTopP=${src.knobs.subTopP} · " +
                             "max=${src.knobs.maxNewTokens} · hash=${src.knobs.hash()} · " +
                             "voiceChars=${identity.length} · styleChars=${src.perf.styleInstruct().length} · " +
-                            "bytes=${f.length()} · instruct=$instruct")
+                            "bytes=${f.length()} · mode=${SynthInput.label(c)} · instruct=${v.instruct ?: "（无）"}")
                     f.absolutePath
                 } finally { NativeEngine.ttsFree(h) }
             }
