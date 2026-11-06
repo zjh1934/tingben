@@ -214,7 +214,12 @@ jobs:
           echo "exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: 编译失败 → 日志回写
-        if: steps.gradle.outputs.exit != '0'
+        # R103 · 原来只判 != '0'，outputs 没写进去时也会误触发；且 `git add -f logs build-report`
+        # 里 build-report 不存在会让整条 add 失败，日志从没进过仓库。改用 Contents API 直写。
+        if: steps.gradle.outputs.exit != '0' && steps.gradle.outputs.exit != ''
+        env:
+          GH_PAT: ${{ secrets.GITHUB_TOKEN }}
+          RUN_NO: ${{ github.run_number }}
         run: |
           set +e
           mkdir -p logs
@@ -224,15 +229,24 @@ jobs:
             echo '```'
             grep -n -E '^e: |error:|Unresolved reference|None of the following|Type mismatch|FAILURE:|What went wrong' /tmp/gradle.log | head -100
             echo '```'
-            echo '## 前 150 行'
-            echo '```'; head -150 /tmp/gradle.log; echo '```'
             echo '## 后 200 行'
             echo '```'; tail -200 /tmp/gradle.log; echo '```'
           } > "logs/build-${{ github.run_number }}.md"
-          git config user.name "tingben-builder"
-          git config user.email "tingben-builder@users.noreply.github.com"
-          git add -f logs build-report 2>/dev/null
-          git diff --cached --quiet || (git commit -m "ci: 失败日志 run ${{ github.run_number }} [skip ci]" && git push origin HEAD:main)
+          python3 - <<'PY'
+          import base64, json, os, urllib.request
+          tok, repo, n = os.environ['GH_PAT'], os.environ['GITHUB_REPOSITORY'], os.environ['RUN_NO']
+          path = 'logs/build-%s.md' % n
+          body = json.dumps({'message': 'ci: 失败日志 run ' + n + ' [skip ci]',
+                             'content': base64.b64encode(open(path, 'rb').read()).decode(),
+                             'branch': 'main'}).encode()
+          req = urllib.request.Request('https://api.github.com/repos/' + repo + '/contents/' + path,
+              data=body, method='PUT', headers={'Authorization': 'token ' + tok,
+              'Accept': 'application/vnd.github+json', 'User-Agent': 'tingben-ci'})
+          try:
+              print('日志回写状态', urllib.request.urlopen(req, timeout=60).status)
+          except Exception as e:
+              print('日志回写失败', e)
+          PY
           exit 1
 
       - name: APK 闸门
