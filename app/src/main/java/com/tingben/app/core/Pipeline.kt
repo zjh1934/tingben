@@ -479,11 +479,16 @@ object Producer {
         TaskResume.save(c, fixed)
         current = fixed
         val real = TaskResume.realProgress(c, fixed)
+        val why = TaskResume.invalidationReason(c, fixed)
         _resume.value = fixed.copy(done = real)
         _state.value = Progress(false, "上次中断", real, fixed.total, 0,
-            "上次做到《${fixed.title}》，已做好的块都留着。点「继续制作」从这接着跑，不用重算。")
+            if (why != null)
+                "上次做到《${fixed.title}》。$why，分段文字还留着，点「继续制作」接着做。"
+            else
+                "上次做到《${fixed.title}》，已做好的块都留着。点「继续制作」从这接着跑，不用重算。")
         EventLog.log(EventLog.Kind.PIPELINE, "TASK_RESTORE",
-            "book=${fixed.title} phase=${fixed.phase} real=$real/${fixed.total}")
+            "book=${fixed.title} phase=${fixed.phase} real=$real/${fixed.total}" +
+                (if (why != null) " invalidate=$why" else ""))
     }
 
     /** 停止：不杀进程、不删已做好的块， native 解码下一 token 会自己退，块边界收尾。 */
@@ -712,9 +717,8 @@ object Producer {
 
         // R93 · 模式 / 音色编号 / 参考音频变化时不作废旧版 voiceStamp（旧 WAV 兼容照旧），
         // 但必须作废这一本已合成的 WAV：否则续跑跳过旧 WAV，切了模式仍听旧声音。
-        val modeStamp = sha(listOf(
-            ModelStore.currentMode(c).id, Prefs.speakerName(c), VoiceRef.fingerprint(c)
-        ).joinToString("||"))
+        // R94 · 与界面预判共用同一枚指纹，避免两处算法漂移。
+        val modeStamp = TaskResume.expectedModeStamp(c)
         val modeStampFile = File(work, "mode_stamp.txt")
         try {
             val oldMode = if (modeStampFile.exists()) modeStampFile.readText().trim() else ""

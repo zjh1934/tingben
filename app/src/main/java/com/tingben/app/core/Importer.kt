@@ -21,6 +21,25 @@ object Importer {
     /** 私有区分隔符：用户正文里几乎不可能出现，用它标记「一章开始」。 */
     const val CHAPTER_SEP = '\uE000'
 
+    /** R94 · 整本读进内存的上限。64 MB 足够常见长篇 txt / epub；
+     *  再大明确拒绝，不把内存耗尽伪装成「这本书坏了」。 */
+    const val MAX_BYTES = 64 * 1024 * 1024
+
+    private fun readLimited(s: InputStream): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val n = s.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > MAX_BYTES)
+                throw IllegalStateException("这本书超过 64 MB，先拆成几本再导入")
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+
     data class Result(
         val title: String,
         val text: String,
@@ -49,12 +68,23 @@ object Importer {
         val lower = name.lowercase()
         val mime = mimeHint ?: try { c.contentResolver.getType(uri) } catch (_: Throwable) { null }
         // file:// 有时 contentResolver.openInputStream 不接，直接读文件兜底
-        val bytes = if (uri.scheme == "file") {
-            val p = uri.path ?: throw IllegalStateException("文件路径为空")
-            java.io.File(p).readBytes()
-        } else {
-            c.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: throw IllegalStateException("打不开这个文件")
+        val bytes = try {
+            if (uri.scheme == "file") {
+                val p = uri.path ?: throw IllegalStateException("文件路径为空")
+                val f = java.io.File(p)
+                if (f.length() > MAX_BYTES)
+                    throw IllegalStateException("这本书超过 64 MB，先拆成几本再导入")
+                f.inputStream().use { readLimited(it) }
+            } else {
+                c.contentResolver.openInputStream(uri)?.use { readLimited(it) }
+                    ?: throw IllegalStateException("打不开这个文件")
+            }
+        } catch (e: OutOfMemoryError) {
+            throw IllegalStateException("手机内存不够读这本书，关掉别的应用再试")
+        } catch (e: IllegalStateException) {
+            throw e
+        } catch (e: Throwable) {
+            throw IllegalStateException("读文件时出错：${e.message ?: "文件可能坏了"}")
         }
         if (bytes.size < 4) throw IllegalStateException("这个文件是空的或读不完整")
 
@@ -62,7 +92,9 @@ object Importer {
         val isEpub = lower.endsWith(".epub") || lower.endsWith(".pub") || isZip ||
                 (mime != null && mime.contains("epub"))
         return if (isEpub) {
-            val r = epubToText(ByteArrayInputStream(bytes))
+            val r = try { epubToText(ByteArrayInputStream(bytes)) }
+                catch (e: IllegalStateException) { throw e }
+                catch (_: Throwable) { throw IllegalStateException("这个 epub 读不开，文件可能坏了") }
             Result(name.substringBeforeLast('.', name).ifBlank { "未命名" },
                 r.first, "epub · ${r.second} 章", r.second)
         } else {

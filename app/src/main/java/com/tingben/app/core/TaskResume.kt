@@ -86,6 +86,34 @@ object TaskResume {
         try { file(c).delete(); part(c).delete() } catch (_: Throwable) { }
     }
 
+    /**
+     * R94 · run() 里作废 WAV 用的模式指纹，抽到这里做唯一算法真源：
+     * 界面预判和真正开工读的是同一个值，不会出现两处算法慢慢漂移。
+     */
+    fun expectedModeStamp(c: Context): String = sha(
+        listOf(ModelStore.currentMode(c).id, Prefs.speakerName(c), VoiceRef.fingerprint(c))
+            .joinToString("||"))
+
+    /**
+     * R94 · 续跑对拍：界面写「已做好 X 段、不用重算」之前，先问一句
+     * 「点继续时 run() 会不会把这几段 WAV 作废」。会作废就返回原因，
+     * realProgress 直接报 0，不把即将被删的 WAV 算成已完成。
+     * 两枚指纹与 run() 一一对应：voice_stamp（含旧版 legacy 兼容）、mode_stamp。
+     */
+    fun invalidationReason(c: Context, t: TaskInfo): String? = try {
+        val w = AnnCache.dirFor(c, t.bookId, t.direct, t.think, t.only)
+        val modeFile = File(w, "mode_stamp.txt")
+        if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
+            "换过模式或音色输入，接着做会按新设置重出声"
+        } else {
+            val voiceFile = File(w, "voice_stamp.txt")
+            val oldVoice = if (voiceFile.exists()) voiceFile.readText().trim() else ""
+            if (voiceFile.exists() && oldVoice != Prefs.voiceStamp(c) &&
+                oldVoice != Prefs.legacyVoiceStamp(c))
+                "改过调音台设置，接着做会按新设置重出声" else null
+        }
+    } catch (_: Throwable) { null }
+
     /** 没做完的任务（供书架 / 常驻条显示「继续」）。 */
     fun active(c: Context): TaskInfo? = load(c)?.takeIf { it.phase != "done" }
 
@@ -95,6 +123,8 @@ object TaskResume {
      * 真正的跳过逻辑在 Producer.run() 里按块判断。
      */
     fun realProgress(c: Context, t: TaskInfo): Int {
+        // R94 · 先对拍：点继续会作废的 WAV，界面上一律不算「已做好」。
+        if (invalidationReason(c, t) != null) return 0
         val book = BookStore.list(c).find { it.id == t.bookId } ?: return t.done
         return try {
             val (_, chunks) = ChapterSplitter.split(BookStore.read(c, book))

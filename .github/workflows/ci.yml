@@ -79,6 +79,11 @@ jobs:
       - name: R93 三模式接通验证（字段链路 / 参考音频 / mode_stamp / 守恒 / 反向注入）
         run: python3 scripts/r93_verify.py --selftest
 
+      - name: R94 续跑对拍（8 组场景：界面说的 = 点继续真做的）
+        run: python3 scripts/r94_resume_parity.py
+
+      - name: R94 导入失败可恢复与续跑对拍验证（正向 / 守恒 / 反向注入）
+        run: python3 scripts/r94_verify.py --selftest
 
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py

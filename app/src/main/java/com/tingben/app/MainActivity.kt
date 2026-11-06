@@ -147,6 +147,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val importBytesFlow = remember { MutableStateFlow(0L) }
     val importBytes by importBytesFlow.collectAsState()
     var importError by remember { mutableStateOf<String?>(null) }
+    // R94 · 导入书失败留一张能重试的细卡，Toast 一闪就没了不算可恢复。
+    var bookImportError by remember { mutableStateOf<String?>(null) }
     // R51 · 高频引擎状态不再在 App() 顶层订阅。旧版为了给书架页传 5 个根本没被使用的
     // 参数，把 Producer.state / Producer.resume 挂在整棵页面树的根上：制作时每次块更新
     // 都会重组 when(screen) 下全部 9 个页面。现在收进 KeepScreenOn() / 进度页两个
@@ -187,11 +189,12 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             withContext(Dispatchers.Main) {
                 val r = result.getOrNull()
                 if (r == null) {
-                    EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL",
-                        "$tag ${result.exceptionOrNull()?.message ?: ""}")
-                    Toast.makeText(ctx, "这本书没读进来：${result.exceptionOrNull()?.message ?: "换个文件试试"}",
-                        Toast.LENGTH_LONG).show()
+                    val why = result.exceptionOrNull()?.message ?: "换个文件试试"
+                    EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL", "$tag $why")
+                    bookImportError = why
+                    Toast.makeText(ctx, "这本书没读进来：$why", Toast.LENGTH_LONG).show()
                 } else {
+                    bookImportError = null
                     val before = BookStore.list(ctx).size
                     BookStore.add(ctx, r.title, r.text)
                     val added = BookStore.list(ctx).size > before
@@ -374,7 +377,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onOpen = { bookId = it; screen = Screen.CHAPTERS },
                     onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
                     onImportBook = { openBookPicker() },
-                    onChanged = { refresh++ })
+                    onChanged = { refresh++ },
+                    importError = bookImportError,
+                    onDismissImportError = { bookImportError = null })
                 // R61 · 一本书点进去 = 四列目录；制作准备页仍在任务/进度链路可达。
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
@@ -500,7 +505,9 @@ private fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.(
 @Composable
 private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                            onModels: () -> Unit, onImportBook: () -> Unit,
-                           onChanged: () -> Unit) {
+                           onChanged: () -> Unit,
+                           importError: String? = null,
+                           onDismissImportError: () -> Unit = {}) {
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
     val missing = remember(refresh) { ModelStore.missing(c) }
@@ -529,6 +536,25 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                 Text("去准备 ›", fontSize = 11.5.sp, color = Primary)
             }
             Spacer(Modifier.height(6.dp))
+        }
+
+        // R94 · 失败可恢复：细卡不抢主操作，能直接重选文件，也能关掉。
+        if (importError != null) {
+            CardBox(Modifier.padding(bottom = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("上次没导进来", fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                        color = Warn, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismissImportError) {
+                        Text("关闭", fontSize = 11.5.sp, color = Sub)
+                    }
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(importError, fontSize = 11.5.sp, color = Sub)
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = onImportBook) {
+                    Text("再选一次文件 ›", fontSize = 12.sp, color = Primary)
+                }
+            }
         }
 
         if (books.isEmpty()) {
