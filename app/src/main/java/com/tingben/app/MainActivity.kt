@@ -1036,23 +1036,37 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                              onAudio: () -> Unit, onLibrary: () -> Unit,
                              onResume: (TaskInfo) -> Unit) {
     val st by Producer.state.collectAsState()
+    // R101 · 磁盘书签最快 2 秒后才刷，而「继续制作 / 从头重做」点下去的那一瞬间
+    // 界面还挂着上一条「已完成」。Producer.resume 是即时的，优先用它。
+    val live by Producer.resume.collectAsState()
     // R79 · 旧版 LaunchedEffect(Unit) 无条件每 2 秒整页重组 + 三次磁盘读，
     // 哪怕「还没有任务」也照跑。改成只在制作中轮询，静止页零定时器。
     var loadTick by remember { mutableStateOf(0) }
     LaunchedEffect(st.running) {
-        if (!st.running) return@LaunchedEffect
+        if (!st.running) { loadTick++; return@LaunchedEffect }
         while (true) { delay(2000); loadTick++ }
     }
     val saved = remember(refresh, loadTick) { TaskResume.load(c) }
-    val t = saved
-    val real = remember(t, refresh) { t?.let { TaskResume.realProgress(c, it) } ?: 0 }
+    val t = live ?: saved
+    val real = remember(t, refresh, st.running) {
+        if (st.running) 0 else t?.let { TaskResume.realProgress(c, it) } ?: 0
+    }
     val bookExists = remember(t, refresh) {
         t?.let { BookStore.list(c).any { b -> b.id == it.bookId } } ?: false
     }
-    val modeText = if (t == null) "" else "直接朗读"
+    // R101 · 三模式接通后还写死「直接朗读」是旧档位话术；按书签里记的模式照实显示，
+    // 旧书签没记模式则回退到当时唯一的 voice_design。
+    val modeText = when (t?.modeId) {
+        "custom_voice" -> "预设音色"
+        "base" -> "参考音频"
+        else -> "描述造音色"
+    }
     val scopeText = t?.let {
         if (it.only == null) "整本" else "选中 ${it.only!!.size} 章"
     } ?: ""
+    // R101 · 切过模式 / 改过调音台时，续跑会作废旧 WAV，先在任务页如实说，
+    // 不再等点下去才发现「已做好 X 块」是假的。
+    val invalidate = remember(t, refresh) { t?.let { TaskResume.invalidationReason(c, it) } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         if (t == null) {
@@ -1082,15 +1096,21 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                 }
                 Spacer(Modifier.height(6.dp))
                 Text("$modeText · $scopeText", fontSize = 12.sp, color = Sub)
-                val total = maxOf(t.total, real)
+                if (invalidate != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(invalidate!!, fontSize = 11.sp, color = Warn)
+                }
+                // R101 · st.total 每块更新、书签 t.total 可能落后一拍，取三者最大；
+                // 以前不 coerce，done/total > 1 时 LinearProgressIndicator 会抛异常。
+                val total = maxOf(t.total, real, if (st.running) st.total else 0)
+                val doneNow = (if (st.running) st.done else real).coerceIn(0, total)
                 if (total > 0) {
                     Spacer(Modifier.height(10.dp))
                     LinearProgressIndicator(
-                        progress = { (if (st.running) st.done else real).toFloat() / total },
+                        progress = { if (total > 0) doneNow.toFloat() / total else 0f },
                         modifier = Modifier.fillMaxWidth().height(7.dp))
                     Spacer(Modifier.height(6.dp))
-                    Text("已做好 ${if (st.running) st.done else real}/$total 块",
-                        fontSize = 12.sp, color = Sub)
+                    Text("已做好 $doneNow/$total 块", fontSize = 12.sp, color = Sub)
                 }
                 Spacer(Modifier.height(5.dp))
                 Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
@@ -1103,6 +1123,24 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                     }
                     t.phase == "done" -> {
                         TextButton(onClick = onAudio) { Text("去「我的音频」试听 ›", fontSize = 12.sp) }
+                        // R101 · 以前做完只能去试听，想重做没入口；两个小文字按钮补齐，
+                        // 与「已中断」分支共用同一套清理 / 启动语义。
+                        Row(Modifier.fillMaxWidth()) {
+                            TextButton(onClick = {
+                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                                val b = BookStore.list(c).find { x -> x.id == t.bookId }
+                                if (b != null) {
+                                    Producer.start(c, b, t.only, true, t.think, t.config)
+                                    onProgress()
+                                }
+                            }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
+                            TextButton(onClick = {
+                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                                loadTick++
+                            }, Modifier.weight(1f)) {
+                                Text("放弃这条记录", fontSize = 12.sp, color = Warn)
+                            }
+                        }
                     }
                     !bookExists -> {
                         Text("这本书已经从书架删掉了，任务没法续跑。", fontSize = 12.sp, color = Warn)
@@ -2055,17 +2093,24 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
             Spacer(Modifier.height(10.dp))
 
-            // ── 9 项采样：三模式共用，常驻不折叠 ──
-            Text("采样参数 · 9 项", fontSize = 12.sp,
-                fontWeight = FontWeight.Bold, color = palette.text)
-            Spacer(Modifier.height(6.dp))
-            ParamCatalog.SAMPLING.forEach { spec ->
-                ParamLine(spec = spec, cur = spec.read(draft.knobs)) { s ->
-                    spec.withValue(draft.knobs, s)?.let { draft = draft.copy(knobs = it) }
+            // R101 · 采样链对三种 model_type 都生效（qwen.h 303-320 无模式条件），
+            // 所以功能不删、全局仍只存一份；但另两种模式的界面不铺 9 项数字，
+            // 只留一行说明，把这一页让给音色编号 / 参考音频。要调切回描述造音色即可。
+            if (mode == ModelStore.Mode.VOICE_DESIGN) {
+                Text("采样参数 · 9 项", fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold, color = palette.text)
+                Spacer(Modifier.height(6.dp))
+                ParamCatalog.SAMPLING.forEach { spec ->
+                    ParamLine(spec = spec, cur = spec.read(draft.knobs)) { s ->
+                        spec.withValue(draft.knobs, s)?.let { draft = draft.copy(knobs = it) }
+                    }
                 }
-            }
-            TextButton(onClick = { draft = draft.copy(knobs = TtsKnobs()) }) {
-                Text("全部恢复默认", fontSize = 10.5.sp, color = Sub)
+                TextButton(onClick = { draft = draft.copy(knobs = TtsKnobs()) }) {
+                    Text("全部恢复默认", fontSize = 10.5.sp, color = Sub)
+                }
+            } else {
+                Text("采样参数沿用全局设置，在「描述造音色」里调",
+                    fontSize = 10.5.sp, color = Sub)
             }
             Spacer(Modifier.height(14.dp))
 

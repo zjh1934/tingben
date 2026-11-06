@@ -67,14 +67,17 @@ private data class ChapterUi(
 private fun chapterStates(
     finished: Map<Int, AudioItem>, playable: Set<Int>, chapters: List<Chapter>,
     running: Boolean, runningBook: String?, runningOnly: Set<Int>?,
-    chapterProgress: Map<Int, Float>
+    chapterProgress: Map<Int, Float>, bookId: String
 ): List<ChapterUi> {
     // R74 · 逐章真值：只认合成循环按段上报的 chapterProgress。
     // 没上报的章一律 null（灰 + 等待中），不拿整本 done/total 摊到每章。
-    val inScope: (Int) -> Boolean = { i -> runningOnly == null || i in runningOnly }
+    // R101 · 必须同时核对正在跑的是不是这本书：以前只判 runningBook != null，
+    // 在 A 书页面看 B 书合成时，B 的进度会按章索引贴到 A 的第二列上。
+    val inScope: (Int) -> Boolean = { i -> runningBook == bookId &&
+        (runningOnly == null || i in runningOnly) }
     return chapters.map { ch ->
         val a = finished[ch.index]
-        val live = if (running && runningBook != null && inScope(ch.index))
+        val live = if (running && inScope(ch.index))
             chapterProgress[ch.index] else null
         ChapterUi(
             index = ch.index,
@@ -107,21 +110,24 @@ internal fun ChapterHubScreen(
     val split = remember(book) { ChapterSplitter.split(BookStore.read(c, book)) }
     val chapters = split.first
     val chunks = split.second
-    val finished = remember(book, refresh) { AudioLibrary.latestByChapter(c, book.id) }
-    val playable = remember(book, refresh) { AudioLibrary.playableChapters(c, book.id) }
-
     // R51 · 叶子级订阅，不把高频引擎状态挂到 App() 根上。
     val st by Producer.state.collectAsState()
     val task by Producer.resume.collectAsState()
-    val ui = remember(book, refresh, st.done, st.total, st.running, task,
+
+    // R101 · 以前成品索引只按 (book, refresh) 缓存，而「合成完成」不会让 App 的 refresh++，
+    // 于是做完回到这本书：第二列还是「等待中」、第三列一章都不亮。
+    // 用引擎阶段做 key：合成中 stage 恒定不会重读磁盘，完成/停止时重读一次即可。
+    val diskKey = "${st.running}|${st.stage}"
+    val finished = remember(book, refresh, diskKey) { AudioLibrary.latestByChapter(c, book.id) }
+    val playable = remember(book, refresh, diskKey) { AudioLibrary.playableChapters(c, book.id) }
+    val ui = remember(book, refresh, diskKey, st.done, st.total, task,
                       st.chapterProgress) {
         chapterStates(finished, playable, chapters,
-            st.running, task?.bookId, task?.only, st.chapterProgress)
+            st.running, task?.bookId, task?.only, st.chapterProgress, book.id)
     }
 
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by remember(book) { mutableStateOf<Pane?>(null) }
-    var showProgressHint by remember(book) { mutableStateOf(false) }
     // R74 · 看书页不写位置 → 改由打开/翻章时落盘，纯 UI 状态，不进声音指纹与任务书签。
     fun openReader(i: Int) {
         if (i in chapters.indices) {
@@ -170,7 +176,6 @@ internal fun ChapterHubScreen(
         val n = selected.size
         Producer.start(c, book, selected, directRead = true, config = ProduceConfig())
         selected = emptySet()
-        showProgressHint = true
         EventLog.log(EventLog.Kind.PIPELINE, "HUB_ACTION",
             "书=${book.title} 章数=$n 档=直接朗读")
     }
@@ -208,13 +213,25 @@ internal fun ChapterHubScreen(
                     Text("继续 ›", fontSize = 12.sp, color = HubPrimary)
                 }
             }
-            if (showProgressHint || st.running) {
+            // R101 · 旧版 showProgressHint 置 true 后永不复位，做完还挂「正在制作 · N/N 块」。
+            // 现在只由引擎状态派生，且只在这本书自己的任务上显示。
+            val barText = when {
+                st.running -> "正在制作 · ${st.done}/${st.total} 块"
+                task?.bookId != book.id -> null
+                st.stage == "完成" -> "做好了 · 合成列已更新，可播列已点亮"
+                st.stage in listOf("没完成", "已停止", "出错了", "没开始") ->
+                    st.message.ifBlank { "这次没做完，已生成的段都留着" }
+                else -> null
+            }
+            if (barText != null) {
                 Row(Modifier.fillMaxWidth().background(HubSoft)
                     .padding(horizontal = 14.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("正在制作 · ${st.done}/${st.total} 块", fontSize = 12.sp,
+                    Text(barText, fontSize = 12.sp, maxLines = 2,
                         color = HubPrimary, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onProgress) { Text("进度页 ›", fontSize = 12.sp) }
+                    if (st.running) {
+                        TextButton(onClick = onProgress) { Text("进度页 ›", fontSize = 12.sp) }
+                    }
                 }
             }
 

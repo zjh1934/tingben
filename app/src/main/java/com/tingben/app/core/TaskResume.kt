@@ -30,7 +30,10 @@ data class TaskInfo(
     val output: String? = null,
     // R20 · 本次制作预设随书签走：进程被杀后回来续跑，风格/静音/重试次数不丢。
     // 放末尾且带默认值 ⇒ 所有既有构造点零改动。
-    val config: ProduceConfig = ProduceConfig()
+    val config: ProduceConfig = ProduceConfig(),
+    // R101 · 这次任务是用哪份模式主文件做的。任务页要照实显示，续跑也要先核对
+    // 当前模式没被切走（切了会把已做好的 WAV 作废），不能拿「当前设置」冒充。
+    val modeId: String = ""
 )
 
 object TaskResume {
@@ -51,6 +54,7 @@ object TaskResume {
                 .put("updatedAt", t.updatedAt)
                 .put("output", t.output ?: "")
                 .put("config", t.config.toJson())
+                .put("modeId", t.modeId)
             val a = JSONArray()
             t.only?.sorted()?.forEach { a.put(it) }
             o.put("only", a)
@@ -78,7 +82,8 @@ object TaskResume {
                 o.optInt("total", 0), o.optInt("done", 0),
                 o.optString("phase", "interrupted"), o.optString("stage", ""),
                 o.optLong("updatedAt", 0L), out,
-                ProduceConfig.fromJson(o.optJSONObject("config")))
+                ProduceConfig.fromJson(o.optJSONObject("config")),
+                o.optString("modeId", ""))
         }
     } catch (_: Throwable) { null }
 

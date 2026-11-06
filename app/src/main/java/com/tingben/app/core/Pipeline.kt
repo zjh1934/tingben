@@ -548,9 +548,12 @@ object Producer {
         // R20 · 本次预设随书签落盘；续跑入口统一传 t.config，风格不因进程重启而断层。
         current = TaskInfo(book.id, book.title, onlyChapters, true, thinkOn,
             0, 0, "running", "正在准备", System.currentTimeMillis(),
-            config = config)
+            config = config, modeId = ModelStore.currentMode(c).id)
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
+        // R101 · 以前要等协程里第一次 emit 才把 running 置 true，这之间任务页/章节页
+        // 还显示上一次的「已完成」。开工即置位，界面不会出现假完成窗口。
+        _state.value = Progress(true, "正在准备", 0, 0, 0, "正在启动…")
         // 上一次点过「停止」的话，native 的 g_cancel 还是 true；整次制作开始才复位。
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         AnnCache.cleanup(AnnCache.dirFor(c, book.id, true, thinkOn, onlyChapters))
