@@ -1554,8 +1554,9 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
                 if (!NativeEngine.isAvailable()) throw IllegalStateException(
                     NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
                 ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }
-                val tk = ModelStore.talker(c) ?: throw IllegalStateException("缺声音主文件")
-                val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺声音配套文件")
+                val tk = ModelStore.modeFile(c, ModelStore.currentMode(c))
+                    ?: throw IllegalStateException("缺这一份模式主文件")
+                val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺共用底座")
                 val h = NativeEngine.ttsLoad(tk.absolutePath, tok.absolutePath, null)
                 if (h == 0L) throw IllegalStateException("声音模型打不开")
                 try {
@@ -2258,7 +2259,7 @@ private fun BasePane(
     }
     Spacer(Modifier.height(6.dp))
     TextButton(onClick = onPick) { Text("导入一小段人声 ›", fontSize = 11.sp) }
-    Text("24kHz 单声道 WAV，3~30 秒，只留一个人的声音", fontSize = 10.sp, color = Sub)
+    Text("一段 3~30 秒的人声录音（WAV 即可，App 自动转成 24kHz 单声道）", fontSize = 10.sp, color = Sub)
     Spacer(Modifier.height(12.dp))
     Text("这段录音念的是什么（可留空）", fontSize = 12.sp,
         fontWeight = FontWeight.Bold, color = palette.text)

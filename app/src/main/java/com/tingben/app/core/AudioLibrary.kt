@@ -202,6 +202,22 @@ object AudioLibrary {
     fun audioFor(c: Context, bookId: String, chapterIndex: Int): AudioItem? =
         latestByChapter(c, bookId)[chapterIndex]
 
+    /**
+     * R100 · 单章/顺序播放起点：整本成品是同一个 WAV，chapters.json 记了每章在
+     * 合并后 PCM 里的毫秒位置。旧成品没有这份数据就从头播，不编造位置。
+     */
+    fun chapterStartMs(c: Context, item: AudioItem, chapterIndex: Int): Long {
+        if (!item.chaptersKnown) return 0L
+        val f = File(dir(c), "${item.id}.chapters.json")
+        if (!f.isFile) return 0L
+        return try {
+            val a = JSONArray(f.readText())
+            (0 until a.length()).map { a.getJSONObject(it) }
+                .firstOrNull { it.optInt("index", -1) == chapterIndex }
+                ?.optLong("startMs", 0L)?.coerceAtLeast(0L) ?: 0L
+        } catch (_: Throwable) { 0L }
+    }
+
     fun remove(c: Context, id: String) {
         val all = readIndex(c)
         all.find { it.id == id }?.file?.delete()

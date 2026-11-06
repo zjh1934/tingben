@@ -27,7 +27,8 @@ import java.io.File
  * 做成 object 单例：音频页与「分段看台」共用同一个播放器，切页不停播，
  * 且不会出现两套 MediaPlayer 抢音频焦点。
  */
-data class Track(val file: File, val label: String)
+/** R100 · startMs：整本成品里这一章的起点，prepared 后 seekTo，点第 5 章不再从头播。 */
+data class Track(val file: File, val label: String, val startMs: Long = 0L)
 
 data class PlaybackState(
     val index: Int = -1,
@@ -57,9 +58,9 @@ object PlayQueue {
     }
 
     /** ensemble-reads 的 playFromSeg：点哪段从哪段开始。 */
-    fun playFrom(i: Int) {
+    fun playFrom(i: Int, startMs: Long? = null) {
         if (tracks.isEmpty() || i < 0 || i >= tracks.size) return
-        open(i)
+        open(i, startMs)
     }
 
     fun toggle() {
@@ -124,15 +125,17 @@ object PlayQueue {
     }
 
     /** CachedAudioPlayer.playCurrent 的改写：一段一个 MediaPlayer，放完自动下一段。 */
-    private fun open(i: Int) {
+    private fun open(i: Int, overrideStartMs: Long? = null) {
         releasePlayer()
         index = i
         val t = tracks[i]
+        val from = (overrideStartMs ?: t.startMs).coerceAtLeast(0L)
         if (!t.file.isFile) {                       // 抄它「文件不在就跳到下一段」
             if (i + 1 < tracks.size) open(i + 1)
             else { _state.value = PlaybackState(speed = speed, ended = true); return }
         }
-        _state.value = PlaybackState(index = i, label = t.label, isPlaying = false, speed = speed)
+        _state.value = PlaybackState(index = i, label = t.label, isPlaying = false,
+            positionMs = from, speed = speed)
         try {
             player = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder()
@@ -142,6 +145,7 @@ object PlayQueue {
                 setOnPreparedListener {
                     try { it.playbackParams = PlaybackParams().setSpeed(speed).setPitch(1f) }
                     catch (_: Throwable) { }
+                    if (from > 0L) { try { it.seekTo(from.toInt()) } catch (_: Throwable) { } }
                     it.start()
                     _state.value = _state.value.copy(isPlaying = true, ended = false)
                 }

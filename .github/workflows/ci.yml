@@ -94,6 +94,8 @@ jobs:
         run: python3 scripts/r98_verify.py --selftest
       - name: R99 常驻与自定义行
         run: python3 scripts/r99_verify.py --selftest
+      - name: R100 端到端链路自检（导入→分章→三模式→合成→登记→按章播放）
+        run: python3 scripts/r100_chain_verify.py --selftest
 
       - name: R40 统一提交验证（diff 对拍 / 反向注入 / 守恒）
         run: python3 scripts/r40_verify.py

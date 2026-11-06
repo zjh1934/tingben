@@ -150,13 +150,15 @@ internal fun ChapterHubScreen(
     fun playChapter(i: Int, single: Boolean) {
         if (single) {
             val a = ui.getOrNull(i)?.audio ?: return
-            PlayQueue.setTracks(listOf(Track(a.file, "${book.title} · 第 ${i + 1} 章")))
+            PlayQueue.setTracks(listOf(Track(a.file, "${book.title} · 第 ${i + 1} 章",
+                AudioLibrary.chapterStartMs(c, a, i))))
             PlayQueue.playFrom(0)
         } else {
             val list = AudioLibrary.playableItems(c, book.id)
             if (list.isEmpty()) return
             PlayQueue.setTracks(list.map { (idx, a) ->
-                Track(a.file, "${book.title} · 第 ${idx + 1} 章")
+                Track(a.file, "${book.title} · 第 ${idx + 1} 章",
+                    AudioLibrary.chapterStartMs(c, a, idx))
             })
             PlayQueue.playFrom(list.indexOfFirst { it.first == i }.coerceAtLeast(0))
         }
@@ -229,7 +231,8 @@ internal fun ChapterHubScreen(
                                     val list = AudioLibrary.playableItems(c, book.id)
                                     if (list.isNotEmpty()) {
                                         PlayQueue.setTracks(list.map { (idx, a) ->
-                                            Track(a.file, "${book.title} · 第 ${idx + 1} 章")
+                                            Track(a.file, "${book.title} · 第 ${idx + 1} 章",
+                                                AudioLibrary.chapterStartMs(c, a, idx))
                                         })
                                         PlayQueue.playFrom(0)
                                         onPlayBook(book.id)
@@ -480,7 +483,8 @@ internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit
                             Row(Modifier.fillMaxWidth().height(44.dp)
                                 .clickable {
                                     PlayQueue.setTracks(list.map { (j, x) ->
-                                        Track(x.file, "${a.title} · 第 ${j + 1} 章")
+                                        Track(x.file, "${a.title} · 第 ${j + 1} 章",
+                                            AudioLibrary.chapterStartMs(c, x, j))
                                     })
                                     PlayQueue.playFrom(list.indexOfFirst { it.first == idx })
                                     showList = false

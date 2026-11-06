@@ -224,8 +224,15 @@ object ModelStore {
             return "「${m.label}」的模式主文件还没导入。到「模型」页导入，或切回「描述造音色」。"
         return when (m) {
             Mode.VOICE_DESIGN -> null
-            Mode.CUSTOM_VOICE ->
-                if (Prefs.speakerName(c).isBlank()) "先在调音台挑一个预设音色，再合成。" else null
+            Mode.CUSTOM_VOICE -> {
+                // R100 · 音色表读过一次就落盘；没手动挑过音色时自动用第一个，
+                // 不再让「没点读取音色表」把整条合成链卡死。
+                val picked = Prefs.speakerName(c).ifBlank {
+                    Prefs.speakerNames(c).firstOrNull()?.also { Prefs.setSpeakerName(c, it) }.orEmpty()
+                }
+                if (picked.isBlank())
+                    "先在调音台点「读取模型自带的音色表」挑一个音色，再合成。" else null
+            }
             Mode.BASE ->
                 if (!VoiceRef.exists(c)) "先在调音台导入一小段参考音频，再合成。" else null
         }
@@ -234,7 +241,11 @@ object ModelStore {
     fun missing(c: Context): List<String> {
         val m = mutableListOf<String>()
         if (tokenizer(c) == null) m.add("共用底座（12Hz）")
+        // R100 · 模型页显示的「就绪」必须和真正开工用的是同一份主文件，
+        // 否则装了 A 模式却选了 B 模式，页面说能出声、点合成才被拦。
         if (installedModes(c).isEmpty()) m.add("模式主文件")
+        else if (modeFile(c, currentMode(c)) == null)
+            m.add("「${currentMode(c).label}」的模式主文件")
         return m
     }
     fun ready(c: Context) = missing(c).isEmpty()
@@ -800,6 +811,12 @@ object Producer {
 
         val wavs = mutableListOf<File>()
         var synthFails = 0
+        // R100 · 每章在成品 WAV 里的起点：合成循环按序累计 PCM 字节
+        // （24kHz/16bit/mono ⇒ 48 字节/ms），段间静音与 WavMerger 用同一公式。
+        // 整本合并后写进 chapters.json，第四列点第 5 章才不会从第 1 章开始播。
+        val gapBytes = ((config.gapMs.coerceIn(0, 5000) * 48) / 2) * 2
+        val segStartBytes = mutableListOf<Long>()
+        var cursorBytes = 0L
         // R74 · 每章总段数 / 已生成段数；只统计真正落盘成功的段，失败段不算完成。
         val perChapterTotal = segChapter.groupingBy { it }.eachCount()
         val perChapterDone = mutableMapOf<Int, Int>()
@@ -855,19 +872,41 @@ object Producer {
                 if (wav.exists() && wav.length() > 44) {
                     wavs.add(wav)
                     SegPlan.clearRedo(work, "seg:$i")
+                    segStartBytes.add(cursorBytes)
+                    cursorBytes += (wav.length() - 44) + gapBytes
                 } else {
-                    val code = try {
-                        // 官方 Qwen3-TTS README：目标语言已知时显式传，别用 auto；全中文书固定 chinese。
-                        NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, "chinese",
-                            wav.absolutePath, knobs)
-                    } catch (t: Throwable) {
-                        EventLog.log(EventLog.Kind.ENGINE, "TTS_ERROR", t.message ?: "")
-                        -99
+                    // R100 · 引擎偶发瞬时失败先重试一次；仍失败就整次停住。
+                    // 以前只 synthFails++ 继续跑，最后把「缺了几段的 WAV」合并并标「完成」，
+                    // 用户听到的是断掉的成品却显示成功 —— 链路是假的。
+                    var ok = false
+                    var lastCode = -1
+                    for (attempt in 0..1) {
+                        val code = try {
+                            // 官方 Qwen3-TTS README：目标语言已知时显式传，别用 auto；全中文书固定 chinese。
+                            NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, "chinese",
+                                wav.absolutePath, knobs)
+                        } catch (t: Throwable) {
+                            EventLog.log(EventLog.Kind.ENGINE, "TTS_ERROR", t.message ?: "")
+                            -99
+                        }
+                        lastCode = code
+                        if (code == 0 && wav.exists() && wav.length() > 44) { ok = true; break }
+                        wav.delete()
                     }
-                    if (code == 0 && wav.exists() && wav.length() > 44) {
-                        wavs.add(wav)
-                        SegPlan.clearRedo(work, "seg:$i")
-                    } else { synthFails++; wav.delete() }
+                    if (!ok) {
+                        synthFails++
+                        _state.value = Progress(false, "没完成", i, annotated.size,
+                            gateFails + synthFails,
+                            "第 ${i + 1} 段没生成声音（引擎返回 $lastCode）；前面 ${wavs.size} 段都留着，" +
+                                "点「继续制作」从这一段接着做，不会重算切分")
+                        EventLog.log(EventLog.Kind.PIPELINE, "TTS_SEG_ABORT",
+                            "seg=${i + 1} code=$lastCode kept=${wavs.size}")
+                        return
+                    }
+                    wavs.add(wav)
+                    SegPlan.clearRedo(work, "seg:$i")
+                    segStartBytes.add(cursorBytes)
+                    cursorBytes += (wav.length() - 44) + gapBytes
                 }
                 // R74 · 只有这一段真的落了 WAV 才推进该章；续跑跳过已有 WAV 也算完成。
                 val chapterSnapshot = if (wavs.size > segStart) {
@@ -919,8 +958,15 @@ object Producer {
         // 章节信息跟着成品 id 走，不再被下一次制作覆盖
         try {
             val chJson = JSONArray()
+            // R100 · 每章第一段在合并后 PCM 里的字节位置 → 毫秒，供单章/顺序播放 seek。
+            val firstOffset = LinkedHashMap<Int, Long>()
+            segStartBytes.forEachIndexed { si, off ->
+                val ci = segChapter.getOrElse(si) { -1 }
+                if (ci >= 0 && !firstOffset.containsKey(ci)) firstOffset[ci] = off / 48L
+            }
             chapters.forEach { ch ->
-                chJson.put(JSONObject().put("index", ch.index).put("title", ch.title))
+                chJson.put(JSONObject().put("index", ch.index).put("title", ch.title)
+                    .put("startMs", firstOffset[ch.index] ?: 0L))
             }
             File(outFile.parentFile, "${outFile.nameWithoutExtension}.chapters.json")
                 .writeText(chJson.toString())

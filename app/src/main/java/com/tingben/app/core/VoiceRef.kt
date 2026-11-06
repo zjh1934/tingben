@@ -22,43 +22,103 @@ object VoiceRef {
     fun file(c: Context): File = File(c.filesDir, NAME)
     fun exists(c: Context): Boolean = file(c).isFile && file(c).length() > 44
 
-    /** 校验并落盘。失败抛 IllegalStateException，文案直接给用户看。 */
+    /**
+     * R100 · 校验并落盘：任意未压缩 PCM WAV 都收，内部统一转成 24kHz / 单声道 / 16-bit。
+     * 以前硬卡「24k / 单声道 / 16bit」，手机随手录的 48k 立体声几乎全部被拒，
+     * base 模式从导入这一步就走不下去。qwen.h:294-301 要的是 24k mono float PCM，
+     * 重采样/下混在这里做，不静默改采样率让克隆变调。
+     */
     fun save(c: Context, bytes: ByteArray) {
         if (bytes.size < 44) throw IllegalStateException("这个文件太短，不像一段 WAV 录音")
         val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         fun tag(off: Int) = String(bytes, off, 4, Charsets.US_ASCII)
-        if (tag(0) != "RIFF" || tag(8) != "WAVE" || tag(12) != "fmt ")
-            throw IllegalStateException("不是标准 WAV 文件，请导出 24kHz 单声道 16-bit WAV")
-        val format = b.getShort(20).toInt() and 0xffff
-        val channels = b.getShort(22).toInt() and 0xffff
-        val rate = b.getInt(24)
-        val bits = b.getShort(34).toInt() and 0xffff
-        if (format != 1) throw IllegalStateException("只收未压缩 PCM WAV，这份是压缩格式（format=$format）")
-        if (channels != 1) throw IllegalStateException("要单声道录音，这份是 $channels 声道")
-        if (rate != RATE) throw IllegalStateException("要 ${RATE}Hz 录音，这份是 ${rate}Hz；请先转好再导入")
-        if (bits != 16) throw IllegalStateException("要 16-bit 录音，这份是 ${bits}-bit")
-
-        // 从 36 字节起按 chunk 找 data，跳过可能存在的 LIST / fact 块
-        var off = 36
+        if (tag(0) != "RIFF" || tag(8) != "WAVE")
+            throw IllegalStateException("不是标准 WAV 文件，请选一段录音的 WAV")
+        // 从 12 字节起按 chunk 找 fmt / data，跳过 LIST / fact 等扩展块
+        var off = 12
+        var fmtOff = -1
         var dataOff = -1
         var dataLen = 0
         while (off + 8 <= bytes.size) {
-            val id = tag(off)
             val len = b.getInt(off + 4)
-            if (id == "data") { dataOff = off + 8; dataLen = len; break }
             if (len < 0 || off + 8 + len > bytes.size) break
+            if (tag(off) == "fmt ") fmtOff = off + 8
+            if (tag(off) == "data") { dataOff = off + 8; dataLen = len; break }
             off += 8 + len + (len and 1)
         }
-        if (dataOff < 0 || dataLen < 2 || dataOff + dataLen > bytes.size)
-            throw IllegalStateException("WAV 里没找到可用的 data 块")
-        val n = dataLen / 2
-        if (n > RATE * MAX_SECONDS)
-            throw IllegalStateException("参考音频最长 ${MAX_SECONDS} 秒，这段约 ${n / RATE} 秒")
-
-        val out = file(c)
-        out.writeBytes(bytes.copyOfRange(0, minOf(bytes.size, dataOff + n * 2)))
+        if (fmtOff < 0 || dataOff < 0 || dataLen < 2)
+            throw IllegalStateException("WAV 里没找到可用的声音数据")
+        val format = b.getShort(fmtOff).toInt() and 0xffff
+        val channels = b.getShort(fmtOff + 2).toInt() and 0xffff
+        val rate = b.getInt(fmtOff + 4)
+        val bits = b.getShort(fmtOff + 14).toInt() and 0xffff
+        if (format != 1 && format != 3)
+            throw IllegalStateException("只收未压缩 WAV，这份是压缩格式（format=$format）")
+        if (channels !in 1..8 || rate !in 8000..192000 || bits !in setOf(8, 16, 24, 32))
+            throw IllegalStateException("这份 WAV 的参数读不懂（$channels 声道 / ${rate}Hz / ${bits}-bit）")
+        if (format == 3 && bits != 32)
+            throw IllegalStateException("浮点 WAV 只认 32-bit")
+        val bytesPerSample = bits / 8
+        val frameBytes = bytesPerSample * channels
+        val frames = minOf(dataLen, bytes.size - dataOff) / frameBytes
+        if (frames < rate / 2) throw IllegalStateException("录音太短，至少要半秒")
+        // 解成单声道 float：多声道取平均；8bit 无符号 / 24bit 三字节 / 32bit 浮点都认
+        val mono = FloatArray(frames)
+        var p = dataOff
+        for (i in 0 until frames) {
+            var acc = 0f
+            for (ch in 0 until channels) {
+                val q = p + ch * bytesPerSample
+                val v = when {
+                    format == 3 -> b.getFloat(q)
+                    bits == 8 -> ((bytes[q].toInt() and 0xff) - 128) / 128f
+                    bits == 16 -> b.getShort(q).toFloat() / 32768f
+                    bits == 24 -> {
+                        val raw = (bytes[q].toInt() and 0xff) or
+                            ((bytes[q + 1].toInt() and 0xff) shl 8) or
+                            ((bytes[q + 2].toInt() and 0xff) shl 16)
+                        val signed = if ((raw and 0x800000) != 0)
+                            (raw or 0xFF000000.toInt()) else raw
+                        signed.toFloat() / 8388608f
+                    }
+                    else -> b.getInt(q).toFloat() / 2147483648f
+                }
+                acc += v
+            }
+            mono[i] = (acc / channels).coerceIn(-1f, 1f)
+            p += frameBytes
+        }
+        // 线性重采样到 24kHz；采样率错了克隆会变调，比直接失败更难查
+        val target = (frames.toLong() * RATE / rate).toInt()
+        if (target > RATE * MAX_SECONDS)
+            throw IllegalStateException("参考音频最长 ${MAX_SECONDS} 秒，这段约 ${target / RATE} 秒")
+        val outPcm = FloatArray(target)
+        for (i in 0 until target) {
+            val src = i.toDouble() * rate / RATE
+            val i0 = src.toInt().coerceAtMost(frames - 1)
+            val i1 = (i0 + 1).coerceAtMost(frames - 1)
+            val f = (src - i0).toFloat()
+            outPcm[i] = mono[i0] * (1f - f) + mono[i1] * f
+        }
+        // 统一落成 24kHz / 单声道 / 16-bit WAV，pcm() 读回时格式固定，不再猜
+        val outBytes = ByteArray(44 + outPcm.size * 2)
+        fun putStr(o: Int, s: String) { s.toByteArray(Charsets.US_ASCII).copyInto(outBytes, o) }
+        fun putInt(o: Int, v: Int) {
+            outBytes[o] = (v and 0xff).toByte(); outBytes[o + 1] = ((v shr 8) and 0xff).toByte()
+            outBytes[o + 2] = ((v shr 16) and 0xff).toByte(); outBytes[o + 3] = ((v shr 24) and 0xff).toByte()
+        }
+        fun putShort(o: Int, v: Int) {
+            outBytes[o] = (v and 0xff).toByte(); outBytes[o + 1] = ((v shr 8) and 0xff).toByte()
+        }
+        putStr(0, "RIFF"); putInt(4, 36 + outPcm.size * 2); putStr(8, "WAVE")
+        putStr(12, "fmt "); putInt(16, 16); putShort(20, 1); putShort(22, 1)
+        putInt(24, RATE); putInt(28, RATE * 2); putShort(32, 2); putShort(34, 16)
+        putStr(36, "data"); putInt(40, outPcm.size * 2)
+        val ob = ByteBuffer.wrap(outBytes).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in outPcm.indices) ob.putShort(44 + i * 2, (outPcm[i] * 32767f).toInt().toShort())
+        file(c).writeBytes(outBytes)
         EventLog.log(EventLog.Kind.MODEL, "VOICE_REF_SAVED",
-            "$n samples · ${"%.1f".format(n.toFloat() / RATE)} 秒 · ${out.length()} 字节")
+            "$rate Hz / $channels 声道 / ${bits}-bit → 24kHz 单声道 · ${outPcm.size} samples")
     }
 
     /** 解成 [-1,1] float PCM；格式由 save() 保证，这里只做防御性兜底。 */
