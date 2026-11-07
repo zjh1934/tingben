@@ -30,7 +30,7 @@ BANNED = [
     "onModels = { modelsFrom = Screen.AUDIO; screen = Screen.MODELS }",
     "onLibrary = { screen = Screen.LIBRARY }",
     "var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }",
-    "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }",
+    "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }",
 ]
 
 def banned_hits(files=None):

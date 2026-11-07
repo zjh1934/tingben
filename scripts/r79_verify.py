@@ -18,13 +18,13 @@ POS = [
     (M, 'import androidx.compose.foundation.lazy.LazyColumn'),
     (M, 'import androidx.compose.foundation.lazy.itemsIndexed'),
     (M, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {'),
-    (M, 'itemsIndexed(items, key = { _, it -> it.id })'),
+    (M, 'itemsIndexed(group, key = { _, it -> it.id })'),
     (M, 'item(key = "now_playing")'),
     (M, 'item(key = "audio_empty")'),
     (M, 'AudioLibrary.durationMsOfBytes(current.bytes)'),
     (M, 'AudioLibrary.durationMsOfBytes(item.bytes)'),
-    (M, 'val seenTask = remember(st.done, redoNonce) { TaskResume.load(c) }'),
-    (M, 'val segs = remember(st.done, seenTask, redoNonce)'),
+    (M, 'val seenTask = remember(st.done, redoNonce, bookId)'),
+    (M, 'val allSegs = remember(st.done, seenTask, redoNonce)'),
     (M, 'val rest = remember(st.done, seenTask, redoNonce)'),
     (M, 'val verdict = remember(st.done, seenTask, redoNonce)'),
     (M, 'val heartbeat = remember(tick) {'),
@@ -66,9 +66,9 @@ def audio_body(text):
 def check(files):
     errs = []
     EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
     if nav.screen_enum(files[M]) != EXPECTED:
-        errs.append("Screen 枚举集合与 9 值不符")
+        errs.append("Screen 枚举集合与 10 值不符")
     for msg in nav.semantics(files[M]):
         errs.append("导航语义: " + msg)
     wins = [m.group(1) for m in re.finditer(

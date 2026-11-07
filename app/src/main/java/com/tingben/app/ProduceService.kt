@@ -237,7 +237,8 @@ private fun buildNotification(
     val open = PendingIntent.getActivity(
         c, 0,
         Intent(c, MainActivity::class.java).addFlags(
-            Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra("open_tasks", true),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     val b = Notification.Builder(c, "tingben_produce")
         .setContentTitle(title)

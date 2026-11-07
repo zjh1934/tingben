@@ -25,54 +25,106 @@ data class TaskInfo(
 object TaskResume {
     private fun file(c: Context) = File(c.filesDir, "task_active.json")
     private fun part(c: Context) = File(c.filesDir, "task_active.json.part")
+    private fun listFile(c: Context) = File(c.filesDir, "tasks.json")
 
-    fun save(c: Context, t: TaskInfo) {
-        try {
-            val o = JSONObject()
-                .put("bookId", t.bookId)
-                .put("title", t.title)
-                .put("direct", t.direct)
-                .put("think", t.think)
-                .put("total", t.total)
-                .put("done", t.done)
-                .put("phase", t.phase)
-                .put("stage", t.stage)
-                .put("updatedAt", t.updatedAt)
-                .put("output", t.output ?: "")
-                .put("config", t.config.toJson())
-                .put("modeId", t.modeId)
-            val a = JSONArray()
-            t.only?.sorted()?.forEach { a.put(it) }
-            o.put("only", a)
-            o.put("onlyNull", t.only == null)
-            AtomicJson.write(file(c), o.toString())
-        } catch (_: Throwable) { }
+    private fun encode(t: TaskInfo): JSONObject {
+        val a = JSONArray()
+        t.only?.sorted()?.forEach { a.put(it) }
+        return JSONObject()
+            .put("bookId", t.bookId)
+            .put("title", t.title)
+            .put("direct", t.direct)
+            .put("think", t.think)
+            .put("total", t.total)
+            .put("done", t.done)
+            .put("phase", t.phase)
+            .put("stage", t.stage)
+            .put("updatedAt", t.updatedAt)
+            .put("output", t.output ?: "")
+            .put("config", t.config.toJson())
+            .put("modeId", t.modeId)
+            .put("only", a)
+            .put("onlyNull", t.only == null)
     }
 
-    fun load(c: Context): TaskInfo? {
+    private fun decode(o: JSONObject): TaskInfo {
+        val arr = o.optJSONArray("only")
+        val only = if (o.optBoolean("onlyNull", true) || arr == null) null else
+            (0 until arr.length()).map { arr.getInt(it) }.toSet()
+        val out = o.optString("output", "").ifBlank { null }
+        return TaskInfo(
+            o.getString("bookId"), o.optString("title", "未命名"), only,
+            o.optBoolean("direct", false), o.optBoolean("think", false),
+            o.optInt("total", 0), o.optInt("done", 0),
+            o.optString("phase", "interrupted"), o.optString("stage", ""),
+            o.optLong("updatedAt", 0L), out,
+            ProduceConfig.fromJson(o.optJSONObject("config")),
+            o.optString("modeId", ""))
+    }
+
+    private fun legacy(c: Context): TaskInfo? {
         val body = when (val r = AtomicJson.read(file(c))) {
             is AtomicJson.Read.Ok -> r.text
             else -> return null
         }
-        return try {
-            val o = JSONObject(body)
-            val arr = o.optJSONArray("only")
-            val only = if (o.optBoolean("onlyNull", true) || arr == null) null else
-                (0 until arr.length()).map { arr.getInt(it) }.toSet()
-            val out = o.optString("output", "").ifBlank { null }
-            TaskInfo(
-                o.getString("bookId"), o.optString("title", "未命名"), only,
-                o.optBoolean("direct", false), o.optBoolean("think", false),
-                o.optInt("total", 0), o.optInt("done", 0),
-                o.optString("phase", "interrupted"), o.optString("stage", ""),
-                o.optLong("updatedAt", 0L), out,
-                ProduceConfig.fromJson(o.optJSONObject("config")),
-                o.optString("modeId", ""))
-        } catch (_: Throwable) { null }
+        return try { decode(JSONObject(body)) } catch (_: Throwable) { null }
+    }
+
+    private fun readAll(c: Context): List<TaskInfo> {
+        val out = mutableListOf<TaskInfo>()
+        val body = when (val r = AtomicJson.read(listFile(c))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> ""
+        }
+        if (body.isNotBlank()) {
+            try {
+                val a = JSONArray(body)
+                for (i in 0 until a.length()) out.add(decode(a.getJSONObject(i)))
+            } catch (_: Throwable) { }
+        }
+        if (out.isEmpty()) legacy(c)?.let { out.add(it) }
+        return out.sortedByDescending { it.updatedAt }
+    }
+
+    fun list(c: Context): List<TaskInfo> = readAll(c)
+
+    fun byBook(c: Context, bookId: String): TaskInfo? =
+        readAll(c).firstOrNull { it.bookId == bookId }
+
+    fun load(c: Context): TaskInfo? = readAll(c).firstOrNull()
+
+    fun save(c: Context, t: TaskInfo) {
+        try {
+            val o = encode(t)
+            AtomicJson.write(file(c), o.toString())
+            val all = readAll(c).toMutableList()
+            all.removeAll { it.bookId == t.bookId }
+            all.add(0, t)
+            val a = JSONArray()
+            all.forEach { a.put(encode(it)) }
+            AtomicJson.write(listFile(c), a.toString())
+        } catch (_: Throwable) { }
+    }
+
+    fun remove(c: Context, bookId: String) {
+        try {
+            val keep = readAll(c).filter { it.bookId != bookId }
+            if (keep.isEmpty()) {
+                listFile(c).delete()
+                file(c).delete()
+                part(c).delete()
+            } else {
+                val a = JSONArray()
+                keep.forEach { a.put(encode(it)) }
+                AtomicJson.write(listFile(c), a.toString())
+                file(c).delete()
+                part(c).delete()
+            }
+        } catch (_: Throwable) { }
     }
 
     fun clear(c: Context) {
-        try { file(c).delete(); part(c).delete() } catch (_: Throwable) { }
+        try { file(c).delete(); part(c).delete(); listFile(c).delete() } catch (_: Throwable) { }
     }
 
     fun expectedModeStamp(c: Context): String = sha(
@@ -102,7 +154,7 @@ object TaskResume {
         }
     } catch (_: Throwable) { null }
 
-    fun active(c: Context): TaskInfo? = load(c)?.takeIf { it.phase != "done" }
+    fun active(c: Context): TaskInfo? = readAll(c).firstOrNull { it.phase != "done" }
 
     fun realProgress(c: Context, t: TaskInfo): Int {
         if (invalidationReason(c, t) != null) return 0

@@ -50,7 +50,7 @@ def check(f):
     if 'def continue_run(' not in f["parity"]: e.append("对拍脚本缺 run 侧模拟")
     for s in ['NAV_MIXER to "调音台"', 'NAV_MODELS to "模型"']:
         if s not in ch: e.append("抽屉 6 项守恒失效: " + s)
-    if 'SETTINGS, MODELS, MIXER, CHAPTERS }' not in m: e.append("Screen 9 值失效")
+    if 'SETTINGS, MODELS, MIXER, CHAPTERS }' not in m: e.append("Screen 10 值失效")
     for s in ['commitAll()', 'ttsSynthesize(', 'verticalScroll(scroll)']:
         if s not in m + p: e.append("主链守恒失效: " + s)
     return e

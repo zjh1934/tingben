@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """R76 · 幽灵页与无意义项清理验证。
-正向：Screen 9 值 / 抽屉 6 项 / 角色页与角色 UI 零残留 / 主链守恒。
+正向：Screen 10 值 / 抽屉 6 项 / 角色页与角色 UI 零残留 / 主链守恒。
 R77 订正：角色表已从底层物理删除（不再作为守恒项），
 旧 WAV 兼容改由「双指纹迁移」承担；相应的零残留断言同步换成新形态。
 反向注入：旧形态塞回去必须拦下。
@@ -15,7 +15,7 @@ CHROME = (KT / "AppChrome.kt").read_text(encoding="utf-8")
 ALLKT = NL.join(p.read_text(encoding="utf-8") for p in KT.rglob("*.kt"))
 
 WANT = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-        "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+        "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
 
 BAN_MAIN = ["Screen.CAST", "NAV_CAST", "CastScreen(", "角色音色", "角色预设",
             "角色映射", "给角色单独指定音色", "改动立即保存 · 对所有新任务生效",
@@ -42,7 +42,7 @@ def check(main=None, chrome=None, allkt=None):
     em = re.search(r"private enum class Screen \{([^}]*)\}", m)
     got = set(re.findall(r"[A-Z_]+", em.group(1))) if em else set()
     if got != WANT:
-        e.append("Screen 不是 9 值: " + str(got ^ WANT))
+        e.append("Screen 不是 10 值: " + str(got ^ WANT))
     navs = re.findall(r"NAV_\w+ = \d", ch)
     if len(navs) != 6:
         e.append("抽屉不是 6 项: %d" % len(navs))

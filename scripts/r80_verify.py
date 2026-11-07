@@ -51,7 +51,7 @@ BAN = [
 
 KEEP = [
     (M, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {'),
-    (M, 'itemsIndexed(items, key = { _, it -> it.id })'),
+    (M, 'itemsIndexed(group, key = { _, it -> it.id })'),
     (M, 'PlayQueue.setTracks(queue, "audio")'),
     (M, 'ActivityResultContracts.CreateDocument("audio/wav")'),
     (M, 'AudioLibrary.remove(c, item.id)'),
@@ -73,9 +73,9 @@ def audio_body(text):
 def check(files):
     errs = []
     EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
     if nav.screen_enum(files[M]) != EXPECTED:
-        errs.append("Screen 枚举集合与 9 值不符")
+        errs.append("Screen 枚举集合与 10 值不符")
     for msg in nav.semantics(files[M]):
         errs.append("导航语义: " + msg)
     try:

@@ -83,7 +83,7 @@ def check(main, chrome, tag):
         ck(False, "导航语义: " + msg)
     ck(nav.back_order_ok(main), "抽屉 BackHandler 没排在全局回退之后")
     EXPECTED_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                        "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+                        "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
     n = len(EXPECTED_SCREENS)
     ck(enum_count(main) == n, "Screen 枚举不是 %d 值" % n)
     ck(dispatch_count(main) == n, "when(screen) 分发不是 %d 分支" % n)

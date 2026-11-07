@@ -94,7 +94,8 @@ internal fun ChapterHubScreen(
     onBack: () -> Unit,
     onProgress: () -> Unit,
     onPlayBook: (String) -> Unit,
-    onMixer: () -> Unit
+    onMixer: () -> Unit,
+    onStarted: (String, Set<Int>) -> Unit
 ) {
     var loadDone by remember(id, refresh) { mutableStateOf(false) }
     var load by remember(id, refresh) { mutableStateOf<HubLoad?>(null) }
@@ -200,6 +201,7 @@ internal fun ChapterHubScreen(
         if (selected.isEmpty()) return
         val n = selected.size
         Producer.start(c, book, selected, directRead = true, config = ProduceConfig())
+        onStarted(book.id, selected)
         selected = emptySet()
         EventLog.log(EventLog.Kind.PIPELINE, "HUB_ACTION",
             "书=${book.title} 章数=$n 档=直接朗读")

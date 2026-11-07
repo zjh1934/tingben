@@ -133,7 +133,7 @@ object AudioLibrary {
             allChapterCount > 0 -> (0 until allChapterCount).toSet()
             else -> emptySet()
         }
-        val madeMode = TaskResume.load(c)?.modeId
+        val madeMode = (TaskResume.byBook(c, bookId)?.modeId ?: TaskResume.load(c)?.modeId)
             ?.let { id -> ModelStore.Mode.values().firstOrNull { it.id == id }?.label }
             ?: ModelStore.currentMode(c).label
         val item = AudioItem(

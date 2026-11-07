@@ -101,7 +101,7 @@ def main():
              lambda t: dict(t, queue=t["queue"].replace("queueId = id", ""))),
             ("音频页按钮不再重建队列",
              lambda t: dict(t, main=t["main"].replace(
-                 'PlayQueue.setTracks(queue, "audio")\n                            if (!on || pq.ended)',
+                 'PlayQueue.setTracks(queue, "audio")\n                                if (!on || pq.ended)',
                  'if (!on || pq.ended)'))),
             ("看台单段队列退回无 id",
              lambda t: dict(t, main=t["main"].replace(

@@ -85,8 +85,8 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
     got = set(re.findall(r'[A-Z_]+', m.group(1))) if m else set()
     want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'AUDIO', 'SETTINGS',
-            'MODELS', 'MIXER', 'CHAPTERS'}
-    if got != want: e.append('Screen 不是 9 值: ' + str(got ^ want))
+            'MODELS', 'MIXER', 'CHAPTERS', 'TASK_DETAIL'}
+    if got != want: e.append('Screen 不是 10 值: ' + str(got ^ want))
     if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉不是 6 项')
     slots = [x.get('slot') for x in manifest.get('models', [])]
     want_slots = {'tts_tokenizer', 'tts_talker_voice_design', 'tts_talker_custom_voice', 'tts_talker_base'}

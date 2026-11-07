@@ -41,15 +41,15 @@ BAN = [
 ]
 
 KEEP = [
-    'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
+    'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
     'Screen.TASKS -> TaskCenterScreen(ctx, refresh,',
     'fun commitAll()',
-    'Producer.start(c, b, t.only, true, t.think, t.config)',
+    'Producer.start(ctx, b, t.only, true, t.think, t.config)',
     'BookStore.list(c).find { x -> x.id == t.bookId }',
 ]
 
 def section(text):
-    i = text.find('private fun TaskCenterScreen')
+    i = text.find('private data class TaskDetailData')
     j = text.find('private fun fmtTime(', i)
     return text[i:j] if i >= 0 and j > i else ''
 

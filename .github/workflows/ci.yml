@@ -134,6 +134,8 @@ jobs:
 
       - name: R116 自找缺陷四连修（F-29 / F-30 / F-31 / F-32 / 反向注入）
         run: python3 scripts/r116_verify.py
+      - name: R117 任务/音频链路重做验证（一本一任务 / 章节层 / 章内进度 / 按书分组 / 反向注入）
+        run: python3 scripts/r117_verify.py --selftest
 
 
 

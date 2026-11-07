@@ -39,9 +39,9 @@ def check(files):
         errs.append("一级组不是 4 项")
 
     EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
     if nav.screen_enum(main) != EXPECTED:
-        errs.append("Screen 枚举集合与 9 值不符")
+        errs.append("Screen 枚举集合与 10 值不符")
     for pat in (r"Screen\.MIXER\s*->\s*NAV_MIXER", r"NAV_MIXER\s*->\s*Screen\.MIXER"):
         if not re.search(pat, main + ch):
             errs.append("导航映射丢失: " + pat)

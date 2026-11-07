@@ -443,12 +443,11 @@ object Producer {
 
     fun clearProgress(c: Context, bookId: String, only: Set<Int>?) {
         AnnCache.clear(AnnCache.dirFor(c, bookId, only))
-        val saved = TaskResume.load(c)
-        if (saved != null && saved.bookId == bookId) {
-            current = null; _resume.value = null; TaskResume.clear(c)
-        } else if (current?.bookId == bookId) {
-            current = null; _resume.value = null; TaskResume.clear(c)
+        val saved = TaskResume.byBook(c, bookId)
+        if (saved != null || current?.bookId == bookId) {
+            current = null; _resume.value = null
         }
+        TaskResume.remove(c, bookId)
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_RESET", "清空这本书的进度，从头重做")
     }
 
@@ -588,6 +587,11 @@ object Producer {
                     (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
         EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
             "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
+        try {
+            val sc = JSONArray()
+            segChapter.forEach { sc.put(it) }
+            AtomicJson.write(File(work, "seg_chapters.json"), sc.toString())
+        } catch (_: Throwable) { }
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
 
         val knobs = Prefs.ttsKnobs(c)

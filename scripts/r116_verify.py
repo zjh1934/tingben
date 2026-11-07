@@ -41,7 +41,8 @@ def check(queue=QUEUE, audio=AUDIO, r66=R66):
         if 'all.filter { it.id != id }' not in b:
             e.append('F-31 成功路径没移除索引条目')
 
-    if 'val madeMode = TaskResume.load(c)?.modeId' not in audio:
+    if ('TaskResume.byBook(c, bookId)?.modeId' not in audio and
+            'val madeMode = TaskResume.load(c)?.modeId' not in audio):
         e.append('F-32 成品模式没取本次任务模式')
     if 'mode = madeMode' not in audio:
         e.append('F-32 成品模式标签没用计算值')

@@ -89,8 +89,8 @@ errs += check(trial, '守恒/三模式', [
 errs += check(ci, 'CI', ['python3 scripts/r105_verify.py --selftest'])
 
 m = re.search(r'private enum class Screen \{([^}]*)\}', main)
-if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 9:
-    errs.append('Screen 枚举不是 9 值')
+if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 10:
+    errs.append('Screen 枚举不是 10 值')
 
 def violates(a, b, c):
     bad = []

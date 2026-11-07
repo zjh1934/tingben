@@ -255,7 +255,7 @@ for sym in ["⟳ 刷新", "TabButton(", '把小说变成能听的音频", fontSi
 for msg in nav.semantics(main_src):
     errs.append("U1 回退：导航语义丢失 — " + msg)
 WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
 enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
 if enum_m:
     got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))

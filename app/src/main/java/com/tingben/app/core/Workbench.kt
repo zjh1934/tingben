@@ -78,6 +78,18 @@ object Workbench {
         }
     }
 
+    fun segChapters(c: Context, t: TaskInfo?): Map<Int, Int>? {
+        val work = workDir(c, t) ?: return null
+        val body = when (val r = AtomicJson.read(File(work, "seg_chapters.json"))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return null
+        }
+        return try {
+            val a = JSONArray(body)
+            (0 until a.length()).associate { it to a.getInt(it) }
+        } catch (_: Throwable) { null }
+    }
+
     fun remainingCount(c: Context, t: TaskInfo?): Int {
         val work = workDir(c, t) ?: return 0
         val mapped = SegPlan.readMap(work)

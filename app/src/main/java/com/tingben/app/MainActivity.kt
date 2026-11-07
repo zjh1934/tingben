@@ -60,7 +60,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }
 
 private class NavHost(
     initialStack: String,
@@ -128,6 +128,10 @@ class MainActivity : ComponentActivity() {
 
     private fun pushIncoming(i: android.content.Intent?) {
         if (i == null) return
+        if (i.getBooleanExtra("open_tasks", false)) {
+            incomingFlow.value = System.currentTimeMillis().toString() + "|tasks:"
+            return
+        }
         val act = i.action
         if (act != android.content.Intent.ACTION_VIEW &&
             act != android.content.Intent.ACTION_EDIT &&
@@ -164,6 +168,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var bookId by rememberSaveable { mutableStateOf<String?>(null) }
     var miniBook by rememberSaveable { mutableStateOf<String?>(null) }
     var lastSelection by rememberSaveable { mutableStateOf<Set<Int>?>(null) }
+    var taskBookId by rememberSaveable { mutableStateOf<String?>(null) }
+    var taskChapter by rememberSaveable { mutableStateOf<Int?>(null) }
     var refresh by rememberSaveable { mutableStateOf(0) }
     var modelsFrom by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
     var importing by rememberSaveable { mutableStateOf<String?>(null) }
@@ -258,6 +264,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         onConsumed()
         val raw = full.substringAfter('|', full)
         when {
+            raw == "tasks:" -> {
+                screen = Screen.TASKS
+                refresh++
+            }
             raw == "empty:" -> {
                 EventLog.log(EventLog.Kind.CRASH, "EXTERNAL_IMPORT_EMPTY", "收到分享但没拿到 Uri/文字")
                 Toast.makeText(ctx, "听本收到打开了，但对方没给文件；试试先在文件管理器里长按分享",
@@ -319,10 +329,21 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
     }
 
+    val resumeTask: (TaskInfo) -> Unit = { t ->
+        val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
+        if (b != null) {
+            bookId = b.id; taskBookId = b.id; taskChapter = null
+            lastSelection = t.only
+            Producer.start(ctx, b, t.only, true, t.think, t.config)
+            nav.push(Screen.TASK_DETAIL)
+        } else {
+            Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
+        }
+    }
     val chrome = chromeOf(screen)
     val drawerSelected = when (screen) {
         Screen.LIBRARY, Screen.PRODUCE, Screen.CHAPTERS -> NAV_LIBRARY
-        Screen.PROGRESS, Screen.TASKS -> NAV_TASKS
+        Screen.PROGRESS, Screen.TASKS, Screen.TASK_DETAIL -> NAV_TASKS
         Screen.AUDIO -> NAV_AUDIO
         Screen.SETTINGS -> NAV_SETTINGS
         Screen.MIXER -> NAV_MIXER
@@ -385,15 +406,19 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onDismissImportError = { bookImportError = null })
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
-                    onProgress = { nav.push(Screen.PROGRESS) },
+                    onProgress = { taskBookId = bookId; taskChapter = null; nav.push(Screen.PROGRESS) },
                     onPlayBook = { miniBook = it },
-                    onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) })
+                    onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) },
+                    onStarted = { id, sel ->
+                        taskBookId = id; lastSelection = sel
+                        nav.push(Screen.TASK_DETAIL)
+                    })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
-                    onProgress = { nav.push(Screen.PROGRESS) },
+                    onProgress = { taskBookId = bookId; taskChapter = null; nav.push(Screen.TASK_DETAIL) },
                     onDone = { nav.clear(); screen = Screen.AUDIO; refresh++ },
-                    onStarted = { lastSelection = it })
-                Screen.PROGRESS -> ProgressScreen(ctx,
+                    onStarted = { taskBookId = bookId; lastSelection = it })
+                Screen.PROGRESS -> ProgressScreen(ctx, taskBookId, taskChapter,
                     onBack = { nav.pop() },
                     onResume = {
                         val t = Producer.resume.value
@@ -408,19 +433,25 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         }
                     })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
-                    onProgress = { nav.push(Screen.PROGRESS) },
+                    onOpenTask = { id -> taskBookId = id; nav.push(Screen.TASK_DETAIL) },
+                    onProgress = {
+                        taskBookId = Producer.resume.value?.bookId ?: taskBookId
+                        taskChapter = null
+                        nav.push(Screen.TASK_DETAIL)
+                    },
                     onAudio = { nav.push(Screen.AUDIO); refresh++ },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
-                    onResume = { t ->
-                        val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
-                        if (b != null) {
-                            bookId = b.id; lastSelection = t.only
-                            Producer.start(ctx, b, t.only, true, t.think, t.config)
-                            nav.push(Screen.PROGRESS)
-                        } else {
-                            Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
-                        }
-                    })
+                    onResume = resumeTask)
+                Screen.TASK_DETAIL -> TaskDetailScreen(ctx, taskBookId, refresh,
+                    onBack = { nav.pop() },
+                    onChapter = { ch ->
+                        taskChapter = ch
+                        taskBookId = taskBookId ?: bookId
+                        nav.push(Screen.PROGRESS)
+                    },
+                    onAudio = { nav.push(Screen.AUDIO); refresh++ },
+                    onLibrary = { screen = Screen.LIBRARY; nav.clear() },
+                    onResume = resumeTask)
                 Screen.AUDIO -> AudioScreen(ctx, refresh,
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
                     onModels = { modelsFrom = Screen.AUDIO; nav.push(Screen.MODELS) })
@@ -476,6 +507,7 @@ private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.SETTINGS -> ChromeSpec("设置")
     Screen.MODELS   -> ChromeSpec("模型")
     Screen.MIXER    -> ChromeSpec("调音台")
+    Screen.TASK_DETAIL -> ChromeSpec("任务详情", TAB_TASKS)
 }
 
 @Composable
@@ -790,7 +822,8 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 }
 
 @Composable
-private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit) {
+private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
+                            onBack: () -> Unit, onResume: () -> Unit) {
     val st by Producer.state.collectAsState()
     val pct = if (st.total > 0) st.done.toFloat() / st.total else 0f
     var tick by remember { mutableStateOf(0) }
@@ -814,8 +847,13 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     }
 
     var redoNonce by remember { mutableStateOf(0) }
-    val seenTask = remember(st.done, redoNonce) { TaskResume.load(c) }
-    val segs = remember(st.done, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
+    val seenTask = remember(st.done, redoNonce, bookId) {
+        bookId?.let { TaskResume.byBook(c, it) } ?: TaskResume.load(c)
+    }
+    val allSegs = remember(st.done, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
+    val segChapters = remember(seenTask) { Workbench.segChapters(c, seenTask) }
+    val segs = if (chapter != null && segChapters != null)
+        allSegs.filter { segChapters[it.index] == chapter } else allSegs
     val rest = remember(st.done, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
     val verdict = remember(st.done, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
     var showCompare by remember { mutableStateOf(false) }
@@ -825,6 +863,16 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     LaunchedEffect(st.running) { if (!st.running) stopping = false }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+
+        if (chapter != null) {
+            Text("第 ${chapter + 1} 章 · 本章 ${segs.count { it.hasAudio }}/${segs.size} 段",
+                fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
+            if (segChapters == null) {
+                Spacer(Modifier.height(4.dp))
+                Text("旧记录没记章，这里显示整次分段", fontSize = 12.sp, color = Warn)
+            }
+            Spacer(Modifier.height(10.dp))
+        }
 
         CardBox {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -945,8 +993,219 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     }
 }
 
+
+private data class TaskDetailData(
+    val title: String,
+    val exists: Boolean,
+    val task: TaskInfo?,
+    val chapters: List<Chapter>,
+    val finished: Map<Int, AudioItem>,
+    val real: Int,
+    val invalidate: String?
+)
+
+private fun buildTaskDetail(c: Context, bookId: String?): TaskDetailData {
+    val book = bookId?.let { BookStore.list(c).find { it.id == bookId } }
+    val task = bookId?.let { TaskResume.byBook(c, it) }
+    val chapters = if (book != null) try {
+        ChapterSplitter.split(BookStore.read(c, book)).first
+    } catch (_: Throwable) { emptyList() } else emptyList()
+    val finished = bookId?.let { AudioLibrary.latestByChapter(c, it) } ?: emptyMap()
+    val real = task?.let { TaskResume.realProgress(c, it) } ?: 0
+    val invalidate = task?.let { TaskResume.invalidationReason(c, it) }
+    return TaskDetailData(book?.title ?: task?.title ?: "这本书不在了",
+        book != null, task, chapters, finished, real, invalidate)
+}
+
+private fun playChapterAudio(c: Context, bookId: String?, ch: Int) {
+    if (bookId == null) return
+    val a = AudioLibrary.audioFor(c, bookId, ch) ?: return
+    val q = "chapter:$bookId"
+    PlayQueue.setTracks(listOf(Track(a.file, "${a.title} · 第 ${ch + 1} 章",
+        AudioLibrary.chapterStartMs(c, a, ch),
+        id = "chapter:${a.file.absolutePath}")), q)
+    PlayQueue.playFrom(0, id = q)
+}
+
 @Composable
-private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
+private fun TaskDetailScreen(
+    c: Context, bookId: String?, refresh: Int,
+    onBack: () -> Unit, onChapter: (Int) -> Unit,
+    onAudio: () -> Unit, onLibrary: () -> Unit,
+    onResume: (TaskInfo) -> Unit
+) {
+    val st by Producer.state.collectAsState()
+    val live by Producer.resume.collectAsState()
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(st.running) {
+        if (!st.running) { tick++; return@LaunchedEffect }
+        while (true) { delay(2000); tick++ }
+    }
+    var detail by remember { mutableStateOf<TaskDetailData?>(null) }
+    LaunchedEffect(bookId, refresh, tick, st.done, st.stage) {
+        detail = withContext(Dispatchers.IO) { buildTaskDetail(c, bookId) }
+    }
+    val d = detail
+    if (d == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    val t = d.task
+    val runningHere = st.running && live?.bookId == bookId
+    val otherRunning = st.running && !runningHere
+    val modeText = when (t?.modeId) {
+        "custom_voice" -> "预设音色"
+        "base" -> "参考音频"
+        else -> "描述造音色"
+    }
+    val scopeText = t?.let {
+        if (it.only == null) "整本" else "选中 ${it.only!!.size} 章"
+    } ?: ""
+    val badge = when {
+        runningHere -> "进行中"
+        t?.phase == "done" -> "已完成"
+        t?.phase == "stopped" -> "已停止"
+        else -> "已中断"
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+        item(key = "detail_back") {
+            TextButton(onClick = onBack) { Text("‹ 任务", fontSize = 12.sp) }
+        }
+        item(key = "detail_head") {
+            CardBox {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(d.title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f))
+                    Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (runningHere) Primary else if (t?.phase == "done") Good else Warn)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("$modeText · $scopeText", fontSize = 12.sp, color = Sub)
+                if (!d.exists) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("这本书已从书架删掉，成品仍留在「我的音频」里。",
+                        fontSize = 12.sp, color = Warn)
+                }
+                if (d.invalidate != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(d.invalidate!!, fontSize = 12.sp, color = Warn)
+                }
+                if (otherRunning) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("另一本正在制作，等它跑完或先停它，再续这一本。",
+                        fontSize = 12.sp, color = Warn)
+                }
+                val total = maxOf(t?.total ?: 0, d.real, if (runningHere) st.total else 0)
+                val doneNow = (if (runningHere) st.done else d.real)
+                    .coerceIn(0, maxOf(total, 1))
+                if (total > 0) {
+                    Spacer(Modifier.height(10.dp))
+                    LinearProgressIndicator(
+                        progress = { doneNow.toFloat() / total.toFloat() },
+                        modifier = Modifier.fillMaxWidth().height(7.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text("已做好 $doneNow/$total 块", fontSize = 12.sp, color = Sub)
+                }
+                Spacer(Modifier.height(5.dp))
+                Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
+                    .format(java.util.Date(t?.updatedAt ?: 0L)), fontSize = 12.sp, color = Sub)
+            }
+        }
+        item(key = "detail_chapter_title") {
+            Spacer(Modifier.height(10.dp))
+            Text("章节 · 点开看这一章的分段进度", fontSize = 13.sp,
+                fontWeight = FontWeight.Bold, color = Primary)
+            Spacer(Modifier.height(6.dp))
+        }
+        if (d.chapters.isEmpty()) {
+            item(key = "detail_no_chapter") {
+                CardBox {
+                    Text("这本书的章节读不出来", fontSize = 12.sp, color = Sub)
+                    TextButton(onClick = onLibrary) { Text("去书架 ›", fontSize = 12.sp) }
+                }
+            }
+        } else {
+            items(d.chapters, key = { it.index }) { ch ->
+                val done = d.finished.containsKey(ch.index)
+                val inScope = t?.only == null || ch.index in t.only!!
+                val livePct = if (runningHere) st.chapterProgress[ch.index] else null
+                val label = when {
+                    done -> "已合成"
+                    livePct != null -> "生成中 ${(livePct * 100).toInt()}%"
+                    runningHere && inScope -> "排队中"
+                    !inScope -> "本次没选"
+                    t?.phase == "stopped" || t?.phase == "interrupted" -> "没做完 · 接着做会续上"
+                    else -> "等待中"
+                }
+                CardBox(Modifier.padding(bottom = 6.dp)) {
+                    Row(Modifier.fillMaxWidth().height(52.dp)
+                        .clickable { onChapter(ch.index) },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${ch.index + 1}. ${ch.title}", fontSize = 14.sp, maxLines = 1)
+                            Text(label, fontSize = 12.sp,
+                                color = if (done) Good else Sub)
+                        }
+                        if (done) {
+                            TextButton(onClick = { playChapterAudio(c, bookId, ch.index) }) {
+                                Text("▶ 播放", fontSize = 12.sp)
+                            }
+                        }
+                        Text("进度 ›", fontSize = 12.sp, color = Primary)
+                    }
+                }
+            }
+        }
+        item(key = "detail_actions") {
+            Spacer(Modifier.height(8.dp))
+            if (t == null) {
+                TextButton(onClick = onLibrary) { Text("去书架，选一本书 ›", fontSize = 12.sp) }
+            } else when {
+                runningHere -> {
+                    Text("这一本正在跑，上方是整本进度；点任一章看分段看台。",
+                        fontSize = 12.sp, color = Sub)
+                }
+                t.phase == "done" -> {
+                    TextButton(onClick = onAudio) {
+                        Text("去「我的音频」试听 ›", fontSize = 12.sp)
+                    }
+                }
+                !d.exists -> {
+                    TextButton(onClick = {
+                        Producer.clearProgress(c, t.bookId, t.only)
+                        tick++
+                    }) { Text("清除这条失效任务", fontSize = 12.sp) }
+                }
+                else -> {
+                    Button(onClick = { if (!otherRunning) onResume(t) },
+                        enabled = !otherRunning,
+                        modifier = Modifier.fillMaxWidth().height(46.dp)) {
+                        Text("继续制作（接着已做好的块跑）", fontSize = 15.sp)
+                    }
+                    Row(Modifier.fillMaxWidth()) {
+                        TextButton(onClick = {
+                            Producer.clearProgress(c, t.bookId, t.only)
+                            val b = BookStore.list(c).find { x -> x.id == t.bookId }
+                            if (b != null) onResume(t)
+                        }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
+                        TextButton(onClick = {
+                            Producer.clearProgress(c, t.bookId, t.only)
+                            tick++
+                        }, Modifier.weight(1f)) {
+                            Text("放弃任务", fontSize = 12.sp, color = Warn)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> Unit,
+                             onProgress: () -> Unit,
                              onAudio: () -> Unit, onLibrary: () -> Unit,
                              onResume: (TaskInfo) -> Unit) {
     val st by Producer.state.collectAsState()
@@ -956,114 +1215,101 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
         if (!st.running) { loadTick++; return@LaunchedEffect }
         while (true) { delay(2000); loadTick++ }
     }
-    val saved = remember(refresh, loadTick) { TaskResume.load(c) }
-    val t = live ?: saved
-    val real = remember(t, refresh, st.running) {
-        if (st.running) 0 else t?.let { TaskResume.realProgress(c, it) } ?: 0
+    val tasks = remember(refresh, loadTick) { TaskResume.list(c) }
+    var realMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var warnMap by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+    var books by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(tasks, loadTick) {
+        withContext(Dispatchers.IO) {
+            books = BookStore.list(c).map { it.id }.toSet()
+            realMap = tasks.associate { it.bookId to
+                if (st.running) 0 else TaskResume.realProgress(c, it) }
+            warnMap = tasks.associate { it.bookId to TaskResume.invalidationReason(c, it) }
+        }
     }
-    val bookExists = remember(t, refresh) {
-        t?.let { BookStore.list(c).any { b -> b.id == it.bookId } } ?: false
-    }
-    val modeText = when (t?.modeId) {
-        "custom_voice" -> "预设音色"
-        "base" -> "参考音频"
-        else -> "描述造音色"
-    }
-    val scopeText = t?.let {
-        if (it.only == null) "整本" else "选中 ${it.only!!.size} 章"
-    } ?: ""
-    val invalidate = remember(t, refresh) { t?.let { TaskResume.invalidationReason(c, it) } }
-
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        if (t == null) {
-            CardBox {
-                Text("还没有任务", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Spacer(Modifier.height(6.dp))
-                Text("在书架选一本书，勾选章节后点「合成音频」，这里就会出现进度。",
-                    fontSize = 12.sp, color = Sub)
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("去书架，选一本书")
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+        if (tasks.isEmpty()) {
+            item(key = "tasks_empty") {
+                CardBox {
+                    Text("还没有任务", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text("在书架选一本书，勾选章节后点「合成音频」，这里就会出现进度。",
+                        fontSize = 12.sp, color = Sub)
+                    Spacer(Modifier.height(4.dp))
+                    Text("一本算一个任务；做过的书一直留着，点开能看每一章。",
+                        fontSize = 12.sp, color = Sub)
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
+                        Text("去书架，选一本书")
+                    }
                 }
             }
         } else {
-            CardBox {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(t.title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f))
-                    val badge = when {
-                        st.running -> "进行中"
-                        t.phase == "done" -> "已完成"
-                        t.phase == "stopped" -> "已停止"
-                        else -> "已中断"
+            item(key = "tasks_count") {
+                Text("共 ${tasks.size} 本 · 一本一个任务",
+                    fontSize = 12.sp, color = Sub,
+                    modifier = Modifier.padding(bottom = 8.dp))
+            }
+            items(tasks, key = { it.bookId }) { t ->
+                val runningThis = st.running && live?.bookId == t.bookId
+                val badge = when {
+                    runningThis -> "进行中"
+                    t.phase == "done" -> "已完成"
+                    t.phase == "stopped" -> "已停止"
+                    else -> "已中断"
+                }
+                val modeText = when (t.modeId) {
+                    "custom_voice" -> "预设音色"
+                    "base" -> "参考音频"
+                    else -> "描述造音色"
+                }
+                val scopeText = if (t.only == null) "整本" else "选中 ${t.only!!.size} 章"
+                val real = realMap[t.bookId] ?: 0
+                val total = maxOf(t.total, real, if (runningThis) st.total else 0)
+                val doneNow = (if (runningThis) st.done else real).coerceIn(0, maxOf(total, 1))
+                val warn = warnMap[t.bookId]
+                CardBox(Modifier.clickable { onOpenTask(t.bookId) }
+                    .padding(bottom = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(t.title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f))
+                        Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                            color = if (runningThis) Primary else if (t.phase == "done") Good else Warn)
                     }
-                    Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (st.running) Primary else if (t.phase == "done") Good else Warn)
-                }
-                Spacer(Modifier.height(6.dp))
-                Text("$modeText · $scopeText", fontSize = 12.sp, color = Sub)
-                if (invalidate != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(invalidate!!, fontSize = 12.sp, color = Warn)
-                }
-                val total = maxOf(t.total, real, if (st.running) st.total else 0)
-                val doneNow = (if (st.running) st.done else real).coerceIn(0, total)
-                if (total > 0) {
-                    Spacer(Modifier.height(10.dp))
-                    LinearProgressIndicator(
-                        progress = { if (total > 0) doneNow.toFloat() / total else 0f },
-                        modifier = Modifier.fillMaxWidth().height(7.dp))
                     Spacer(Modifier.height(6.dp))
-                    Text("已做好 $doneNow/$total 块", fontSize = 12.sp, color = Sub)
-                }
-                Spacer(Modifier.height(5.dp))
-                Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
-                    .format(java.util.Date(t.updatedAt)), fontSize = 12.sp, color = Sub)
-                Spacer(Modifier.height(8.dp))
-
-                when {
-                    st.running -> {
-                        TextButton(onClick = onProgress) { Text("看实时进度 ›", fontSize = 12.sp) }
+                    Text("$modeText · $scopeText", fontSize = 12.sp, color = Sub)
+                    if (t.bookId !in books) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("书已从书架删掉，成品仍在「我的音频」", fontSize = 12.sp, color = Warn)
                     }
-                    t.phase == "done" -> {
-                        TextButton(onClick = onAudio) { Text("去「我的音频」试听 ›", fontSize = 12.sp) }
-                        Row(Modifier.fillMaxWidth()) {
-                            TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.only)
-                                val b = BookStore.list(c).find { x -> x.id == t.bookId }
-                                if (b != null) {
-                                    Producer.start(c, b, t.only, true, t.think, t.config)
-                                    onProgress()
-                                }
-                            }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
-                            TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.only)
-                                loadTick++
-                            }, Modifier.weight(1f)) {
-                                Text("放弃这条记录", fontSize = 12.sp, color = Warn)
+                    if (warn != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(warn, fontSize = 12.sp, color = Warn)
+                    }
+                    if (total > 0) {
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { doneNow.toFloat() / total.toFloat() },
+                            modifier = Modifier.fillMaxWidth().height(7.dp))
+                        Spacer(Modifier.height(6.dp))
+                        Text("已做好 $doneNow/$total 块", fontSize = 12.sp, color = Sub)
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
+                        .format(java.util.Date(t.updatedAt)), fontSize = 12.sp, color = Sub)
+                    Row(Modifier.fillMaxWidth()) {
+                        if (runningThis) {
+                            TextButton(onClick = onProgress) {
+                                Text("看实时进度 ›", fontSize = 12.sp)
                             }
                         }
-                    }
-                    !bookExists -> {
-                        Text("这本书已经从书架删掉了，任务没法续跑。", fontSize = 12.sp, color = Warn)
-                        TextButton(onClick = {
-                            Producer.clearProgress(c, t.bookId, t.only)
-                        }) { Text("清除这条失效任务", fontSize = 12.sp) }
-                    }
-                    else -> {
-                        Button(onClick = { onResume(t) }, Modifier.fillMaxWidth().height(46.dp)) {
-                            Text("继续制作（接着已做好的块跑）", fontSize = 15.sp)
+                        if (t.phase == "done") {
+                            TextButton(onClick = onAudio) {
+                                Text("去「我的音频」试听 ›", fontSize = 12.sp)
+                            }
                         }
-                        Row(Modifier.fillMaxWidth()) {
-                            TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.only)
-                                val b = BookStore.list(c).find { x -> x.id == t.bookId }
-                                if (b != null) { Producer.start(c, b, t.only, true, t.think, t.config); onProgress() }
-                            }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
-                            TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.only)
-                            }, Modifier.weight(1f)) { Text("放弃任务", fontSize = 12.sp, color = Warn) }
-                        }
+                        Spacer(Modifier.weight(1f))
+                        Text("章节 ›", fontSize = 12.sp, color = Primary)
                     }
                 }
             }
@@ -1086,6 +1332,7 @@ private fun AudioScreen(
     val indexError = AudioLibrary.readError ?: AudioLibrary.writeError
     var exportId by remember { mutableStateOf<String?>(null) }
     var controlsOpen by remember { mutableStateOf(false) }
+    var dropGroup by remember { mutableStateOf<String?>(null) }
     val pq by PlayQueue.state.collectAsState()
     val queue = remember(items) {
         items.map {
@@ -1100,6 +1347,16 @@ private fun AudioScreen(
     val current = items.firstOrNull {
         val tid = "audio:${it.id}:${it.file.absolutePath}"
         pq.trackId.isNotEmpty() && pq.trackId == tid
+    }
+    var bookNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(items) {
+        bookNames = withContext(Dispatchers.IO) {
+            BookStore.list(c).associate { it.id to it.title }
+        }
+    }
+    val groups = remember(items, bookNames) {
+        items.groupBy { it.bookId ?: "" }.toList()
+            .sortedByDescending { g -> g.second.maxOf { it.createdAt } }
     }
 
     val release: () -> Unit = { PlayQueue.release() }
@@ -1206,43 +1463,109 @@ private fun AudioScreen(
                 }
             }
         } else {
-            itemsIndexed(items, key = { _, it -> it.id }) { idx, item ->
-                val on = pq.trackId.isNotEmpty() &&
-                    pq.trackId == "audio:${item.id}:${item.file.absolutePath}"
-                CardBox(Modifier.padding(bottom = 10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp, maxLines = 2)
-                            Text("${item.mode} · 约 ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))} · %.1f MB"
-                                .format(item.bytes / 1024f / 1024f), fontSize = 12.sp, color = Sub)
+            groups.forEach { (bid, group) ->
+                val name = bookNames[bid]
+                    ?: if (bid.isEmpty()) "没记书名的音频" else "不在书架上的音频"
+                item(key = "audio_group_$bid") {
+                    CardBox(Modifier.padding(bottom = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(name, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f))
+                            Text("${group.size} 个", fontSize = 12.sp, color = Sub)
                         }
-                        if (on) Text("●", color = Primary, fontSize = 13.sp)
-                    }
-                    Spacer(Modifier.height(9.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = {
-                            PlayQueue.setTracks(queue, "audio")
-                            if (!on || pq.ended) PlayQueue.playFrom(idx, id = "audio") else PlayQueue.toggle()
-                        }) {
-                            Text(if (on && isPlaying) "暂停" else if (on) "继续" else "试听", fontSize = 12.sp)
-                        }
-                        TextButton(onClick = {
-                            exportId = item.id
-                            export.launch("${item.title}_${item.scope}.wav")
-                        }) { Text("保存到手机", fontSize = 12.sp, color = Sub) }
-                        TextButton(onClick = {
-                            if (on) release()
-                            if (!AudioLibrary.remove(c, item.id)) {
-                                Toast.makeText(c, AudioLibrary.writeError ?: "删除失败，记录未改动",
-                                    Toast.LENGTH_SHORT).show()
+                        Spacer(Modifier.height(4.dp))
+                        Text("合计 " + fmtTime(group.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }) +
+                            "（按文件大小估算）", fontSize = 12.sp, color = Sub)
+                        Row(Modifier.fillMaxWidth()) {
+                            TextButton(onClick = {
+                                val list = if (bid.isEmpty()) emptyList()
+                                else AudioLibrary.playableItems(c, bid)
+                                if (list.isNotEmpty()) {
+                                    val q = "chapter:$bid"
+                                    PlayQueue.setTracks(list.map { (idx, a) ->
+                                        Track(a.file, "${a.title} · 第 ${idx + 1} 章",
+                                            AudioLibrary.chapterStartMs(c, a, idx),
+                                            id = "chapter:${a.file.absolutePath}")
+                                    }, q)
+                                    PlayQueue.playFrom(0, id = q)
+                                } else {
+                                    Toast.makeText(c, "这一本还没有能按顺序播放的成品",
+                                        Toast.LENGTH_SHORT).show()
+                                }
+                            }) { Text("按顺序播放 ›", fontSize = 12.sp, color = Primary) }
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = { dropGroup = bid }) {
+                                Text("删除整本 ›", fontSize = 12.sp, color = Warn)
                             }
-                            localTick++
-                        }) { Text("删除", fontSize = 12.sp, color = Warn) }
+                        }
+                    }
+                }
+                itemsIndexed(group, key = { _, it -> it.id }) { _, item ->
+                    val idx = items.indexOfFirst { it.id == item.id }
+                    val on = pq.trackId.isNotEmpty() &&
+                        pq.trackId == "audio:${item.id}:${item.file.absolutePath}"
+                    CardBox(Modifier.padding(start = 10.dp, bottom = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp, maxLines = 2)
+                                Text("${item.mode} · 约 ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))} · %.1f MB"
+                                    .format(item.bytes / 1024f / 1024f), fontSize = 12.sp, color = Sub)
+                            }
+                            if (on) Text("●", color = Primary, fontSize = 13.sp)
+                        }
+                        Spacer(Modifier.height(9.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(onClick = {
+                                PlayQueue.setTracks(queue, "audio")
+                                if (!on || pq.ended) PlayQueue.playFrom(idx, id = "audio") else PlayQueue.toggle()
+                            }) {
+                                Text(if (on && isPlaying) "暂停" else if (on) "继续" else "试听", fontSize = 12.sp)
+                            }
+                            TextButton(onClick = {
+                                exportId = item.id
+                                export.launch("${item.title}_${item.scope}.wav")
+                            }) { Text("保存到手机", fontSize = 12.sp, color = Sub) }
+                            TextButton(onClick = {
+                                if (on) release()
+                                if (!AudioLibrary.remove(c, item.id)) {
+                                    Toast.makeText(c, AudioLibrary.writeError ?: "删除失败，记录未改动",
+                                        Toast.LENGTH_SHORT).show()
+                                }
+                                localTick++
+                            }) { Text("删除", fontSize = 12.sp, color = Warn) }
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (dropGroup != null) {
+        val gid = dropGroup!!
+        val group = groups.firstOrNull { it.first == gid }?.second ?: emptyList()
+        AlertDialog(
+            onDismissRequest = { dropGroup = null },
+            title = { Text("删除这一本的音频？", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            text = { Text("共 ${group.size} 个成品，删掉后不能恢复；已保存到手机的不受影响。",
+                fontSize = 13.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    var failed = 0
+                    group.forEach {
+                        val on = pq.trackId == "audio:${it.id}:${it.file.absolutePath}"
+                        if (on) release()
+                        if (!AudioLibrary.remove(c, it.id)) failed++
+                    }
+                    Toast.makeText(c,
+                        if (failed > 0) "有 $failed 个删不掉，记录已保留" else "已删除 ${group.size} 个",
+                        Toast.LENGTH_SHORT).show()
+                    localTick++
+                    dropGroup = null
+                }) { Text("删除", color = Warn) }
+            },
+            dismissButton = { TextButton(onClick = { dropGroup = null }) { Text("取消") } }
+        )
     }
 }
 

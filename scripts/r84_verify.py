@@ -105,7 +105,7 @@ BAN = [
 ]
 
 KEEP = [
-    'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
+    'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
     'NAV_SETTINGS to "设置"',
     'NAV_MIXER to "调音台"',
     'NAV_MODELS to "模型"',

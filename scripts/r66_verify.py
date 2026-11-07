@@ -48,8 +48,8 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
     got = set(re.findall(r'[A-Z_]+', m.group(1))) if m else set()
     want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'AUDIO', 'SETTINGS',
-            'MODELS', 'MIXER', 'CHAPTERS'}
-    if got != want: e.append('Screen 枚举不是 9 值或仍含旧页: ' + str(got ^ want))
+            'MODELS', 'MIXER', 'CHAPTERS', 'TASK_DETAIL'}
+    if got != want: e.append('Screen 枚举不是 10 值或仍含旧页: ' + str(got ^ want))
     if re.search(r'enum class ProduceMode\s*\{[^}]*,', main): e.append('制作档位又出现多档枚举')
     if 'ProduceMode.ANNOTATE' in main or 'HubAction.ANNOTATE' in main:
         e.append('旧标注档回潮')

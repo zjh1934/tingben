@@ -20,7 +20,7 @@ def load():
     return {k: p.read_text(encoding="utf-8", errors="replace") for k, p in FILES.items()}
 
 def tasks(s):
-    i = s.find("private fun TaskCenterScreen(")
+    i = s.find("private data class TaskDetailData")
     j = s.find("private fun fmtTime(", i + 1)
     return s[i:j] if i >= 0 else ""
 
@@ -39,12 +39,12 @@ POS = [
     ("hub", "val barText = when {"),
     ("hub", 'st.stage == "完成" -> "做好了 · 合成列已更新，可播列已点亮"'),
     ("main", "val live by Producer.resume.collectAsState()"),
-    ("main", "val t = live ?: saved"),
+    ("main", "val tasks = remember(refresh, loadTick) { TaskResume.list(c) }"),
     ("main", '"custom_voice" -> "预设音色"'),
     ("main", '"base" -> "参考音频"'),
-    ("main", ".coerceIn(0, total)"),
+    ("main", ".coerceIn(0, maxOf(total, 1))"),
     ("main", "TaskResume.invalidationReason(c, it)"),
-    ("main", 'Text("放弃这条记录", fontSize = 12.sp, color = Warn)'),
+    ("main", 'Text("放弃任务", fontSize = 12.sp, color = Warn)'),
     ("resume", "val modeId: String = \"\""),
     ("resume", '.put("modeId", t.modeId)'),
     ("resume", 'o.optString("modeId", "")'),
@@ -86,7 +86,7 @@ def check(f):
     for b in BAN_HUB:
         if b in f["hub"]:
             errs.append("章节页旧形态: " + b[:50])
-    if tasks(f["main"]).count('Text("从头重做", fontSize = 12.sp)') != 2:
+    if tasks(f["main"]).count('Text("从头重做", fontSize = 12.sp)') != 1:
         errs.append("已完成分支缺「从头重做」")
     mx = mixer(f["main"])
     if "if (mode == ModelStore.Mode.VOICE_DESIGN) {" not in mx:
@@ -126,7 +126,7 @@ if __name__ == "__main__":
              lambda t: dict(t, main=t["main"].replace(
                  "val live by Producer.resume.collectAsState()", ""))),
             ("进度防越界被删",
-             lambda t: dict(t, main=t["main"].replace(".coerceIn(0, total)", ""))),
+             lambda t: dict(t, main=t["main"].replace(".coerceIn(0, maxOf(total, 1))", ""))),
             ("模式名写死回旧档位",
              lambda t: dict(t, main=tasks(t["main"]).replace(
                  'val modeText = when (t?.modeId)', 'val modeText = "直接朗读" // when (t?.modeId)')

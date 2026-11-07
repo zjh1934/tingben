@@ -54,7 +54,7 @@ BAN = [
 ]
 
 KEEP = [
-    'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
+    'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
     'private fun SoundProbeBlock(',
     'private fun DiagnosticsBlock(',
     'Prefs.setThemeMode(c, m)',
