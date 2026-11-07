@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- R26 · 长任务前台服务（dataSync）：四个权限跟着 targetSdk 35 一起声明，
+         缺任一权限 startForeground 会抛 SecurityException。绝不申请 INTERNET。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:name=".TingbenApp"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:largeHeap="true"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Tingben">
+        <activity android:name=".MainActivity" android:exported="true" android:label="@string/app_name"
+            android:theme="@style/Theme.Tingben" android:launchMode="singleTop"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- 在其他 App（微信、文件管理器、浏览器）里点「打开方式 / 分享」能选到听本。
+                 content:// 为主，file:// 兜底；不加 INTERNET，仍纯离线。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/epub+zip" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:scheme="content" />
+            </intent-filter>
+        </activity>
+
+        <!-- R26 · 只从可见界面启动；不导出、不自动重启、不伪装 mediaPlayback。
+             依据 docs/后台保活与浮窗_调研.md：dataSync 在 Android 15 起约 6h 超时，
+             到点停 + 任务页点继续，不承诺永不中断。 -->
+        <service
+            android:name=".ProduceService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
+        <receiver android:name=".core.PlaybackActions" android:exported="false">
+            <intent-filter>
+                <action android:name="com.tingben.app.PLAY_TOGGLE" />
+                <action android:name="com.tingben.app.PLAY_NEXT" />
+                <action android:name="com.tingben.app.PLAY_PREV" />
+                <action android:name="com.tingben.app.PLAY_STOP" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
