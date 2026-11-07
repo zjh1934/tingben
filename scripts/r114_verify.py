@@ -54,6 +54,8 @@ def check(root):
     ck('默认锚点' not in main and '采样种子' not in main, 'F-28 只读信息组没删')
     ck('ProduceMode.values()' not in main and 'RadioButton(selected' not in main,
        'F-28 只有一个选项的假单选仍在')
+    ck('Modifier.weight(1f).height(92.dp)' in main,
+       'F-08 三张模式卡没给 12sp 三行留出高度，会裁字')
     ck('ExpandGroup("① 做什么", "")' in main, 'F-28 第一分区丢了')
     ck('ExpandGroup("② 怎么念"' in main, 'F-28 念法分区丢了')
     ck('ExpandGroup("③ 怎么跑", "")' in main, 'F-28 跑法分区丢了')
@@ -97,6 +99,8 @@ def check(root):
 INJECT = [
     ('字号退回 9sp', 'main', 'Text("去听")', 'Text("去听", fontSize = 9.sp)'),
     ('字号脱阶', 'opts', 'fontSize = 12.sp', 'fontSize = 12.5.sp'),
+    ('模式卡高度退回', 'main', 'Modifier.weight(1f).height(92.dp)',
+     'Modifier.weight(1f).height(76.dp)'),
     ('恢复多档枚举', 'main', 'private fun ProduceScreen(',
      'private enum class ProduceMode { DIRECT, ANNOTATE }\nprivate fun ProduceScreen('),
     ('恢复折叠状态', 'opts', '    Card(\n',

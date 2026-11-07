@@ -2052,7 +2052,7 @@ private fun ModeTabs(
         ModelStore.Mode.values().forEach { m ->
             val on = m == current
             Column(
-                Modifier.weight(1f).height(76.dp)
+                Modifier.weight(1f).height(92.dp)
                     .background(if (on) PrimarySoft else Card, RoundedCornerShape(10.dp))
                     .border(1.dp, if (on) Primary else Line, RoundedCornerShape(10.dp))
                     .clickable { onPick(m) }
