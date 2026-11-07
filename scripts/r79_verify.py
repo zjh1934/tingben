@@ -22,7 +22,7 @@ POS = [
     (M, 'item(key = "audio_tree_playing")'),
     (M, 'item(key = "audio_tree_summary")'),
     (M, 'pq.durationMs'),
-    (M, 'AudioLibrary.durationMs(s.file)'),
+    (M, '"audio_seg_grid_$ck"'),
     (M, 'val seenTask = remember(st.done, redoNonce, bookId)'),
     (M, 'val allSegs = remember(st.done, seenTask, redoNonce)'),
     (M, 'val rest = remember(st.done, seenTask, redoNonce)'),

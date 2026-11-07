@@ -129,7 +129,7 @@ if __name__ == "__main__":
              lambda t: dict(t, main=t["main"].replace(".coerceIn(0, maxOf(total, 1))", ""))),
             ("模式名写死回旧档位",
              lambda t: dict(t, main=tasks(t["main"]).replace(
-                 'val modeText = when (t?.modeId)', 'val modeText = "直接朗读" // when (t?.modeId)')
+                 'val modeText = when (t.modeId)', 'val modeText = "直接朗读" // when (t?.modeId)')
                  + t["main"][t["main"].find("private fun fmtTime("):])),
             ("模式落盘被删",
              lambda t: dict(t, resume=t["resume"].replace('.put("modeId", t.modeId)', ""))),

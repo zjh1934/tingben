@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""R111 · F-24 播放队列归属 + F-22 时长口径标注：正向 / 零残留 / 守恒 / 反向注入。"""
+"""R111 · F-24 播放队列归属 + F-22 时长口径标注：正向 / 零残留 / 守恒 / 反向注入。
+
+R119：逐块时长行已收成小格子，时长口径守恒点落在播放卡 fmtTime(pq.positionMs)。
+"""
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -31,7 +34,7 @@ POS = {
         'PlayQueue.playFrom(0, id = "trial")',
         "· $chCount 章",
         'fmtTime(pq.durationMs)',
-        'AudioLibrary.durationMs(s.file)',
+        'fmtTime(pq.positionMs)',
     ],
     "hub": [
         'val q = "chapter:${book.id}"',

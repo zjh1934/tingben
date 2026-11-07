@@ -46,7 +46,7 @@ POS = [
     ("main", 'AudioTree.load(c)'),
     ("main", '"audio_book_${b.bookId}"'),
     ("main", '"audio_chapter_$ck"'),
-    ("main", '"audio_seg_${s.key}"'),
+    ("main", '"audio_seg_grid_'),
     ("main", 'fun playSeg(s: SegAudio)'),
     ("main", 'fun playChapter(ch: ChapterAudio)'),
     ("main", 'detectTapGestures('),
@@ -131,7 +131,7 @@ def main():
             ('接缝防爆音被删', lambda t: dict(t, pipe=t['pipe'].replace(
                 'declick(it, declickMs)', 'it'))),
             ('三层小块行被删', lambda t: dict(t, main=t['main'].replace(
-                '"audio_seg_${s.key}"', '"audio_seg_off"'))),
+                '"audio_seg_grid_', '"audio_seg_off"'))),
             ('章播放键被删', lambda t: dict(t, main=t['main'].replace(
                 '"▶ 整章"', '"整章"'))),
             ('拼接成章被删', lambda t: dict(t, main=t['main'].replace(

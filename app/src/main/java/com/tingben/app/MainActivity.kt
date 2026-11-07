@@ -333,15 +333,21 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val resumeTask: (TaskInfo) -> Unit = { t ->
         val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
         if (b != null) {
-            bookId = b.id; taskBookId = b.id; taskChapter = null
+            bookId = b.id; taskBookId = b.id
+            taskChapter = TaskResume.currentChapter(ctx, t)
             lastSelection = t.only
             Producer.start(ctx, b, t.only, true, t.think, t.config)
-            nav.push(Screen.TASK_DETAIL)
+            nav.push(if (taskChapter != null) Screen.PROGRESS else Screen.TASK_DETAIL)
         } else {
             Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
         }
     }
-    val chrome = chromeOf(screen)
+    val chrome = chromeOf(screen).let { base ->
+        when {
+            screen == Screen.PROGRESS && taskChapter != null -> base.copy(title = "本章进度")
+            else -> base
+        }
+    }
     val drawerSelected = when (screen) {
         Screen.LIBRARY, Screen.PRODUCE, Screen.CHAPTERS -> NAV_LIBRARY
         Screen.PROGRESS, Screen.TASKS, Screen.TASK_DETAIL -> NAV_TASKS
@@ -407,7 +413,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onDismissImportError = { bookImportError = null })
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
-                    onProgress = { taskBookId = bookId; taskChapter = null; nav.push(Screen.PROGRESS) },
+                    onProgress = { taskBookId = bookId; nav.push(Screen.TASKS) },
                     onPlayBook = { miniBook = it },
                     onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) },
                     onStarted = { id, sel ->
@@ -436,9 +442,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
                     onOpenTask = { id -> taskBookId = id; nav.push(Screen.TASK_DETAIL) },
                     onProgress = {
-                        taskBookId = Producer.resume.value?.bookId ?: taskBookId
-                        taskChapter = null
-                        nav.push(Screen.TASK_DETAIL)
+                        val t = Producer.resume.value
+                        taskBookId = t?.bookId ?: taskBookId
+                        taskChapter = t?.let { TaskResume.currentChapter(ctx, it) }
+                        nav.push(Screen.PROGRESS)
                     },
                     onAudio = { nav.push(Screen.AUDIO); refresh++ },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
@@ -449,6 +456,11 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         taskChapter = ch
                         taskBookId = taskBookId ?: bookId
                         nav.push(Screen.PROGRESS)
+                    },
+                    onPickChapter = { ch ->
+                        bookId = taskBookId ?: bookId
+                        lastSelection = setOf(ch)
+                        nav.push(Screen.CHAPTERS)
                     },
                     onAudio = { nav.push(Screen.AUDIO); refresh++ },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
@@ -508,7 +520,7 @@ private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.SETTINGS -> ChromeSpec("设置")
     Screen.MODELS   -> ChromeSpec("模型")
     Screen.MIXER    -> ChromeSpec("调音台")
-    Screen.TASK_DETAIL -> ChromeSpec("任务详情", TAB_TASKS)
+    Screen.TASK_DETAIL -> ChromeSpec("章节", TAB_TASKS)
 }
 
 @Composable
@@ -853,8 +865,22 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
     }
     val allSegs = remember(st.done, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
     val segChapters = remember(seenTask) { Workbench.segChapters(c, seenTask) }
-    val segs = if (chapter != null && segChapters != null)
+    var treeChapter by remember { mutableStateOf<ChapterAudio?>(null) }
+    LaunchedEffect(bookId, chapter, st.done, redoNonce) {
+        treeChapter = if (bookId == null || chapter == null) null else
+            withContext(Dispatchers.IO) {
+                AudioTree.load(c).firstOrNull { it.bookId == bookId }
+                    ?.chapters?.firstOrNull { it.chapter == chapter }
+            }
+    }
+    val fallbackSegs = if (chapter != null && segChapters != null)
         allSegs.filter { segChapters[it.index] == chapter } else allSegs
+    val chapterRows = treeChapter?.segments?.map { s ->
+        SegRow(s.seq - 1, s.seq - 1, 0, null, s.file, s.file.name,
+            "", "旁白", "", false)
+    }
+    val segs = if (chapter != null && chapterRows != null) chapterRows else
+        if (chapter != null) fallbackSegs.mapIndexed { i, r -> r.copy(index = i) } else allSegs
     val rest = remember(st.done, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
     val verdict = remember(st.done, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
     var showCompare by remember { mutableStateOf(false) }
@@ -866,9 +892,12 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
 
         if (chapter != null) {
+            Text(treeChapter?.title ?: "第 ${chapter + 1} 章",
+                fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Primary)
+            Spacer(Modifier.height(3.dp))
             Text("第 ${chapter + 1} 章 · 本章 ${segs.count { it.hasAudio }}/${segs.size} 段",
-                fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
-            if (segChapters == null) {
+                fontSize = 12.sp, color = Sub)
+            if (segChapters == null && treeChapter == null) {
                 Spacer(Modifier.height(4.dp))
                 Text("旧记录没记章，这里显示整次分段", fontSize = 12.sp, color = Warn)
             }
@@ -895,20 +924,26 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
                     Spacer(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f)) {
-                    LinearProgressIndicator(progress = { pct },
+                    LinearProgressIndicator(
+                        progress = { if (chapter != null && segs.isNotEmpty())
+                            segs.count { it.hasAudio }.toFloat() / segs.size else pct },
                         modifier = Modifier.fillMaxWidth().height(6.dp))
                     Spacer(Modifier.height(5.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(st.stage, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             maxLines = 1, modifier = Modifier.weight(1f))
-                        Text(if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
+                        Text(if (chapter != null && segs.isNotEmpty())
+                            "${(segs.count { it.hasAudio } * 100 / segs.size)}%" else
+                            if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
                             fontSize = 12.sp, color = Primary)
                     }
                 }
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                if (st.total > 0) "已完成 ${st.done}/${st.total} 块" +
+                if (chapter != null) "本章 ${segs.count { it.hasAudio }}/${segs.size} 段" +
+                        if (st.total > 0) " · 整本 ${st.done}/${st.total} 块" else ""
+                else if (st.total > 0) "已完成 ${st.done}/${st.total} 块" +
                         if (st.failed > 0) " · ${st.failed} 块改走直读" else ""
                 else st.message.ifBlank { "还没开始" },
                 fontSize = 12.sp, color = Sub)
@@ -928,24 +963,25 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
             st.stage == "完成" -> 3
             else -> -1
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            steps.forEachIndexed { i, stepName ->
-                val doneStep = curStep > i
-                val nowStep = curStep == i
-                Column(Modifier.weight(1f)) {
-                    Text(stepName, fontSize = 12.sp, maxLines = 1,
-                        textAlign = TextAlign.Center,
-                        fontWeight = if (nowStep || doneStep) FontWeight.Bold else FontWeight.Normal,
-                        color = if (nowStep || doneStep) Primary else Sub,
-                        modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(3.dp))
-                    Box(Modifier.fillMaxWidth().height(3.dp).background(
-                        if (doneStep) Primary else Color.Transparent, RoundedCornerShape(50)))
+        if (chapter == null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                steps.forEachIndexed { i, stepName ->
+                    val doneStep = curStep > i
+                    val nowStep = curStep == i
+                    Column(Modifier.weight(1f)) {
+                        Text(stepName, fontSize = 12.sp, maxLines = 1,
+                            textAlign = TextAlign.Center,
+                            fontWeight = if (nowStep || doneStep) FontWeight.Bold else FontWeight.Normal,
+                            color = if (nowStep || doneStep) Primary else Sub,
+                            modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(3.dp))
+                        Box(Modifier.fillMaxWidth().height(3.dp).background(
+                            if (doneStep) Primary else Color.Transparent, RoundedCornerShape(50)))
+                    }
                 }
             }
+            Spacer(Modifier.height(10.dp))
         }
-
-        Spacer(Modifier.height(10.dp))
         CardBox {
             Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
             if (segs.isEmpty()) {
@@ -1032,6 +1068,7 @@ private fun playChapterAudio(c: Context, bookId: String?, ch: Int) {
 private fun TaskDetailScreen(
     c: Context, bookId: String?, refresh: Int,
     onBack: () -> Unit, onChapter: (Int) -> Unit,
+    onPickChapter: (Int) -> Unit,
     onAudio: () -> Unit, onLibrary: () -> Unit,
     onResume: (TaskInfo) -> Unit
 ) {
@@ -1056,14 +1093,6 @@ private fun TaskDetailScreen(
     val t = d.task
     val runningHere = st.running && live?.bookId == bookId
     val otherRunning = st.running && !runningHere
-    val modeText = when (t?.modeId) {
-        "custom_voice" -> "预设音色"
-        "base" -> "参考音频"
-        else -> "描述造音色"
-    }
-    val scopeText = t?.let {
-        if (it.only == null) "整本" else "选中 ${it.only!!.size} 章"
-    } ?: ""
     val badge = when {
         runningHere -> "进行中"
         t?.phase == "done" -> "已完成"
@@ -1071,52 +1100,29 @@ private fun TaskDetailScreen(
         else -> "已中断"
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-        item(key = "detail_back") {
-            TextButton(onClick = onBack) { Text("‹ 任务", fontSize = 12.sp) }
-        }
         item(key = "detail_head") {
-            CardBox {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(d.title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f))
-                    Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (runningHere) Primary else if (t?.phase == "done") Good else Warn)
-                }
-                Spacer(Modifier.height(6.dp))
-                Text("$modeText · $scopeText", fontSize = 12.sp, color = Sub)
-                if (!d.exists) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("这本书已从书架删掉，成品仍留在「我的音频」里。",
-                        fontSize = 12.sp, color = Warn)
-                }
-                if (d.invalidate != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(d.invalidate!!, fontSize = 12.sp, color = Warn)
-                }
-                if (otherRunning) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("另一本正在制作，等它跑完或先停它，再续这一本。",
-                        fontSize = 12.sp, color = Warn)
-                }
-                val total = maxOf(t?.total ?: 0, d.real, if (runningHere) st.total else 0)
-                val doneNow = (if (runningHere) st.done else d.real)
-                    .coerceIn(0, maxOf(total, 1))
-                if (total > 0) {
-                    Spacer(Modifier.height(10.dp))
-                    LinearProgressIndicator(
-                        progress = { doneNow.toFloat() / total.toFloat() },
-                        modifier = Modifier.fillMaxWidth().height(7.dp))
-                    Spacer(Modifier.height(6.dp))
-                    Text("已做好 $doneNow/$total 块", fontSize = 12.sp, color = Sub)
-                }
-                Spacer(Modifier.height(5.dp))
-                Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
-                    .format(java.util.Date(t?.updatedAt ?: 0L)), fontSize = 12.sp, color = Sub)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("‹ 任务", fontSize = 12.sp) }
+                Spacer(Modifier.weight(1f))
+                Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (runningHere) Primary else if (t?.phase == "done") Good else Warn)
             }
+            if (!d.exists) {
+                Text("这本书已从书架删掉，成品仍留在「我的音频」里。",
+                    fontSize = 12.sp, color = Warn)
+            }
+            if (d.invalidate != null) {
+                Text(d.invalidate!!, fontSize = 12.sp, color = Warn)
+            }
+            if (otherRunning) {
+                Text("另一本正在制作，等它跑完或先停它，再续这一本。",
+                    fontSize = 12.sp, color = Warn)
+            }
+            Spacer(Modifier.height(6.dp))
         }
         item(key = "detail_chapter_title") {
             Spacer(Modifier.height(10.dp))
-            Text("章节 · 点开看这一章的分段进度", fontSize = 13.sp,
+            Text("章节 · 做过的章点开看它的分段", fontSize = 13.sp,
                 fontWeight = FontWeight.Bold, color = Primary)
             Spacer(Modifier.height(6.dp))
         }
@@ -1132,29 +1138,47 @@ private fun TaskDetailScreen(
                 val done = d.finished.containsKey(ch.index)
                 val inScope = t?.only == null || ch.index in t.only!!
                 val livePct = if (runningHere) st.chapterProgress[ch.index] else null
+                val started = done || livePct != null ||
+                    ((t?.phase == "stopped" || t?.phase == "interrupted" ||
+                        t?.phase == "running") && inScope)
                 val label = when {
-                    done -> "已合成"
-                    livePct != null -> "生成中 ${(livePct * 100).toInt()}%"
+                    done -> "已做好"
+                    livePct != null -> "正在制作 ${(livePct * 100).toInt()}%"
                     runningHere && inScope -> "排队中"
                     !inScope -> "本次没选"
-                    t?.phase == "stopped" || t?.phase == "interrupted" -> "没做完 · 接着做会续上"
-                    else -> "等待中"
+                    t?.phase == "stopped" || t?.phase == "interrupted" -> "没做完"
+                    else -> "还没做"
+                }
+                val tone = when {
+                    done -> Good
+                    livePct != null || (runningHere && inScope) -> Primary
+                    started -> Warn
+                    else -> Sub
                 }
                 CardBox(Modifier.padding(bottom = 6.dp)) {
                     Row(Modifier.fillMaxWidth().height(52.dp)
-                        .clickable { onChapter(ch.index) },
+                        .clickable(enabled = started) { onChapter(ch.index) },
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("${ch.index + 1}. ${ch.title}", fontSize = 14.sp, maxLines = 1)
-                            Text(label, fontSize = 12.sp,
-                                color = if (done) Good else Sub)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(7.dp).background(tone, RoundedCornerShape(50)))
+                                Spacer(Modifier.width(6.dp))
+                                Text(label, fontSize = 12.sp, color = tone)
+                            }
                         }
                         if (done) {
                             TextButton(onClick = { playChapterAudio(c, bookId, ch.index) }) {
                                 Text("▶ 播放", fontSize = 12.sp)
                             }
                         }
-                        Text("进度 ›", fontSize = 12.sp, color = Primary)
+                        if (started) {
+                            Text("本章 ›", fontSize = 12.sp, color = Primary)
+                        } else {
+                            TextButton(onClick = { onPickChapter(ch.index) }) {
+                                Text("去选这一章 ›", fontSize = 12.sp, color = Sub)
+                            }
+                        }
                     }
                 }
             }
@@ -1165,7 +1189,7 @@ private fun TaskDetailScreen(
                 TextButton(onClick = onLibrary) { Text("去书架，选一本书 ›", fontSize = 12.sp) }
             } else when {
                 runningHere -> {
-                    Text("这一本正在跑，上方是整本进度；点任一章看分段看台。",
+                    Text("这一本正在跑，点做过的章看它的分段。",
                         fontSize = 12.sp, color = Sub)
                 }
                 t.phase == "done" -> {
@@ -1251,7 +1275,16 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
                     fontSize = 12.sp, color = Sub,
                     modifier = Modifier.padding(bottom = 8.dp))
             }
-            items(tasks, key = { it.bookId }) { t ->
+            val unfinished = tasks.filter { it.phase != "done" }
+            val finishedTasks = tasks.filter { it.phase == "done" }
+            if (unfinished.isNotEmpty()) {
+                item(key = "tasks_unfinished_label") {
+                    Text("没做完 ${unfinished.size} 本 · 点「继续制作」接着跑",
+                        fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Warn,
+                        modifier = Modifier.padding(bottom = 6.dp))
+                }
+            }
+            items(unfinished + finishedTasks, key = { it.bookId }) { t ->
                 val runningThis = st.running && live?.bookId == t.bookId
                 val badge = when {
                     runningThis -> "进行中"
@@ -1269,6 +1302,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
                 val total = maxOf(t.total, real, if (runningThis) st.total else 0)
                 val doneNow = (if (runningThis) st.done else real).coerceIn(0, maxOf(total, 1))
                 val warn = warnMap[t.bookId]
+                val otherBusy = st.running && live?.bookId != t.bookId
                 CardBox(Modifier.clickable { onOpenTask(t.bookId) }
                     .padding(bottom = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1298,6 +1332,16 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
                     Spacer(Modifier.height(5.dp))
                     Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
                         .format(java.util.Date(t.updatedAt)), fontSize = 12.sp, color = Sub)
+                    if (!runningThis && t.phase != "done") {
+                        Button(onClick = { onResume(t) }, enabled = !otherBusy,
+                            modifier = Modifier.fillMaxWidth().height(42.dp)) {
+                            Text("继续制作 · 接着已做好的块跑", fontSize = 13.sp)
+                        }
+                        if (otherBusy) {
+                            Text("另一本正在制作，等它跑完或先停它。",
+                                fontSize = 12.sp, color = Warn)
+                        }
+                    }
                     Row(Modifier.fillMaxWidth()) {
                         if (runningThis) {
                             TextButton(onClick = onProgress) {
@@ -1310,7 +1354,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
                             }
                         }
                         Spacer(Modifier.weight(1f))
-                        Text("章节 ›", fontSize = 12.sp, color = Primary)
+                        Text("看章节 ›", fontSize = 12.sp, color = Primary)
                     }
                 }
             }
@@ -1508,23 +1552,35 @@ private fun AudioScreen(
                         }
                     }
                     if (chOpen) {
-                        ch.segments.forEach { s ->
-                            val tid = "seg:${s.file.absolutePath}"
-                            val on = pq.trackId == tid
-                            item(key = "audio_seg_${s.key}") {
-                                CardBox(Modifier.padding(start = 24.dp, bottom = 4.dp)) {
-                                    Row(Modifier.fillMaxWidth().pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onTap = { playSeg(s) },
-                                            onLongPress = { target = segMenu(s) })
-                                    }, verticalAlignment = Alignment.CenterVertically) {
-                                        Text(s.name, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                                        if (on) Text("●", fontSize = 12.sp, color = Primary)
-                                        Text(fmtTime(AudioLibrary.durationMs(s.file)),
-                                            fontSize = 12.sp, color = Sub)
-                                        Text("  %.1f MB".format(s.bytes / 1024f / 1024f),
-                                            fontSize = 12.sp, color = Sub)
+                        item(key = "audio_seg_grid_$ck") {
+                            CardBox(Modifier.padding(start = 24.dp, bottom = 6.dp)) {
+                                ch.segments.chunked(8).forEach { row ->
+                                    Row(Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        row.forEach { s ->
+                                            val tid = "seg:${s.file.absolutePath}"
+                                            val on = pq.trackId == tid
+                                            val playing = on && pq.isPlaying
+                                            Box(
+                                                Modifier.size(34.dp)
+                                                    .background(
+                                                        if (playing) PrimarySoft else
+                                                            if (on) Good.copy(alpha = 0.35f) else
+                                                                Good.copy(alpha = 0.18f),
+                                                        RoundedCornerShape(8.dp))
+                                                    .pointerInput(Unit) {
+                                                        detectTapGestures(
+                                                            onTap = { playSeg(s) },
+                                                            onLongPress = { target = segMenu(s) })
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text("${s.seq}", fontSize = 12.sp,
+                                                    color = if (playing) Primary else Good)
+                                            }
+                                        }
                                     }
+                                    Spacer(Modifier.height(5.dp))
                                 }
                             }
                         }

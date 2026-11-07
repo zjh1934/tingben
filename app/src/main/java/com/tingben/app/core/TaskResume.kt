@@ -82,7 +82,8 @@ object TaskResume {
                 for (i in 0 until a.length()) out.add(decode(a.getJSONObject(i)))
             } catch (_: Throwable) { }
         }
-        if (out.isEmpty()) legacy(c)?.let { out.add(it) }
+        val old = legacy(c)
+        if (old != null && out.none { it.bookId == old.bookId }) out.add(old)
         return out.sortedByDescending { it.updatedAt }
     }
 
@@ -155,6 +156,19 @@ object TaskResume {
     } catch (_: Throwable) { null }
 
     fun active(c: Context): TaskInfo? = readAll(c).firstOrNull { it.phase != "done" }
+
+    fun currentChapter(c: Context, t: TaskInfo): Int? {
+        val body = when (val r = AtomicJson.read(File(AnnCache.dirFor(c, t.bookId, t.only),
+            "seg_chapters.json"))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return null
+        }
+        return try {
+            val a = JSONArray(body)
+            if (a.length() == 0) null else
+                a.getInt(realProgress(c, t).coerceIn(0, a.length() - 1))
+        } catch (_: Throwable) { null }
+    }
 
     fun realProgress(c: Context, t: TaskInfo): Int {
         if (invalidationReason(c, t) != null) return 0

@@ -253,7 +253,7 @@ internal fun ChapterHubScreen(
                     Text(barText, fontSize = 12.sp, maxLines = 2,
                         color = HubPrimary, modifier = Modifier.weight(1f))
                     if (st.running) {
-                        TextButton(onClick = onProgress) { Text("进度页 ›", fontSize = 12.sp) }
+                        TextButton(onClick = onProgress) { Text("任务 ›", fontSize = 12.sp) }
                     }
                 }
             }

@@ -32,7 +32,7 @@ POS = [
     ("bench", 'fun segChapters(c: Context, t: TaskInfo?): Map<Int, Int>?'),
     ("audio", 'TaskResume.byBook(c, bookId)?.modeId'),
     ("main", 'Screen.TASK_DETAIL'),
-    ("main", 'Screen.TASK_DETAIL -> ChromeSpec("任务详情", TAB_TASKS)'),
+    ("main", 'Screen.TASK_DETAIL -> ChromeSpec("章节", TAB_TASKS)'),
     ("main", 'TASKS, TASK_DETAIL, AUDIO'),
     ("main", 'private data class TaskDetailData('),
     ("main", 'private fun buildTaskDetail(c: Context, bookId: String?): TaskDetailData'),

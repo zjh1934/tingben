@@ -138,6 +138,8 @@ jobs:
         run: python3 scripts/r117_verify.py --selftest
       - name: R118 我的音频三层结构验证（书章块 / 生成即联动 / 拼接防爆音 / 五项操作 / 反向注入）
         run: python3 scripts/r118_verify.py --selftest
+      - name: R119 音频小格子 / 任务三层 / 章内进度 / 停滞任务续跑验证
+        run: python3 scripts/r119_verify.py --selftest
 
 
 
