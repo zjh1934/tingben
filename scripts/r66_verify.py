@@ -78,7 +78,7 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
             seg = mm.group(1)
             if 't.direct' in seg or 'directMode' in seg or 'directRead = direct' in seg:
                 e.append(f + ' 仍有按旧档位分叉的制作入口')
-    if 'mode = "直接朗读"' not in audio: e.append('成品档位没固定')
+    if 'mode = madeMode' not in audio: e.append('成品模式没按本次模式登记')
     if 'a.mode == "标注后合成"' in audio: e.append('可播门槛仍按旧档位')
 
     for s in string_literals(allkt):

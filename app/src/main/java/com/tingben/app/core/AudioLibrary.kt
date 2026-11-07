@@ -133,13 +133,16 @@ object AudioLibrary {
             allChapterCount > 0 -> (0 until allChapterCount).toSet()
             else -> emptySet()
         }
+        val madeMode = TaskResume.load(c)?.modeId
+            ?.let { id -> ModelStore.Mode.values().firstOrNull { it.id == id }?.label }
+            ?: ModelStore.currentMode(c).label
         val item = AudioItem(
             id = file.nameWithoutExtension,
             file = file,
             bookId = bookId,
             title = bookTitle,
             scope = scopeLabel(only),
-            mode = "直接朗读",
+            mode = madeMode,
             createdAt = System.currentTimeMillis(),
             bytes = file.length(),
             chapters = chs,
@@ -206,7 +209,11 @@ object AudioLibrary {
             writeError = "音频记录损坏，删除暂不可用"
             return false
         }
-        all.find { it.id == id }?.file?.delete()
+        val f = all.find { it.id == id }?.file ?: File(dir(c), "$id.wav")
+        if (f.isFile && !f.delete()) {
+            writeError = "文件删不掉，记录已保留"
+            return false
+        }
         return writeIndex(c, all.filter { it.id != id })
     }
 

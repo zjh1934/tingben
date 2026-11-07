@@ -132,6 +132,9 @@ jobs:
       - name: R114 字号与交互收敛验证（F-08 / F-26 / F-27 / F-28 / 反向注入）
         run: python3 scripts/r114_verify.py --selftest
 
+      - name: R116 自找缺陷四连修（F-29 / F-30 / F-31 / F-32 / 反向注入）
+        run: python3 scripts/r116_verify.py
+
 
 
       - name: JDK 17
