@@ -41,7 +41,6 @@ POS = [
     'fun modelMode(c: Context): String',
     'fun setModelMode(c: Context, v: String)',
     # 模型页：底座 + 三模式 + 两条地址 + 完整文件名 + 制作中禁切
-    'R84 · 1 共用底座 + 3 模式，各自单独导入',
     'val modeFiles = remember(refresh) { ModelStore.modeFiles(c) }',
     'Text(if (allReady) "已就绪 · ${installed.size} 个模式"',
     'Text("共用底座 · 三个模式都要用"',
@@ -136,8 +135,8 @@ KEEP = [
 ]
 
 def model_body(text):
-    s = text.index("// ── ⑤b 模型页")
-    e = text.index("// ── ⑥ 调音台", s)
+    s = text.index("private fun ModelScreen(")
+    e = text.index("private fun MixerScreen(", s)
     return text[s:e]
 
 def check(files):
@@ -185,7 +184,7 @@ def check(files):
         errs.append("voiceStamp 定位失败")
     # Pipeline：精确识别不含泛化 talker 提示
     try:
-        ms = p[p.index("object ModelStore"):p.index("// ─────────────────────────── 分块")]
+        ms = p[p.index("object ModelStore"):p.index("object ChapterSplitter {")]
         if 'pick(c, TALKER, "talker")' in ms:
             errs.append("泛化 talker 模糊匹配仍在")
         for k in ("-voicedesign-", "-customvoice-", "-base-"):

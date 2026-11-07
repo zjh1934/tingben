@@ -15,19 +15,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/**
- * R20 · 「本次制作」预设页的折叠分组与档位控件。
- *
- * 不手搓依据（逐条见 docs/P1_制作准备页_联动表.md §1）：
- * - state hoisted 的 ExpandableSection：ProAndroidDev「Creating Expandable Sections with Compose」[citation:10]
- *   （这里用简单 if 展开而非 AnimatedVisibility，避免为动画再引一个依赖）
- * - header / child 折叠结构：SSComposeExpandableListView（MIT，R18 已用于分段看台）
- * - selectable Row 档位形态：OfflineLLM `SettingsScreen.kt`
- * - 「恢复默认」：PocketPal `CompletionSettings.tsx` 的 serverDefaultState/reset
- *
- * 与主界面解耦：不引用 MainActivity.kt 里文件私有的 CardBox / 颜色常量。
- */
-// R73 · 跟随主题，调用点一行不动。
 private val OptCard: Color get() = palette.card
 private val OptChip: Color get() = palette.primarySoft
 private val OptChipOn: Color get() = palette.primarySoft
@@ -66,7 +53,6 @@ fun ExpandGroup(
     }
 }
 
-/** 一行 2~3 个档位胶囊，选中高亮。泛型让枚举/整数档位共用一套控件。 */
 @Composable
 fun <T> OptionRow(
     label: String,

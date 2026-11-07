@@ -23,7 +23,7 @@ def load():
 
 def tasks(s):
     i = s.find("private fun TaskCenterScreen(")
-    j = s.find("// ── ④ 我的音频", i + 1)
+    j = s.find("private fun fmtTime(", i + 1)
     return s[i:j] if i >= 0 else ""
 
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
             ("模式名写死回旧档位",
              lambda t: dict(t, main=tasks(t["main"]).replace(
                  'val modeText = when (t?.modeId)', 'val modeText = "直接朗读" // when (t?.modeId)')
-                 + t["main"][t["main"].find("// ── ④ 我的音频"):])),
+                 + t["main"][t["main"].find("private fun fmtTime("):])),
             ("模式落盘被删",
              lambda t: dict(t, resume=t["resume"].replace('.put("modeId", t.modeId)', ""))),
             ("开工即时置位被删",
@@ -157,7 +157,7 @@ if __name__ == "__main__":
             ("完成后重做入口被删",
              lambda t: dict(t, main=tasks(t["main"]).replace(
                  'Text("从头重做", fontSize = 12.sp)', 'Text("重做")', 1)
-                 + t["main"][t["main"].find("// ── ④ 我的音频"):])),
+                 + t["main"][t["main"].find("private fun fmtTime("):])),
             ("CI 漏挂验证",
              lambda t: dict(t, ci=t["ci"].replace("r101_verify.py", "r101_missing.py"))),
         ]

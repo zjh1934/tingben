@@ -14,18 +14,6 @@ import android.os.PowerManager
 import com.tingben.app.core.Producer
 import com.tingben.app.diag.EventLog
 
-/**
- * R26 · 长任务前台服务（dataSync）。
- *
- * 形状移植自 ReaderVoice-Mobile 的 ChapterDirectorService.kt 与 VoiceDesignService.kt（MIT）：
- * ACTION_START / ACTION_CANCEL、createChannel、startForegroundCompat、buildNotification
- * 的「打开 + 停止」两个 PendingIntent、START_NOT_STICKY、结束用 STOP_FOREGROUND_DETACH。
- * 不搬它的业务 runner：本服务只管「可见通知 + 按块唤醒锁 + 停止入口」，
- * 推理与逐块落盘仍由 core/Producer.kt 的协程跑，唯一真源还是 TaskResume 书签。
- *
- * 如实边界：FGS 不保证不被杀；Doze 会忽略常规唤醒锁；Android 15 起 dataSync
- * 约 6 小时后会被系统停。目标是「到点停 + 回来点继续」，不是永不死。
- */
 class ProduceService : Service() {
 
     companion object {
@@ -34,7 +22,6 @@ class ProduceService : Service() {
         const val EXTRA_TITLE = "title"
         private const val CHANNEL_ID = "tingben_produce"
         private const val NOTIF_ID = 4711
-        // 单块/单段唤醒锁的硬超时：真机有过 643 秒的块，给足余量但绝不整轮常驻。
         private const val UNIT_TIMEOUT_MS = 30L * 60L * 1000L
 
         private val wakeGuard = Any()
@@ -58,7 +45,6 @@ class ProduceService : Service() {
         fun cancelIntent(c: Context): Intent =
             Intent(c, ProduceService::class.java).apply { action = ACTION_CANCEL }
 
-        /** LocalContext.current 有时是 ContextThemeWrapper，逐层剥到 Activity 才能申请运行时权限。 */
         fun activityOf(c: Context): android.app.Activity? {
             var x: Context? = c
             while (x is android.content.ContextWrapper) {
@@ -68,7 +54,6 @@ class ProduceService : Service() {
             return null
         }
 
-        /** 从可见界面点「合成音频」时调用，必须先于 Producer 的协程启动。 */
         fun begin(c: Context, title: String) {
             val ctx = c.applicationContext
             lastBook = title
@@ -92,7 +77,6 @@ class ProduceService : Service() {
             }
         }
 
-        /** 每块 / 每段推进时更新通知，后台唯一可见界面不能一直写「准备中」。 */
         fun update(c: Context, stage: String, done: Int, total: Int, msg: String) {
             if (finished) return
             lastStage = stage
@@ -107,14 +91,12 @@ class ProduceService : Service() {
             publish(c)
         }
 
-        /** UI 点停止（通知里的停止走 ACTION_CANCEL，两者都汇到 Producer.stop）。 */
         fun stopping(c: Context) {
             if (finished) return
             lastText = "正在停止…（已做好的块都留着）"
             publish(c)
         }
 
-        /** 整次制作结束（完成 / 停止 / 出错 / 缺模型都走这里，由 Producer 的 finally 保证）。 */
         fun finish(c: Context, stage: String, done: Int, total: Int) {
             if (finished) return
             finished = true
@@ -139,10 +121,6 @@ class ProduceService : Service() {
             } catch (_: Throwable) { }
         }
 
-        /**
-         * 按块申请唤醒锁：先释放再带 30 分钟硬超时重新 acquire。
-         * 不从首次点击一直持有到任务结束，避免整轮数小时常驻被 Android Vitals 记过度唤醒锁。
-         */
         fun touch(c: Context, unit: String) {
             if (finished) return
             val pm = c.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
@@ -166,7 +144,6 @@ class ProduceService : Service() {
             }
         }
 
-        /** 诊断摘要里的一行，能看出服务到底起没起、通知最后写了什么。 */
         fun status(): String =
             "foreground=$foreground finished=$finished stage=$lastStage " +
                 "done=$lastDone/$lastTotal text=$lastText"
@@ -185,8 +162,6 @@ class ProduceService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // startForegroundService 的硬约束：进服务后必须立刻 startForeground，
-        // 哪怕任务已经结束也要先挂上通知再摘掉，否则系统直接抛 ForegroundServiceDidNotStartInTimeException。
         ensureChannel(this)
         startForegroundCompat(lastTitle, lastText)
         foreground = true
@@ -209,7 +184,6 @@ class ProduceService : Service() {
                 EventLog.log(EventLog.Kind.PIPELINE, "FGS_READY",
                     "notification=visible type=dataSync busy=${Producer.isBusy()}",
                     fields = mapOf("busy" to Producer.isBusy().toString(), "type" to "dataSync"))
-                // 任务极快结束（例如模型没导全）时，begin 之后 finish 可能已经先跑完。
                 if (!Producer.isBusy() || finished) stopSelf()
             }
         }
@@ -220,7 +194,6 @@ class ProduceService : Service() {
         releaseWake()
         foreground = false
         try {
-            // DETACH：保留「任务已结束」那条通知给用户点，不把它伪装成还在跑。
             stopForeground(STOP_FOREGROUND_DETACH)
         } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.PIPELINE, "FGS_DESTROY",
@@ -238,7 +211,6 @@ class ProduceService : Service() {
     }
 }
 
-/** 通知渠道：照 ChapterDirectorService.createChannel 的形状，名称如实写「本地制作进度」。 */
 private fun ensureChannel(c: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val nm = c.getSystemService(NotificationManager::class.java) ?: return
@@ -253,7 +225,6 @@ private fun ensureChannel(c: Context) {
     }
 }
 
-/** 打开回书架；「停止」直接发 ACTION_CANCEL 给本服务，不新建线程、不绕开 Producer。 */
 private fun buildNotification(
     c: Context, title: String, text: String, done: Int, total: Int, final: Boolean
 ): Notification {

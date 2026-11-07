@@ -5,23 +5,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/**
- * R18 · 成品登记。
- *
- * 旧版把每次产出都写成 audio/<bookId>.wav：
- *  - 做第 1 章和做第 3 章互相覆盖同一个文件；
- *  - 音频页把文件名当 bookId 查书名，一章的成品显示成整本书，
- *    看起来就像「一章杠到书架上变成了另一本书」。
- *
- * 现在成品用独立 id + index.json 记「书名 / 范围 / 制作方式 / 时间」，
- * 书架只放源文本、任务页只放制作记录、音频页只放成品，三者互不增长。
- *
- * R61 · 目录页按章判「已合成 / 可整本顺序播」，
- * 而 scope 只是一句文字（「第 3 章」），索引在 register 时就被丢掉了。
- * 这里补 chapterIndices：新成品写精确索引，旧成品按 scope 反推，
- * 反推不出来的（整本 / 选中 N 章 / 旧版文件）一律 known=false，
- * 界面显示灰，不冒充某一章已完成。
- */
 data class AudioItem(
     val id: String,
     val file: File,
@@ -31,16 +14,13 @@ data class AudioItem(
     val mode: String,
     val createdAt: Long,
     val bytes: Long,
-    // R61 · 末尾带默认值 ⇒ 所有既有构造点零改动
     val chapters: Set<Int> = emptySet(),
     val chaptersKnown: Boolean = false
 )
 
 object AudioLibrary {
-    /** R104 · 最近一次读取异常，界面显示；每次 list() 重新判定。 */
     @Volatile var readError: String? = null
         private set
-    /** R104 · 最近一次写入失败；写入成功后清空，不被读取清空。 */
     @Volatile var writeError: String? = null
         private set
 
@@ -57,11 +37,6 @@ object AudioLibrary {
         }
     }
 
-    /**
-     * 旧 index.json 没有 chapterIndices：只能从人写的范围文字反推。
-     * 「第 3 章」「第 2–5 章」是可信的；「整本」「选中 3 章」「整本（旧版）」没有
-     * 逐章信息，返回 known=false —— 宁可灰着，也不把整本成品点亮成某一章。
-     */
     private fun scopeIndices(scope: String): Pair<Set<Int>, Boolean> {
         val one = Regex("""^第\s*(\d+)\s*章$""").matchEntire(scope.trim())
         if (one != null) {
@@ -85,14 +60,9 @@ object AudioLibrary {
             val v = arr.optInt(i, -1)
             if (v >= 0) s.add(v)
         }
-        // 显式写了空数组 = 整本且未展开，仍标 unknown，界面不点亮单章
         return s.toSet() to s.isNotEmpty()
     }
 
-    /**
-     * R104 · F-02：区分「不存在 / 正常 / 损坏」。损坏时不再静默返回空列表，
-     * 而是返回 null，由 list() 走磁盘 WAV 兜底，并把原因交给界面显示。
-     */
     private fun readIndex(c: Context): MutableList<AudioItem>? {
         val body = when (val r = AtomicJson.read(index(c))) {
             is AtomicJson.Read.Missing -> { readError = null; return mutableListOf() }
@@ -132,7 +102,6 @@ object AudioLibrary {
         }
     }
 
-    /** R104 · F-02：写失败保留旧正式文件并明确报错，绝不覆写、绝不吞掉。 */
     private fun writeIndex(c: Context, items: List<AudioItem>): Boolean {
         val a = JSONArray()
         items.forEach { it ->
@@ -159,7 +128,6 @@ object AudioLibrary {
 
     fun register(c: Context, bookId: String, bookTitle: String, only: Set<Int>?,
                  direct: Boolean, file: File, allChapterCount: Int = -1): AudioItem {
-        // 整本时把 0..n-1 展开，否则第四列永远不亮；只有单章/范围才写精确索引。
         val chs: Set<Int> = when {
             !only.isNullOrEmpty() -> only
             allChapterCount > 0 -> (0 until allChapterCount).toSet()
@@ -179,7 +147,6 @@ object AudioLibrary {
         )
         val all = readIndex(c)
         if (all == null) {
-            // 记录损坏时不拿单条新数据覆盖旧文件，交给 list() 按磁盘恢复
             writeError = "音频记录损坏，本次成品已保留但未登记"
             return item
         }
@@ -189,10 +156,7 @@ object AudioLibrary {
         return item
     }
 
-    /** 兼容旧版 audio/<bookId>.wav：没在 index 里的按 bookId 查书名，标成「整本（旧版）」。 */
     fun list(c: Context): List<AudioItem> {
-        // R104 · 记录损坏时 items 为空，但下面的目录扫描会把磁盘 WAV 全部兜回来，
-        // 不会出现「WAV 还在、列表却空了」。
         val items = (readIndex(c) ?: mutableListOf()).toMutableList()
         val known = items.map { it.file.name }.toSet()
         try {
@@ -208,32 +172,23 @@ object AudioLibrary {
         return items.sortedByDescending { it.createdAt }
     }
 
-    // ── R61 · 目录页四列的查询入口（唯一真值来源） ──────────────────────────
 
-    /** 每章取最近一份成品；只认 chaptersKnown，旧「整本」不冒充具体章。 */
     fun latestByChapter(c: Context, bookId: String): Map<Int, AudioItem> =
         list(c).filter { it.bookId == bookId && it.chaptersKnown && it.file.length() > 44 }
             .flatMap { a -> a.chapters.map { ch -> ch to a } }
             .groupBy { it.first }
             .mapValues { (_, pairs) -> pairs.maxBy { it.second.createdAt }.second }
 
-    /** 第三列门槛：索引已知且成品存在；1.1.0 起不再区分制作档位。 */
     fun playableChapters(c: Context, bookId: String): Set<Int> =
         list(c).filter { it.bookId == bookId && it.chaptersKnown }
             .flatMap { it.chapters }.toSet()
 
-    /** 按章序返回第四列可播条目，供 PlayQueue 与悬浮条目录共用同一顺序。 */
     fun playableItems(c: Context, bookId: String): List<Pair<Int, AudioItem>> =
         latestByChapter(c, bookId).toList().sortedBy { it.first }
 
-    /** 第三列单章播放：有成品就能听。 */
     fun audioFor(c: Context, bookId: String, chapterIndex: Int): AudioItem? =
         latestByChapter(c, bookId)[chapterIndex]
 
-    /**
-     * R100 · 单章/顺序播放起点：整本成品是同一个 WAV，chapters.json 记了每章在
-     * 合并后 PCM 里的毫秒位置。旧成品没有这份数据就从头播，不编造位置。
-     */
     fun chapterStartMs(c: Context, item: AudioItem, chapterIndex: Int): Long {
         if (!item.chaptersKnown) return 0L
         val f = File(dir(c), "${item.id}.chapters.json")
@@ -246,7 +201,6 @@ object AudioLibrary {
         } catch (_: Throwable) { 0L }
     }
 
-    /** R104 · 记录损坏时不删文件也不写索引，返回 false 让界面给明确提示。 */
     fun remove(c: Context, id: String): Boolean {
         val all = readIndex(c)
         if (all == null) {
@@ -257,8 +211,6 @@ object AudioLibrary {
         return writeIndex(c, all.filter { it.id != id })
     }
 
-    /** WAV 24kHz / 16bit / mono：48000 字节 = 1 秒。 */
-    /** R79 · index 里已有 bytes，列表行内不再做 f.length() 的磁盘 stat。 */
     fun durationMsOfBytes(bytes: Long): Long =
         ((bytes - 44).coerceAtLeast(0) * 1000L / 48000L)
 

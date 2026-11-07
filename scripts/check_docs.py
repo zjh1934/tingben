@@ -11,10 +11,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ACTIVE_DOCS = {
     '00_现行契约.md', '01_音频模型调教逻辑.md', '02_模型文件结构.md',
     '03_调音台延迟与一级目录现状.md', 'THIRD_PARTY_NOTICES.md',
-    '修复清单_按优先级.md',
+    '修复清单_按优先级.md', '源代码中文清理清单.md',
 }
 # 缺陷台账天然要写历史词与过程语，不参与方向词扫描 / docs 引用检查。
 AUDIT_DOC = '修复清单_按优先级.md'
+# 执行明细要逐字引用待删的旧说法，同样不参与方向词扫描；其 docs 引用仍受第 4 步检查。
+AUDIT_DOC_2 = '源代码中文清理清单.md'
 # 方向变更后不应再出现在「现行」文件里的词：旧方向实体 + 历轮补丁话术
 NOISE = [
     '语言模型', '标注', '4B', 'Huihui', 'no_think', 'A/B gate',
@@ -65,7 +67,7 @@ def checks(base=ROOT):
 
     # 3. 旧方向词与补丁话术零残留
     scanned = ['STATUS.md', 'README.md', 'ROADMAP.md',
-               'contracts/pipeline_spec.md'] + ['docs/' + n for n in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md', AUDIT_DOC})]
+               'contracts/pipeline_spec.md'] + ['docs/' + n for n in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md', AUDIT_DOC, AUDIT_DOC_2})]
     for n in scanned:
         t = read(base / n)
         hit = [w for w in NOISE if w in t]

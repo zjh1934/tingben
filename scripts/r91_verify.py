@@ -49,7 +49,6 @@ def check(files):
         'segs.chunked(8)',
         'val pqSeg by PlayQueue.state.collectAsState()',
         'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
-        '音频页与「分段看台」共用一个实例',
     ]
     for s in KEEP:
         if s not in m:

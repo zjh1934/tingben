@@ -53,7 +53,7 @@ KEEP = [
 
 def section(text):
     i = text.find('private fun TaskCenterScreen')
-    j = text.find('// ── ④ 我的音频', i)
+    j = text.find('private fun fmtTime(', i)
     return text[i:j] if i >= 0 and j > i else ''
 
 
@@ -92,8 +92,8 @@ def main():
     if '--selftest' in sys.argv:
         injections = [
             ('最近完成卡回潮',
-             lambda t: dict(t, main=t['main'].replace('// ── ④ 我的音频',
-                 'Text("最近完成")\n\n// ── ④ 我的音频'))),
+             lambda t: dict(t, main=t['main'].replace('private fun fmtTime(',
+                 'Text("最近完成")\n\nprivate fun fmtTime('))),
             ('整宽跳转按钮回潮',
              lambda t: dict(t, main=t['main'].replace('TextButton(onClick = onProgress)',
                  'Button(onClick = onProgress, Modifier.fillMaxWidth().height(46.dp))'))),

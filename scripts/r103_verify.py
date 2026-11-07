@@ -21,8 +21,8 @@ def load():
 
 
 def grid(s):
-    i = s.find("// ④ 分段看台")
-    j = s.find("// ── ③b 任务中心", i + 1)
+    i = s.find("private fun ProgressScreen(")
+    j = s.find("private fun TaskCenterScreen(", i + 1)
     return s[i:j] if i >= 0 else ""
 
 

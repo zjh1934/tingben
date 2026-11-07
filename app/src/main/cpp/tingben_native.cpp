@@ -1,16 +1,6 @@
-// R20 · 模型底座 JNI 桥。
-//
-// 【原则】不实现任何推理算法，只转发两个现成引擎的官方公开 C API：
-//   - LLM : llama.cpp  llama.h  (model_load / tokenize / decode / sampler / token_to_piece)
-//   - TTS : qwentts.cpp qwen.h  (qt_init / qt_synthesize / qt_audio_free)
-// 上游 .so 由 scripts/build_native.sh 交叉编译，见 app/src/main/cpp/CMakeLists.txt。
-//
-// 【为什么写 WAV 而不是让 Kotlin 转】qt_synthesize 直接返回 24kHz / mono / float PCM，
-// 与 CONTEXT §3 硬约束一致；C 侧一次写成 16-bit PCM WAV，避免把 GB 级 float 数组过 JNI。
-
 #include <jni.h>
 #include <android/log.h>
-#include <algorithm>   // R34: std::min
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -28,19 +18,15 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// ─────────────────────────────────────────────────────────────
-// LLM 句柄
-// ─────────────────────────────────────────────────────────────
 struct LlmHandle {
     llama_model *   model = nullptr;
     llama_context * ctx   = nullptr;
     llama_sampler * smpl  = nullptr;
-    std::mutex      mu;     // 同一时刻只允许一个 generate
+    std::mutex      mu;
 };
 
 static std::atomic<bool> g_cancel{false};
 
-/** R9 · 让 llama_decode（含 60 秒级 prefill）内部也能被停止打断。 */
 static bool llmAbortCb(void *) { return g_cancel.load(); }
 
 static void throwJava(JNIEnv * env, const char * msg) {
@@ -48,14 +34,8 @@ static void throwJava(JNIEnv * env, const char * msg) {
     if (cls) env->ThrowNew(cls, msg);
 }
 
-/**
- * R34 · 把 native 内部每一步写回 EventLog（与 Kotlin 共用同一个落盘文件）。
- * 每条立即 flush，SIGSEGV 直接杀进程时最后一条仍留着 —— 这是定位
- * 「LLM_GENERATE_BEGIN 之后没有 END」的唯一办法。调用失败一律静默，绝不反向搞崩。
- */
 static jclass g_eventLogCls = nullptr;
 static void note(JNIEnv * env, const char * action, const char * detail) {
-    // 后台 Thread 里 FindClass 可能拿不到 app 类加载器 → 首次缓存全局引用
     if (g_eventLogCls == nullptr) {
         jclass local = env->FindClass("com/tingben/app/diag/EventLog");
         if (!local) { env->ExceptionClear(); return; }
@@ -74,9 +54,6 @@ static void note(JNIEnv * env, const char * action, const char * detail) {
     env->DeleteLocalRef(k); env->DeleteLocalRef(a); env->DeleteLocalRef(d);
 }
 
-// ─────────────────────────────────────────────────────────────
-// WAV 写入（24kHz / mono / 16-bit PCM）
-// ─────────────────────────────────────────────────────────────
 static bool writeWav16(const char * path, const float * samples, int n) {
     if (n <= 0 || !samples) return false;
     const int32_t rate = 24000, ch = 1, bits = 16;
@@ -97,7 +74,6 @@ static bool writeWav16(const char * path, const float * samples, int n) {
     memcpy(h + 36, "data", 4);   put32(40, dataBytes);
     if (fwrite(h, 1, 44, f) != 44) { fclose(f); return false; }
 
-    // float [-1,1] → int16，带 clamp
     bool ok = true;
     const int BUF = 4096;
     int16_t buf[BUF];
@@ -118,7 +94,6 @@ static bool writeWav16(const char * path, const float * samples, int n) {
 
 extern "C" {
 
-// ── 通用 ────────────────────────────────────────────────────
 JNIEXPORT jstring JNICALL
 Java_com_tingben_app_engine_NativeEngine_nativeVersion(JNIEnv * env, jobject) {
     char buf[256];
@@ -132,13 +107,11 @@ Java_com_tingben_app_engine_NativeEngine_nativeCancel(JNIEnv *, jobject) {
     g_cancel.store(true);
 }
 
-/** 只在整次制作开始时调一次；停止后标志保持 true，直到下次开始。 */
 JNIEXPORT void JNICALL
 Java_com_tingben_app_engine_NativeEngine_nativeCancelReset(JNIEnv *, jobject) {
     g_cancel.store(false);
 }
 
-// ── LLM ─────────────────────────────────────────────────────
 JNIEXPORT jlong JNICALL
 Java_com_tingben_app_engine_NativeEngine_llmLoad(
         JNIEnv * env, jobject, jstring jPath, jint nCtx, jint nThreads) {
@@ -146,7 +119,7 @@ Java_com_tingben_app_engine_NativeEngine_llmLoad(
     LOGI("llmLoad: %s nCtx=%d threads=%d", path, nCtx, nThreads);
 
     llama_model_params mp = llama_model_default_params();
-    mp.n_gpu_layers = 0;                    // CPU 主力（D23：Adreno Vulkan 只做实验）
+    mp.n_gpu_layers = 0;
     auto * model = llama_model_load_from_file(path, mp);
     env->ReleaseStringUTFChars(jPath, path);
     if (!model) {
@@ -159,10 +132,6 @@ Java_com_tingben_app_engine_NativeEngine_llmLoad(
     cp.n_ctx     = nCtx > 0 ? (uint32_t)nCtx : 8192;
     cp.n_threads = nThreads > 0 ? (uint32_t)nThreads : 4;
     cp.n_threads_batch = cp.n_threads;
-    // n_batch 放满整个上下文，让一次 llama_decode 就能提交完整 prompt；
-    // n_ubatch 仍是 512，llama.cpp 内部自动分片，compute buffer 不会爆。
-    // R34 手工分两批 prefill 实测：第一批 512 token 70 秒、第二批 195 token
-    // 反而 115 秒 —— 固定开销按次付，分得越碎越慢。
     cp.n_batch   = cp.n_ctx;
     cp.n_ubatch  = 512;
     auto * ctx = llama_init_from_model(model, cp);
@@ -172,8 +141,6 @@ Java_com_tingben_app_engine_NativeEngine_llmLoad(
         return 0;
     }
 
-    // R9 · abort callback：prefill 是单次 llama_decode，光靠 decode 循环里的
-    // g_cancel 检查要等它整个算完（真机实测 63 秒）才停得下来。
     llama_set_abort_callback(ctx, llmAbortCb, nullptr);
 
     auto * h = new LlmHandle();
@@ -181,7 +148,6 @@ Java_com_tingben_app_engine_NativeEngine_llmLoad(
     h->ctx   = ctx;
     auto sp  = llama_sampler_chain_default_params();
     h->smpl  = llama_sampler_chain_init(sp);
-    // 标注任务要稳定 JSON：贪心优先，temperature 由 Kotlin 侧决定是否放宽
     llama_sampler_chain_add(h->smpl, llama_sampler_init_temp(0.2f));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_top_p(0.9f, 1));
     llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(42));
@@ -195,22 +161,11 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     auto * h = (LlmHandle *)(intptr_t)handle;
     if (!h || !h->ctx) { throwJava(env, "LLM 未加载"); return nullptr; }
     std::lock_guard<std::mutex> lock(h->mu);
-    // R9 · 不在这里复位！之前每次进入 generate 都 g_cancel.store(false)，
-    // 于是「停止 → 返回空串 → gate 重试 → 新 generate 把停止标志清零 → 又跑起来」
-    // 形成死循环，用户狂点 10 次停止都没用。复位只在整次制作开始时做一次。
     note(env, "NATIVE_ENTER", "llmGenerate");
 
-    // R8 · 同一个 ctx 会被连续调用多次（逐块标注、gate 失败重试）。
-    // 不清 KV 的话第二次 prefill 的位置会接着上一次累加，直接把 4096 窗口撑爆：
-    // 真机日志 04:49:01 第二次 generate 的 tokens=592 立刻 NATIVE_PREFILL_FAIL。
-    // 每次生成都是独立补全，必须从头开始，不需要跨调用保留上下文（跨块上下文由
-    // Kotlin 侧把角色表/最近 3 条拼进 prompt 来带）。
     llama_memory_t mem = llama_get_memory(h->ctx);
     if (mem) {
         llama_memory_clear(mem, true);
-        // 清完立刻查序列最大位置：-1 才算真正归零。
-        // 若不是 -1，说明 llama_decode 的自动位置仍从上一段末尾累加，
-        // 第二块 prefill 就会撑爆窗口 —— 这正是「第二段接不上」的硬证据。
         const llama_pos posMax = llama_memory_seq_pos_max(mem, 0);
         char pb[64];
         snprintf(pb, sizeof(pb), "kvCleared=1 posMax=%d", (int)posMax);
@@ -221,13 +176,11 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     const int plen = (int)strlen(prompt);
     const llama_vocab * vocab = llama_model_get_vocab(h->model);
     const uint32_t nCtx   = llama_n_ctx(h->ctx);
-    const uint32_t nBatch = llama_n_batch(h->ctx);   // 已是 n_ctx，一次可提交完整 prompt
+    const uint32_t nBatch = llama_n_batch(h->ctx);
 
-    // 先探测需要多少 token（llama_tokenize 返回负值表示容量不足，取绝对值）
     int nMax = llama_tokenize(vocab, prompt, plen, nullptr, 0, false, true);
     if (nMax < 0) nMax = -nMax;
     nMax += 8;
-    // R34：异常长度直接拦下，避免 vector 分配巨块内存 → SIGSEGV
     if (nMax <= 0 || nMax > 100000) {
         env->ReleaseStringUTFChars(jPrompt, prompt);
         throwJava(env, "prompt token 数异常，已拒绝生成");
@@ -244,7 +197,6 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
         note(env, "NATIVE_TOKENIZE_DONE", buf);
     }
 
-    // R34：prompt + 生成余量必须留在 n_ctx 内，否则 llama.cpp 会在解码中途 abort
     const int avail = (int)nCtx - n - 8;
     if (avail < 1) {
         throwJava(env, "prompt 已占满上下文，请把切块调小");
@@ -252,7 +204,6 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     }
     const int limit = std::min(maxTokens > 0 ? maxTokens : 1024, avail);
 
-    // 按 temperature 重建采样链（0 = 贪心，输出合法 JSON 更稳）
     if (h->smpl) llama_sampler_free(h->smpl);
     auto sp = llama_sampler_chain_default_params();
     h->smpl = llama_sampler_chain_init(sp);
@@ -264,11 +215,6 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
         llama_sampler_chain_add(h->smpl, llama_sampler_init_dist(42));
     }
 
-    // R15 · 显式 pos，抄 OfflineLLM 的 LLMInference.cpp（batchAdd 逐 token 设 pos）。
-    // llama.h 明确写 llama_batch_get_one 的位置「由 llama_decode 自动追踪」且「avoid using it」：
-    // 同一个 ctx 连续生成多块时，自动位置是否随 memory_clear 归零取决于内部状态，
-    // 这正是「第一块跑完、第二块 prefill 失败」最该排除的不确定性。
-    // 自己填 pos 后，每段补全一定从 0 开始，与上下文内部计数无关。
     {
         char buf[96];
         snprintf(buf, sizeof(buf), "tokens=%zu nCtx=%u nBatch=%u avail=%d limit=%d",
@@ -305,10 +251,6 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
     next.seq_id[0][0] = 0;
     next.logits[0] = 1;
 
-    // R22 · JSON 数组闭合即停。llmGenerate 在本项目里唯一用途就是产出标注数组，
-    // 小模型吐完 `]` 常不主动发 EOG，旧实现会一直吐到 maxTokens：尾部被预算腰斩
-    // → 四级修复只能保住最后一个完整对象之前的条 → gate 全等失败 → 整块降级直读。
-    // 只在「已见到第一个 [」之后启用；字符串内的 ] 不计；全程没出现 [ 时行为不变。
     int jsonDepth = 0;
     bool jsonStarted = false, inStr = false, esc = false;
 
@@ -350,7 +292,6 @@ Java_com_tingben_app_engine_NativeEngine_llmGenerate(
             note(env, "NATIVE_DECODE_FAIL", "llama_decode 返回非 0");
             break;
         }
-        // 8 token 一次心跳：手机 CPU 上一条要十几秒，32 太稀会让人以为死机
         if ((i & 7) == 0) {
             char buf[64];
             snprintf(buf, sizeof(buf), "token=%d outChars=%zu", i, out.size());
@@ -379,13 +320,8 @@ Java_com_tingben_app_engine_NativeEngine_llmFree(JNIEnv *, jobject, jlong handle
     LOGI("llmFree done");
 }
 
-// ── TTS ─────────────────────────────────────────────────────
 static bool ttsCancelCb(void *) { return g_cancel.load(); }
 
-// R93 · base 模式参考音频。qwen.h:294-301 要 mono float PCM @24kHz；
-// ref_audio_24k 与 ref_text 一起给 = ICL（模式 B），只给 PCM = clone（模式 A）。
-// 指针在整个 qt_synthesize 阻塞期间必须有效，因此按 handle 存一份并持锁到合成结束；
-// ttsFree 里 erase。上游 max_batch=1、制作中禁切模式，不存在并发改写。
 struct VoiceRefState {
     std::vector<float> pcm;
     std::string        text;
@@ -405,10 +341,10 @@ Java_com_tingben_app_engine_NativeEngine_ttsLoad(
     qt_init_default_params(&p);
     p.talker_path = talker;
     p.codec_path  = codec;
-    p.device      = (device && device[0]) ? device : nullptr;  // NULL = CPU/自动
-    p.max_batch   = 1;                 // 手机串行，防热降频（D24）
-    p.use_fa      = false;             // CPU 路径不用 flash attention
-    p.clamp_fp16  = true;              // Adreno FP16 溢出防护（D23）
+    p.device      = (device && device[0]) ? device : nullptr;
+    p.max_batch   = 1;
+    p.use_fa      = false;
+    p.clamp_fp16  = true;
 
     auto * q = qt_init(&p);
     env->ReleaseStringUTFChars(jTalker, talker);
@@ -428,10 +364,6 @@ Java_com_tingben_app_engine_NativeEngine_ttsLoad(
     return (jlong)(intptr_t)q;
 }
 
-// R14 · 采样参数全部由 Kotlin 侧 TtsKnobs 传入，默认值来自
-// qwentts.cpp/src/sampling-defaults.h，不再硬编码在 JNI 里。
-// 顺序：seed, maxNewTokens, temperature, topK, topP, repetitionPenalty,
-//       subTemperature, subTopK, subTopP —— 与 NativeEngine.ttsSynthesizeRaw 一一对应。
 JNIEXPORT jint JNICALL
 Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
         JNIEnv * env, jobject, jlong handle, jstring jText, jstring jInstruct,
@@ -441,11 +373,6 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
         jfloat subTemperature, jint subTopK, jfloat subTopP) {
     auto * q = (qt_context *)(intptr_t)handle;
     if (!q) { throwJava(env, "TTS 未加载"); return -1; }
-    // R108 · F-19：不在这里复位。停止信号属于「整次任务」，只能由 nativeCancelReset()
-    // 在整次制作 / 每次试听开始时清一次。旧写法每段进门就 g_cancel.store(false)，
-    // 于是「停止 → 当前段被 ttsCancelCb 打断 → R100 的重试或下一段一进来又清零 → 接着算」，
-    // UI 显示已停止、native 还在跑完整段。llmGenerate 早在 R9 就按这个规矩改过，
-    // 这里是 TTS 路径最后一处漏网；段队列、写盘、JNI 回调全程不再复位。
     std::unique_lock<std::mutex> refLock(g_refMu, std::defer_lock);
 
     const char * text     = env->GetStringUTFChars(jText, nullptr);
@@ -455,19 +382,17 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     const char * outPath  = env->GetStringUTFChars(jOutWav, nullptr);
 
     qt_tts_params tp;
-    qt_tts_default_params(&tp);   // 先拿上游完整默认，再逐字段覆盖，不手搓字段顺序
+    qt_tts_default_params(&tp);
     tp.text     = text;
     tp.lang     = (lang && lang[0]) ? lang : "auto";
 
-    // R93 · 模式由 qt_init 从 talker GGUF 读出的 model_type 决定，不是界面开关。
-    // 按 qwen.h:280-301 的字段语义供料，绝不把上层的模式判断硬塞进引擎。
     const char * mt = qt_model_type ? qt_model_type(q) : nullptr;
     const bool isBase   = mt && std::strcmp(mt, "base") == 0;
     const bool isCustom = mt && std::strcmp(mt, "custom_voice") == 0;
     if (isBase) {
-        tp.instruct = nullptr;               // base 拒绝 instruct
-        tp.speaker  = nullptr;               // 与 ref_audio 互斥
-        refLock.lock();                      // 持锁到 qt_synthesize 结束，保住 PCM 指针
+        tp.instruct = nullptr;
+        tp.speaker  = nullptr;
+        refLock.lock();
         auto it = g_refs.find(q);
         if (it != g_refs.end() && !it->second.pcm.empty()) {
             tp.ref_audio_24k = it->second.pcm.data();
@@ -475,10 +400,10 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
             tp.ref_text = it->second.text.empty() ? nullptr : it->second.text.c_str();
         }
     } else if (isCustom) {
-        tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;  // 可选风格指令
-        tp.speaker  = (speaker && speaker[0]) ? speaker : nullptr;      // 预设音色编号
+        tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;
+        tp.speaker  = (speaker && speaker[0]) ? speaker : nullptr;
     } else {
-        tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;  // voice_design 必填
+        tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;
         tp.speaker  = nullptr;
     }
 
@@ -492,8 +417,6 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     tp.subtalker_top_k       = (int)subTopK;
     tp.subtalker_top_p       = (float)subTopP;
 
-    // R38 · 触达证据：打印 qt_tts_params 的实收值，与 Kotlin 侧 TTS_PARAMS 事件逐项对照。
-    // 只截 instruct 前 40 字符，不把长正文写进 logcat。
     LOGI("TTS_PARAMS_APPLIED mode=%s seed=%lld max=%d temp=%.3f top_k=%d top_p=%.3f rep=%.3f "
          "subTemp=%.3f subTopK=%d subTopP=%.3f lang=%s speaker=%s refN=%d instruct=%.40s",
          mt ? mt : "?", (long long)tp.seed, tp.max_new_tokens, tp.temperature, tp.top_k, tp.top_p,
@@ -502,17 +425,16 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
          tp.speaker ? tp.speaker : "(null)", tp.ref_n_samples,
          tp.instruct ? tp.instruct : "(null)");
 
-    tp.cancel   = ttsCancelCb;      // 设计系统 §11：长任务必须有可取消入口
-    tp.on_chunk = nullptr;          // buffered 模式，一次拿全量 PCM
+    tp.cancel   = ttsCancelCb;
+    tp.on_chunk = nullptr;
 
     qt_audio audio;
     memset(&audio, 0, sizeof(audio));
     int status = qt_synthesize(q, &tp, &audio);
-    if (refLock.owns_lock()) refLock.unlock();   // PCM 指针不再被引用
+    if (refLock.owns_lock()) refLock.unlock();
 
     int ret = status;
     if (status == 0 && audio.n_samples > 0) {
-        // -10/-11 是桥层自有码，避开 qwen.h 里 -1..-5 的 qt_status 语义
         if (audio.sample_rate != 24000 || audio.channels != 1) {
             LOGE("unexpected audio format %d Hz / %d ch", audio.sample_rate, audio.channels);
             ret = -11;
@@ -536,8 +458,6 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     return ret;
 }
 
-// R93 · 把一段 24kHz 单声道 float PCM 交给 base 模式作参考音频。
-// 只在 qt_synthesize 的阻塞期间读，ttsFree 里清掉，不做预编码 latent 缓存。
 JNIEXPORT jboolean JNICALL
 Java_com_tingben_app_engine_NativeEngine_ttsSetVoiceRef(
         JNIEnv * env, jobject, jlong handle, jfloatArray jPcm, jstring jRefText) {
@@ -575,8 +495,6 @@ Java_com_tingben_app_engine_NativeEngine_ttsClearVoiceRef(JNIEnv *, jobject, jlo
     g_refs.erase(q);
 }
 
-// R23 · 运行时读出 customvoice 的真实音色表（不硬编码 9 个名字）。
-// 返回逗号分隔字符串，Kotlin 侧按 ',' 拆；base / voice_design 返回空串。
 JNIEXPORT jstring JNICALL
 Java_com_tingben_app_engine_NativeEngine_ttsSpeakers(
         JNIEnv * env, jobject, jlong handle) {
@@ -603,4 +521,4 @@ Java_com_tingben_app_engine_NativeEngine_ttsFree(JNIEnv *, jobject, jlong handle
     LOGI("ttsFree done");
 }
 
-} // extern "C"
+}

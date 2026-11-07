@@ -6,23 +6,10 @@ import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.util.zip.ZipInputStream
 
-/**
- * 外部「打开方式 / 分享」进来的文件统一转成纯文本。
- * 只用 Android 自带类，不引任何依赖、不加任何权限。
- *
- * epub 的关键决定（R10）：
- * 不再把整本拼成一坨再靠正则猜「第X章」——中文 epub 大量用「楔子 / 序 / Chapter 1 /
- * 一、初遇」当标题，正则全漏，结果整本只剩 1 章，按章制作等于没有。
- * 改成：**OPF spine 里每个正文文件 = 一章**，标题优先取 toc.ncx / nav.xhtml，
- * 输出时用私有区字符 \uE000 打显式边界，ChapterSplitter 见到就按它切，绝不乱序。
- */
 object Importer {
 
-    /** 私有区分隔符：用户正文里几乎不可能出现，用它标记「一章开始」。 */
     const val CHAPTER_SEP = '\uE000'
 
-    /** R94 · 整本读进内存的上限。64 MB 足够常见长篇 txt / epub；
-     *  再大明确拒绝，不把内存耗尽伪装成「这本书坏了」。 */
     const val MAX_BYTES = 64 * 1024 * 1024
 
     private fun readLimited(s: InputStream): ByteArray {
@@ -59,15 +46,10 @@ object Importer {
         return n
     }
 
-    /**
-     * 主入口。**只读一次流**：ACTION_SEND 的一次性 content:// URI 第二次 open 常常失败，
-     * 之前为探测 zip 头又开一次，会让无扩展名的 epub 被误判成纯文本 → 满屏乱码。
-     */
     fun read(c: Context, uri: Uri, mimeHint: String? = null): Result {
         val name = nameOf(c, uri)
         val lower = name.lowercase()
         val mime = mimeHint ?: try { c.contentResolver.getType(uri) } catch (_: Throwable) { null }
-        // file:// 有时 contentResolver.openInputStream 不接，直接读文件兜底
         val bytes = try {
             if (uri.scheme == "file") {
                 val p = uri.path ?: throw IllegalStateException("文件路径为空")
@@ -104,20 +86,17 @@ object Importer {
         }
     }
 
-    /** txt/md：优先 UTF-8，中文老书常见 GBK/GB18030，乱码就换。 */
     private fun plainToText(bytes: ByteArray): String {
         val utf8 = String(bytes, Charsets.UTF_8)
         val bad = utf8.count { it == '\uFFFD' }
         if (bad <= 8) return utf8
         for (enc in listOf("GB18030", "GBK", "Big5")) {
             val t = runCatching { String(bytes, charset(enc)) }.getOrNull() ?: continue
-            // 换编码后若乱码更少、且中文比例更高，就采用
             if (t.count { it == '\uFFFD' } < bad / 2) return t
         }
         return utf8
     }
 
-    /** 先整块读进内存再解 zip：content:// 流一次性/分段读时 ZipInputStream 容易漏 entry。 */
     private fun readZipEntries(s: InputStream): LinkedHashMap<String, ByteArray> {
         val all = s.readBytes()
         val entries = LinkedHashMap<String, ByteArray>()
@@ -137,7 +116,6 @@ object Importer {
         val entries = readZipEntries(s)
         if (entries.isEmpty()) throw IllegalStateException("这个 epub 里是空的")
 
-        // 1) container.xml → OPF 路径
         val container = decodeXml(entries.entries
             .firstOrNull { it.key.endsWith("container.xml", true) }?.value ?: ByteArray(0))
         val rootPath = Regex("""full-path\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
@@ -151,7 +129,6 @@ object Importer {
             ?: throw IllegalStateException("读不到 epub 目录")
         val opf = decodeXml(opfBytes)
 
-        // 2) manifest: id -> href
         val hrefById = HashMap<String, String>()
         Regex("""<item\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(opf).forEach { m ->
             val id = attr(m.value, "id") ?: return@forEach
@@ -159,7 +136,6 @@ object Importer {
             hrefById[id] = href.substringBefore('#')
         }
 
-        // 3) spine：按 idref 顺序，一个 itemref 就是一章
         val ordered = mutableListOf<String>()
         Regex("""<itemref\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(opf).forEach { m ->
             val id = attr(m.value, "idref") ?: return@forEach
@@ -171,7 +147,6 @@ object Importer {
         }
         if (ordered.isEmpty()) throw IllegalStateException("epub 里没找到正文文件")
 
-        // 4) toc.ncx / nav.xhtml：href(去锚点、去路径) -> 章节标题
         val toc = HashMap<String, String>()
         entries.entries.firstOrNull { it.key.endsWith("toc.ncx", true) }?.value?.let { b ->
             val ncx = decodeXml(b)
@@ -197,11 +172,9 @@ object Importer {
             }
         }
 
-        // 5) 逐 spine 文件 → 一章，输出显式边界
         val sb = StringBuilder()
         var count = 0
         ordered.forEachIndexed { i, href ->
-            // nav.xhtml / toc.ncx 偶尔被塞进 spine，读作「一章」会念出一堆目录条目
             if (href.contains("toc.ncx", true) || href.contains("nav.xhtml", true) ||
                 href.contains("nav.html", true)) return@forEachIndexed
             val path = normalizePath(base, href)
@@ -212,7 +185,6 @@ object Importer {
             val body = htmlToText(html)
             if (body.isBlank()) return@forEachIndexed
 
-            // 标题优先级：toc → <h1/h2/h3> → <title> → 文件名 → 「第 N 节」
             val title = toc[keyOf(href)]
                 ?: firstHeading(html)
                 ?: htmlTitle(html)
@@ -229,7 +201,6 @@ object Importer {
 
     private fun keyOf(href: String) = href.substringAfterLast('/').substringBefore('#').lowercase()
 
-    /** 按 XML 声明 / meta charset 选编码；中文老 epub 常见 GB2312/GBK，硬解 UTF-8 必乱码。 */
     private fun decodeXml(bytes: ByteArray): String {
         if (bytes.isEmpty()) return ""
         val head = String(bytes, 0, minOf(bytes.size, 2048), charset("ISO-8859-1"))
@@ -271,17 +242,14 @@ object Importer {
         return parts.joinToString("/")
     }
 
-    /** 去标签、解实体、标题独占一行。private 供 toc/h 标题复用。 */
     private fun stripTags(src: String): String = decodeEntities(
         Regex("""(?s)<[^>]+>""").replace(src, ""))
 
     private fun htmlToText(src: String): String {
         var t = src
-        // <title> 里通常是书名/网页标题，不是正文；不删会每章开头多念一遍书名
         t = Regex("""(?is)<title[^>]*>.*?</title>""").replace(t, "")
         t = Regex("""(?is)<script.*?</script>|<style.*?</style>""").replace(t, "")
         t = Regex("""(?i)<br\s*/?>""").replace(t, "\n")
-        // 块级标签一律换行，标题才能独占一行
         t = Regex("""(?i)</?(p|div|h[1-6]|li|tr|section|blockquote|article|head|body|html)[^>]*>""")
             .replace(t, "\n")
         t = Regex("""(?s)<[^>]+>""").replace(t, "")

@@ -133,8 +133,8 @@ for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
 # R54 · 设置页重设计后不再有圈码分组标题，改验四分区组件与作用域文案。
 R25_MAIN = ["private fun GroupLabel(", "private fun SettingsSection(",
-            "SettingsSection(\"外观与显示\", \"软件\"", "仅本次", "作用域",
-            "ACTION_MAIN 也被当成", "ProduceMode.DIRECT"]
+            "SettingsSection(\"外观与显示\", \"软件\"", "仅本次",
+            "ProduceMode.DIRECT"]
 for sym in R25_MAIN:
     if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
 # 反向断言：按字符腰斩的旧实现、把标注档当默认的旧写法不许回来
@@ -211,7 +211,7 @@ mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text
 # R41a · A/B 对比换成「草稿 / 已生效」两态一步试听；日志事件同步改名。
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "ParamLine(", "调音台", "private fun SettingsSection(",
-           "Anatomy-First", "12 维", "试听草稿", "试听已生效",
+           "12 维", "试听草稿", "试听已生效",
            "MixerScreen", "Screen.MIXER", "全部恢复默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
@@ -232,7 +232,7 @@ if "private val knobs" in mixer_src or "var knobs" in mixer_src:
 if "MIXER_TRIAL" not in main_src:
     errs.append("R41a 回退：两态试听没把完整参数写进日志")
 # R54 · 设置页重设计：界面里不许再出现跳转卡 / 圈码 / 跨页大按钮 / 教程腔。
-_s54 = main_src.split("private fun SettingsScreen(")[-1].split("// ── ⑤b 模型页")[0]
+_s54 = main_src.split("private fun SettingsScreen(")[-1].split("private fun ModelScreen(")[0]
 for _banned in ["🎛 调音台", "固定音色", "音色 12 维 · 采样 9 项", "去书架制作",
                 "①", "②", "提交变更", "共用一份文件表", "R45_FIXED_VOICE_ENTRY"]:
     if _banned in _s54:
@@ -391,7 +391,7 @@ if "statusBarsPadding()" not in main_src:
 R36_ALL = ["ModeTabs(", "MixerPresetStore", "MixerPreset(",
            "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT",
            "本机数据",
-           "单次音频长度上限", "TIMING_NEXT", "同名覆盖",
+           "单次音频长度上限", "TIMING_NEXT",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
@@ -464,7 +464,7 @@ R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit
 for sym in R40_ALL:
     if sym not in all_src: errs.append("缺少 R40 统一提交符号: " + sym)
 # 唯一出口：MixerScreen 区块里禁止出现任何直接写 Prefs 的调用
-blk_i = main_src.find("// ── ⑥ 调音台")
+blk_i = main_src.find("private fun MixerScreen(")
 mixer_block = main_src[blk_i:] if blk_i >= 0 else ""
 for banned in ["Prefs.setTtsKnobs(", "Prefs.setVoiceDescription(", "Prefs.setDefaultPerf(",
                "Prefs.setNonVerbal(", "Prefs.resetTtsKnobs("]:

@@ -7,18 +7,6 @@ import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 
-/**
- * R21 · 日志模块重设计。
- *
- * 参考用户贴过的「看得清」诊断日志思路：静态快照（设置页拼）+ 分类事件流（最新在上）
- * + 一键复制；但不照抄，按听本实际改成两级：
- *   events.log        用户态：所有事件都记，行格式保持 ts | KIND | ACTION | detail 不变
- *   events_detail.log 诊断态：同一条事件额外带 level 与结构化字段，含产出截取片段
- * 另留 200 行环形缓冲，Java 层崩溃时连同最后 10 个块摘要一起写进 crash.log。
- * native 侧仍通过 nativeNote(kind, action, detail) 回调，签名不变。
- *
- * 分级只用于「复制摘要」时过滤，不删事件：用户要详细，就都留着。
- */
 object EventLog {
     enum class Kind { UI, ENGINE, PIPELINE, MODEL, CRASH, AUDIT }
     enum class Level { INFO, WARN, ERROR, TRACE }
@@ -33,7 +21,6 @@ object EventLog {
     private val ring = ArrayDeque<String>()
     private const val RING_MAX = 200
 
-    /** 给进度页做心跳：native 每 8 token 写一条，UI 每秒读一次，不用反复读文件。 */
     fun lastEngine(): Pair<String, String> = lastEngineAction to lastEngineDetail
     fun lastEngineAgeMs(): Long = System.currentTimeMillis() - lastEngineAt
     fun resetEngine() {
@@ -44,7 +31,6 @@ object EventLog {
         file = File(c.filesDir, "events.log")
         detailFile = File(c.filesDir, "events_detail.log")
         crashFile = File(c.filesDir, "crash.log")
-        // 恢复上一次进程留下的环形尾部，被杀后重开也能接着看
         try {
             val old = file?.readLines()?.takeLast(RING_MAX).orEmpty()
             ring.clear(); old.forEach { ring.addLast(it) }
@@ -53,7 +39,6 @@ object EventLog {
         log(Kind.UI, "APP_START", "version=" + c.packageManager.getPackageInfo(c.packageName, 0).versionName)
     }
 
-    /** Java 层崩溃一定留痕；native SIGSEGV 抓不到，但事件流会停在最后一步。 */
     private fun installCrashHandler(c: Context) {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -71,7 +56,6 @@ object EventLog {
                     cause = cause.cause
                 }
                 val ringTail = try { ring.joinToString("\n") } catch (_: Throwable) { "" }
-                // R67 · P1a：崩溃日志只保留环形缓冲，不再读分段块审计。
                 crashFile?.writeText(
                     "$ts | thread=${thread.name}\n$stack\n=== 崩溃前事件（环形缓冲）===\n$ringTail\n")
                 log(Kind.CRASH, "JAVA_CRASH", throwable.javaClass.simpleName + ": " + (throwable.message ?: ""),
@@ -99,9 +83,6 @@ object EventLog {
         } catch (_: Throwable) { }
     }
 
-    /**
-     * @param fields 结构化字段，既拼进人话 detail，也单独落进诊断态日志，便于逐块审计。
-     */
     @Synchronized
     fun log(kind: Kind, action: String, detail: String = "",
             level: Level = Level.INFO, fields: Map<String, String> = emptyMap()) {
@@ -117,9 +98,7 @@ object EventLog {
         val detailLine = "$ts | $kind | $level | $action | $detail$kv"
         ring.addLast(mainLine)
         while (ring.size > RING_MAX) ring.removeFirst()
-        // 主日志：全部保留（用户要详细），轮转上限比旧版放宽
         appendCapped(file, mainLine, 768 * 1024L, 800)
-        // 诊断态：带 level + 字段，事件日志本机留存
         appendCapped(detailFile, detailLine, 1536 * 1024L, 2000)
     }
 
@@ -129,7 +108,6 @@ object EventLog {
         ring.toList().takeLast(n).joinToString("\n")
     } catch (_: Throwable) { "" }
 
-    /** JNI 回调入口，必须 @JvmStatic + 三个 String 参数。 */
     @JvmStatic
     fun nativeNote(kind: String, action: String, detail: String) {
         val k = try { Kind.valueOf(kind) } catch (_: Throwable) { Kind.ENGINE }

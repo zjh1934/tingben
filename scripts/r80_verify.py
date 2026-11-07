@@ -68,7 +68,7 @@ FILES = {M: MAIN, H: HUB}
 
 def audio_body(text):
     s = text.index("private fun AudioScreen")
-    e = text.index("// ── ⑤ 设置（只管软件） ──", s)
+    e = text.index("private fun GroupLabel(", s)
     return text[s:e]
 
 def check(files):

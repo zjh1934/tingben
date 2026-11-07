@@ -82,7 +82,7 @@ def check_sources(main, draft):
     for sym in ["fun diff(", "fun commit(", "MIXER_COMMIT", "TIMING_NOW", "TIMING_NEXT"]:
         if sym not in draft: errs.append("缺唯一出口符号: " + sym)
     # 2) 界面不许有第二个生效写入口
-    i = main.find("// ── ⑥ 调音台")
+    i = main.find("private fun MixerScreen(")
     blk = main[i:] if i >= 0 else ""
     for banned in ["Prefs.setTtsKnobs(", "Prefs.setVoiceDescription(", "Prefs.setDefaultPerf(",
                    "Prefs.setNonVerbal(", "Prefs.setCastEnabled(", "Prefs.resetTtsKnobs("]:
@@ -158,9 +158,9 @@ def main():
     # R41 只在文件头加了 7 行 Compose import；调音台区块之前的业务代码不许动。
     # 按区块标记切，而不是固定行数（新增 import 会让行号整体偏移）。
     no_imports = lambda ls: [x for x in ls if not x.startswith("import ")]
-    head = canon(m.split("// ── ⑥ 调音台")[0])
+    head = canon(m.split("private fun MixerScreen(")[0])
     try:
-        old = canon(git_head(MAIN).decode("utf-8").split("// ── ⑥ 调音台")[0])
+        old = canon(git_head(MAIN).decode("utf-8").split("private fun MixerScreen(")[0])
         same = head == old
         print("  MainActivity 前 1880 行:", "一致" if same else "被改动")
         if not same: ok = False

@@ -71,7 +71,7 @@ OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '导出日志', 
 
 def library_body(t):
     start = t.find('private fun LibraryScreen(')
-    end = t.find('// ── ② 制作', start)
+    end = t.find('private fun ProduceScreen(', start)
     return t[start:end] if start >= 0 and end > start else ''
 
 

@@ -28,15 +28,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/**
- * R61 · 一本书点进去的目录页。
- *
- * 三列平级：章节（勾选 + 底部小条）/ 合成 / 可播，左右滑切换。
- * 播放走软件内悬浮条，不做独立播放器页；看书页是本页的覆盖层，
- * 不扩张 Screen 枚举。状态只从磁盘成品 / Producer.state 取，不画假进度；
- * R74 起进行中逐章进度来自 Producer.state.chapterProgress，不再用整本比值冒充。
- */
-// R73 · 跟随主题，调用点一行不动。
 private val HubBg: Color get() = palette.bg
 private val HubCard: Color get() = palette.card
 private val HubPrimary: Color get() = palette.primary
@@ -55,7 +46,6 @@ private sealed class Pane {
 
 private enum class HubAction { SYNTH }
 
-/** 一章在三列里的全部状态；null 进度 = 没有可信来源，界面只画灰。 */
 private data class ChapterUi(
     val index: Int,
     val title: String,
@@ -69,10 +59,6 @@ private fun chapterStates(
     running: Boolean, runningBook: String?, runningOnly: Set<Int>?,
     chapterProgress: Map<Int, Float>, bookId: String
 ): List<ChapterUi> {
-    // R74 · 逐章真值：只认合成循环按段上报的 chapterProgress。
-    // 没上报的章一律 null（灰 + 等待中），不拿整本 done/total 摊到每章。
-    // R101 · 必须同时核对正在跑的是不是这本书：以前只判 runningBook != null，
-    // 在 A 书页面看 B 书合成时，B 的进度会按章索引贴到 A 的第二列上。
     val inScope: (Int) -> Boolean = { i -> runningBook == bookId &&
         (runningOnly == null || i in runningOnly) }
     return chapters.map { ch ->
@@ -106,17 +92,12 @@ internal fun ChapterHubScreen(
         return
     }
 
-    // 全文与拆分只算一次；成品索引按 refresh 重读，避免每帧读磁盘 JSON（R51 卡顿根因）。
     val split = remember(book) { ChapterSplitter.split(BookStore.read(c, book)) }
     val chapters = split.first
     val chunks = split.second
-    // R51 · 叶子级订阅，不把高频引擎状态挂到 App() 根上。
     val st by Producer.state.collectAsState()
     val task by Producer.resume.collectAsState()
 
-    // R101 · 以前成品索引只按 (book, refresh) 缓存，而「合成完成」不会让 App 的 refresh++，
-    // 于是做完回到这本书：第二列还是「等待中」、第三列一章都不亮。
-    // 用引擎阶段做 key：合成中 stage 恒定不会重读磁盘，完成/停止时重读一次即可。
     val diskKey = "${st.running}|${st.stage}"
     val finished = remember(book, refresh, diskKey) { AudioLibrary.latestByChapter(c, book.id) }
     val playable = remember(book, refresh, diskKey) { AudioLibrary.playableChapters(c, book.id) }
@@ -128,7 +109,6 @@ internal fun ChapterHubScreen(
 
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by remember(book) { mutableStateOf<Pane?>(null) }
-    // R74 · 看书页不写位置 → 改由打开/翻章时落盘，纯 UI 状态，不进声音指纹与任务书签。
     fun openReader(i: Int) {
         if (i in chapters.indices) {
             ReadingState.save(c, book.id, i)
@@ -137,7 +117,6 @@ internal fun ChapterHubScreen(
     }
     val lastRead = remember(book, refresh) { ReadingState.last(c, book.id) }
 
-    // 覆盖层内的返回键优先于 App 层的「回书架」。
     BackHandler(enabled = pane != null) { pane = null }
 
     val scope = rememberCoroutineScope()
@@ -146,7 +125,6 @@ internal fun ChapterHubScreen(
     val hScroll = rememberScrollState()
     val current by remember {
         derivedStateOf {
-            // R74 · 三列只有 0/1/2；写 3 会让滑到「可播」时高亮跑进不存在的第四列。
             if (pagePx <= 0f) 0 else ((hScroll.value + pagePx / 2f) / pagePx).toInt().coerceIn(0, 2)
         }
     }
@@ -184,7 +162,6 @@ internal fun ChapterHubScreen(
 
     Box(Modifier.fillMaxSize().background(HubBg)) {
         Column(Modifier.fillMaxSize()) {
-            // 顶部三个文字标签：当前列下划线，不画圆点；滚动反向联动 current。
             Row(Modifier.fillMaxWidth().background(HubCard).padding(horizontal = 8.dp)) {
                 HubTitles.forEachIndexed { col, t ->
                     val on = current == col
@@ -203,7 +180,6 @@ internal fun ChapterHubScreen(
                     }
                 }
             }
-            // R74 · 上次读到哪：一条细提示，不占常驻高度，点了才跳；制作中不抢位置。
             if (!st.running && lastRead != null && lastRead in chapters.indices) {
                 Row(Modifier.fillMaxWidth().background(HubCard)
                     .clickable { openReader(lastRead) }
@@ -215,8 +191,6 @@ internal fun ChapterHubScreen(
                     Text("继续 ›", fontSize = 12.sp, color = HubPrimary)
                 }
             }
-            // R101 · 旧版那个提示开关置 true 后永不复位，做完还挂「正在制作 · N/N 块」。
-            // 现在只由引擎状态派生，且只在这本书自己的任务上显示。
             val barText = when {
                 st.running -> "正在制作 · ${st.done}/${st.total} 块"
                 task?.bookId != book.id -> null
@@ -266,7 +240,6 @@ internal fun ChapterHubScreen(
             }
         }
 
-        // 第一列勾选后底部浮出的小选项条，不占常驻高度。
         if (selected.isNotEmpty()) {
             Card(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp).fillMaxWidth(),
@@ -287,7 +260,6 @@ internal fun ChapterHubScreen(
             }
         }
 
-        // 覆盖层：看书页，不进 Screen 枚举。
         val p = pane
         if (p != null) {
             when (p) {
@@ -298,7 +270,6 @@ internal fun ChapterHubScreen(
     }
 }
 
-/** 第一列：章名 + 右侧勾选框；点章名看原文。 */
 @Composable
 private fun RawColumn(
     ui: List<ChapterUi>, selected: Set<Int>,
@@ -322,12 +293,10 @@ private fun RawColumn(
     }
 }
 
-/** 第二列：灰=没合 / 逐章进度条=正在合 / 右侧播放暂停=完成。 */
 @Composable
 private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp)) {
         items(ui, key = { it.index }) { r ->
-            // R74 · null = 本轮还没轮到这章；0f..1f = 该章已生成占比，不是整本比值。
             val p = r.synthesized?.coerceIn(0f, 1f)
             val done = r.audio != null
             Box(Modifier.fillMaxWidth().height(52.dp)) {
@@ -355,7 +324,6 @@ private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
     }
 }
 
-/** 可播列：只有已合成的章变亮；三个控制，不画倍速/定时这类没有的开关。 */
 @Composable
 private fun PlayColumn(
     ui: List<ChapterUi>, onAll: () -> Unit, onFrom: (Int) -> Unit, onStop: () -> Unit
@@ -389,7 +357,6 @@ private fun HubDivider() {
     Box(Modifier.fillMaxWidth().height(1.dp).background(HubLine))
 }
 
-/** 看书就是看书：纯文本、字号、上下章，不认识播放器、不加系统 TTS。 */
 @Composable
 private fun ReaderPane(
     c: Context, book: Book, chapters: List<Chapter>, i: Int,
@@ -403,8 +370,6 @@ private fun ReaderPane(
         text.substring(s, e).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
     }
     var size by remember { mutableStateOf(Prefs.readerFontScale(c)) }
-    // R95 · 章内滚动位置：打开时恢复，滚动时落盘。
-    // 只在这一章自己的位置有效；换章由 ReadingState.save 自动归零。
     val saved = remember(book, i) { ReadingState.pos(c, book.id)?.takeIf { it.chapter == i } }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = saved?.para ?: 0,
@@ -448,17 +413,12 @@ private fun ReaderPane(
 }
 
 
-/**
- * 软件内悬浮条：跨页常驻，订阅单例 PlayQueue.state（不新建播放器）。
- * 目录弹层只列第四列亮章，与「按顺序播放」用同一份 playableItems 顺序。
- */
 @Composable
 internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit) {
     val st by PlayQueue.state.collectAsState()
     if (st.index < 0 && st.label.isEmpty()) return
     var showList by remember { mutableStateOf(false) }
     val list = remember(bookId) { bookId?.let { AudioLibrary.playableItems(c, it) } ?: emptyList() }
-    // R79 · 悬浮条跨页常驻，是唯一 tick 源：暂停时不再每秒写全局 state、拖所有订阅页重组。
     LaunchedEffect(st.isPlaying) {
         if (!st.isPlaying) return@LaunchedEffect
         while (isActive) {

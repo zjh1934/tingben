@@ -11,16 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
-/**
- * R73 · P2 软件设置：夜间模式与主题色板。
- *
- * 设计取舍（不是想当然）：全项目 22 个颜色常量原本是 file-private 硬编码 val，
- * 改成「普通 getter 读顶层 snapshot state」后，Compose 在组合期会跟踪这次读取，
- * 切换主题即触发重组，**所有调用点一行都不用改**，也不依赖 @Composable get() 这类
- * 编译器特性。比逐处替换成 MaterialTheme.colorScheme.* 风险低得多。
- *
- * 色值取自现有亮色板（R11），暗色板按同一层级给出对比色；不做「只把背景刷黑」。
- */
 internal data class Pal(
     val bg: Color, val card: Color, val primary: Color, val primarySoft: Color,
     val sub: Color, val good: Color, val line: Color, val warn: Color,
@@ -43,7 +33,6 @@ internal val DarkPal = Pal(
 
 private var _appThemeDark by mutableStateOf(false)
 
-/** 只读快照；写只走 applyAppTheme，避免外部绕过三档语义。 */
 internal val appThemeDark: Boolean get() = _appThemeDark
 
 internal val palette: Pal get() = if (_appThemeDark) DarkPal else LightPal
@@ -52,7 +41,6 @@ internal fun isSystemNight(c: Context): Boolean =
     (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
         Configuration.UI_MODE_NIGHT_YES
 
-/** mode：0 跟随系统 / 1 浅色 / 2 深色。设置页拨动即调用，Ctx 只用于读系统夜间态。 */
 internal fun applyAppTheme(c: Context, mode: Int) {
     _appThemeDark = when (mode) {
         1 -> false
@@ -61,7 +49,6 @@ internal fun applyAppTheme(c: Context, mode: Int) {
     }
 }
 
-/** 给未显式着色的 M3 组件（Switch 轨道 / Button 默认态）也套上同一套色。 */
 @Composable
 internal fun TingbenTheme(content: @Composable () -> Unit) {
     val dark = appThemeDark

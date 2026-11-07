@@ -5,24 +5,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/**
- * R36 · 调音台预设库：把「音色 12 维 + 采样 9 项 + 表演层 5 项」整套存成可复用预设。
- *
- * 不手搓依据（逐条见 docs/R36_调音台重设计_联动表.md）：
- *  - 磁盘形状抄 IndexTTS WebUI `indextts/utils/presets.py`：
- *    PRESET_VERSION、safe_preset_name、list_presets、save_preset、load_preset、
- *    delete_preset、preset_exists、同名覆盖、.part 原子落盘。
- *    该仓库许可证未核实，只抄数据结构与函数形状，不复制源码行。
- *  - 交互形状抄 text-generation-webui `modules/ui_parameters.py`：
- *    preset_menu + save_preset / delete_preset / reset_preset 三按钮。
- *    该项目为 AGPL-3.0，只借鉴交互，不复制代码。
- *  - 「新建 Session 时选预设 / Session 设置里存为预设」抄 IndexTTS WebUI 项目面板。
- *  - 版本化宽容迁移抄 PocketPal `completionSettingsVersions.ts`。
- *
- * 边界：预设只是「一键载入待提交」的配方，不新建第二份 TtsKnobs / ProduceConfig
- * 配置。载入预设只写 MixerDraft，唯一出口仍是 MixerCommit.commit，
- * 不碰 Producer.start 签名、不碰 TaskInfo 书签、不碰缓存分桶。
- */
 private const val PRESET_SCHEMA = 1
 
 data class MixerPreset(
@@ -53,7 +35,6 @@ data class MixerPreset(
             .put("perf", perf.toJson()).put("builtin", builtin)
     }
 
-    /** R41 · 一行摘要补全关键字段，列表里就能看出预设改了什么，不拼长说明文字。 */
     fun chips(): String = buildList {
         add("主 ${knobs.temperature}/${knobs.topK}/${knobs.topP}")
         add("副 ${knobs.subTemperature}/${knobs.subTopK}")
@@ -103,14 +84,12 @@ data class MixerPreset(
 object MixerPresetStore {
     private fun file(c: Context) = File(c.filesDir, "mixer_presets.json")
 
-    /** 抄 safe_preset_name：只留能当文件名的字符，空名兜底，同名覆盖靠它对齐。 */
     fun safeName(raw: String): String {
         var s = raw.trim().replace(Regex("[\\\\/:*?\"|]+"), "")
         s = s.replace(Regex("\\s+"), "").trim('.', '_')
         return s.ifBlank { "untitled" }
     }
 
-    /** 4 组内置：采样值沿用 SamplingPresets，音色留空表示「沿用当前身份」。 */
     fun builtins(): List<MixerPreset> = listOf(
         MixerPreset("builtin_upstream", "上游默认", "", emptyMap(), TtsKnobs(),
             ProduceConfig(), true),
@@ -125,7 +104,6 @@ object MixerPresetStore {
             ProduceConfig(), true)
     )
 
-    /** R104 · 坏预设库回退到上一次成功版本，不再当成「没有预设」。 */
     private fun readUser(c: Context): List<MixerPreset> {
         val body = when (val r = AtomicJson.read(file(c))) {
             is AtomicJson.Read.Ok -> r.text
@@ -138,7 +116,6 @@ object MixerPresetStore {
         } catch (_: Throwable) { emptyList() }
     }
 
-    /** 内置在前、用户自定义在后；未知 schema 与坏条目一律跳过，不崩。 */
     fun list(c: Context): List<MixerPreset> = builtins() + readUser(c)
 
     fun find(c: Context, id: String): MixerPreset? = list(c).firstOrNull { it.id == id }
@@ -146,21 +123,18 @@ object MixerPresetStore {
     fun exists(c: Context, name: String): Boolean =
         readUser(c).any { it.name == safeName(name) }
 
-    /** R41 · 空名 / untitled 一律拒存，界面与 Store 双层拦，别再留脏预设。 */
     private fun usableName(raw: String): String? {
         if (raw.trim().isEmpty()) return null
         val n = safeName(raw)
         return if (n == "untitled") null else n
     }
 
-    /** R104 · 一份原子落盘逻辑，save / delete / rename 共用；写失败保留旧库并返回 false。 */
     private fun writeAll(c: Context, list: List<MixerPreset>): Boolean {
         val arr = JSONArray(); list.forEach { arr.put(it.toJson()) }
         val root = JSONObject().put("schema", PRESET_SCHEMA).put("presets", arr)
         return AtomicJson.write(file(c), root.toString(1))
     }
 
-    /** 同名覆盖（抄 IndexTTS「存为预设（同名覆盖）」）。 */
     fun save(c: Context, p: MixerPreset): Boolean {
         val name = usableName(p.name) ?: return false
         val item = p.copy(id = sha(name).take(10), name = name, builtin = false)
@@ -169,7 +143,6 @@ object MixerPresetStore {
         return writeAll(c, list)
     }
 
-    /** R41 · 给历史遗留的 untitled 一个改名出口；同名冲突拒改。 */
     fun rename(c: Context, id: String, raw: String): Boolean {
         val name = usableName(raw) ?: return false
         val list = readUser(c).toMutableList()
@@ -180,7 +153,6 @@ object MixerPresetStore {
         return writeAll(c, list)
     }
 
-    /** 内置预设不许删，返回 false 由界面给明确提示。 */
     fun delete(c: Context, id: String): Boolean {
         if (id.startsWith("builtin_")) return false
         val list = readUser(c).toMutableList()

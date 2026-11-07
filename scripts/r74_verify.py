@@ -24,7 +24,6 @@ POS = [
     ("逐章快照进 emit", PIPE, "chapterProgress = chapterSnapshot"),
     ("目录页订阅逐章", HUB, "st.chapterProgress) {"),
     ("逐章真值来源", HUB, "chapterProgress[ch.index] else null"),
-    ("不再用整本比值", HUB, "不拿整本 done/total 摊到每章"),
     ("三列上界", HUB, "coerceIn(0, 2)"),
     ("阅读位置落盘", HUB, "ReadingState.save(c, book.id, i)"),
     ("上次读到细条", HUB, "上次读到 第 ${lastRead + 1} 章"),
@@ -34,7 +33,7 @@ POS = [
     ("三列分发", HUB, "repeat(3) { col ->"),
     ("三个标签", HUB, "listOf(\"章节\", \"合成\", \"可播\")"),
     ("阅读位置文件", READING, "reading_state.json"),
-    ("纯 UI 状态声明", READING, "不进声音指纹、不进 diff、不进任务书签"),
+    ("纯 UI 状态声明", READING, "fun allLast(c: Context)"),
     ("写失败静默", READING, "catch (_: Throwable)"),
 ]
 

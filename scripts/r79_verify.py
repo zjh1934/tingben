@@ -61,7 +61,7 @@ FILES = {M: MAIN, H: HUB, A: LIB}
 def audio_body(text):
     """AudioScreen 函数体：从函数签名到下一个 '// ── ⑤' 之前。"""
     s = text.index("private fun AudioScreen")
-    e = text.index("// ── ⑤ 设置（只管软件） ──", s)
+    e = text.index("private fun GroupLabel(", s)
     return text[s:e]
 
 def check(files):

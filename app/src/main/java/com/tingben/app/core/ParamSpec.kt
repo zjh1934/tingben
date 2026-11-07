@@ -1,26 +1,5 @@
 package com.tingben.app.core
 
-/**
- * R38 · 控制台参数目录：把界面上每一项与官方资料一一对应。
- * R41 · P1 第 10 条：范围/单位/校验收成唯一一份元数据，界面不再各处硬编码。
- *
- * 不手搓依据：
- *  - 元数据形状（label / 默认值 / 范围 / 步长 / 说明）抄 PocketPal
- *    src__utils__modelSettings.ts 的 COMPLETION_PARAMS_METADATA 与
- *    CompletionSettings.tsx 的 renderServerDefault。
- *  - 范围校验 validateNumericField（isNaN → aboveMin/belowMax → 可显示错误文案）
- *    抄 PocketPal modelSettings.ts:155-180（Apache-2.0）。
- *  - 参数行「名称 + 一行说明 + 当前值 + 恢复默认」抄 OfflineLLM
- *    SettingsScreen.kt 的 ParamSlider 形状（本项目用档位 + 精确输入，不引滑块依赖）。
- *
- * 官方字段名与默认值逐字来自随包 qwen.h 的 qt_tts_params（312-320 行）、
- * reference/qwentts-cpp/src__sampling-defaults.h，以及 qwentts.cpp README
- * 的采样链与可覆盖字段说明。出处编号见 docs/R38_调音台重做_联动表与参数触达矩阵.md §2。
- *
- * 边界：**只读目录，不是第二份配置真值源**。当前值一律从 Prefs.ttsKnobs 读，
- * 写入一律走 Prefs.setTtsKnobs；本文件不持久化、不参与缓存指纹。
- */
-
 enum class ParamKind(val label: String) {
     ENGINE("到引擎"),
     UPPER("上层"),
@@ -36,7 +15,6 @@ data class ParamSpec(
     val source: String,
     val options: List<String>,
     val kind: ParamKind = ParamKind.ENGINE,
-    /** R41 · 唯一范围来源。null = 不设该侧界限；界面 rangeLabel 由它生成。 */
     val min: Double? = null,
     val max: Double? = null,
     val unit: String = ""
@@ -59,7 +37,6 @@ data class ParamSpec(
         else -> ""
     }
 
-    /** 人话范围，界面直接显示；不再各处写「0~2」「256~8192」。 */
     val rangeLabel: String
         get() {
             val lo = min
@@ -72,10 +49,6 @@ data class ParamSpec(
             }
         }
 
-    /**
-     * 抄 PocketPal validateNumericField：数值 / 上下界 / 类型解析三层，
-     * 返回可直接显示的错误文案；null = 合法。界面只显示，不自行判断。
-     */
     fun validate(raw: String): String? {
         val s = raw.trim()
         if (s.isEmpty()) return "请填数值"
@@ -86,7 +59,6 @@ data class ParamSpec(
         return null
     }
 
-    /** 按官方语义做范围校验；非法返回 null，界面给明确提示，不静默吞掉。 */
     fun withValue(k: TtsKnobs, raw: String): TtsKnobs? {
         val s = raw.trim()
         val n = s.toDoubleOrNull() ?: return null
@@ -114,7 +86,6 @@ data class ParamSpec(
 }
 
 object ParamCatalog {
-    /** 9 项采样参数：全部真到 qt_tts_params，逐字段经 JNI 覆盖。min/max 与 withValue 旧范围逐项对齐。 */
     val SAMPLING: List<ParamSpec> = listOf(
         ParamSpec("seed", "qt_tts_params.seed", "采样种子", "42",
             "固定可复现；-1 = 引擎硬件随机（O5:308-310）", "O4/O5",
@@ -145,7 +116,6 @@ object ParamCatalog {
             listOf("0.8", "0.95", "1.0"), min = 0.0, max = 1.0)
     )
 
-    /** 上层项：不是模型 API 字段，只影响 App 自己的文本/合并/流程。 */
     val UPPER: List<ParamSpec> = listOf(
         ParamSpec("voice", "qt_tts_params.instruct", "音色身份描述", "（必填）",
             "自由文本属性指令，VoiceDesign 的必需输入（O1:201-223 / O4:121-129）", "O1/O3/O4",
@@ -170,7 +140,6 @@ object ParamCatalog {
             emptyList(), ParamKind.UPPER)
     )
 
-    /** 结构上不可控：qt_tts_params 里物理不存在，或属 context 级。 */
     val LOCKED: List<ParamSpec> = listOf(
         ParamSpec("max_batch", "context 级", "合成并发", "1（CPU 单 worker）",
             "不在每次请求参数里", "O5", emptyList(), ParamKind.LOCKED),
@@ -182,7 +151,6 @@ object ParamCatalog {
             "换 CustomVoice 权重才有 9 个音色", "O1/O5", emptyList(), ParamKind.LOCKED)
     )
 
-    /** 官方资料索引：App 内只列名称与章节，URL 写在交付文档里（App 无 INTERNET 权限）。 */
     val DOCS: List<Pair<String, String>> = listOf(
         "O1 官方仓库 README" to "QwenLM/Qwen3-TTS · §Voice Design(201-239)、§146 generate kwargs、§167 language、§465 评测 2048",
         "O2 官方模型卡" to "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign · 模型能力与 10 语言",

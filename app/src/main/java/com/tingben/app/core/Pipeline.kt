@@ -20,16 +20,13 @@ import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.UUID
 
-// ─────────────────────────── 数据模型 ───────────────────────────
 
-/** R18 · sha 是正文指纹：反复用「打开方式」打开同一本书不该让书架一直膨胀。 */
 data class Book(val id: String, val title: String, val path: String, val chars: Int,
                 val sha: String = "")
 data class Chapter(val index: Int, val title: String, val start: Int, val end: Int)
 data class Chunk(val index: Int, val chapter: Int, val text: String, val start: Int, val end: Int)
 data class Ann(val text: String, val speaker: String, val instruct: String)
 
-// ─────────────────────────── 书架 ───────────────────────────
 
 object BookStore {
     private fun dir(c: Context) = File(c.filesDir, "books").apply { mkdirs() }
@@ -63,9 +60,6 @@ object BookStore {
     } catch (_: Throwable) { "${text.length}_${text.hashCode()}" }
 
     /**
-     * R18 · 同一份正文（同名 + 同指纹）只保留一本。
-     * 之前每次「打开方式 / 分享 / 粘贴」都无脑新建 UUID，书架越用越满，
-     * 而用户其实只是想再打开那本书。命中时返回旧书，不写新文件。
      */
     fun add(c: Context, title: String, text: String): Book {
         val sha = fingerprint(text)
@@ -95,20 +89,13 @@ object BookStore {
     }
 }
 
-// ─────────────────────────── 模型槽位 ───────────────────────────
 
 object ModelStore {
     /**
-     * R68 · P1b：旧文本权重整套退场后，下面两个名称常量只作「旧数据白名单」保留——
-     * 老用户私有目录里若还躺着旧 GGUF，不主动删、也不再加载。
      */
     const val TOKENIZER = "qwen-tokenizer-12hz-Q8_0.gguf"
 
     /**
-     * R84 · 结构不是「两份配套文件」，而是 1 个共用底座 + 3 份模式主文件。
-     * 底座三模式共用、导入一次；三份主文件各自单独点导入，装哪份用哪份。
-     * 模式语义以随包 qwen.h 为准：instruct 只归 voice_design（必填），
-     * speaker 编号只归 custom_voice，ref_audio_24k 只归 base 且与 instruct 互斥。
      */
     enum class Mode(
         val id: String, val label: String, val file: String,
@@ -131,9 +118,6 @@ object ModelStore {
     } catch (_: Throwable) { emptyList() }
 
     /**
-     * 把 SAF 选中的文件复制进私有目录；同名覆盖。
-     * 必须流式、必须在后台线程调用、必须写 .part 再原子改名：
-     * 2.5GB 一次性读进内存会 OOM，主线程同步复制会 ANR 被系统杀掉。
      */
     fun import(c: Context, name: String, source: java.io.InputStream,
                onProgress: (Long) -> Unit = {}): File {
@@ -165,7 +149,7 @@ object ModelStore {
             EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT", "$safe ${out.length()}")
             return out
         } catch (t: Throwable) {
-            tmp.delete()   // 半截文件绝不留下来被当成就绪
+            tmp.delete()
             val reason = t.message ?: ""
             EventLog.log(EventLog.Kind.CRASH, "MODEL_IMPORT_FAIL",
                 "$safe ${t.javaClass.simpleName}: $reason")
@@ -175,7 +159,6 @@ object ModelStore {
 
     fun delete(c: Context, f: File) { f.delete(); EventLog.log(EventLog.Kind.MODEL, "MODEL_DELETE", f.name) }
 
-    /** 上次导入被系统中断留下的半截文件，清掉，绝不被当成就绪。 */
     fun cleanup(c: Context) {
         try {
             dir(c).listFiles()?.filter { it.isFile && it.name.endsWith(".part") }?.forEach {
@@ -192,10 +175,6 @@ object ModelStore {
     }
 
     /**
-     * R84 · 按「模式独有关键词」识别，绝不用泛化的 "talker"：
-     * 旧写法按泛化关键词找主文件，会把 customvoice / base 误当成
-     * voicedesign 加载，而 speaker 恒 null、instruct 必填，引擎会直接判非法。
-     * 下载器在文件名后加 (1) / _1 时，仍靠 -voicedesign- / -customvoice- / -base- 认出来。
      */
     private fun pickFor(c: Context, m: Mode): File? {
         val all = files(c)
@@ -209,14 +188,10 @@ object ModelStore {
     fun currentMode(c: Context): Mode =
         Mode.values().firstOrNull { it.id == Prefs.modelMode(c) } ?: Mode.VOICE_DESIGN
 
-    /** 当前启用模式没装时回退到已装的 voicedesign，保证老用户升级后仍能出声。 */
     fun talker(c: Context): File? = pickFor(c, currentMode(c)) ?: pickFor(c, Mode.VOICE_DESIGN)
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
     /**
-     * R93 · 三种模式都能合成，只拦「这一份输入还没准备齐」。
-     * 严格按当前模式取主文件，不回退到 voicedesign —— 否则会拿 A 权重配 B 参数。
-     * 引擎侧由 qt_model_type 再校验一次字段合法性，这里只管用户能补上的部分。
      */
     fun synthesisBlockReason(c: Context): String? {
         val m = currentMode(c)
@@ -225,8 +200,6 @@ object ModelStore {
         return when (m) {
             Mode.VOICE_DESIGN -> null
             Mode.CUSTOM_VOICE -> {
-                // R100 · 音色表读过一次就落盘；没手动挑过音色时自动用第一个，
-                // 不再让「没点读取音色表」把整条合成链卡死。
                 val picked = Prefs.speakerName(c).ifBlank {
                     Prefs.speakerNames(c).firstOrNull()?.also { Prefs.setSpeakerName(c, it) }.orEmpty()
                 }
@@ -241,8 +214,6 @@ object ModelStore {
     fun missing(c: Context): List<String> {
         val m = mutableListOf<String>()
         if (tokenizer(c) == null) m.add("共用底座（12Hz）")
-        // R100 · 模型页显示的「就绪」必须和真正开工用的是同一份主文件，
-        // 否则装了 A 模式却选了 B 模式，页面说能出声、点合成才被拦。
         if (installedModes(c).isEmpty()) m.add("模式主文件")
         else if (modeFile(c, currentMode(c)) == null)
             m.add("「${currentMode(c).label}」的模式主文件")
@@ -251,10 +222,8 @@ object ModelStore {
     fun ready(c: Context) = missing(c).isEmpty()
 }
 
-// ─────────────────────────── 分块（Alexandria + Antioch） ───────────────────────────
 
 object ChapterSplitter {
-    /** txt 兜底用的标题正则：除「第X章」，补上中文小说常见的序章类与 Chapter N。 */
     private val headRe = Regex(
         """^\s*(第[一二三四五六七八九十百千零〇0-9]+[章节回卷篇].{0,40}|""" +
         """[0-9]{1,3}[、.．]\s*.{1,40}|""" +
@@ -263,7 +232,6 @@ object ChapterSplitter {
         RegexOption.MULTILINE
     )
 
-    /** 一段文字按 ≤500 字切成朗读块，绝不改动一个字符。 */
     private fun cut(text: String, s: Int, e: Int, chIndex: Int,
                     out: MutableList<Chunk>, startIdx: Int): Int {
         var idx = startIdx
@@ -291,8 +259,6 @@ object ChapterSplitter {
         val chunks = mutableListOf<Chunk>()
         var idx = 0
 
-        // R10 · epub 由 Importer 打了显式边界：一个 spine 文件 = 一章。
-        // 走这条路就不再靠正则猜标题，「楔子 / Chapter 1 / 一、」都能正确成章，且顺序由 OPF 保证。
         if (text.contains(Importer.CHAPTER_SEP)) {
             val segs = text.split(Importer.CHAPTER_SEP)
                 .map { it.trim() }.filter { it.isNotBlank() }
@@ -322,13 +288,9 @@ object ChapterSplitter {
     }
 }
 
-// ─────────────────────────── 文本切分（直接朗读） ───────────────────────────
 
 object Annotator {
     /**
-     * R25 · 断句只在句末标点 / 段落 / 次级标点边界，绝不按字数腰斩；
-     * 切片拼回与原文逐字相等（TextSplitter.Stats.charsIn == charsOut）。
-     * R68 · P1b：旧分段管线退场，本对象只剩「直接朗读」的断句入口。
      */
     fun directWithStats(text: String): Pair<List<Ann>, TextSplitter.Stats> {
         val (segs, st) = TextSplitter.split(text)
@@ -339,9 +301,6 @@ object Annotator {
 }
 
 /**
- * 制作工作目录按块落盘，断点续传靠它认「哪几块做好了」。
- * R68 · P1b：只剩一条直接朗读路径，分桶前缀继续沿用 "v11/direct"，
- * 旧版本的分桶目录仍按原规则读取，不删用户已做好的分段 WAV。
  */
 object AnnCache {
 
@@ -349,7 +308,6 @@ object AnnCache {
         work.listFiles()?.count { it.isFile && it.name.startsWith("ann_") && it.name.endsWith(".json") } ?: 0
     } catch (_: Throwable) { 0 }
 
-    /** 每次开工前清掉上次被杀留下的半成品，避免被误当成完成块。 */
     fun cleanup(work: File) {
         try { work.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() } }
         catch (_: Throwable) { }
@@ -359,7 +317,6 @@ object AnnCache {
         try { work.listFiles()?.forEach { it.delete() } } catch (_: Throwable) { }
     }
 
-    /** 这本书、这个模式下有没有没跑完的东西可续。 */
     fun hasProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?): Boolean {
         val w = File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}")
         val ann = count(w)
@@ -380,7 +337,6 @@ object AnnCache {
 }
 
 
-// ─────────────────────────── WAV 合并（Antioch merger） ───────────────────────────
 
 object WavMerger {
     private fun pcmOf(f: File): ByteArray? {
@@ -422,10 +378,6 @@ object WavMerger {
     }
 
     /**
-     * R20 · 段间静音：24kHz / 16bit / mono ⇒ 每毫秒 48 字节，取偶数保证 16bit 对齐。
-     * 依据 epub_to_audiobook 的 break_duration 参数（0-5000ms）。
-     * 只在段与段之间插，最后一段后不插；header 的 dataLen 必须把静音算进去。
-     * gapMs 默认 0，旧调用点行为不变；不影响分段 WAV 内容，故不进任何缓存指纹。
      */
     fun merge(parts: List<File>, out: File, gapMs: Int = 0): Boolean {
         return try {
@@ -449,7 +401,6 @@ object WavMerger {
     }
 }
 
-// ─────────────────────────── 一键编排（唯一入口） ───────────────────────────
 
 data class Progress(
     val running: Boolean = false,
@@ -459,8 +410,6 @@ data class Progress(
     val failed: Int = 0,
     val message: String = "",
     val output: String? = null,
-    // R74 · 逐章真实进度：章索引 -> 该章已生成段数 / 该章总段数。
-    // 只有合成循环填它；其余阶段保持空表，界面不许拿整本 done/total 冒充逐章。
     val chapterProgress: Map<Int, Float> = emptyMap()
 )
 
@@ -471,7 +420,6 @@ object Producer {
     @Volatile private var busy = false
     @Volatile private var cancelRequested = false
 
-    // R11 · 进程死了以后唯一还活着的东西
     @Volatile private var appCtx: Context? = null
     @Volatile private var current: TaskInfo? = null
     private val _resume = MutableStateFlow<TaskInfo?>(null)
@@ -481,11 +429,9 @@ object Producer {
     fun isBusy() = busy
     fun isStopping() = cancelRequested
 
-    /** Application.onCreate 调一次：把上次被杀/退出的任务重新摆到界面上。 */
     fun restore(c: Context) {
         appCtx = c.applicationContext
         val t = TaskResume.active(c) ?: return
-        // 写的是 running 但进程已经重启 ⇒ 它绝不可能还在跑，如实标成「中断」
         val fixed = if (t.phase == "running") t.copy(phase = "interrupted") else t
         TaskResume.save(c, fixed)
         current = fixed
@@ -502,7 +448,6 @@ object Producer {
                 (if (why != null) " invalidate=$why" else ""))
     }
 
-    /** 停止：不杀进程、不删已做好的块， native 解码下一 token 会自己退，块边界收尾。 */
     fun stop() {
         if (!busy) return
         cancelRequested = true
@@ -525,8 +470,6 @@ object Producer {
 
     fun clearProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) {
         AnnCache.clear(AnnCache.dirFor(c, bookId, direct, think, only))
-        // 「从头重做 / 放弃任务」必须把书签也清掉。
-        // 重启后 current 是 null，所以以磁盘记录为准，不能只判断内存里的 current。
         val saved = TaskResume.load(c)
         if (saved != null && saved.bookId == bookId) {
             current = null; _resume.value = null; TaskResume.clear(c)
@@ -543,29 +486,20 @@ object Producer {
         busy = true
         cancelRequested = false
         appCtx = c.applicationContext
-        // R67 · P1a：续跑仍沿用书签里的旧分桶档位；新建任务恒 false，不再读写思考设置键。
         val thinkOn = thinkOverride ?: false
-        // R20 · 本次预设随书签落盘；续跑入口统一传 t.config，风格不因进程重启而断层。
         current = TaskInfo(book.id, book.title, onlyChapters, true, thinkOn,
             0, 0, "running", "正在准备", System.currentTimeMillis(),
             config = config, modeId = ModelStore.currentMode(c).id)
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
-        // R101 · 以前要等协程里第一次 emit 才把 running 置 true，这之间任务页/章节页
-        // 还显示上一次的「已完成」。开工即置位，界面不会出现假完成窗口。
         _state.value = Progress(true, "正在准备", 0, 0, 0, "正在启动…")
-        // 上一次点过「停止」的话，native 的 g_cancel 还是 true；整次制作开始才复位。
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         AnnCache.cleanup(AnnCache.dirFor(c, book.id, true, thinkOn, onlyChapters))
-        // R17 · 制作方式从 UI 小按钮升成正式选择后，所有入口（制作页 / 任务页 / 进度页续跑）
-        // 所有启动入口都汇到 start，在这里记一次本次制作范围与预设。
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_MODE",
             "直接朗读" +
                 " · think=" + thinkOn +
                 " · " + (onlyChapters?.let { "选中 ${it.size} 章" } ?: "整本") +
                 " · 本次预设=" + config.summary())
-        // R26 · 通知权限：四个启动入口全汇到 start，只在这里申请一次。
-        // Android 13+ 不授权时通知不进抽屉，前台服务仍在但用户看不见；拒绝也不拦制作。
         ProduceService.activityOf(c)?.let { act ->
             if (android.os.Build.VERSION.SDK_INT >= 33 &&
                 act.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
@@ -578,8 +512,6 @@ object Producer {
                 }
             }
         }
-        // R26 · 必须在协程开跑前起服务：startForegroundService 要求 5 秒内 startForeground，
-        // 且只能从可见界面发起，不能等进程进后台再偷偷起。
         ProduceService.begin(c, book.title)
         scope.launch {
             try {
@@ -592,10 +524,7 @@ object Producer {
                 }
             } finally {
                 busy = false
-                // 只要没走到 done，就如实落一条「中断」书签，进程被杀也有据可查
                 if (current?.phase == "running") markInterrupted("中断")
-                // R26 · 完成 / 停止 / 出错 / 缺模型提前 return 全走这里：
-                // 收服务、释放唤醒锁、把通知换成「任务已结束」。漏了会挂一整夜。
                 val p = _state.value
                 ProduceService.finish(c.applicationContext, p.stage, p.done, p.total)
             }
@@ -616,7 +545,6 @@ object Producer {
     private fun emit(stage: String, done: Int, total: Int, failed: Int, msg: String,
                      out: String? = null, chapterProgress: Map<Int, Float> = emptyMap()) {
         _state.value = Progress(true, stage, done, total, failed, msg, out, chapterProgress)
-        // 每完成一块就落一次书签：进程被杀时，最坏只丢当前这一块，前面全留着
         val c = appCtx
         val t = current
         if (c != null && t != null && t.phase == "running") {
@@ -625,7 +553,6 @@ object Producer {
             current = up
             TaskResume.save(c, up)
         }
-        // R26 · 通知是切到后台后唯一可见的界面，每块 / 每段都要更新进度条。
         appCtx?.let { ctx ->
             ProduceService.update(ctx.applicationContext, stage, done, total, msg)
         }
@@ -637,12 +564,10 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, NativeEngine.shortReason())
             return
         }
-        // R84 · 非 voicedesign 模式的输入界面还没做，明确拦住，不静默产出坏音频。
         ModelStore.synthesisBlockReason(c)?.let { reason ->
             _state.value = Progress(false, "没开始", 0, 0, 0, reason)
             return
         }
-        // R93 · 严格取当前模式的主文件，不再用带 voicedesign 回退的 talker()
         val tk = ModelStore.modeFile(c, ModelStore.currentMode(c))
         val tok = ModelStore.tokenizer(c)
         val miss = mutableListOf<String>()
@@ -662,20 +587,14 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, "这本书没有可制作的文字")
             return
         }
-        // R68 · P1b：只剩一条直接朗读路径，不加载第二份权重、不读旧文本管线参数。
         val thinkOn = thinkOverride ?: false
         val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
             "chunks=${chunks.size} · 预设=" + config.summary())
         EventLog.resetEngine()
 
-        // R68 · P1b：单一路径后没有块级审计/模型命中计数；gateFails 恒 0，
-        // 只为不改合成/合并段 6 处算式而保留，kotlin 会内联成常量。
         val gateFails = 0
-        // R68 · 单一路径：原文按标点/段落边界切段后直接交给 TTS，不跑任何文本管线。
         val stats = mutableListOf<TextSplitter.Stats>()
-        // R74 · 段 -> 章 的归属表：flatMap 会让段丢掉 chapter，这里按块补齐，
-        // 合成循环才知道「这一段属于第几章」，逐章进度才有真值来源。
         val segChapter = mutableListOf<Int>()
         val annotated = chunks.flatMap { ch ->
             val (segs, s) = Annotator.directWithStats(ch.text)
@@ -683,8 +602,6 @@ object Producer {
             repeat(segs.size) { segChapter.add(ch.chapter) }
             segs
         }
-        // R25 · 用户原话「起码按符号断，不能按字符段」：把断句结果写进日志，
-        // 贴一段事件就能核对有没有从半句腰斩、原文有没有少字。
         EventLog.log(EventLog.Kind.PIPELINE, "SPLIT_STATS",
             "${chunks.size} 块 → ${annotated.size} 段 · 只在标点/段落边界断 · " +
                 "字符硬切 0 · 句段边界 ${stats.sumOf { it.sentenceCuts }} · " +
@@ -698,13 +615,8 @@ object Producer {
                     (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
         EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
             "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
-        // ── 合成阶段：先释放再加载 TTS，绝不同时常驻 ──
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
 
-        // 声音指纹：音色描述 / 采样 / instruct 模板 任一变化，旧 WAV 必须作废。
-        // 只删 WAV，文本切分结果留着不重算。
-        // 双指纹兼容：旧版指纹含角色表项，命中 legacy 就不作废，只改写成新值，
-        // 避免升级后把用户已经做好的音频一次性删光。
         val knobs = Prefs.ttsKnobs(c)
         val globalVoice = Prefs.voiceDescription(c)
         val voiceStamp = Prefs.voiceStamp(c)
@@ -729,9 +641,6 @@ object Producer {
             "${SynthInput.label(c)} · 指纹=$voiceStamp · seed=${knobs.seed}" +
                 " · temp=${knobs.temperature} · lang=chinese（官方 README：目标语言已知时显式传，别用 auto）")
 
-        // R93 · 模式 / 音色编号 / 参考音频变化时不作废旧版 voiceStamp（旧 WAV 兼容照旧），
-        // 但必须作废这一本已合成的 WAV：否则续跑跳过旧 WAV，切了模式仍听旧声音。
-        // R94 · 与界面预判共用同一枚指纹，避免两处算法漂移。
         val modeStamp = TaskResume.expectedModeStamp(c)
         val modeStampFile = File(work, "mode_stamp.txt")
         try {
@@ -745,10 +654,6 @@ object Producer {
             modeStampFile.writeText(modeStamp)
         } catch (_: Throwable) { }
 
-        // R20 · 预设指纹：voiceStamp 覆盖「升级 App 导致模板版本变化」，
-        // 这里覆盖「同一版本内用户把叙事改成广播剧」。两者都只删 WAV、保留切分结果：
-        // 换风格应该「复用切分、重合成」，不是重新切一遍书。
-        // gapMs 不进指纹（只在合并插静音）。
         val presetFile = File(work, "produce_stamp.txt")
         val presetStamp = config.audioStamp()
         try {
@@ -756,8 +661,6 @@ object Producer {
                 f.isFile && f.name.endsWith(".wav") && f.length() > 44
             } ?: 0
             val changed = presetFile.exists() && presetFile.readText().trim() != presetStamp
-            // 首次写也要删：如果 App 刚从没有风格层的版本升上来且已有旧 WAV，
-            // 不能让续跑跳过它们、听出「前半本旧味道、后半本新味道」。
             if (changed || (!presetFile.exists() && oldWavs > 0)) {
                 val killed = work.listFiles()?.filter { f ->
                     f.isFile && f.name.endsWith(".wav")
@@ -781,7 +684,6 @@ object Producer {
             _state.value = Progress(false, "没开始", 0, 0, 0, "音频模型打不开，请确认两个文件都导入了")
             return
         }
-        // R93 · base 的参考音频只在这里交给引擎一次，整次合成的 PCM 指针由 native 持锁保住。
         try {
             SynthInput.prepare(c, ttsHandle)
         } catch (t: Throwable) {
@@ -790,12 +692,10 @@ object Producer {
             return
         }
 
-        // R11 · 拟声表达：只在合成前增强 instruct，正文一字不动
         val nonVerbalOn = Prefs.nonVerbal(c)
         var strippedTotal = 0
         val toSpeak = annotated.map { ann ->
             val base = if (nonVerbalOn) NonVerbal.apply(ann) else ann
-            // 声音只由调音台的全局音色决定；拟声表达与本次风格层只改 instruct，正文一字不动。
             val built = VoiceProfile.buildWithReport(globalVoice, config.styleInstruct(), base.instruct)
             strippedTotal += built.second
             Ann(base.text, base.speaker, built.first)
@@ -814,17 +714,11 @@ object Producer {
 
         val wavs = mutableListOf<File>()
         var synthFails = 0
-        // R100 · 每章在成品 WAV 里的起点：合成循环按序累计 PCM 字节
-        // （24kHz/16bit/mono ⇒ 48 字节/ms），段间静音与 WavMerger 用同一公式。
-        // 整本合并后写进 chapters.json，第四列点第 5 章才不会从第 1 章开始播。
         val gapBytes = ((config.gapMs.coerceIn(0, 5000) * 48) / 2) * 2
         val segStartBytes = mutableListOf<Long>()
         var cursorBytes = 0L
-        // R74 · 每章总段数 / 已生成段数；只统计真正落盘成功的段，失败段不算完成。
         val perChapterTotal = segChapter.groupingBy { it }.eachCount()
         val perChapterDone = mutableMapOf<Int, Int>()
-        // R95 · 落盘预检：磁盘满时逐段失败只会留半成品，合并还会静默失败。
-        // 估算只用来判断「够不够」，不进任何指纹、不改声音内容、不改正文。
         val pending = (0 until toSpeak.size).count { i ->
             val f = File(work, String.format("direct_%04d.wav", i))
             !(f.exists() && f.length() > 44)
@@ -833,7 +727,6 @@ object Producer {
             File(work, String.format("direct_%04d.wav", i))
                 .takeIf { it.exists() && it.length() > 44 }?.length()
         }
-        // 24kHz / 16bit / mono，按 60 秒一段保守估；有真实成品样本就用均值。
         val segBytes = if (sample.isNotEmpty()) sample.average().toLong()
                        else 24_000L * 2L * 60L
         val mergeBytes = toSpeak.size.toLong() * segBytes
@@ -857,12 +750,8 @@ object Producer {
                     return
                 }
                 val segStart = wavs.size
-                // R26 · 合成阶段同样按段刷新唤醒锁；TTS 单次可能几分钟。
                 ProduceService.touch(c.applicationContext, "合成段 ${i + 1}/${toSpeak.size}")
                 val wav = File(work, String.format("direct_%04d.wav", i))
-                // 让「这一段到底用什么指令读的」可见：最终 instruct（含身份层/风格层）。
-                // voice_design 的 speaker 必须传 null。
-                // R93 · 字段按引擎读出的 model_type 供料，不再恒传 null。
                 val v = SynthInput.params(c, a.instruct, config.styleInstruct())
                 EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
                     "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
@@ -878,20 +767,14 @@ object Producer {
                     segStartBytes.add(cursorBytes)
                     cursorBytes += (wav.length() - 44) + gapBytes
                 } else {
-                    // R100 · 引擎偶发瞬时失败先重试一次；仍失败就整次停住。
-                    // 以前只 synthFails++ 继续跑，最后把「缺了几段的 WAV」合并并标「完成」，
-                    // 用户听到的是断掉的成品却显示成功 —— 链路是假的。
                     var ok = false
                     var lastCode = -1
                     for (attempt in 0..1) {
-                        // R108 · F-19：点停止后当前段会被 native 取消并返回非 0；
-                        // 不在重试前拦住就会白跑第二次（旧 JNI 还会顺手把停止标志清零）。
                         if (cancelRequested) {
                             _state.value = halted(i, annotated.size, gateFails + synthFails)
                             return
                         }
                         val code = try {
-                            // 官方 Qwen3-TTS README：目标语言已知时显式传，别用 auto；全中文书固定 chinese。
                             NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, "chinese",
                                 wav.absolutePath, knobs)
                         } catch (t: Throwable) {
@@ -917,7 +800,6 @@ object Producer {
                     segStartBytes.add(cursorBytes)
                     cursorBytes += (wav.length() - 44) + gapBytes
                 }
-                // R74 · 只有这一段真的落了 WAV 才推进该章；续跑跳过已有 WAV 也算完成。
                 val chapterSnapshot = if (wavs.size > segStart) {
                     val ci = segChapter.getOrElse(i) { -1 }
                     if (ci >= 0) perChapterDone[ci] = (perChapterDone[ci] ?: 0) + 1
@@ -938,12 +820,8 @@ object Producer {
             return
         }
 
-        // ── 合并 ──
         emit("正在整理音频", annotated.size, annotated.size, gateFails + synthFails, "正在把各段接成一个音频…")
-        // R18 · 旧版写死 audio/<bookId>.wav：做第 1 章和第 3 章会互相覆盖，
-        // 音频页又把文件名当 bookId，一章的成品显示成整本书。改成每次独立成品 id。
         val outFile = File(AudioLibrary.dir(c), "${UUID.randomUUID()}.wav")
-        // R95 · 成品还要占一份空间：分段够、合并不够时给明确原因，而不是笼统「没能生成音频」。
         val finalBytes = wavs.sumOf { it.length() } + 16L * 1024 * 1024
         if (finalBytes > outFile.parentFile!!.usableSpace) {
             _state.value = Progress(false, "没完成", annotated.size, annotated.size,
@@ -960,15 +838,12 @@ object Producer {
                 gateFails + synthFails, "没能生成音频，可以回书架重新合成这一本")
             return
         }
-        // R61 · 把全书章数带进去：整本成品要展开成 0..n-1，第四列才亮。
         val item = AudioLibrary.register(c, book.id, book.title, only, direct, outFile, chapters.size)
         val regWarn = AudioLibrary.writeError
         EventLog.log(EventLog.Kind.PIPELINE, "AUDIO_REGISTER",
             "${item.title} · ${item.scope} · ${item.mode} · ${item.bytes} 字节")
-        // 章节信息跟着成品 id 走，不再被下一次制作覆盖
         try {
             val chJson = JSONArray()
-            // R100 · 每章第一段在合并后 PCM 里的字节位置 → 毫秒，供单章/顺序播放 seek。
             val firstOffset = LinkedHashMap<Int, Long>()
             segStartBytes.forEachIndexed { si, off ->
                 val ci = segChapter.getOrElse(si) { -1 }
@@ -986,7 +861,6 @@ object Producer {
             gateFails + synthFails,
             if (regWarn != null) "音频已生成，但记录没写上：$regWarn；文件仍在「我的音频」里"
             else "做好了，可以去「我的音频」听", outFile.absolutePath)
-        // 任务中心要能显示「最近完成」，所以 done 也留一条记录（active() 会自动过滤掉它）
         val c = appCtx
         val t = current
         if (c != null && t != null) {

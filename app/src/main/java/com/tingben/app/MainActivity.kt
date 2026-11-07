@@ -62,11 +62,8 @@ import java.io.File
 
 private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }
 
-/** R17 · 制作方式是正式选择，不是藏在按钮底下的调试捷径。第三档「改编剧本」= 换逐字契约，单列二期。 */
 private enum class ProduceMode { DIRECT }
 
-// R73 · 颜色跟随主题：普通 getter 读顶层 snapshot state，组合期自动跟踪，切换即重组。
-// 22 个调用点一行不动；亮/暗两套色板见 Theme.kt。
 private val Bg: Color get() = palette.bg
 private val Card: Color get() = palette.card
 private val Primary: Color get() = palette.primary
@@ -78,10 +75,6 @@ private val Warn: Color get() = palette.warn
 
 class MainActivity : ComponentActivity() {
     /**
-     * R11 · 外部「打开方式 / 分享」加不进书架的根因之一：
-     * App 已经在后台任务里时，MIUI / 多数文件管理器会把新 intent 投到 onNewIntent，
-     * 而不是 onCreate。旧代码只读 onCreate，于是点了「打开方式」什么都没发生、也没提示。
-     * 改成 Activity 持有一条流，onCreate / onNewIntent 都往里推，Compose 消费后置空。
      */
     private val incomingFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
@@ -105,8 +98,6 @@ class MainActivity : ComponentActivity() {
 
     private fun pushIncoming(i: android.content.Intent?) {
         if (i == null) return
-        // R25 · 真机日志：冷启动 ACTION_MAIN 也被当成「收到分享但没拿到 Uri」记进 CRASH。
-        // 只有 VIEW / EDIT / SEND 是外部导入，普通启动根本不推 incoming。
         val act = i.action
         if (act != android.content.Intent.ACTION_VIEW &&
             act != android.content.Intent.ACTION_EDIT &&
@@ -120,12 +111,9 @@ class MainActivity : ComponentActivity() {
         }
         EventLog.log(EventLog.Kind.MODEL, "EXTERNAL_INTENT",
             "action=${i.action ?: "无"} uri=${raw?.take(90) ?: "无"}")
-        // 加时间戳：连续两次分享同一个文件，StateFlow 不会因为「值相同」而吞掉第二次
-        // 没抽到 Uri 也给个明确信号，让用户知道「听本收到了但没拿到文件」，而不是静默
         incomingFlow.value = System.currentTimeMillis().toString() + "|" + (raw ?: "empty:")
     }
 
-    /** 三种来源全兜：data / EXTRA_STREAM / clipData。微信、QQ 分享常常只给 clipData。 */
     private fun uriFrom(i: android.content.Intent): String? {
         i.data?.let { return it.toString() }
         @Suppress("DEPRECATION")
@@ -144,7 +132,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var screen by remember { mutableStateOf(Screen.LIBRARY) }
     var bookId by remember { mutableStateOf<String?>(null) }
-    // R61 · 悬浮条记住「最近播放的是哪本书」，目录弹层与去书页都用它。
     var miniBook by remember { mutableStateOf<String?>(null) }
     var lastSelection by remember { mutableStateOf<Set<Int>?>(null) }
     var refresh by remember { mutableStateOf(0) }
@@ -153,38 +140,24 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val importBytesFlow = remember { MutableStateFlow(0L) }
     val importBytes by importBytesFlow.collectAsState()
     var importError by remember { mutableStateOf<String?>(null) }
-    // R94 · 导入书失败留一张能重试的细卡，Toast 一闪就没了不算可恢复。
     var bookImportError by remember { mutableStateOf<String?>(null) }
-    // R51 · 高频引擎状态不再在 App() 顶层订阅。旧版为了给书架页传 5 个根本没被使用的
-    // 参数，把 Producer.state / Producer.resume 挂在整棵页面树的根上：制作时每次块更新
-    // 都会重组 when(screen) 下全部 9 个页面。现在收进 KeepScreenOn() / 进度页两个
-    // 叶子 composable（官方「状态读在树的最低处」），回调里只读 .value，不订阅。
-    // R65 · 贴底任务卡已整条删除，不再有第三个高频状态订阅点。
 
-    // V1 · 抽屉状态：☰ 与从左边缘右滑都开它；drawerReturn 记「从哪一页进的二级页」。
-    // 形状抄 reference/OfflineLLM/ChatScreen.kt:99,151-160（Apache-2.0），不自写横向手势。
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }
 
-    // 系统返回键/手势统一回书架，而不是直接退出 App。
     BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }
-    // V1 · 后注册的 callback 优先：抽屉开着时先收抽屉，不误退回书架。
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
 
-    // R19 · 长任务在跑时保持屏幕常亮：零权限、零 WakeLock；不等于保活。
-    // R51 · 下沉到叶子 composable，避免 App() 为它订阅高频引擎状态。
     KeepScreenOn()
 
-    // R10/R11 · 导入逻辑抽成局部函数：主动选择器、兜底选择器、外部打开方式共用一条路。
     fun importBook(uri: Uri?, tag: String = "PICKER") {
         if (uri == null) {
             EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_NONE", "$tag 没拿到文件")
             Toast.makeText(ctx, "没拿到文件，换个方式再试", Toast.LENGTH_SHORT).show()
             return
         }
-        // 外部 content:// 授权是一次性的，不 take 会在真正读流时被系统拒掉
         try {
             ctx.contentResolver.takePersistableUriPermission(
                 uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -218,7 +191,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         importBook(uri, "PICKER")
     }
 
-    // 兜底：某些厂商（小米/MIUI 等）的 DocumentsUI 对 OpenDocument contract 会直接静默返回。
     val fallbackPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()) { res ->
         val picked = res.data?.data ?: try {
@@ -246,7 +218,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
     }
 
-    // ── 外部打开方式 / 分享：onCreate 和 onNewIntent 都会推进来，只消费一次 ──
     var pendingIncoming by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(incoming) { if (incoming != null) pendingIncoming = incoming }
     LaunchedEffect(pendingIncoming) {
@@ -275,7 +246,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             }
         }
     }
-    // 关键：2.5GB 的复制绝不能在主线程做，否则系统会按 ANR 杀掉进程。
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         try {
@@ -305,7 +275,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     refresh++
                     val left = ModelStore.missing(ctx)
                     if (left.isEmpty()) {
-                        // 三个齐了就别让用户自己找「下一步」，直接回到主路
                         screen = Screen.LIBRARY
                         Toast.makeText(ctx, "模型都齐了，导入一本书就能开始", Toast.LENGTH_LONG).show()
                     } else {
@@ -318,9 +287,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
     }
 
-    // U1 · 顶层目的地归属集中到 chromeOf()，顶栏/抽屉只消费规格，不再各自写 screen == ...
     val chrome = chromeOf(screen)
-    // V1 · 抽屉选中态：顶层沿用 chrome.activeTab 的下标，二级页一一对应。
     val drawerSelected = when (screen) {
         Screen.LIBRARY, Screen.PRODUCE, Screen.CHAPTERS -> NAV_LIBRARY
         Screen.PROGRESS, Screen.TASKS -> NAV_TASKS
@@ -329,9 +296,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Screen.MIXER -> NAV_MIXER
         Screen.MODELS -> NAV_MODELS
     }
-    // R51 · 联动抽屉：官方 DismissibleNavigationDrawer 展开时把右侧工作页一起推走，
-    // 不再是 ModalNavigationDrawer 那种「抽屉盖在内容上 + 全屏遮罩」的覆盖式。
-    // ☰ / 从左边缘右滑 / 返回键优先收抽屉三个行为一行未改。
     DismissibleNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -339,7 +303,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             AppDrawerSheet(
                 selected = drawerSelected,
                 onNavigate = { idx ->
-                    // 从顶层页进二级页时记住来源；已在二级页则沿用上一次来源
                     val from = when (screen) {
                         Screen.LIBRARY, Screen.TASKS, Screen.AUDIO,
                         Screen.PRODUCE, Screen.PROGRESS -> screen
@@ -355,7 +318,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         NAV_MODELS -> Screen.MODELS
                         else -> Screen.LIBRARY
                     }
-                    // 原菜单 / 底栏的刷新副作用迁到这里，语义不变
                     if (idx == NAV_AUDIO || idx == NAV_SETTINGS) refresh++
                     if (idx == NAV_MODELS) modelsFrom = from
                     scope.launch { drawerState.close() }
@@ -366,7 +328,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             )
         }
     ) {
-        // 底栏移除后，底部系统手势区由这一层统一让开（原 AppBottomBar 的 navigationBarsPadding）
         Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
         AppTopBar(
             spec = chrome,
@@ -378,7 +339,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Box(Modifier.weight(1f)) {
             when (screen) {
                 // R51 · producing / progressText / onProgress / pendingTask / onTasks
-                // 五个参数在 LibraryScreen 函数体里从未被读取，白挂了一路高频订阅。
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
                     onOpen = { bookId = it; screen = Screen.CHAPTERS },
                     onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
@@ -386,7 +346,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onChanged = { refresh++ },
                     importError = bookImportError,
                     onDismissImportError = { bookImportError = null })
-                // R61 · 一本书点进去 = 四列目录；制作准备页仍在任务/进度链路可达。
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
                     onBack = { screen = Screen.LIBRARY },
                     onProgress = { screen = Screen.PROGRESS },
@@ -442,24 +401,16 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             }
         }
 
-        // R51 · 任务条抽成叶子 composable：自己订阅引擎状态，
-        // App() 不再为它重组整棵 when(screen) 页面树。
-        // R61 · 软件内悬浮条：跨页常驻，目录弹层只列第四列亮章。
         MiniPlayBar(ctx, miniBook, onGoBook = { id ->
             bookId = id
             screen = Screen.CHAPTERS
         })
-        // R65 · 贴底任务卡整条删除（自带上扒/下扒折叠那张）；
-        // 「去任务页 / 去试听」由抽屉既有的「任务 / 我的音频」承接，不新建入口。
-        // V1 · 3 个顶层 Tab 已收进左侧抽屉；底部安全区由外层 Column 的 navigationBarsPadding() 负责。
     }
     }
 }
 
 
 /**
- * R51 · 屏幕常亮下沉到叶子：以前 DisposableEffect(st.running) 写在 App() 里，
- * 等于让整棵页面树订阅引擎高频状态。这里单独订阅，本函数不产生任何 UI。
  */
 @Composable
 private fun KeepScreenOn() {
@@ -482,9 +433,6 @@ private fun queryName(c: Context, uri: Uri): String {
 }
 
 /**
- * U1 · 全 App 唯一的「目的地 → 壳规格」映射（Now in Android 的 TopLevelDestination 思路）。
- * 原先 4 处 screen == ... 判断散在顶栏和底栏里；这里一次定义。
- * ⚠️ 只描述显示，不改导航：when(screen) 分发、refresh 计数、modelsFrom、BackHandler 全不动。
  */
 private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.LIBRARY  -> ChromeSpec("书架", TAB_LIBRARY, showImport = true)
@@ -507,7 +455,6 @@ private fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.(
     }
 }
 
-// ── ① 书架 ──────────────────────────────────────────────────
 @Composable
 private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                            onModels: () -> Unit, onImportBook: () -> Unit,
@@ -517,7 +464,6 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     val books = remember(refresh) { BookStore.list(c) }
     val ready = remember(refresh) { ModelStore.ready(c) }
     val missing = remember(refresh) { ModelStore.missing(c) }
-    // R96 · 一次批量读、放后台：N 本书从 N 次组合期磁盘读降为 1 次异步读。
     var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }
     LaunchedEffect(refresh, books) {
         lastReads = withContext(Dispatchers.IO) { ReadingState.allLast(c) }
@@ -543,7 +489,6 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         )
     }
 
-    // R96 · 只组合看得见的书卡；各区块各占一个 item，key 稳定，滚动不重排。
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -571,7 +516,6 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             }
         }
 
-        // R94 · 失败可恢复：细卡不抢主操作，能直接重选文件，也能关掉。
         if (importError != null) {
             item(key = "import-error") {
                 CardBox(Modifier.padding(bottom = 12.dp)) {
@@ -594,7 +538,6 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
 
         if (books.isEmpty()) {
             item(key = "empty") {
-                // R78 · 空态只留一张主卡：主操作最大，粘贴是次级入口
                 CardBox(Modifier.padding(bottom = 12.dp)) {
                     Text("还没有书", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(4.dp))
@@ -610,7 +553,6 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                 }
             }
         }
-        // R78 · 粘贴框只在点开时出现，不占首屏
         if (pasteOpen) {
             item(key = "paste") {
                 CardBox(Modifier.padding(bottom = 12.dp)) {
@@ -681,27 +623,20 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     }
 }
 
-// ── ② 制作：一屏一个主按钮 ────────────────────────────────────
 @Composable
 private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> Unit,
                           onProgress: () -> Unit, onDone: () -> Unit,
                           onStarted: (Set<Int>?) -> Unit) {
     val book = remember(id, refresh) { id?.let { BookStore.list(c).find { b -> b.id == it } } }
     val st by Producer.state.collectAsState()
-    // R20 · 一次 split 同时拿章节与全部块，用来显示「预计几块」，不再只取 .first。
     val split = remember(book) { book?.let { ChapterSplitter.split(BookStore.read(c, it)) } }
     val chapters = split?.first ?: emptyList()
     val allChunks = split?.second ?: emptyList()
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
-    val thinkOn = false  // R67 · P1a：不再读写思考设置键
-    // R17 · 进页面时对齐已有任务：书正以「直接朗读」跑着，别把高亮停在旧档位，
-    // 否则用户看到的模式和任务页/断点续跑用的不是同一套。
-    // R20 · 本次预设也对齐已有任务书签，续跑时界面显示的档位与实际跑的一致。
+    val thinkOn = false
     var mode by remember(book, refresh) {
         val t = TaskResume.load(c)
-        // R25 · 历史教训：零产出不许在日志里写成「通过」。
-        // 新书默认走直接朗读；已有任务仍按书签原样恢复，不擅自改正在跑的档。
         mutableStateOf(if (t != null && t.bookId == id)
             ProduceMode.DIRECT
         else ProduceMode.DIRECT)
@@ -715,8 +650,6 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         if (selected.isEmpty() || selected.size == chapters.size) allChunks.size
         else allChunks.count { it.chapter in selected }
     }
-    // 两种模式的缓存分桶不同，hasCached 必须跟着 mode 走，
-    // 不然切到直接朗读还会显示「继续制作」，点的却是旧分桶的缓存。
     val hasCached = remember(book, refresh, selected, cacheTick, thinkOn, mode) {
         book?.let { Producer.hasProgress(c, it.id, directMode, thinkOn,
             if (selected.isEmpty() || selected.size == chapters.size) null else selected) } ?: false
@@ -742,8 +675,6 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             }
         }
 
-        // R20 · 「本次制作」预设页：四组折叠，默认只露第一组。
-        // 改的是本次级配置，不写回 Prefs；随任务书签落盘，续跑不丢（联动表 §3）。
         var showAllChapters by remember(book) { mutableStateOf(false) }
 
         ExpandGroup("① 做什么 · 仅本次", "", defaultOpen = true) {
@@ -779,8 +710,6 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             }
             Text(if (selected.isEmpty()) "整本 · 预计约 $estimate 块" else "已选 ${selected.size} 章 · 预计约 $estimate 块",
                 fontSize = 12.sp, color = Sub)
-            // R10 · epub 常有几十上百章，之前写死 2..40 导致长书根本没法选单章。
-            // 改成默认只列 20 章 + 「显示全部」，几百章也不刷屏。
             val visibleChapters = if (chapters.size > 20 && !showAllChapters)
                 chapters.take(20) else chapters
             if (chapters.size >= 2) {
@@ -857,7 +786,6 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 
         if (hasCached && !st.running) {
             TextButton(onClick = {
-                // 清的是当前模式的那一桶，不能切到直接朗读却还去清旧缓存。
                 Producer.clearProgress(c, book.id, directMode, thinkOn,
                     if (selected.isEmpty() || selected.size == chapters.size) null else selected)
                 cacheTick++
@@ -871,13 +799,11 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     }
 }
 
-// ── ③ 进度 · 空间重分配 + 看台「点格子即播 / 再点停」 ─────────────────────
 @Composable
 private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit) {
     val st by Producer.state.collectAsState()
     val pct = if (st.total > 0) st.done.toFloat() / st.total else 0f
     var tick by remember { mutableStateOf(0) }
-    // R51 · 没在制作时不需要心跳，停掉无谓的每秒整页重组。
     LaunchedEffect(st.running) {
         if (!st.running) return@LaunchedEffect
         while (true) { delay(1000); tick++ }
@@ -898,8 +824,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     }
 
     var redoNonce by remember { mutableStateOf(0) }
-    // R79 · 心跳 remember(tick) 是纯内存；这四项都要读磁盘（segmap / 最多 60 次 stat /
-    // 整本书重切章），原来跟 tick 走＝每秒一整轮。改跟「完成的段数」走＝每段一整轮。
     val seenTask = remember(st.done, redoNonce) { TaskResume.load(c) }
     val segs = remember(st.done, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
     val rest = remember(st.done, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
@@ -910,10 +834,8 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(st.running) { if (!st.running) stopping = false }
 
-    // 底部系统手势区 24dp / 三键 48dp 由外层 navigationBarsPadding() 负责，本页不再自画。
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
 
-        // ① 细状态条：一个纯图标 + 进度条 + 11sp 百分比 + 一行状态，无大字、无返回、无收起
         CardBox {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val canStop = st.running
@@ -957,7 +879,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             }
         }
 
-        // ② 四步横排：做过的下面 3dp 色块，正在做只加粗，没做的没有色块
         Spacer(Modifier.height(10.dp))
         val steps = listOf("拆章", "生成声音", "整理音频", "完成")
         val curStep = when {
@@ -985,7 +906,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             }
         }
 
-        // ④ 分段看台：一行 8 格，格子本身就是播放开关；点一下读这一段，再点一下停
         Spacer(Modifier.height(10.dp))
         CardBox {
             Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -999,8 +919,6 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         row.forEach { sg ->
                             val label = "第 ${sg.index + 1} 段"
-                            // R103 · F-01：身份按 WAV 绝对路径（跨书唯一），不再拿显示文字当主键；
-                            // F-10：颜色 / 可点 / 角标只认同一个权威判定，不再 hasAudio 与 wav 两套。
                             val segId = sg.wav?.let { "seg:" + it.absolutePath } ?: ""
                             val playable = sg.hasAudio && segId.isNotEmpty()
                             val onThis = playable && pqSeg.trackId == segId
@@ -1037,17 +955,12 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
     }
 }
 
-// ── ③b 任务中心：长任务单独一个区域管，不藏在书架或设置里 ──────────
 @Composable
 private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                              onAudio: () -> Unit, onLibrary: () -> Unit,
                              onResume: (TaskInfo) -> Unit) {
     val st by Producer.state.collectAsState()
-    // R101 · 磁盘书签最快 2 秒后才刷，而「继续制作 / 从头重做」点下去的那一瞬间
-    // 界面还挂着上一条「已完成」。Producer.resume 是即时的，优先用它。
     val live by Producer.resume.collectAsState()
-    // R79 · 旧版 LaunchedEffect(Unit) 无条件每 2 秒整页重组 + 三次磁盘读，
-    // 哪怕「还没有任务」也照跑。改成只在制作中轮询，静止页零定时器。
     var loadTick by remember { mutableStateOf(0) }
     LaunchedEffect(st.running) {
         if (!st.running) { loadTick++; return@LaunchedEffect }
@@ -1061,8 +974,6 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
     val bookExists = remember(t, refresh) {
         t?.let { BookStore.list(c).any { b -> b.id == it.bookId } } ?: false
     }
-    // R101 · 三模式接通后还写死「直接朗读」是旧档位话术；按书签里记的模式照实显示，
-    // 旧书签没记模式则回退到当时唯一的 voice_design。
     val modeText = when (t?.modeId) {
         "custom_voice" -> "预设音色"
         "base" -> "参考音频"
@@ -1071,8 +982,6 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
     val scopeText = t?.let {
         if (it.only == null) "整本" else "选中 ${it.only!!.size} 章"
     } ?: ""
-    // R101 · 切过模式 / 改过调音台时，续跑会作废旧 WAV，先在任务页如实说，
-    // 不再等点下去才发现「已做好 X 块」是假的。
     val invalidate = remember(t, refresh) { t?.let { TaskResume.invalidationReason(c, it) } }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -1107,8 +1016,6 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                     Spacer(Modifier.height(4.dp))
                     Text(invalidate!!, fontSize = 11.sp, color = Warn)
                 }
-                // R101 · st.total 每块更新、书签 t.total 可能落后一拍，取三者最大；
-                // 以前不 coerce，done/total > 1 时 LinearProgressIndicator 会抛异常。
                 val total = maxOf(t.total, real, if (st.running) st.total else 0)
                 val doneNow = (if (st.running) st.done else real).coerceIn(0, total)
                 if (total > 0) {
@@ -1130,8 +1037,6 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                     }
                     t.phase == "done" -> {
                         TextButton(onClick = onAudio) { Text("去「我的音频」试听 ›", fontSize = 12.sp) }
-                        // R101 · 以前做完只能去试听，想重做没入口；两个小文字按钮补齐，
-                        // 与「已中断」分支共用同一套清理 / 启动语义。
                         Row(Modifier.fillMaxWidth()) {
                             TextButton(onClick = {
                                 Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
@@ -1176,11 +1081,6 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
     }
 }
 
-// ── ④ 我的音频 ───────────────────────────────────────────────
-// R18 · 播放状态与 300ms 快照轮询改写自 m9939418/AlexExoPlayerMP3 的
-// PlaybackState / PlayerController / MiniPlayingBar；控件集（播放暂停 / 上下条 /
-// ±15s / 进度拖动）参照 PaperBack 与 andriishpek-sigma/AudiobookPlayer 的通行做法。
-// 本项目仍用系统 MediaPlayer，不引入 Media3 / Hilt / JitPack 新依赖。
 private fun fmtTime(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return "%02d:%02d".format(s / 60, s % 60)
@@ -1193,15 +1093,10 @@ private fun AudioScreen(
 ) {
     var localTick by remember { mutableStateOf(0) }
     val items = remember(refresh, localTick) { AudioLibrary.list(c) }
-    // R104 · 索引损坏 / 写入失败不再静默：给用户一行能看懂的原因
     val indexError = AudioLibrary.readError ?: AudioLibrary.writeError
     var exportId by remember { mutableStateOf<String?>(null) }
-    // R80 · 详细播放控制默认收起：拖动 seek / ±15s / 上下条 / 倍速 / 关闭播放器
-    // 这 5 项跨页悬浮条里没有，收起来但不删；曲名与状态归悬浮条，本页不再重复一张播放卡。
     var controlsOpen by remember { mutableStateOf(false) }
-    // R18 · 播放器不再手搓：PlayQueue 由三份现成源码改写（ReaderVoice CachedAudioPlayer
     // / AlexExoPlayerMP3 PlayerController / ensemble-reads PlaybackController）。
-    // 音频页与「分段看台」共用一个实例，切页不停播、不会两套 MediaPlayer 抢焦点。
     val pq by PlayQueue.state.collectAsState()
     LaunchedEffect(items) {
         PlayQueue.setTracks(items.map {
@@ -1209,12 +1104,9 @@ private fun AudioScreen(
                 id = "audio:${it.id}:${it.file.absolutePath}")
         })
     }
-    // R79 · tick 统一由跨页常驻的 MiniPlayBar 驱动；本页只订阅 PlayQueue.state，
-    // 不再和悬浮条同时驱动同一单例（播放时原本 500ms + 1000ms 双份 tick）。
     val isPlaying = pq.isPlaying
     val posMs = pq.positionMs
     val durMs = pq.durationMs
-    // R103 · 当前曲目按稳定 id 认；pq.index 是「队列里第几条」，切页换队列后会串。
     val current = items.firstOrNull {
         val tid = "audio:${it.id}:${it.file.absolutePath}"
         pq.trackId.isNotEmpty() && pq.trackId == tid
@@ -1241,7 +1133,6 @@ private fun AudioScreen(
             }
         }
 
-        // R80 · 汇总行兼播放控制入口：曲名与播放状态归跨页悬浮条，本页不再重复一张播放卡。
         if (items.isNotEmpty()) {
             item(key = "audio_summary") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1257,7 +1148,6 @@ private fun AudioScreen(
                 }
             }
 
-            // R80 · 详细控制默认收起；展开后拖动 seek / ±15s / 上下条 / 倍速 / 关闭一个不丢。
             if (current != null && controlsOpen) {
                 item(key = "now_playing") {
                     CardBox(Modifier.padding(bottom = 10.dp)) {
@@ -1293,7 +1183,6 @@ private fun AudioScreen(
                             }
                             TextButton(onClick = { step(1) }) { Text("下一条 ⏭", fontSize = 12.sp) }
                         }
-                        // ensemble-reads PlaybackController.setSpeed 的同款档位
                         TextButton(onClick = {
                             val nextSpeed = when (pq.speed) {
                                 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f
@@ -1341,7 +1230,6 @@ private fun AudioScreen(
                         if (on) Text("●", color = Primary, fontSize = 13.sp)
                     }
                     Spacer(Modifier.height(9.dp))
-                    // R80 · 主操作只留一个实心块；保存 / 删除降为小文字，导出逻辑一行不动。
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Button(onClick = {
                             if (!on || pq.ended) PlayQueue.playFrom(idx) else PlayQueue.toggle()
@@ -1368,8 +1256,6 @@ private fun AudioScreen(
 }
 
 
-// ── ⑤ 设置（只管软件） ──
-/** R25 · 历史分组小标题组件，R54 起不再调用，保留定义避免动别处引用。 */
 @Composable
 private fun GroupLabel(title: String, sub: String) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
@@ -1394,7 +1280,6 @@ private fun SettingOption(label: String, options: List<String>, current: Int, on
     }
 }
 
-/** R54 · 细分割线分区：展开态 rememberSaveable 跨旋转保留，不加 Prefs 键、不引新依赖。 */
 @Composable
 private fun SettingsSection(
     title: String, badge: String, open: Boolean, onToggle: (Boolean) -> Unit,
@@ -1419,7 +1304,6 @@ private fun SettingsSection(
     }
 }
 
-/** R54 · 开关右侧补「开 / 关」文字，不只靠颜色表状态（v7 评审 15）。 */
 @Composable
 private fun SettingSwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -1432,7 +1316,6 @@ private fun SettingSwitchRow(label: String, checked: Boolean, onChange: (Boolean
     }
 }
 
-/** P0 · 只读信息行：徽标区分「现有 / 待新增 / 只读 / 需确认」，不画假开关。 */
 @Composable
 private fun SettingInfoRow(label: String, badge: String, value: String, note: String = "",
                            onClick: (() -> Unit)? = null) {
@@ -1450,24 +1333,18 @@ private fun SettingInfoRow(label: String, badge: String, value: String, note: St
 }
 
 /**
- * R66 · 设置页只管软件：外观、本机数据、后台与关于；模型参数不再有独立页。
- * 三套作用域守恒：设置页拨动即写 Prefs（长期默认），无草稿、无差异、无提交按钮；
- * 调音台是草稿 → 唯一 commitAll()，制作准备页是「仅本次」。
  */
 @Composable
 @Suppress("UNUSED_PARAMETER")
 private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                            onLibrary: () -> Unit,
                            onMixer: () -> Unit) {
-    // R54 · onLibrary / onMixer 保留签名但零调用：抽屉已有独立目的地，
-    // 设置页不再画第二遍跳转卡。
     val missing = remember(refresh) { ModelStore.missing(c) }
     val modeCount = remember(refresh) { ModelStore.installedModes(c).size }
     var lookOpen by rememberSaveable { mutableStateOf(false) }
     var dataOpen by rememberSaveable { mutableStateOf(true) }
     var backOpen by rememberSaveable { mutableStateOf(false) }
     var moreOpen by rememberSaveable { mutableStateOf(true) }
-    // R73 · 主题 / 字号拨动即写 Prefs；诊断二级折叠默认收起。
     var themeMode by remember { mutableStateOf(Prefs.themeMode(c)) }
     var fontScale by remember { mutableStateOf(Prefs.readerFontScale(c)) }
     var diagOpen by rememberSaveable { mutableStateOf(false) }
@@ -1557,7 +1434,6 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     }
 }
 
-/** 只展示用户能核对的当前配置；日志导出与复制整块退场。 */
 @Composable
 private fun DiagnosticsBlock(c: Context, _refresh: Int) {
     Spacer(Modifier.height(10.dp))
@@ -1565,7 +1441,6 @@ private fun DiagnosticsBlock(c: Context, _refresh: Int) {
     Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
 }
 
-/** 本机数据里的真清理入口：明确说清删什么、二次确认、结果可见。 */
 @Composable
 private fun ClearSegmentsRow(c: Context) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -1602,7 +1477,6 @@ private fun ClearSegmentsRow(c: Context) {
     }
 }
 
-/** P0 · 两段真合成试音搬进「本机数据」：能力不丢，不新增第五个分区。 */
 @Composable
 private fun SoundProbeBlock(c: Context, refresh: Int) {
     val st by Producer.state.collectAsState()
@@ -1629,7 +1503,6 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
                     SynthInput.prepare(c, h)
                     val v = SynthInput.params(c, instruct, null)
                     val f = File(c.filesDir, outName)
-                    // R38 · 目标语言已知时显式传 chinese，主链 / 两态试听 / 试音口径统一。
                     val code = NativeEngine.ttsSynthesize(h, text, v.instruct, v.speaker, "chinese",
                         f.absolutePath, Prefs.ttsKnobs(c))
                     if (code != 0 || !f.exists() || f.length() <= 44)
@@ -1691,7 +1564,6 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
     if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 11.sp, color = Sub)
 }
 
-// ── ⑤b 模型页（R84 · 1 共用底座 + 3 模式，各自单独导入） ──────────
 @Composable
 private fun ModelScreen(c: Context, refresh: Int,
                         importing: String?, importBytes: Long, importError: String?,
@@ -1726,7 +1598,6 @@ private fun ModelScreen(c: Context, refresh: Int,
         }
         Spacer(Modifier.height(6.dp))
 
-        // 导入中 / 导入失败：两态沿用，不静默
         if (importing != null) {
             CardBox(Modifier.padding(bottom = 11.dp)) {
                 Text("正在复制，别关掉 App", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Primary)
@@ -1749,7 +1620,6 @@ private fun ModelScreen(c: Context, refresh: Int,
             }
         }
 
-        // ── 老大：共用底座，三模式共用，导入一次就够 ──
         CardBox(Modifier.padding(bottom = 10.dp)) {
             Text("共用底座 · 三个模式都要用", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(4.dp))
@@ -1861,7 +1731,6 @@ private fun ModelScreen(c: Context, refresh: Int,
                         Text("回书架，导入一本书", fontSize = 15.sp)
                     }
                 } else {
-                    // R84 自审：不能让用户带着「还不能合成」的模式回书架，给一键切回。
                     Button(onClick = {
                         if (!st.running) {
                             Prefs.setModelMode(c, ModelStore.Mode.VOICE_DESIGN.id)
@@ -1896,31 +1765,10 @@ private fun ModelScreen(c: Context, refresh: Int,
     }
 }
 
-// ── ⑥ 调音台（R40 · P0 统一提交）：音频模型控制台 ─────────────────────
-// 评审实查：旧版 5 个写入口（身份保存 / 九项各自提交 / 12 维直接覆盖 / 表演层长期默认 /
-// 预设一键覆盖）各自握着生效权，界面没有「未保存」这一层。R40 收成：
-//   active（Prefs 唯一真值源） ←→ draft（唯一编辑态） → 唯一出口 MixerCommit.commit()
-// 不手搓依据见 docs/R39_调音台统一提交_联动表与分轮.md §6 与 core/MixerDraft.kt 头注。
-// R98 · 调音台整页重写：旧 MixerScreen 与配套控件整段删除。
-// R99 · 折叠分组整套退场，采样与试听常驻；三种模式并列、数值完整可见。
 
 /**
- * R98 · 调音台整页重写（不是在旧形态上增删）。
  *
- * 事实边界（随包 app/src/main/cpp/qwen.h:285-301 + 官方 Qwen3-TTS 模型卡）：
- *   voice_design  instruct 必填 / speaker 拒 / ref_audio 拒
- *   custom_voice  speaker 必填 / instruct 可选（念法情绪）/ ref_audio 拒
- *   base          ref_audio + ref_text / instruct 与 speaker 都拒
- *   9 项采样三模式共用。
  *
- * 设计原则：
- *  1. 三种模式并列放在同一屏顶部，点即切换，不用去「模型」页绕一圈；
- *     每种模式的输入独立保存，切换互不覆盖。
- *  2. 数值不再塞进 40dp 的 OutlinedTextField（真机上只露半截字）。
- *     当前值用普通 Text 完整显示，点一下才弹正常高度的输入框；滑块只做粗调。
- *  3. 不摆设计注记、字段号、状态徽标、重复话术、两个整宽大按钮。
- *     R99 · 采样参数与试听常驻不折叠；顶栏只留返回 + 有改动时一枚「保存」。
- *  4. 全页仍只有一个出口 commit()，两态试听仍共用 PlayQueue 单实例。
  */
 
 
@@ -1975,7 +1823,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         }
     }
 
-    /** 全页唯一生效动作。写完重读真值源，三种模式的输入一起落盘。 */
     fun commitAll() {
         val n = changes.size
         MixerCommit.commit(c, draft, n)
@@ -1985,7 +1832,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     }
     fun discardAll() { draft = active }
 
-    /** 模式点即切；制作中禁切，避免一份任务跑出两种权重。 */
     fun switchMode(m: ModelStore.Mode) {
         if (Producer.isBusy()) {
             Toast.makeText(c, "正在制作，做完再切模式", Toast.LENGTH_SHORT).show()
@@ -2003,12 +1849,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         PlayQueue.playFrom(0)
     }
 
-    /** R105 · 每次试听带唯一 token：新请求 / 离页先取消旧 Job，终态写回前校验 token。 */
     var trialJob by remember { mutableStateOf<Job?>(null) }
     var trialToken by remember { mutableStateOf(0L) }
 
-    // R108 · 离页只在本页确实起过试听时才发 nativeCancel：正式制作在跑时本页
-    // 根本不会起试听（trial 里先拦 Producer.isBusy），这样不会误停后台任务。
     DisposableEffect(Unit) { onDispose {
         trialJob?.cancel()
         if (busyTrial) { try { NativeEngine.nativeCancel() } catch (_: Throwable) { } }
@@ -2023,17 +1866,12 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         trialMsg = "已停止"
     }
 
-    /** 两态试听按传入的 src 完整组装，草稿与已生效各自独立，不写 Prefs。 */
     fun trial(label: String, src: MixerDraft, out: String) {
-        // R108 · F-19：正式制作在跑时，native 的取消标志属于那次任务，碰它会把后台制作停掉。
         if (Producer.isBusy()) {
             Toast.makeText(c, "正在制作，做完再试听", Toast.LENGTH_SHORT).show()
             return
         }
-        // R108 · 连点直接忽略，不再「先发 nativeCancel 停掉上一次、第二次又被门闩拦下」。
         if (busyTrial) return
-        // R108 · 取消标志只在「整次任务开始」复位；JNI 已不再逐段清零，这一步不能省，
-        // 否则上次点过停止后 g_cancel 恒为 true，之后所有试听都会立刻被取消。
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         trialJob?.cancel()
         val myToken = trialToken + 1
@@ -2088,7 +1926,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 } finally { NativeEngine.ttsFreeGated(h) }
             }
             withContext(Dispatchers.Main) {
-                // 过期请求不写回：连点两下时旧结果不会覆盖新状态。
                 if (myToken != trialToken || !isActive) return@withContext
                 busyTrial = false
                 val p = res.getOrNull()
@@ -2106,7 +1943,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     BackHandler(enabled = dirty) { showLeave = true }
 
     Column(Modifier.fillMaxSize().background(Bg)) {
-        // 顶栏：返回与标题同一行；有改动才出现差异 / 提交。
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text("‹", fontSize = 20.sp, color = Primary,
@@ -2127,7 +1963,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(12.dp))
 
-            // ── 三种模式并列 ──
             ModeTabs(mode, installed) { switchMode(it) }
             Spacer(Modifier.height(10.dp))
             if (mode.id !in installed) {
@@ -2136,7 +1971,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
             }
 
-            // ── 当前模式自己的输入区（三种各自独立，切换不丢） ──
             when (mode) {
                 ModelStore.Mode.VOICE_DESIGN -> VoiceDesignPane(draft) { draft = it }
                 ModelStore.Mode.CUSTOM_VOICE -> CustomVoicePane(
@@ -2161,9 +1995,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
             Spacer(Modifier.height(10.dp))
 
-            // R101 · 采样链对三种 model_type 都生效（qwen.h 303-320 无模式条件），
-            // 所以功能不删、全局仍只存一份；但另两种模式的界面不铺 9 项数字，
-            // 只留一行说明，把这一页让给音色编号 / 参考音频。要调切回描述造音色即可。
             if (mode == ModelStore.Mode.VOICE_DESIGN) {
                 Text("采样参数 · 9 项", fontSize = 12.sp,
                     fontWeight = FontWeight.Bold, color = palette.text)
@@ -2182,7 +2013,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             }
             Spacer(Modifier.height(14.dp))
 
-            // ── 试听：常驻，不必先保存；两态收成一行，结果只留「已播放」 ──
             Text("试听", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.text)
             Spacer(Modifier.height(6.dp))
             val canTrial = missing.isEmpty() && !busyTrial
@@ -2234,7 +2064,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     }
 }
 
-/** 三个模式并排，点即切；没导入主文件的那张明确标出来，不假装能用。 */
 @Composable
 private fun ModeTabs(
     current: ModelStore.Mode,
@@ -2268,7 +2097,6 @@ private fun ModeTabs(
     }
 }
 
-/** 描述造音色：只一个自由输入框，不再堆 12 维词条和身份说明。 */
 @Composable
 private fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2286,7 +2114,6 @@ private fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit) {
     )
 }
 
-/** 预设音色：音色表 + 一句念法要求，两者独立保存。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CustomVoicePane(
@@ -2340,9 +2167,6 @@ private fun CustomVoicePane(
         }
     }
     Spacer(Modifier.height(12.dp))
-    // R99 · 单独一行「自定义」：音色编号来自模型元数据（固定，不能新增第 10 个），
-    // 但 custom_voice 的 instruct 可选（qwen.h:285-291）。这行写自定义念法/情绪，
-    // 与上面选中的音色一起送进引擎，不另建第二份生效态。
     Text("自定义", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.text)
     Spacer(Modifier.height(6.dp))
     OutlinedTextField(
@@ -2353,7 +2177,6 @@ private fun CustomVoicePane(
     )
 }
 
-/** 参考音频克隆：一段样本 + 它的原文，拒一切文字描述。 */
 @Composable
 private fun BasePane(
     draft: MixerDraft,
@@ -2390,10 +2213,6 @@ private fun BasePane(
 }
 
 /**
- * R98 · 数值控件重写。
- * 旧版把值塞进 72×40dp 的 OutlinedTextField，真机上「0.8 / 50 / 1.05 / 42」
- * 只露上半截；滑块却占了大半行，比例失调。这里当前值用普通 Text 完整显示，
- * 点一下才弹正常高度的输入框；细滑块只做粗调，不再和数值框抢宽度。
  */
 @Composable
 private fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) {

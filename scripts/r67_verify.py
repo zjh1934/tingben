@@ -50,7 +50,7 @@ def check(pipe=None, prefs=None, main=None, hub=None, event=None, chrome=None,
     # ① P1a 零残留
     for g in GONE:
         if g in allkt: e.append('P1a 旧形态残留: ' + g)
-    if 'P1a' not in pipe: e.append('Pipeline 缺 R67 清理注记')
+    if 'val gateFails = 0' not in pipe: e.append('Pipeline 缺单一路径常量')
     # ② 旧数据兼容
     for k in COMPAT:
         if k not in allkt and k != 'qt_tts_params': e.append('旧数据兼容项缺失: ' + k)

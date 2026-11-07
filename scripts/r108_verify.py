@@ -80,7 +80,7 @@ def core_errors(a, b, c, d):
     if 'DisposableEffect(Unit)' not in t or 'onDispose {' not in t:
         errs.append('离页取消块丢失')
     # 3) 段重试前必须拦停止
-    if not re.search(r'for \(attempt in 0\.\.1\) \{\s*// R108[\s\S]{0,240}?if \(cancelRequested\)', c):
+    if not re.search(r'for \(attempt in 0\.\.1\) \{[\s\S]{0,400}?if \(cancelRequested\)', c):
         errs.append('段重试前未检查 cancelRequested')
     # 4) CI 缓存键与 JNI 桥解耦，且有回退键
     blk = cache_block(d)
@@ -94,7 +94,7 @@ def core_errors(a, b, c, d):
 errs = core_errors(cpp, main, pipe, ci)
 
 # ── 零残留 / 守恒 ──────────────────────────────────────────────────────
-errs += check(cpp, 'C++/注释', ['R108 · F-19：不在这里复位'])
+errs += check(cpp, 'C++/停止标志', ['std::unique_lock<std::mutex> refLock'])
 errs += check(code_only(tts_body(cpp)), 'C++/TTS 段', [], absent=['g_cancel.store(false)'])
 errs += check(main, '守恒/界面', [
     '试听草稿', '试听已生效', 'commitAll(', 'Screen.MIXER -> MixerScreen',
@@ -116,7 +116,8 @@ if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 9:
 if '--selftest' in sys.argv:
     cases = [
         ('复位加回 TTS', lambda a, b, c, d: (
-            a.replace('    // R108 · F-19：不在这里复位', '    g_cancel.store(false);\n    // R108 · F-19：不在这里复位', 1), b, c, d)),
+            a.replace('    std::unique_lock<std::mutex> refLock(g_refMu, std::defer_lock);',
+                      '    g_cancel.store(false);\n    std::unique_lock<std::mutex> refLock(g_refMu, std::defer_lock);', 1), b, c, d)),
         ('试听撤掉任务级复位', lambda a, b, c, d: (
             a, b.replace('        try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }\n        trialJob?.cancel()',
                          '        trialJob?.cancel()', 1), c, d)),

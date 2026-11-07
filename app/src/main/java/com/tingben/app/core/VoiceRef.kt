@@ -6,14 +6,6 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * R93 · base 模式的参考音频。qwen.h:294-301 只收 mono float PCM @24kHz，
- * 这里收与之对应的 24kHz / 单声道 / 16-bit PCM WAV，解成 FloatArray 交给 JNI。
- *
- * 边界：不做重采样、不做格式猜测。用户给的文件不对就明确说清要什么格式，
- * 不静默改采样率 —— 采样率错了克隆出来会变调，比直接失败更难查。
- * 上限 30 秒，避免把整本书的录音塞进内存。
- */
 object VoiceRef {
     private const val NAME = "voice_ref.wav"
     private const val RATE = 24000
@@ -22,19 +14,12 @@ object VoiceRef {
     fun file(c: Context): File = File(c.filesDir, NAME)
     fun exists(c: Context): Boolean = file(c).isFile && file(c).length() > 44
 
-    /**
-     * R100 · 校验并落盘：任意未压缩 PCM WAV 都收，内部统一转成 24kHz / 单声道 / 16-bit。
-     * 以前硬卡「24k / 单声道 / 16bit」，手机随手录的 48k 立体声几乎全部被拒，
-     * base 模式从导入这一步就走不下去。qwen.h:294-301 要的是 24k mono float PCM，
-     * 重采样/下混在这里做，不静默改采样率让克隆变调。
-     */
     fun save(c: Context, bytes: ByteArray) {
         if (bytes.size < 44) throw IllegalStateException("这个文件太短，不像一段 WAV 录音")
         val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         fun tag(off: Int) = String(bytes, off, 4, Charsets.US_ASCII)
         if (tag(0) != "RIFF" || tag(8) != "WAVE")
             throw IllegalStateException("不是标准 WAV 文件，请选一段录音的 WAV")
-        // 从 12 字节起按 chunk 找 fmt / data，跳过 LIST / fact 等扩展块
         var off = 12
         var fmtOff = -1
         var dataOff = -1
@@ -62,7 +47,6 @@ object VoiceRef {
         val frameBytes = bytesPerSample * channels
         val frames = minOf(dataLen, bytes.size - dataOff) / frameBytes
         if (frames < rate / 2) throw IllegalStateException("录音太短，至少要半秒")
-        // 解成单声道 float：多声道取平均；8bit 无符号 / 24bit 三字节 / 32bit 浮点都认
         val mono = FloatArray(frames)
         var p = dataOff
         for (i in 0 until frames) {
@@ -88,7 +72,6 @@ object VoiceRef {
             mono[i] = (acc / channels).coerceIn(-1f, 1f)
             p += frameBytes
         }
-        // 线性重采样到 24kHz；采样率错了克隆会变调，比直接失败更难查
         val target = (frames.toLong() * RATE / rate).toInt()
         if (target > RATE * MAX_SECONDS)
             throw IllegalStateException("参考音频最长 ${MAX_SECONDS} 秒，这段约 ${target / RATE} 秒")
@@ -100,7 +83,6 @@ object VoiceRef {
             val f = (src - i0).toFloat()
             outPcm[i] = mono[i0] * (1f - f) + mono[i1] * f
         }
-        // 统一落成 24kHz / 单声道 / 16-bit WAV，pcm() 读回时格式固定，不再猜
         val outBytes = ByteArray(44 + outPcm.size * 2)
         fun putStr(o: Int, s: String) { s.toByteArray(Charsets.US_ASCII).copyInto(outBytes, o) }
         fun putInt(o: Int, v: Int) {
@@ -121,7 +103,6 @@ object VoiceRef {
             "$rate Hz / $channels 声道 / ${bits}-bit → 24kHz 单声道 · ${outPcm.size} samples")
     }
 
-    /** 解成 [-1,1] float PCM；格式由 save() 保证，这里只做防御性兜底。 */
     fun pcm(c: Context): FloatArray {
         if (!exists(c)) throw IllegalStateException("还没导入参考音频")
         val bytes = file(c).readBytes()
@@ -143,11 +124,9 @@ object VoiceRef {
         return out
     }
 
-    /** 参考音频变了要作废旧 WAV，但模式选择本身不进 voiceStamp。 */
     fun fingerprint(c: Context): String =
         if (!exists(c)) "none" else sha(file(c).name + "|" + file(c).length() + "|" + Prefs.refText(c))
 
-    /** 给用户看的一句话状态，不暴露字段名。 */
     fun status(c: Context): String =
         if (!exists(c)) "还没导入参考音频" else
             "已导入 · ${"%.1f".format((file(c).length() - 44).coerceAtLeast(0) / 2f / RATE)} 秒"

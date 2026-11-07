@@ -69,7 +69,7 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     # R100 · 单一路径之上又加了「失败中止 / 章节偏移登记」，行数自然增长；
     # 旧分支回潮仍由上面三条特征断言 + 本脚本注入对拍拦住，不再靠行数卡新代码。
     if pipe.count('\n') > 1100: e.append('Pipeline 异常膨胀，旧分支疑似回潮')
-    if 'R68 · P1b' not in pipe: e.append('缺 R68 重构注记')
+    if 'val stats = mutableListOf<TextSplitter.Stats>()' not in pipe: e.append('缺单一路径主体')
 
     # ③ 零残留
     for g in GONE:
@@ -115,8 +115,7 @@ def main():
     print('R68 单一路径 / 零残留 / 旧数据兼容 / 守恒：PASS')
 
     INJ = [
-        ('旧合成分支回潮', lambda: check(pipe=PIPE.replace('        // R68 · P1b：单一路径后没有块级审计',
-            '        // ── 标注阶段：只加载 LLM\n        // R68 · P1b：单一路径后没有块级审计'),
+        ('旧合成分支回潮', lambda: check(pipe=PIPE + '\n// ── 标注阶段：只加载 LLM\n',
             allkt=ALL + '\n// ── 标注阶段：只加载 LLM\n')),
         ('Adoption 回潮', lambda: check(allkt=ALL, extra='\nobject Adoption {}\n')),
         ('ThinkingStore 回潮', lambda: check(extra='\nobject ThinkingStore {}\n')),
@@ -137,7 +136,7 @@ def main():
             allkt=ALL.replace('chapterIndices', 'chapterIdx'))),
         ('抽屉多一项', lambda: check(chrome=CHROME + '\nconst val NAV_LLM = 8\n')),
         ('版本号退回', lambda: check(gradle=GRADLE.replace('1.1.0+', '1.0.0+'))),
-        ('旧说法注释回潮', lambda: check(pipe=PIPE.replace('// R68 · 单一路径：', '// 4B 标注档：\n        // R68 · 单一路径：'))),
+        ('旧说法注释回潮', lambda: check(pipe=PIPE + '\n// 4B 标注档：\n')),
         ('旧权重加载函数回潮', lambda: check(pipe=PIPE.replace('    fun tokenizer(c: Context)',
             '    fun llm(c: Context) = pick(c, LLM)\n    fun tokenizer(c: Context)'))),
     ]

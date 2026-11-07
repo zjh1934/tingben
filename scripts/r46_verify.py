@@ -112,7 +112,7 @@ _global_frag = nav.global_back(MAIN)[2]
 INJECT = [
     ("删抽屉返回键", MAIN, "    BackHandler(enabled = drawerState.isOpen) {\n        scope.launch { drawerState.close() }\n    }\n", ""),
     ("关掉官方手势", MAIN, "gesturesEnabled = true", "gesturesEnabled = false"),
-    ("恢复底栏", MAIN, "        // V1 · 3 个顶层 Tab 已收进左侧抽屉", "        AppBottomBar(active = 0, onTab = {}, surface = Card, primary = Primary, primarySoft = PrimarySoft, sub = Sub)\n        // V1 · 3 个顶层 Tab 已收进左侧抽屉"),
+    ("恢复底栏", MAIN, "gesturesEnabled = true", "AppBottomBar(active = 0, onTab = {}, surface = Card, primary = Primary, primarySoft = PrimarySoft, sub = Sub)\n        gesturesEnabled = true"),
     ("☰ 回退成浮层菜单", CHROME, "IconButton(onClick = onMenu)", "DropdownMenu(expanded = false, onDismissRequest = {}) {}; IconButton(onClick = onMenu)"),
     ("去掉底部安全区", MAIN, ".statusBarsPadding().navigationBarsPadding()", ".statusBarsPadding()"),
     ("调音台返回写死设置页", MAIN, _mixer_back_lit,

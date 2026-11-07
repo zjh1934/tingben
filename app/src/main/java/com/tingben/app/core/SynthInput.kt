@@ -4,17 +4,9 @@ import android.content.Context
 import com.tingben.app.diag.EventLog
 import com.tingben.app.engine.NativeEngine
 
-/**
- * R93 · 三处合成（主链 / 两态试听 / 声音自检）共用的唯一装配点。
- *
- * 模式由引擎在 qt_init 时从 talker GGUF 读出的 model_type 决定，这里不决定模式，
- * 只按 qwen.h 的字段语义供料，避免三套调用点各自传 null 而分叉。
- * base 的参考音频在 prepare() 里一次性交给 handle，params() 每段只装字段。
- */
 object SynthInput {
     data class Params(val instruct: String?, val speaker: String?)
 
-    /** ttsLoad 成功后、第一段合成之前调一次。 */
     fun prepare(c: Context, handle: Long) {
         when (ModelStore.currentMode(c)) {
             ModelStore.Mode.BASE -> {
@@ -29,10 +21,6 @@ object SynthInput {
         }
     }
 
-    /**
-     * @param instructVD voice_design 用的最终 instruct（身份层 + 风格层 + 本段导演指令）
-     * @param style      朗读档位等风格短语；custom_voice 下与念法要求一起当可选 instruct
-     */
     fun params(c: Context, instructVD: String?, style: String?): Params =
         when (ModelStore.currentMode(c)) {
             ModelStore.Mode.VOICE_DESIGN -> Params(instructVD, null)
