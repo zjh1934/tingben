@@ -10,8 +10,7 @@ import json, pathlib, re, shutil, sys, tempfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ACTIVE_DOCS = {
     '00_现行契约.md', '01_音频模型调教逻辑.md', '02_模型文件结构.md',
-    '03_调音台延迟与一级目录现状.md', 'THIRD_PARTY_NOTICES.md',
-    '修复清单_按优先级.md', '源代码中文清理清单.md',
+    'THIRD_PARTY_NOTICES.md', '修复清单_按优先级.md', '源代码中文清理清单.md',
 }
 AUDIT_DOC = '修复清单_按优先级.md'
 AUDIT_DOC_2 = '源代码中文清理清单.md'
