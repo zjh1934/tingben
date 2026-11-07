@@ -62,6 +62,9 @@ def check(root):
     ck('directRead = true' in main, '守恒：不是恒直接朗读')
     ck('OptionRow("朗读档位"' in main and 'OptionRow("段间静音"' in main,
        '守恒：真实念法 / 跑法选项被误删')
+    used_opt = set(re.findall(r'\bOpt[A-Z]\w*', opts))
+    defined_opt = set(re.findall(r'private val (Opt\w+):', opts))
+    ck(used_opt <= defined_opt, 'F-28 颜色符号有引用却没定义：%s' % sorted(used_opt - defined_opt))
 
     ck('AudioFocusRequest' in queue, 'F-26 缺焦点请求')
     ck('requestAudioFocus(req)' in queue, 'F-26 没申请焦点')
@@ -106,6 +109,7 @@ INJECT = [
      'ProduceMode.values().forEach { }\n            Text("原文整段送声音模型"'),
     ('删路径说明', 'main', 'Text("原文整段送声音模型", fontSize = 13.sp, color = Sub)', ''),
     ('删恢复默认', 'main', 'cfg = Prefs.defaultPerf(c)', ''),
+    ('删颜色定义', 'opts', 'private val OptPrimary: Color get() = palette.primary\n', ''),
     ('去掉焦点申请', 'queue', 'am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED',
      'true'),
     ('去掉焦点归还', 'queue', '?.abandonAudioFocusRequest(req)', ''),

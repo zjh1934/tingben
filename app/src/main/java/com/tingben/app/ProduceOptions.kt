@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 private val OptCard: Color get() = palette.card
 private val OptChip: Color get() = palette.primarySoft
 private val OptChipOn: Color get() = palette.primarySoft
+private val OptPrimary: Color get() = palette.primary
 private val OptSub: Color get() = palette.sub
 
 @Composable
