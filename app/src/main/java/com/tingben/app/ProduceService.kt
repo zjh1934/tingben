@@ -54,6 +54,10 @@ class ProduceService : Service() {
             return null
         }
 
+        fun fgsTypeLabel(): String =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+                "mediaProcessing" else "dataSync"
+
         fun begin(c: Context, title: String) {
             val ctx = c.applicationContext
             lastBook = title
@@ -64,8 +68,8 @@ class ProduceService : Service() {
             lastTotal = 0
             finished = false
             EventLog.log(EventLog.Kind.PIPELINE, "FGS_BEGIN",
-                "title=$title type=dataSync reason=用户从界面主动开始长任务",
-                fields = mapOf("book" to title, "type" to "dataSync"))
+                "title=$title type=${fgsTypeLabel()} reason=用户从界面主动开始长任务",
+                fields = mapOf("book" to title, "type" to fgsTypeLabel()))
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     ctx.startForegroundService(startIntent(ctx, title))
@@ -182,8 +186,8 @@ class ProduceService : Service() {
                     publish(this)
                 }
                 EventLog.log(EventLog.Kind.PIPELINE, "FGS_READY",
-                    "notification=visible type=dataSync busy=${Producer.isBusy()}",
-                    fields = mapOf("busy" to Producer.isBusy().toString(), "type" to "dataSync"))
+                    "notification=visible type=${fgsTypeLabel()} busy=${Producer.isBusy()}",
+                    fields = mapOf("busy" to Producer.isBusy().toString(), "type" to fgsTypeLabel()))
                 if (!Producer.isBusy() || finished) stopSelf()
             }
         }
@@ -203,7 +207,9 @@ class ProduceService : Service() {
 
     private fun startForegroundCompat(title: String, text: String) {
         val n = buildNotification(this, title, text, lastDone, lastTotal, finished)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
             startForeground(NOTIF_ID, n)

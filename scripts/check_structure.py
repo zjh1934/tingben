@@ -136,7 +136,11 @@ for perm in ["android.permission.FOREGROUND_SERVICE",
              "android.permission.WAKE_LOCK"]:
     if perm not in m: errs.append("Manifest 缺少 R26 权限: " + perm)
 if 'android:name=".ProduceService"' not in m: errs.append("Manifest 未注册 ProduceService")
-if 'android:foregroundServiceType="dataSync"' not in m: errs.append("前台服务类型不是 dataSync")
+fgs = re.search(r'android:foregroundServiceType="([^"]+)"', m)
+fgs_types = fgs.group(1).split("|") if fgs else []
+if "dataSync" not in fgs_types: errs.append("前台服务类型缺 dataSync 低版本分支")
+if any(t not in ("dataSync", "mediaProcessing") for t in fgs_types):
+    errs.append("前台服务类型出现未复核的类型")
 for banned in ["BIND_ACCESSIBILITY_SERVICE", "SYSTEM_ALERT_WINDOW", "systemExempted",
                "foregroundServiceType=\"mediaPlayback\""]:
     if banned in m: errs.append("R26 回退：出现了明确不做的权限/类型 " + banned)

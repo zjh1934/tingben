@@ -68,8 +68,10 @@ def check(files):
     for s in KEEP:
         if s not in m + ch:
             errs.append('守恒丢失: ' + s[:56])
-    if sec.count('Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)') < 3:
+    if sec.count('Producer.clearProgress(c, t.bookId, t.only)') < 3:
         errs.append('四项操作里的清除进度调用被删')
+    if 't.direct, t.think' in sec:
+        errs.append('分桶旧三态参数回潮')
     if 'r88_verify.py' not in ci:
         errs.append('CI 未挂 r88_verify')
     if '1.1.0+' not in gr:

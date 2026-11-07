@@ -666,7 +666,6 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     val allChunks = split?.second ?: emptyList()
     var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
-    val thinkOn = false
     var mode by remember(book, refresh) {
         val t = TaskResume.load(c)
         mutableStateOf(if (t != null && t.bookId == id)
@@ -677,13 +676,12 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         val t = TaskResume.load(c)
         mutableStateOf(if (t != null && t.bookId == id) t.config else Prefs.defaultPerf(c))
     }
-    val directMode = mode == ProduceMode.DIRECT
     val estimate = remember(selected, book) {
         if (selected.isEmpty() || selected.size == chapters.size) allChunks.size
         else allChunks.count { it.chapter in selected }
     }
-    val hasCached = remember(book, refresh, selected, cacheTick, thinkOn, mode) {
-        book?.let { Producer.hasProgress(c, it.id, directMode, thinkOn,
+    val hasCached = remember(book, refresh, selected, cacheTick, mode) {
+        book?.let { Producer.hasProgress(c, it.id,
             if (selected.isEmpty() || selected.size == chapters.size) null else selected) } ?: false
     }
     if (book == null) {
@@ -818,7 +816,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
 
         if (hasCached && !st.running) {
             TextButton(onClick = {
-                Producer.clearProgress(c, book.id, directMode, thinkOn,
+                Producer.clearProgress(c, book.id,
                     if (selected.isEmpty() || selected.size == chapters.size) null else selected)
                 cacheTick++
             }, Modifier.fillMaxWidth()) { Text("从头重做（清掉已做的块）", fontSize = 12.sp) }
@@ -1071,7 +1069,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                         TextButton(onClick = onAudio) { Text("去「我的音频」试听 ›", fontSize = 12.sp) }
                         Row(Modifier.fillMaxWidth()) {
                             TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                                Producer.clearProgress(c, t.bookId, t.only)
                                 val b = BookStore.list(c).find { x -> x.id == t.bookId }
                                 if (b != null) {
                                     Producer.start(c, b, t.only, true, t.think, t.config)
@@ -1079,7 +1077,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                                 }
                             }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
                             TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                                Producer.clearProgress(c, t.bookId, t.only)
                                 loadTick++
                             }, Modifier.weight(1f)) {
                                 Text("放弃这条记录", fontSize = 12.sp, color = Warn)
@@ -1089,7 +1087,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                     !bookExists -> {
                         Text("这本书已经从书架删掉了，任务没法续跑。", fontSize = 12.sp, color = Warn)
                         TextButton(onClick = {
-                            Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                            Producer.clearProgress(c, t.bookId, t.only)
                         }) { Text("清除这条失效任务", fontSize = 12.sp) }
                     }
                     else -> {
@@ -1098,12 +1096,12 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                         }
                         Row(Modifier.fillMaxWidth()) {
                             TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                                Producer.clearProgress(c, t.bookId, t.only)
                                 val b = BookStore.list(c).find { x -> x.id == t.bookId }
                                 if (b != null) { Producer.start(c, b, t.only, true, t.think, t.config); onProgress() }
                             }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
                             TextButton(onClick = {
-                                Producer.clearProgress(c, t.bookId, t.direct, t.think, t.only)
+                                Producer.clearProgress(c, t.bookId, t.only)
                             }, Modifier.weight(1f)) { Text("放弃任务", fontSize = 12.sp, color = Warn) }
                         }
                     }

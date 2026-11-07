@@ -29,7 +29,7 @@ object Workbench {
     private val wavRe = Regex("""^(?:chunk|direct)_(\d{4})\.wav$""")
 
     fun workDir(c: Context, t: TaskInfo?): File? = t?.let {
-        AnnCache.dirFor(c, it.bookId, it.direct, it.think, it.only)
+        AnnCache.dirFor(c, it.bookId, it.only)
     }
 
     fun segments(c: Context, t: TaskInfo?): List<SegRow> {

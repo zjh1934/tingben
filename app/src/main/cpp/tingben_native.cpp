@@ -10,6 +10,7 @@
 #include <atomic>
 #include <mutex>
 #include <map>
+#include <dlfcn.h>
 
 #include "llama.h"
 #include "qwen.h"
@@ -325,9 +326,27 @@ static bool ttsCancelCb(void *) { return g_cancel.load(); }
 struct VoiceRefState {
     std::vector<float> pcm;
     std::string        text;
+    qt_voice_ref       latent{};
+    bool               latentOk = false;
 };
 static std::mutex g_refMu;
 static std::map<qt_context *, VoiceRefState> g_refs;
+
+typedef int  (*QtExtractRefFn)(qt_context *, const float *, int, qt_voice_ref *);
+typedef void (*QtFreeRefFn)(qt_voice_ref *);
+static QtExtractRefFn extractRefFn() {
+    static auto f = (QtExtractRefFn) dlsym(RTLD_DEFAULT, "qt_extract_voice_ref");
+    return f;
+}
+static QtFreeRefFn freeRefFn() {
+    static auto f = (QtFreeRefFn) dlsym(RTLD_DEFAULT, "qt_voice_ref_free");
+    return f;
+}
+static void releaseRefLocked(VoiceRefState & st) {
+    if (st.latentOk && freeRefFn()) freeRefFn()(&st.latent);
+    st.latent = qt_voice_ref{};
+    st.latentOk = false;
+}
 
 JNIEXPORT jlong JNICALL
 Java_com_tingben_app_engine_NativeEngine_ttsLoad(
@@ -394,10 +413,21 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
         tp.speaker  = nullptr;
         refLock.lock();
         auto it = g_refs.find(q);
-        if (it != g_refs.end() && !it->second.pcm.empty()) {
-            tp.ref_audio_24k = it->second.pcm.data();
-            tp.ref_n_samples = (int)it->second.pcm.size();
-            tp.ref_text = it->second.text.empty() ? nullptr : it->second.text.c_str();
+        if (it != g_refs.end()) {
+            VoiceRefState & st = it->second;
+            if (st.latentOk && st.latent.ref_spk_emb) {
+                tp.ref_spk_emb = st.latent.ref_spk_emb;
+                tp.ref_spk_dim = st.latent.ref_spk_dim;
+                if (st.latent.ref_codes && st.latent.ref_T > 0 && !st.text.empty()) {
+                    tp.ref_codes = st.latent.ref_codes;
+                    tp.ref_T     = st.latent.ref_T;
+                    tp.ref_text  = st.text.c_str();
+                }
+            } else if (!st.pcm.empty()) {
+                tp.ref_audio_24k = st.pcm.data();
+                tp.ref_n_samples = (int)st.pcm.size();
+                tp.ref_text = st.text.empty() ? nullptr : st.text.c_str();
+            }
         }
     } else if (isCustom) {
         tp.instruct = (instruct && instruct[0]) ? instruct : nullptr;
@@ -418,11 +448,12 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
     tp.subtalker_top_p       = (float)subTopP;
 
     LOGI("TTS_PARAMS_APPLIED mode=%s seed=%lld max=%d temp=%.3f top_k=%d top_p=%.3f rep=%.3f "
-         "subTemp=%.3f subTopK=%d subTopP=%.3f lang=%s speaker=%s refN=%d instruct=%.40s",
+         "subTemp=%.3f subTopK=%d subTopP=%.3f lang=%s speaker=%s refN=%d refMode=%s instruct=%.40s",
          mt ? mt : "?", (long long)tp.seed, tp.max_new_tokens, tp.temperature, tp.top_k, tp.top_p,
          tp.repetition_penalty, tp.subtalker_temperature, tp.subtalker_top_k,
          tp.subtalker_top_p, tp.lang ? tp.lang : "auto",
          tp.speaker ? tp.speaker : "(null)", tp.ref_n_samples,
+         tp.ref_spk_emb ? "latent" : (tp.ref_audio_24k ? "raw" : "none"),
          tp.instruct ? tp.instruct : "(null)");
 
     tp.cancel   = ttsCancelCb;
@@ -477,13 +508,27 @@ Java_com_tingben_app_engine_NativeEngine_ttsSetVoiceRef(
         if (s) { txt = s; env->ReleaseStringUTFChars(jRefText, s); }
     }
     const size_t nchars = txt.size();
+    const bool hasPcm = !pcm.empty();
+    bool cached = false;
     {
         std::lock_guard<std::mutex> lk(g_refMu);
         VoiceRefState & st = g_refs[q];
+        releaseRefLocked(st);
         st.pcm = std::move(pcm);
         st.text = std::move(txt);
+        auto fn = extractRefFn();
+        if (fn && q && hasPcm &&
+            fn(q, st.pcm.data(), (int)st.pcm.size(), &st.latent) == 0 &&
+            st.latent.ref_spk_emb) {
+            st.latentOk = true;
+            cached = true;
+        } else if (freeRefFn()) {
+            freeRefFn()(&st.latent);
+            st.latent = qt_voice_ref{};
+        }
     }
-    LOGI("ttsSetVoiceRef: %d samples, refText chars=%zu", (int)n, nchars);
+    LOGI("ttsSetVoiceRef: %d samples, refText chars=%zu, latent=%s", (int)n, nchars,
+         cached ? "cached" : "fallback-raw");
     return JNI_TRUE;
 }
 
@@ -492,7 +537,8 @@ Java_com_tingben_app_engine_NativeEngine_ttsClearVoiceRef(JNIEnv *, jobject, jlo
     auto * q = (qt_context *)(intptr_t)handle;
     if (!q) return;
     std::lock_guard<std::mutex> lk(g_refMu);
-    g_refs.erase(q);
+    auto it = g_refs.find(q);
+    if (it != g_refs.end()) { releaseRefLocked(it->second); g_refs.erase(it); }
 }
 
 JNIEXPORT jstring JNICALL
@@ -516,7 +562,9 @@ JNIEXPORT void JNICALL
 Java_com_tingben_app_engine_NativeEngine_ttsFree(JNIEnv *, jobject, jlong handle) {
     auto * q = (qt_context *)(intptr_t)handle;
     if (!q) return;
-    { std::lock_guard<std::mutex> lk(g_refMu); g_refs.erase(q); }
+    { std::lock_guard<std::mutex> lk(g_refMu);
+      auto it = g_refs.find(q);
+      if (it != g_refs.end()) { releaseRefLocked(it->second); g_refs.erase(it); } }
     qt_free(q);
     LOGI("ttsFree done");
 }

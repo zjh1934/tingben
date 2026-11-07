@@ -296,8 +296,8 @@ object AnnCache {
         try { work.listFiles()?.forEach { it.delete() } } catch (_: Throwable) { }
     }
 
-    fun hasProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?): Boolean {
-        val w = File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}")
+    fun hasProgress(c: Context, bookId: String, only: Set<Int>?): Boolean {
+        val w = File(c.filesDir, "work/${bookId}/${bucket(only)}")
         val ann = count(w)
         val wav = try {
             w.listFiles()?.count { it.isFile &&
@@ -307,12 +307,11 @@ object AnnCache {
         return ann > 0 || wav > 0
     }
 
-    fun bucket(direct: Boolean, think: Boolean, only: Set<Int>?) =
-        "v11/" + (if (direct) "direct" else "annotated") + "/" +
-                (only?.sorted()?.joinToString("_") ?: "all")
+    fun bucket(only: Set<Int>?) =
+        "v11/direct/" + (only?.sorted()?.joinToString("_") ?: "all")
 
-    fun dirFor(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) =
-        File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}").apply { mkdirs() }
+    fun dirFor(c: Context, bookId: String, only: Set<Int>?) =
+        File(c.filesDir, "work/${bookId}/${bucket(only)}").apply { mkdirs() }
 }
 
 object WavMerger {
@@ -439,11 +438,11 @@ object Producer {
         false, "已停止", done, total, failed,
         "已停在 $done/$total 块，已做好的都留着。点「继续制作」从这接着跑。")
 
-    fun hasProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) =
-        AnnCache.hasProgress(c, bookId, direct, think, only)
+    fun hasProgress(c: Context, bookId: String, only: Set<Int>?) =
+        AnnCache.hasProgress(c, bookId, only)
 
-    fun clearProgress(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) {
-        AnnCache.clear(AnnCache.dirFor(c, bookId, direct, think, only))
+    fun clearProgress(c: Context, bookId: String, only: Set<Int>?) {
+        AnnCache.clear(AnnCache.dirFor(c, bookId, only))
         val saved = TaskResume.load(c)
         if (saved != null && saved.bookId == bookId) {
             current = null; _resume.value = null; TaskResume.clear(c)
@@ -468,7 +467,7 @@ object Producer {
         _resume.value = current
         _state.value = Progress(true, "正在准备", 0, 0, 0, "正在启动…")
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
-        AnnCache.cleanup(AnnCache.dirFor(c, book.id, true, thinkOn, onlyChapters))
+        AnnCache.cleanup(AnnCache.dirFor(c, book.id, onlyChapters))
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_MODE",
             "直接朗读" +
                 " · think=" + thinkOn +
@@ -562,7 +561,7 @@ object Producer {
             return
         }
         val thinkOn = thinkOverride ?: false
-        val work = AnnCache.dirFor(c, book.id, direct, thinkOn, only)
+        val work = AnnCache.dirFor(c, book.id, only)
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
             "chunks=${chunks.size} · 预设=" + config.summary())
         EventLog.resetEngine()

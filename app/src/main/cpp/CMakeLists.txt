@@ -20,4 +20,4 @@ target_include_directories(tingben_native PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/upstream_include")
 
-target_link_libraries(tingben_native llama_engine qwen_engine android log)
+target_link_libraries(tingben_native llama_engine qwen_engine android log ${CMAKE_DL_LIBS})

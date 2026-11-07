@@ -1,6 +1,7 @@
 package com.tingben.app.core
 
 import android.content.Context
+import com.tingben.app.diag.EventLog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -79,16 +80,25 @@ object TaskResume {
             .joinToString("||"))
 
     fun invalidationReason(c: Context, t: TaskInfo): String? = try {
-        val w = AnnCache.dirFor(c, t.bookId, t.direct, t.think, t.only)
+        val w = AnnCache.dirFor(c, t.bookId, t.only)
         val modeFile = File(w, "mode_stamp.txt")
         if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
             "换过模式或音色输入，接着做会按新设置重出声"
         } else {
             val voiceFile = File(w, "voice_stamp.txt")
             val oldVoice = if (voiceFile.exists()) voiceFile.readText().trim() else ""
-            if (voiceFile.exists() && oldVoice != Prefs.voiceStamp(c) &&
-                oldVoice != Prefs.legacyVoiceStamp(c))
-                "改过调音台设置，接着做会按新设置重出声" else null
+            val currentVoice = Prefs.voiceStamp(c)
+            if (voiceFile.exists() && oldVoice != currentVoice &&
+                oldVoice != Prefs.legacyVoiceStamp(c)) {
+                "改过调音台设置，接着做会按新设置重出声"
+            } else {
+                if (voiceFile.exists() && oldVoice != currentVoice) {
+                    try { voiceFile.writeText(currentVoice) } catch (_: Throwable) { }
+                    EventLog.log(EventLog.Kind.PIPELINE, "VOICE_STAMP_MIGRATE",
+                        "旧指纹写回新口径，已生成段保持不变")
+                }
+                null
+            }
         }
     } catch (_: Throwable) { null }
 
@@ -100,7 +110,7 @@ object TaskResume {
         return try {
             val (_, chunks) = ChapterSplitter.split(BookStore.read(c, book))
             val selected = if (t.only == null) chunks.size else chunks.count { it.chapter in t.only!! }
-            val w = AnnCache.dirFor(c, t.bookId, t.direct, t.think, t.only)
+            val w = AnnCache.dirFor(c, t.bookId, t.only)
             val ann = AnnCache.count(w)
             val wav = w.listFiles()?.count { f ->
                 f.isFile && (f.name.startsWith("chunk_") || f.name.startsWith("direct_")) &&

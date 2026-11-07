@@ -127,6 +127,8 @@ jobs:
 
       - name: R112 章节页高频进度订阅验证（F-09 / 索引不重建 / 防抖 / 反向注入）
         run: python3 scripts/r112_verify.py --selftest
+      - name: R113 清单收尾验证（F-20 / F-13 / F-17 / F-23 / 反向注入）
+        run: python3 scripts/r113_verify.py --selftest
 
 
 

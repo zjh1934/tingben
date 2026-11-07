@@ -35,7 +35,7 @@ POS = [
     ("hub", 'val diskKey = "${st.running}|${st.stage}|${st.done}"'),
     ("hub", "var disk by remember(book.id, refresh)"),
     ("hub", "AudioLibrary.playableChapters(c, book.id)"),
-    ("hub", "st.running, task?.bookId, task?.only, st.chapterProgress, book.id)"),
+    ("hub", "st.running, task?.bookId, task?.only, st.chapterProgress, book.id, stalled)"),
     ("hub", "val barText = when {"),
     ("hub", 'st.stage == "完成" -> "做好了 · 合成列已更新，可播列已点亮"'),
     ("main", "val live by Producer.resume.collectAsState()"),

@@ -62,13 +62,14 @@ private data class ChapterUi(
     val title: String,
     val synthesized: Float?,
     val audio: AudioItem?,
-    val playable: Boolean
+    val playable: Boolean,
+    val stalled: Boolean = false
 )
 
 private fun chapterStates(
     finished: Map<Int, AudioItem>, playable: Set<Int>, chapters: List<Chapter>,
     running: Boolean, runningBook: String?, runningOnly: Set<Int>?,
-    chapterProgress: Map<Int, Float>, bookId: String
+    chapterProgress: Map<Int, Float>, bookId: String, stalled: Boolean
 ): List<ChapterUi> {
     val inScope: (Int) -> Boolean = { i -> runningBook == bookId &&
         (runningOnly == null || i in runningOnly) }
@@ -81,7 +82,8 @@ private fun chapterStates(
             title = ch.title,
             synthesized = if (a != null) 1f else live,
             audio = a,
-            playable = ch.index in playable
+            playable = ch.index in playable,
+            stalled = stalled
         )
     }
 }
@@ -142,8 +144,10 @@ internal fun ChapterHubScreen(
     val ui by remember(chapters, disk, task) {
         derivedStateOf {
             val d = disk
+            val stalled = !st.running && task?.bookId == book.id &&
+                st.stage in listOf("没完成", "已停止", "出错了")
             chapterStates(d?.first ?: emptyMap(), d?.second ?: emptySet(), chapters,
-                st.running, task?.bookId, task?.only, st.chapterProgress, book.id)
+                st.running, task?.bookId, task?.only, st.chapterProgress, book.id, stalled)
         }
     }
 
@@ -353,8 +357,10 @@ private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
                             color = if (done || (p ?: 0f) > 0f) Color.Unspecified else HubGrey)
                         if (!done && p != null && p > 0f)
                             Text("本章已生成 ${(p * 100).toInt()}%", fontSize = 12.sp, color = HubSub)
-                        if (!done && p == null)
-                            Text("等待中", fontSize = 12.sp, color = HubSub)
+                        if (!done && p == null) {
+                            if (r.stalled) Text("没做完 · 接着做会续上", fontSize = 12.sp, color = HubWarn)
+                            else Text("等待中", fontSize = 12.sp, color = HubSub)
+                        }
                     }
                     if (done) {
                         TextButton(onClick = { onPlay(r.index) }) { Text("▶ 播放", fontSize = 12.sp) }
