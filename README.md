@@ -11,7 +11,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 备用 Release 页：`https://github.com/zjh1934/tingben/releases/latest`
 
-- 固定地址**永远是最新版**；当前 `1.1.0+105`（R108 停止信号任务级复位、TTS 段内不再复活、改 JNI 不再触发上游重编），字节数 / blob / 验证结果见 `STATUS.md`
+- 固定地址**永远是最新版**；当前 `1.1.0+110`（R113 收完清单最后四条：章节页终态文案、分桶旧参数、前台服务类型、参考音频 latent 缓存），字节数 / blob / 验证结果见 `STATUS.md`
 - 源码仓 `zjh1934/tingben`、APK 仓 `zjh1934/ting-ben-apk`（旧名自动跳转）
 - 包名 `com.tingben.app`，固定签名，**新版直接覆盖装**，模型与已做好的音频都保留
 - 平台解析器读不了 GB 级二进制会报「资源解析服务请求失败」——不是坏链，用浏览器打开
