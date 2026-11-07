@@ -33,7 +33,7 @@ POS = [
     ("hub", "chapterProgress: Map<Int, Float>, bookId: String"),
     ("hub", "runningBook == bookId"),
     ("hub", 'val diskKey = "${st.running}|${st.stage}|${st.done}"'),
-    ("hub", "var disk by remember(book.id, refresh, diskKey)"),
+    ("hub", "var disk by remember(book.id, refresh)"),
     ("hub", "AudioLibrary.playableChapters(c, book.id)"),
     ("hub", "st.running, task?.bookId, task?.only, st.chapterProgress, book.id)"),
     ("hub", "val barText = when {"),

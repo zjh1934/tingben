@@ -130,10 +130,11 @@ internal fun ChapterHubScreen(
     val task by Producer.resume.collectAsState()
 
     val diskKey = "${st.running}|${st.stage}|${st.done}"
-    var disk by remember(book.id, refresh, diskKey) {
+    var disk by remember(book.id, refresh) {
         mutableStateOf<Pair<Map<Int, AudioItem>, Set<Int>>?>(null)
     }
     LaunchedEffect(book.id, refresh, diskKey) {
+        if (disk != null) delay(350)
         disk = withContext(Dispatchers.IO) {
             AudioLibrary.latestByChapter(c, book.id) to AudioLibrary.playableChapters(c, book.id)
         }
@@ -403,12 +404,22 @@ private fun ReaderPane(
     c: Context, book: Book, chapters: List<Chapter>, i: Int,
     onClose: () -> Unit, onJump: (Int) -> Unit
 ) {
-    val text = remember(book) { BookStore.read(c, book) }
+    var text by remember(book) { mutableStateOf<String?>(null) }
+    LaunchedEffect(book) {
+        text = withContext(Dispatchers.IO) { BookStore.read(c, book) }
+    }
     val ch = chapters.getOrNull(i) ?: return
-    val body = remember(i) {
-        val s = ch.start.coerceIn(0, text.length)
-        val e = ch.end.coerceIn(s, text.length)
-        text.substring(s, e).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+    val t = text
+    if (t == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    val body = remember(i, t) {
+        val s = ch.start.coerceIn(0, t.length)
+        val e = ch.end.coerceIn(s, t.length)
+        t.substring(s, e).split("\n").map { it.trim() }.filter { it.isNotEmpty() }
     }
     var size by remember { mutableStateOf(Prefs.readerFontScale(c)) }
     val saved = remember(book, i) { ReadingState.pos(c, book.id)?.takeIf { it.chapter == i } }
@@ -502,7 +513,7 @@ internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit
                         items(list) { (idx, a) ->
                             Row(Modifier.fillMaxWidth().height(44.dp)
                                 .clickable {
-                                    val q = "chapter:${book.id}"
+                                    val q = "chapter:" + bookId.orEmpty()
                                     PlayQueue.setTracks(list.map { (j, x) ->
                                         Track(x.file, "${x.title} · 第 ${j + 1} 章",
                                             AudioLibrary.chapterStartMs(c, x, j),

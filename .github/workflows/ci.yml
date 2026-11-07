@@ -125,6 +125,9 @@ jobs:
       - name: R111 播放队列归属与时长口径验证（F-24 / F-22 / 反向注入）
         run: python3 scripts/r111_verify.py --selftest
 
+      - name: R112 章节页高频进度订阅验证（F-09 / 索引不重建 / 防抖 / 反向注入）
+        run: python3 scripts/r112_verify.py --selftest
+
 
 
       - name: JDK 17
