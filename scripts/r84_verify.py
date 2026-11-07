@@ -59,17 +59,17 @@ POS = [
     'Text("回书架，导入一本书"',
     'Text("切回「描述造音色」"',
     'Prefs.setModelMode(c, ModelStore.Mode.VOICE_DESIGN.id)',
-    'Text("重新导入某个文件 ›"',
+    'Text("一次导入多个模型文件 ›"',
     'Text("已导入 ${files.size} 个文件"',
     'ModelStore.synthesisBlockReason(c)?.let { reason ->',
     'ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }',
-    'SettingsSection("本机数据", "本机", dataOpen',
+    'SettingsSection("本机数据", "本机", collapsible = false)',
     'private fun ClearSegmentsRow(',
-    'Text("当前配置"',
+    'Text("保存试听文本"',
     'Text("清理分段音频", fontSize = 13.sp)',
     'Text("清理 ›"',
-    'SoundProbeBlock(c, refresh)',
-    'ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS',
+    'Text("试听 · 当前"',
+    'ActivityResultContracts.OpenMultipleDocuments()',
 ]
 
 BAN = [

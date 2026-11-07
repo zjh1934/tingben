@@ -52,8 +52,18 @@ object AudioOps {
             return Result(false, reason = "拼接没成功，原来的小块都留着")
         }
         AudioLibrary.register(c, bookId, bookTitle, setOf(chapter), true, dst, chapter + 1)
-        parts.firstOrNull()?.parentFile?.let { AudioTree.markDone(it, chapter, dst) }
+        if (!AudioLibrary.lastRegisterOk) {
+            return Result(true, dst, kept = parts.size,
+                reason = "整章已拼好，但成品登记没成功，文件仍在「我的音频」里；原来的小块先留着")
+        }
+        val marked = parts.firstOrNull()?.parentFile
+            ?.let { AudioTree.markDone(it, chapter, dst) } ?: false
+        if (!marked) {
+            return Result(true, dst, kept = parts.size,
+                reason = "整章已拼好，但章状态没记上，原来的小块先留着")
+        }
         val kept = deleteAll(parts)
+        AudioTree.forget(c, parts.filter { !it.isFile }.map { it.absolutePath })
         return Result(true, dst, kept = kept)
     }
 
@@ -69,9 +79,18 @@ object AudioOps {
     }
 
     fun copyTo(c: Context, src: File, uri: Uri): Boolean = try {
-        c.contentResolver.openOutputStream(uri)?.use { o -> src.inputStream().use { i -> i.copyTo(o) } }
-        true
-    } catch (_: Throwable) { false }
+        val out = c.contentResolver.openOutputStream(uri) ?: return false
+        val copied = out.use { o -> src.inputStream().use { i -> i.copyTo(o) } }
+        if (copied <= 0L) { dropUri(c, uri); false } else true
+    } catch (_: Throwable) {
+        dropUri(c, uri)
+        false
+    }
+
+    private fun dropUri(c: Context, uri: Uri) {
+        try { android.provider.DocumentsContract.deleteDocument(c.contentResolver, uri) }
+        catch (_: Throwable) { }
+    }
 
     fun toM4a(c: Context, src: File, out: File): Result {
         val parsed = pcmOf(src) ?: return Result(false, reason = "这个文件不是能读的 WAV")
@@ -110,7 +129,7 @@ object AudioOps {
                                 buf.put(pcm, offset, n)
                                 offset += n
                             }
-                            val ptsUs = offset * 1_000_000L / (rate.toLong() * 2L)
+                            val ptsUs = (offset - n).toLong() * 1_000_000L / (rate.toLong() * 2L)
                             val flags = if (offset >= pcm.size || n == 0)
                                 MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0
                             enc.queueInputBuffer(idx, 0, maxOf(n, 0), ptsUs, flags)
@@ -139,6 +158,10 @@ object AudioOps {
                     }
                 }
             }
+            if (!started || !inputDone || !outputDone || out.length() <= 0L) {
+                out.delete()
+                return Result(false, reason = "转格式没完成，原文件留着")
+            }
             Result(true, out)
         } catch (t: Throwable) {
             out.delete()
@@ -151,11 +174,8 @@ object AudioOps {
         }
     }
 
-    fun deleteMerged(c: Context, file: File): Boolean {
-        val ok = AudioLibrary.remove(c, file.nameWithoutExtension)
-        if (file.isFile) file.delete()
-        return ok
-    }
+    fun deleteMerged(c: Context, file: File): Boolean =
+        AudioLibrary.remove(c, file.nameWithoutExtension)
 
     fun deleteAll(files: List<File>): Int {
         var failed = 0

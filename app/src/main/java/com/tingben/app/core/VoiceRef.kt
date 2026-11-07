@@ -98,7 +98,16 @@ object VoiceRef {
         putStr(36, "data"); putInt(40, outPcm.size * 2)
         val ob = ByteBuffer.wrap(outBytes).order(ByteOrder.LITTLE_ENDIAN)
         for (i in outPcm.indices) ob.putShort(44 + i * 2, (outPcm[i] * 32767f).toInt().toShort())
-        file(c).writeBytes(outBytes)
+        val dst = file(c)
+        val part = File(c.filesDir, NAME + ".part")
+        try {
+            part.writeBytes(outBytes)
+            if (!part.renameTo(dst))
+                throw IllegalStateException("参考音频没能保存，原来的还在")
+        } catch (t: Throwable) {
+            part.delete()
+            throw t
+        }
         EventLog.log(EventLog.Kind.MODEL, "VOICE_REF_SAVED",
             "$rate Hz / $channels 声道 / ${bits}-bit → 24kHz 单声道 · ${outPcm.size} samples")
     }
@@ -124,8 +133,19 @@ object VoiceRef {
         return out
     }
 
-    fun fingerprint(c: Context): String =
-        if (!exists(c)) "none" else sha(file(c).name + "|" + file(c).length() + "|" + Prefs.refText(c))
+    fun fingerprint(c: Context): String {
+        if (!exists(c)) return "none"
+        val f = file(c)
+        val head = try {
+            f.inputStream().use { s ->
+                val b = ByteArray(4096)
+                val n = s.read(b)
+                if (n > 0) sha(String(b, 0, n, Charsets.ISO_8859_1)) else ""
+            }
+        } catch (_: Throwable) { "" }
+        return sha(f.name + "|" + f.length() + "|" + f.lastModified() +
+            "|" + head + "|" + Prefs.refText(c))
+    }
 
     fun status(c: Context): String =
         if (!exists(c)) "还没导入参考音频" else
@@ -133,6 +153,7 @@ object VoiceRef {
 
     fun clear(c: Context) {
         file(c).delete()
+        File(c.filesDir, NAME + ".part").delete()
         Prefs.setRefText(c, "")
         EventLog.log(EventLog.Kind.MODEL, "VOICE_REF_CLEARED", "参考音频已删除")
     }

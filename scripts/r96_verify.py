@@ -24,12 +24,12 @@ POS = {
         'lastReads = withContext(Dispatchers.IO) { ReadingState.allLast(c) }',
         'contentPadding = PaddingValues(16.dp),',
         'item(key = "head") {',
-        'item(key = "missing") {',
+        'if (importError != null) {',
         'item(key = "import-error") {',
-        'item(key = "empty") {',
-        'item(key = "paste") {',
+        'if (books.isNotEmpty()) {',
+        'private fun InputReadScreen(',
         'item(key = "count") {',
-        'item(key = "paste-entry") {',
+        'Text("共 ${books.size} 本"',
         'items(books, key = { it.id }) { b ->',
         'val lastRead = lastReads[b.id]',
         '上次读到 第 ${lastRead + 1} 章',
@@ -50,10 +50,10 @@ POS = {
 
 KEEP = {
     "main": [
-        'BookStore.list(c)', 'ModelStore.ready(c)', 'ModelStore.missing(c)',
+        'BookStore.list(c)', 'ModelStore.installedModes(c)', 'ModelStore.missing(c)',
         'RefreshStrip(', 'AlertDialog(', 'onOpen(b.id)', 'onChanged()',
-        'BookStore.add(c, "粘贴的文字", pasteText)', 'BookStore.delete(c, id)',
-        'Text("共 ${books.size} 本"', 'Text("去准备 ›"', '再选一次文件 ›',
+        'BookStore.add(c, "粘贴的文字", text)', 'BookStore.delete(c, id)',
+        'Text("共 ${books.size} 本"', 'private fun InputReadScreen(', '再选一次文件 ›',
     ],
     "reading": [
         'reading_state.json',
@@ -69,7 +69,7 @@ OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '导出日志', 
 
 def library_body(t):
     start = t.find('private fun LibraryScreen(')
-    end = t.find('private fun ProduceScreen(', start)
+    end = t.find('private fun InputReadScreen(', start)
     return t[start:end] if start >= 0 and end > start else ''
 
 def check(f):
@@ -108,8 +108,8 @@ def check(f):
         if not (body.find('item(key = "head")') < body.find('item(key = "count")')
                 < body.find('items(books, key = { it.id })')):
             e.append('item 顺序错乱')
-        if body.count('item(key = ') != 7:
-            e.append('固定 item 数不是 7')
+        if body.count('item(key = ') != 3:
+            e.append('固定 item 数不是 3')
     return e
 
 def load():

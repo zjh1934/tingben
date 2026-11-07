@@ -90,7 +90,7 @@ def check(main, chrome, tag):
     ck(chrome_count(main) == n, "chromeOf 没覆盖 %d 个目的地" % n)
     ck(chrome_set(main) == EXPECTED_SCREENS, "chromeOf 目的地集合与枚举不一致")
     for s in ["fun importBook(uri: Uri?", "incoming: String?", "EXTERNAL_INTENT",
-              "ProduceService"]:
+              "InputReadScreen("]:
         ck(s in main, "外部导入/通知回跳落地丢失: " + s)
     ck(nav.library_reachable(main), "书架不再是可达目的地")
     ck("statusBarsPadding().navigationBarsPadding()" in main,

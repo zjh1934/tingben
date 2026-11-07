@@ -20,8 +20,14 @@ def check(queue=QUEUE, audio=AUDIO, r66=R66):
         b = m.group(1)
         if not re.search(r'open\(i \+ 1\)\s*;?\s*return', b):
             e.append('F-29 跳下一首后没返回')
-        if b.count('return') < 2 or 'ended = true' not in b:
+        if b.count('return') < 2 or not ('finish()' in b or 'ended = true' in b):
             e.append('F-29 最后一首没写终态并返回')
+        fm = re.search(r'private fun finish\(\) \{([\s\S]*?)\n    \}', queue)
+        if not fm or 'ended = true' not in fm.group(1) or 'abandonFocus()' not in fm.group(1):
+            e.append('F-29 终态函数没收敛状态')
+        em = re.search(r'setOnErrorListener \{[\s\S]*?\n                \}', queue)
+        if not em or 'else finish()' not in em.group(0):
+            e.append('F-29 最后一首出错没收敛状态')
         if re.search(r'if \(i \+ 1 < tracks\.size\) open\(i \+ 1\)(?!\s*;)', b):
             e.append('F-29 仍是旧的单语句递归')
 

@@ -64,7 +64,7 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'Text("‹ 返回")' in main: pass
     if 'NAV_LLM' in chrome or '语言模型' in chrome or '文本处理' in chrome:
         e.append('抽屉仍残留旧模块项')
-    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉目的地不是 6 项')
+    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 7: e.append('抽屉目的地不是 7 项')
 
     if 'run(c, book, onlyChapters, true, thinkOverride, config)' not in pipe:
         e.append('主流程没强制直接朗读')

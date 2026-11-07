@@ -32,6 +32,7 @@ internal const val NAV_AUDIO = 2
 internal const val NAV_SETTINGS = 3
 internal const val NAV_MIXER = 4
 internal const val NAV_MODELS = 5
+internal const val NAV_INPUT = 6
 
 internal data class ChromeSpec(
     val title: String,
@@ -44,6 +45,7 @@ private val DRAWER_TOP = listOf(
     NAV_TASKS to "任务",
     NAV_AUDIO to "我的音频",
     NAV_MIXER to "调音台",
+    NAV_INPUT to "输入朗读",
 )
 
 private val DRAWER_MORE = listOf(

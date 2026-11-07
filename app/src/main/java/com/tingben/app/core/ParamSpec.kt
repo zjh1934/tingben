@@ -55,7 +55,10 @@ data class ParamSpec(
         val n = s.toDoubleOrNull() ?: return "只能填数字"
         min?.let { if (n < it) return "不能小于 ${fmt(it)}" }
         max?.let { if (n > it) return "不能大于 ${fmt(it)}" }
-        if (withValue(TtsKnobs(), s) == null) return "不在允许范围 $rangeLabel"
+        if (withValue(TtsKnobs(), s) == null) return when (key) {
+            "seed", "maxNewTokens", "topK", "subTopK" -> "请填整数，范围 $rangeLabel"
+            else -> "不在允许范围 $rangeLabel"
+        }
         return null
     }
 
@@ -92,13 +95,13 @@ object ParamCatalog {
             listOf("42", "1234", "随机"), min = -1.0),
         ParamSpec("maxNewTokens", "qt_tts_params.max_new_tokens", "单次音频长度上限", "2048",
             "12.5Hz → 单次约 164 秒音频；官方评测也用 2048（O1:465）", "O1/O4/O6",
-            listOf("1024", "2048", "3072"), min = 256.0, max = 8192.0, unit = " token"),
+            listOf("1024", "2048", "4096", "8192"), min = 64.0, max = 8192.0, unit = " token"),
         ParamSpec("temperature", "qt_tts_params.temperature", "主·随机度", "0.9",
             "talker 抽语义码 c0；0 = argmax（O5:307）", "O4/O5/O6",
             listOf("0", "0.4", "0.6", "0.9", "1.1"), min = 0.0, max = 2.0),
         ParamSpec("topK", "qt_tts_params.top_k", "主·候选范围", "50",
             "候选集；<=0 关闭截断（O5:308）", "O4/O5/O6",
-            listOf("0", "20", "50"), min = 0.0, max = 1000.0, unit = " 个"),
+            listOf("0", "20", "50", "100"), min = 0.0, max = 100.0, unit = " 个"),
         ParamSpec("topP", "qt_tts_params.top_p", "主·核采样", "1.0",
             "核采样；>=1 关闭截断（O5:308）", "O1/O4/O5/O6",
             listOf("0.8", "0.95", "1.0"), min = 0.0, max = 1.0),
@@ -110,7 +113,7 @@ object ParamCatalog {
             listOf("0", "0.4", "0.6", "0.9", "1.1"), min = 0.0, max = 2.0),
         ParamSpec("subTopK", "qt_tts_params.subtalker_top_k", "副·候选范围", "50",
             "声学层候选集（O5:319）", "O5/O6",
-            listOf("0", "20", "50"), min = 0.0, max = 1000.0, unit = " 个"),
+            listOf("0", "20", "50", "100"), min = 0.0, max = 100.0, unit = " 个"),
         ParamSpec("subTopP", "qt_tts_params.subtalker_top_p", "副·核采样", "1.0",
             "声学层核采样（O5:320）", "O5/O6",
             listOf("0.8", "0.95", "1.0"), min = 0.0, max = 1.0)
@@ -158,7 +161,8 @@ object ParamCatalog {
         "O4 qwentts.cpp README" to "ServeurpersoCom/qwentts.cpp · §14/§22-23 采样链、§121-129 voice design、§153-156 可覆盖字段",
         "O5 随包 qwen.h" to "app/src/main/cpp/qwen.h:277-356 · qt_tts_params 全字段与模式规则",
         "O6 采样默认值" to "src/sampling-defaults.h · 9 个默认值逐字",
-        "O7 CLI 采样表" to "Qwen3 TTS Sampling：--temperature 0.9 / --top-k 50 / --top-p 1.0 / --repetition-penalty 1.05"
+        "O7 CLI 采样表" to "Qwen3 TTS Sampling：--temperature 0.9 / --top-k 50 / --top-p 1.0 / --repetition-penalty 1.05",
+        "O8 官方生成参数与范围" to "temperature 0~2 / top_k 1~100 / top_p 0~1 / repetition_penalty 1~2 / max_new_tokens 64~8192；subtalker 同套默认 0.9/50/1.0"
     )
 
     fun find(key: String): ParamSpec? = SAMPLING.find { it.key == key }

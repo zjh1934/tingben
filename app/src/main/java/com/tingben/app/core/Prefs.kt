@@ -68,6 +68,9 @@ object Prefs {
     private const val KEY_SPEAKER_NAMES = "speakerNames"
     private const val KEY_REF_TEXT = "refText"
     private const val KEY_CV_STYLE = "cvStyle"
+    private const val KEY_TRIAL_TEXT = "trialText"
+
+    const val DEFAULT_TRIAL_TEXT = "雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。"
 
     private fun sp(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -161,6 +164,12 @@ object Prefs {
             .split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
     fun setSpeakerNames(c: Context, names: List<String>) =
         sp(c).edit().putString(KEY_SPEAKER_NAMES, names.joinToString(",")).apply()
+
+    fun trialText(c: Context): String =
+        (sp(c).getString(KEY_TRIAL_TEXT, DEFAULT_TRIAL_TEXT) ?: DEFAULT_TRIAL_TEXT)
+            .ifBlank { DEFAULT_TRIAL_TEXT }
+    fun setTrialText(c: Context, v: String) =
+        sp(c).edit().putString(KEY_TRIAL_TEXT, v).apply()
 
     fun refText(c: Context): String = sp(c).getString(KEY_REF_TEXT, "") ?: ""
     fun setRefText(c: Context, v: String) =

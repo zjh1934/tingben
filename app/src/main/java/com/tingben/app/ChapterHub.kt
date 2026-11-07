@@ -1,6 +1,7 @@
 package com.tingben.app
 
 import android.content.Context
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -132,7 +133,7 @@ internal fun ChapterHubScreen(
     val st by Producer.state.collectAsState()
     val task by Producer.resume.collectAsState()
 
-    val diskKey = "${st.running}|${st.stage}|${st.done}"
+    val diskKey = "${!st.running}|${st.stage}"
     var disk by remember(book.id, refresh) {
         mutableStateOf<Pair<Map<Int, AudioItem>, Set<Int>>?>(null)
     }
@@ -167,11 +168,29 @@ internal fun ChapterHubScreen(
     val scope = rememberCoroutineScope()
     val colWidth = LocalConfiguration.current.screenWidthDp.dp
     val pagePx = with(LocalDensity.current) { colWidth.toPx() }
+    val pagePxState = rememberUpdatedState(pagePx)
     val hScroll = rememberScrollState()
     val current by remember {
         derivedStateOf {
             if (pagePx <= 0f) 0 else ((hScroll.value + pagePx / 2f) / pagePx).toInt().coerceIn(0, 2)
         }
+    }
+    var savedCol by rememberSaveable { mutableStateOf(0) }
+
+    LaunchedEffect(pagePx) {
+        if (pagePx > 0f) hScroll.animateScrollTo((savedCol * pagePx).toInt())
+    }
+    LaunchedEffect(current) { savedCol = current }
+    LaunchedEffect(Unit) {
+        snapshotFlow { hScroll.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { moving ->
+                val px = pagePxState.value
+                if (!moving && px > 0f) {
+                    val target = (current * px).toInt()
+                    if (hScroll.value != target) hScroll.animateScrollTo(target)
+                }
+            }
     }
 
     fun jumpTo(col: Int) { scope.launch { hScroll.animateScrollTo((col * pagePx).toInt()) } }
@@ -199,6 +218,11 @@ internal fun ChapterHubScreen(
 
     fun startAction(a: HubAction) {
         if (selected.isEmpty()) return
+        if (Producer.isBusy()) {
+            Toast.makeText(c, "还有一本在制作，等它做完或先停止，一次只跑一本",
+                Toast.LENGTH_LONG).show()
+            return
+        }
         val n = selected.size
         Producer.start(c, book, selected, directRead = true, config = ProduceConfig())
         onStarted(book.id, selected)

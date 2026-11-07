@@ -60,7 +60,7 @@ errs += check(trial, 'trial', [
     'ensureActive()',
     'if (myToken != trialToken || !isActive) return@withContext',
     'trialJob = job',
-    'if (busyTrial) stopTrial()',
+    'Text("停止", fontSize = 12.sp)',
 ])
 if trial.count('ensureActive()') < 4:
     errs.append('ensureActive 检查点不足 4 处')
@@ -71,7 +71,7 @@ errs += check(trial, '旧形态', [], absent=[
 ])
 
 errs += check(main, '守恒/界面', [
-    '用当前草稿', '用已生效的设置',
+    '试听 · 当前', '试听 · 已保存',
     'commitAll(',
     'PlayQueue.setTracks(',
     'Screen.MIXER -> MixerScreen',

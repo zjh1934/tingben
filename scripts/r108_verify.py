@@ -83,7 +83,7 @@ errs = core_errors(cpp, main, pipe, ci)
 errs += check(cpp, 'C++/停止标志', ['std::unique_lock<std::mutex> refLock'])
 errs += check(code_only(tts_body(cpp)), 'C++/TTS 段', [], absent=['g_cancel.store(false)'])
 errs += check(main, '守恒/界面', [
-    '用当前草稿', '用已生效的设置', 'commitAll(', 'Screen.MIXER -> MixerScreen',
+    '试听 · 当前', '试听 · 已保存', 'commitAll(', 'Screen.MIXER -> MixerScreen',
     'ModelStore.Mode.BASE ->', 'ModelStore.Mode.CUSTOM_VOICE ->',
     'ModelStore.Mode.VOICE_DESIGN ->',
 ])

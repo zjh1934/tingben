@@ -149,10 +149,10 @@ for banned in ["BIND_ACCESSIBILITY_SERVICE", "SYSTEM_ALERT_WINDOW", "systemExemp
 
 fgs_src = (ROOT / "app/src/main/java/com/tingben/app/ProduceService.kt").read_text(encoding="utf-8", errors="replace")
 R26_ALL = ["FGS_BEGIN", "FGS_READY", "FGS_FINISH", "FGS_DESTROY", "FGS_WAKELOCK",
-           "FGS_CANCEL", "FGS_NOTIF_PERMISSION", "FGS_START_FAIL", "BATTERY_SETTINGS_OPEN",
+           "FGS_CANCEL", "FGS_NOTIF_PERMISSION", "FGS_START_FAIL", "OpenMultipleDocuments()",
            "PARTIAL_WAKE_LOCK", "FOREGROUND_SERVICE_TYPE_DATA_SYNC", "UNIT_TIMEOUT_MS",
-           "POST_NOTIFICATIONS", "ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS",
-           "ProduceService", "dataSync", "ProduceService.status()"]
+           "POST_NOTIFICATIONS", "DEFAULT_TRIAL_TEXT",
+           "ProduceService", "dataSync", "Prefs.trialText(c)"]
 for sym in R26_ALL:
     if sym not in all_src: errs.append("缺少 R26 符号: " + sym)
 for call in ["ProduceService.begin(", "ProduceService.finish(", "ProduceService.update(",
@@ -194,7 +194,7 @@ if "val playable = sg.hasAudio && segId.isNotEmpty()" not in main_src:
 mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "ParamLine(", "调音台", "private fun SettingsSection(",
-           "12 维", "用当前草稿", "用已生效的设置",
+           "12 维", "试听 · 已保存", "试听 · 当前",
            "MixerScreen", "Screen.MIXER", "全部恢复默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
@@ -292,8 +292,8 @@ tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 if tabs_m:
     body = tabs_m.group(1)
-    if body.count(" to ") != 4 or "设置" in body or "调音台" not in body:
-        errs.append("U1 回退：抽屉一级不是 4 项 / 调音台不在一级 / 混入了设置")
+    if body.count(" to ") != 5 or "设置" in body or "调音台" not in body:
+        errs.append("U1 回退：抽屉一级不是 5 项 / 调音台不在一级 / 混入了设置")
 else:
     errs.append("U1 回退：找不到 DRAWER_TOP")
 if more_m:

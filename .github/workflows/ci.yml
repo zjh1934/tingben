@@ -142,6 +142,12 @@ jobs:
         run: python3 scripts/r119_verify.py --selftest
       - name: R120 拼成整章后删小块闭环验证（章成品进树 / 续跑不重算 / 章状态真值 / 反向注入）
         run: python3 scripts/r120_verify.py --selftest
+      - name: R121 local interaction batch
+        run: python3 scripts/r121_verify.py --selftest
+      - name: R122 拼接落盘原子化与状态闭环验证
+        run: python3 scripts/r122_verify.py --selftest
+      - name: R123 落盘一致性与音频归位验证
+        run: python3 scripts/r123_verify.py --selftest
 
 
 

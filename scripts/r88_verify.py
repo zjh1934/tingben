@@ -16,8 +16,8 @@ GRADLE = ROOT / "app/build.gradle.kts"
 CI = ROOT / ".github/workflows/ci.yml"
 
 POS = [
-    '在书架选一本书，勾选章节后点「合成音频」，这里就会出现进度。',
-    'Text("去书架，选一本书")',
+    'if (tasks.isNotEmpty()) {',
+    'Text("共 ${tasks.size} 本 · 一本一个任务"',
     'Text("看实时进度 ›", fontSize = 12.sp)',
     'Text("去「我的音频」试听 ›", fontSize = 12.sp)',
     'Text("继续制作（接着已做好的块跑）", fontSize = 15.sp)',
@@ -30,6 +30,8 @@ POS = [
 ]
 
 BAN = [
+    '还没有任务',
+    'Text("去书架，选一本书")',
     'Text("最近完成"',
     'Text("去试听 ›")',
     'Text("查看实时进度")',
@@ -94,7 +96,8 @@ def main():
              lambda t: dict(t, main=t['main'].replace('TextButton(onClick = onProgress)',
                  'Button(onClick = onProgress, Modifier.fillMaxWidth().height(46.dp))'))),
             ('旧空态按钮回潮',
-             lambda t: dict(t, main=t['main'].replace('Text("去书架，选一本书")', 'Text("去书架")'))),
+             lambda t: dict(t, main=t['main'].replace('if (tasks.isNotEmpty()) {',
+                 'if (tasks.isEmpty()) {\n Text("还没有任务")\n Text("去书架，选一本书")'))),
             ('看进度文案回潮',
              lambda t: dict(t, main=t['main'].replace('Text("看实时进度 ›", fontSize = 12.sp)',
                  'Text("查看实时进度")'))),

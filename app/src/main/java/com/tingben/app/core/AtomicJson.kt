@@ -63,7 +63,14 @@ object AtomicJson {
                 } else bp.delete()
             }
             if (!raw(part, s)) { part.delete(); return false }
-            return part.renameTo(f)
-        } catch (_: Throwable) { return false }
+            if (!part.renameTo(f)) { part.delete(); return false }
+            return true
+        } catch (_: Throwable) { part.delete(); return false }
+    }
+
+    fun delete(f: File) {
+        listOf(f, File(f.parentFile, f.name + ".part"), File(f.parentFile, f.name + ".bak")).forEach {
+            try { if (it.isFile) it.delete() } catch (_: Throwable) { }
+        }
     }
 }

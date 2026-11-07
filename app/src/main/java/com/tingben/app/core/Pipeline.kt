@@ -133,8 +133,15 @@ object ModelStore {
                 onProgress(total)
             }
             if (tmp.length() == 0L) throw IllegalStateException("选到的文件是空的")
-            if (out.exists() && !out.delete()) throw IllegalStateException("旧文件删不掉")
-            if (!tmp.renameTo(out)) throw IllegalStateException("文件没能保存")
+            val bak = File(dir(c), "$safe.bak")
+            if (bak.exists()) bak.delete()
+            if (out.exists() && !out.renameTo(bak))
+                throw IllegalStateException("旧文件挪不开，原文件留着")
+            if (!tmp.renameTo(out)) {
+                if (bak.exists()) bak.renameTo(out)
+                throw IllegalStateException("文件没能保存，原文件已放回")
+            }
+            bak.delete()
             EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT", "$safe ${out.length()}")
             return out
         } catch (t: Throwable) {
@@ -150,7 +157,8 @@ object ModelStore {
 
     fun cleanup(c: Context) {
         try {
-            dir(c).listFiles()?.filter { it.isFile && it.name.endsWith(".part") }?.forEach {
+            dir(c).listFiles()?.filter { it.isFile &&
+                (it.name.endsWith(".part") || it.name.endsWith(".bak")) }?.forEach {
                 EventLog.log(EventLog.Kind.MODEL, "PART_DISCARD", "${it.name} ${it.length()}")
                 it.delete()
             }
@@ -375,24 +383,30 @@ object WavMerger {
     }
 
     fun merge(parts: List<File>, out: File, gapMs: Int = 0, declickMs: Int = 30): Boolean {
+        val part = File(out.parentFile, out.name + ".part")
         return try {
             val chunks = parts.mapNotNull { p -> pcmOf(p)?.let { declick(it, declickMs) } }
-            if (chunks.isEmpty()) false else {
+            if (chunks.isEmpty() || chunks.size != parts.size) { part.delete(); false } else {
                 val gapBytes = (gapMs.coerceIn(0, 5000) * 48 / 2) * 2
                 val silence = if (gapBytes > 0) ByteArray(gapBytes) else ByteArray(0)
                 val total = chunks.sumOf { it.size } + silence.size * (chunks.size - 1).coerceAtLeast(0)
-                out.outputStream().use { os ->
+                java.io.FileOutputStream(part, false).use { os ->
                     os.write(header(total))
                     chunks.forEachIndexed { i, pcm ->
                         if (i > 0 && silence.isNotEmpty()) os.write(silence)
                         os.write(pcm)
                     }
+                    os.flush()
+                    os.fd.sync()
                 }
+                if (part.length() != 44L + total) { part.delete(); return false }
+                if (out.exists() && !out.delete()) { part.delete(); return false }
+                if (!part.renameTo(out)) { part.delete(); return false }
                 EventLog.log(EventLog.Kind.PIPELINE, "MERGE_DONE",
                     "${parts.size} 块 / $total 字节 · 段间静音 ${gapMs}ms")
                 true
             }
-        } catch (_: Throwable) { false }
+        } catch (_: Throwable) { part.delete(); false }
     }
 }
 
@@ -631,6 +645,7 @@ object Producer {
             if (changed) {
                 val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
                 killed.forEach { it.delete() }
+                AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })
                 EventLog.log(EventLog.Kind.PIPELINE, "VOICE_INVALIDATE",
                     "声音配置变了，作废 ${killed.size} 段旧音频，分段保留")
             }
@@ -651,6 +666,7 @@ object Producer {
             if (modeStampFile.exists() && oldMode != modeStamp) {
                 val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
                 killed.forEach { it.delete() }
+                AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })
                 EventLog.log(EventLog.Kind.PIPELINE, "MODE_INVALIDATE",
                     "模式输入变了（$oldMode → $modeStamp），作废 ${killed.size} 段旧音频，分段保留")
             }
@@ -669,6 +685,7 @@ object Producer {
                     f.isFile && f.name.endsWith(".wav")
                 } ?: emptyList()
                 killed.forEach { it.delete() }
+                AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })
                 EventLog.log(EventLog.Kind.PIPELINE, "PRESET_INVALIDATE",
                     "本次预设变了（$presetStamp），作废 ${killed.size} 段旧音频，分段保留")
             }
@@ -726,7 +743,11 @@ object Producer {
         val perChapterDone = mutableMapOf<Int, Int>()
         val pending = (0 until toSpeak.size).count { i ->
             val f = File(work, String.format("direct_%04d.wav", i))
-            !(f.exists() && f.length() > 44)
+            if (f.exists() && f.length() > 44) return@count false
+            val ci = segChapter.getOrElse(i) { -1 }
+            val covered = ci >= 0 && doneChapterFiles[ci]
+                ?.let { it.isFile && it.length() > 44 } == true
+            !covered
         }
         val sample = (0 until toSpeak.size).mapNotNull { i ->
             File(work, String.format("direct_%04d.wav", i))
@@ -853,6 +874,8 @@ object Producer {
         }
         val ok = WavMerger.merge(wavs, outFile, config.gapMs)
         if (!ok || outFile.length() <= 44) {
+            outFile.delete()
+            File(outFile.parentFile, outFile.name + ".part").delete()
             _state.value = Progress(false, "没完成", annotated.size, annotated.size,
                 gateFails + synthFails, "没能生成音频，可以回书架重新合成这一本")
             return
@@ -872,8 +895,8 @@ object Producer {
                 chJson.put(JSONObject().put("index", ch.index).put("title", ch.title)
                     .put("startMs", firstOffset[ch.index] ?: 0L))
             }
-            File(outFile.parentFile, "${outFile.nameWithoutExtension}.chapters.json")
-                .writeText(chJson.toString())
+            AtomicJson.write(File(outFile.parentFile,
+                "${outFile.nameWithoutExtension}.chapters.json"), chJson.toString())
         } catch (_: Throwable) { }
 
         _state.value = Progress(false, "完成", annotated.size, annotated.size,

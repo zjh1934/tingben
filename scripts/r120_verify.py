@@ -32,8 +32,13 @@ POS = [
     ("tree", 'chapterOnly.filter { it.bookId == bookId && ch in it.chapters }'),
     ("tree", 'bk.chapters.mapNotNull { it.merged?.lastModified() }'),
     ("ops", 'val kept: Int = 0'),
-    ("ops", 'parts.firstOrNull()?.parentFile?.let { AudioTree.markDone(it, chapter, dst) }'),
+    ("ops", 'val marked = parts.firstOrNull()?.parentFile'),
+    ("ops", 'AudioTree.markDone(it, chapter, dst)'),
+    ("ops", 'if (!marked)'),
+    ("ops", 'kept = parts.size'),
+    ("ops", '章状态没记上'),
     ("ops", 'val kept = deleteAll(parts)'),
+    ("ops", 'AudioTree.forget(c, parts.filter { !it.isFile }'),
     ("ops", 'fun deleteMerged(c: Context, file: File): Boolean'),
     ("pipe", 'AudioTree.readDone(work)'),
     ("pipe", 'val usedDoneChapters = mutableSetOf<Int>()'),
@@ -136,6 +141,8 @@ def main():
                 'val kept = deleteAll(parts)', 'val kept = 0'))),
             ('章完成表不写', lambda t: dict(t, ops=t['ops'].replace(
                 'AudioTree.markDone(it, chapter, dst)', 'Unit'))),
+            ('章状态写失败仍删小块', lambda t: dict(t, ops=t['ops'].replace(
+                'if (!marked) {', 'if (false) {'))),
             ('续跑补位被删', lambda t: dict(t, pipe=t['pipe'].replace(
                 'usedDoneChapters.add(ci)', 'false'))),
             ('进度倒退没修', lambda t: dict(t, resume=t['resume'].replace(

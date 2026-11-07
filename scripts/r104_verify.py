@@ -30,7 +30,9 @@ POS = [
     ("atomic", 'f.name + ".bak"'),
     ("atomic", 'return Read.Corrupt("索引损坏且没有可用的上一次记录")'),
     ("atomic", "if (!legal(s)) return false"),
-    ("atomic", "return part.renameTo(f)"),
+    ("atomic", "if (!part.renameTo(f)) { part.delete(); return false }"),
+    ("atomic", "fun delete(f: File) {"),
+    ("resume", "AtomicJson.delete(listFile(c))"),
     ("audio", "@Volatile var readError: String? = null"),
     ("audio", "@Volatile var writeError: String? = null"),
     ("audio", "val body = when (val r = AtomicJson.read(index(c)))"),
@@ -58,6 +60,10 @@ POS = [
 ]
 
 BAN_ALL = [
+    'return part.renameTo(f)',
+    'listFile(c).delete()',
+    'file(c).delete()',
+    'part(c).delete()',
     'if (!tmp.renameTo(f)) { f.writeText(a.toString()); tmp.delete() }',
     'if (!tmp.renameTo(file(c))) { file(c).writeText(root.toString(1)); tmp.delete() }',
     'if (!p.renameTo(f)) { f.writeText(s); p.delete() }',

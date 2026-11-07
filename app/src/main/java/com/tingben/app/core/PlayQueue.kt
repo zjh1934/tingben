@@ -180,7 +180,7 @@ object PlayQueue {
         val from = (overrideStartMs ?: t.startMs).coerceAtLeast(0L)
         if (!t.file.isFile) {
             if (i + 1 < tracks.size) { open(i + 1); return }
-            _state.value = PlaybackState(speed = speed, ended = true, queueId = queueId)
+            finish()
             return
         }
         _state.value = PlaybackState(index = i, label = t.label, trackId = t.id,
@@ -203,16 +203,13 @@ object PlayQueue {
                     it.release()
                     player = null
                     if (index + 1 < tracks.size) open(index + 1)
-                    else {
-                        _state.value = _state.value.copy(
-                            isPlaying = false, ended = true, index = -1, label = "",
-                            trackId = "")
-                    }
+                    else finish()
                 }
                 setOnErrorListener { failed, _, _ ->
                     failed.release()
                     player = null
                     if (index + 1 < tracks.size) open(index + 1)
+                    else finish()
                     true
                 }
                 setDataSource(t.file.absolutePath)
@@ -221,7 +218,13 @@ object PlayQueue {
         } catch (_: Throwable) {
             player = null
             if (i + 1 < tracks.size) open(i + 1)
+            else finish()
         }
+    }
+
+    private fun finish() {
+        abandonFocus()
+        _state.value = PlaybackState(speed = speed, ended = true, queueId = queueId)
     }
 
     private fun releasePlayer() {

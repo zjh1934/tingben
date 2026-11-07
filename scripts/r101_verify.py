@@ -32,7 +32,7 @@ def mixer(s):
 POS = [
     ("hub", "chapterProgress: Map<Int, Float>, bookId: String"),
     ("hub", "runningBook == bookId"),
-    ("hub", 'val diskKey = "${st.running}|${st.stage}|${st.done}"'),
+    ("hub", 'val diskKey = "'),
     ("hub", "var disk by remember(book.id, refresh)"),
     ("hub", "AudioLibrary.playableChapters(c, book.id)"),
     ("hub", "st.running, task?.bookId, task?.only, st.chapterProgress, book.id, stalled)"),
@@ -71,8 +71,19 @@ BAN_HUB = [
     "val finished = remember(book, refresh) {",
 ]
 
+def disk_key_body(s):
+    parts = s.split('val diskKey = "', 1)
+    return parts[1].split('"', 1)[0] if len(parts) > 1 else None
+
 def check(f):
     errs = []
+    key = disk_key_body(f["hub"])
+    if key is None:
+        errs.append("章节页没有磁盘读 key")
+    elif "st.done" in key:
+        errs.append("磁盘读 key 仍随每段 done 变化")
+    elif "running" not in key or "stage" not in key:
+        errs.append("磁盘读 key 缺完成/阶段维度")
     for k, needle in POS:
         if needle not in f[k]:
             errs.append("缺正向: " + needle[:70])
@@ -120,6 +131,10 @@ if __name__ == "__main__":
              lambda t: dict(t, hub=t["hub"].replace("runningBook == bookId", "true"))),
             ("做完重读磁盘被删",
              lambda t: dict(t, hub=t["hub"].replace("val diskKey = ", "val unusedKey = "))),
+            ("读盘 key 又逐段变化",
+             lambda t: dict(t, hub=t["hub"].replace(
+                 'val diskKey = "${!st.running}|${st.stage}"',
+                 'val diskKey = "${st.running}|${st.stage}|${st.done}"'))),
             ("常驻提示开关复活",
              lambda t: dict(t, hub=t["hub"] + "\nvar showProgressHint = false\n")),
             ("即时状态源被删",

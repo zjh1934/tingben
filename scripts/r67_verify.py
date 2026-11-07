@@ -53,7 +53,7 @@ def check(pipe=None, prefs=None, main=None, hub=None, event=None, chrome=None,
     if 'chapterIndices' not in audio: e.append('AudioLibrary 缺旧成品索引兼容')
     for k in KEEP:
         if k not in allkt: e.append('守恒项缺失: ' + k)
-    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉不是 6 项')
+    if len(re.findall(r'NAV_\w+ = \d', chrome)) != 7: e.append('抽屉不是 7 项')
     slots = [x.get('slot') for x in manifest.get('models', [])]
     want_slots = {'tts_tokenizer', 'tts_talker_voice_design', 'tts_talker_custom_voice', 'tts_talker_base'}
     if set(slots) != want_slots or len(slots) != 4: e.append('模型清单不是 1 底座 + 3 模式: ' + str(slots))

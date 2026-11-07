@@ -7,7 +7,7 @@ HUB = ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt"
 CI = ROOT / ".github/workflows/ci.yml"
 
 POS = [
-    'val diskKey = "${st.running}|${st.stage}|${st.done}"',
+    'val diskKey = "',
     "var disk by remember(book.id, refresh) {",
     "LaunchedEffect(book.id, refresh, diskKey) {",
     "if (disk != null) delay(350)",
@@ -28,8 +28,19 @@ BAN = [
 ]
 
 
+def disk_key_body(s):
+    parts = s.split('val diskKey = "', 1)
+    return parts[1].split('"', 1)[0] if len(parts) > 1 else None
+
 def check(f):
     e = []
+    key = disk_key_body(f["hub"])
+    if key is None:
+        e.append("章节页没有磁盘读 key")
+    elif "st.done" in key:
+        e.append("磁盘读 key 仍随每段 done 变化")
+    elif "running" not in key or "stage" not in key:
+        e.append("磁盘读 key 缺完成/阶段维度")
     for s in POS:
         if s not in f["hub"]:
             e.append("缺正向: " + s[:60])
@@ -54,6 +65,10 @@ def main():
              lambda t: dict(t, hub=t["hub"].replace(
                  "var disk by remember(book.id, refresh)",
                  "var disk by remember(book.id, refresh, diskKey)"))),
+            ("读盘 key 又逐段变化",
+             lambda t: dict(t, hub=t["hub"].replace(
+                 'val diskKey = "${!st.running}|${st.stage}"',
+                 'val diskKey = "${st.running}|${st.stage}|${st.done}"'))),
             ("撤掉磁盘读防抖",
              lambda t: dict(t, hub=t["hub"].replace("if (disk != null) delay(350)", ""))),
             ("退回组合期同步读整本",

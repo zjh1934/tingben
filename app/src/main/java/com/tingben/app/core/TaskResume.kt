@@ -24,7 +24,6 @@ data class TaskInfo(
 
 object TaskResume {
     private fun file(c: Context) = File(c.filesDir, "task_active.json")
-    private fun part(c: Context) = File(c.filesDir, "task_active.json.part")
     private fun listFile(c: Context) = File(c.filesDir, "tasks.json")
 
     private fun encode(t: TaskInfo): JSONObject {
@@ -96,6 +95,7 @@ object TaskResume {
 
     fun save(c: Context, t: TaskInfo) {
         try {
+            if (AtomicJson.read(listFile(c)) is AtomicJson.Read.Corrupt) return
             val o = encode(t)
             AtomicJson.write(file(c), o.toString())
             val all = readAll(c).toMutableList()
@@ -109,23 +109,22 @@ object TaskResume {
 
     fun remove(c: Context, bookId: String) {
         try {
+            if (AtomicJson.read(listFile(c)) is AtomicJson.Read.Corrupt) return
             val keep = readAll(c).filter { it.bookId != bookId }
             if (keep.isEmpty()) {
-                listFile(c).delete()
-                file(c).delete()
-                part(c).delete()
+                AtomicJson.delete(listFile(c))
+                AtomicJson.delete(file(c))
             } else {
                 val a = JSONArray()
                 keep.forEach { a.put(encode(it)) }
-                AtomicJson.write(listFile(c), a.toString())
-                file(c).delete()
-                part(c).delete()
+                if (!AtomicJson.write(listFile(c), a.toString())) return
+                AtomicJson.delete(file(c))
             }
         } catch (_: Throwable) { }
     }
 
     fun clear(c: Context) {
-        try { file(c).delete(); part(c).delete(); listFile(c).delete() } catch (_: Throwable) { }
+        try { AtomicJson.delete(file(c)); AtomicJson.delete(listFile(c)) } catch (_: Throwable) { }
     }
 
     fun expectedModeStamp(c: Context): String = sha(

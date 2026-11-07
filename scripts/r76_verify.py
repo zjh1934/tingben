@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """R76 · 幽灵页与无意义项清理验证。
-正向：Screen 10 值 / 抽屉 6 项 / 角色页与角色 UI 零残留 / 主链守恒。
+正向：Screen 10 值 / 抽屉 7 项 / 角色页与角色 UI 零残留 / 主链守恒。
 R77 订正：角色表已从底层物理删除（不再作为守恒项），
 旧 WAV 兼容改由「双指纹迁移」承担；相应的零残留断言同步换成新形态。
 反向注入：旧形态塞回去必须拦下。
@@ -44,8 +44,8 @@ def check(main=None, chrome=None, allkt=None):
     if got != WANT:
         e.append("Screen 不是 10 值: " + str(got ^ WANT))
     navs = re.findall(r"NAV_\w+ = \d", ch)
-    if len(navs) != 6:
-        e.append("抽屉不是 6 项: %d" % len(navs))
+    if len(navs) != 7:
+        e.append("抽屉不是 7 项: %d" % len(navs))
     for s in BAN_MAIN:
         if s in m:
             e.append("幽灵页/角色 UI 残留: " + s)
@@ -79,7 +79,7 @@ def selftest():
             "old != voiceStamp && old != legacyStamp", "@@BROKEN@@"))),
         ("删掉直接朗读入口", lambda: check(allkt=ALLKT.replace(
             "run(c, book, onlyChapters, true, thinkOverride, config)", "@@BROKEN@@"))),
-        ("抽屉变成 7 项", lambda: check(chrome=CHROME + NL + "internal const val NAV_EXTRA = 6" + NL)),
+        ("抽屉变成 8 项", lambda: check(chrome=CHROME + NL + "internal const val NAV_EXTRA = 7" + NL)),
     ]
     for name, fn in INJ:
         try:
@@ -95,5 +95,5 @@ if __name__ == "__main__":
         selftest()
     else:
         a, b = check()
-        print("r76_verify ok · Screen %d 值 · 抽屉 6 项 · %d 类旧形态零残留 · 守恒 %d 项全在"
+        print("r76_verify ok · Screen %d 值 · 抽屉 7 项 · %d 类旧形态零残留 · 守恒 %d 项全在"
               % (a, b, len(KEEP)))

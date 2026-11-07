@@ -173,6 +173,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var taskChapter by rememberSaveable { mutableStateOf<Int?>(null) }
     var refresh by rememberSaveable { mutableStateOf(0) }
     var modelsFrom by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
+    var inputReadOpen by rememberSaveable { mutableStateOf(false) }
     var importing by rememberSaveable { mutableStateOf<String?>(null) }
     val importBytesFlow = remember { MutableStateFlow(0L) }
     val importBytes by importBytesFlow.collectAsState()
@@ -289,31 +290,46 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             }
         }
     }
-    val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        try {
-            ctx.contentResolver.takePersistableUriPermission(
-                uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: Throwable) { }
-        val name = queryName(ctx, uri).ifBlank {
-            uri.lastPathSegment?.substringAfterLast('/') ?: "model.gguf"
-        }
-        importing = name
-        importBytesFlow.value = 0L
+    val pickModel = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
         importError = null
-        EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT_BEGIN", name)
+        EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT_BEGIN", "${uris.size} 个文件")
         scope.launch(Dispatchers.IO) {
-            val result = runCatching {
-                ctx.contentResolver.openInputStream(uri)?.use { s ->
-                    ModelStore.import(ctx, name, s) { n -> importBytesFlow.value = n }
-                } ?: throw IllegalStateException("打不开这个文件")
+            var totalBytes = 0L
+            val failures = mutableListOf<String>()
+            uris.forEach { uri ->
+                try {
+                    ctx.contentResolver.takePersistableUriPermission(
+                        uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Throwable) { }
+                val name = queryName(ctx, uri).ifBlank {
+                    uri.lastPathSegment?.substringAfterLast('/') ?: "model.gguf"
+                }
+                withContext(Dispatchers.Main) {
+                    importing = name
+                    importBytesFlow.value = totalBytes
+                }
+                val result = runCatching {
+                    ctx.contentResolver.openInputStream(uri)?.use { s ->
+                        ModelStore.import(ctx, name, s) { n ->
+                            importBytesFlow.value = totalBytes + n
+                        }
+                    } ?: throw IllegalStateException("打不开这个文件")
+                }
+                val f = result.getOrNull()
+                if (f != null) {
+                    totalBytes += f.length()
+                } else {
+                    failures.add("$name：${result.exceptionOrNull()?.message ?: "导入失败"}")
+                }
             }
             withContext(Dispatchers.Main) {
                 importing = null
-                val err = result.exceptionOrNull()
-                if (err != null) {
-                    importError = err.message ?: "导入失败"
-                    Toast.makeText(ctx, "没导入成功：${importError}", Toast.LENGTH_LONG).show()
+                if (failures.isNotEmpty()) {
+                    importError = failures.joinToString("；")
+                    Toast.makeText(ctx, "有 ${failures.size} 个没导入成功：$importError",
+                        Toast.LENGTH_LONG).show()
                 } else {
                     refresh++
                     val left = ModelStore.missing(ctx)
@@ -363,30 +379,35 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             AppDrawerSheet(
                 selected = drawerSelected,
                 onNavigate = { idx ->
-                    val from = when (screen) {
-                        Screen.LIBRARY, Screen.TASKS, Screen.AUDIO,
-                        Screen.PRODUCE, Screen.PROGRESS -> screen
-                        else -> drawerReturn
-                    }
-                    drawerReturn = from
-                    if (idx == NAV_MODELS) modelsFrom = from
-                    val target = when (idx) {
-                        NAV_LIBRARY -> Screen.LIBRARY
-                        NAV_TASKS -> Screen.TASKS
-                        NAV_AUDIO -> Screen.AUDIO
-                        NAV_SETTINGS -> Screen.SETTINGS
-                        NAV_MIXER -> Screen.MIXER
-                        NAV_MODELS -> Screen.MODELS
-                        else -> Screen.LIBRARY
-                    }
-                    if (target == Screen.LIBRARY) {
-                        screen = Screen.LIBRARY
-                        nav.clear()
+                    if (idx == NAV_INPUT) {
+                        inputReadOpen = true
+                        scope.launch { drawerState.close() }
                     } else {
-                        nav.push(target)
+                        val from = when (screen) {
+                            Screen.LIBRARY, Screen.TASKS, Screen.AUDIO,
+                            Screen.PRODUCE, Screen.PROGRESS -> screen
+                            else -> drawerReturn
+                        }
+                        drawerReturn = from
+                        if (idx == NAV_MODELS) modelsFrom = from
+                        val target = when (idx) {
+                            NAV_LIBRARY -> Screen.LIBRARY
+                            NAV_TASKS -> Screen.TASKS
+                            NAV_AUDIO -> Screen.AUDIO
+                            NAV_SETTINGS -> Screen.SETTINGS
+                            NAV_MIXER -> Screen.MIXER
+                            NAV_MODELS -> Screen.MODELS
+                            else -> Screen.LIBRARY
+                        }
+                        if (target == Screen.LIBRARY) {
+                            screen = Screen.LIBRARY
+                            nav.clear()
+                        } else {
+                            nav.push(target)
+                        }
+                        if (idx == NAV_AUDIO || idx == NAV_SETTINGS) refresh++
+                        scope.launch { drawerState.close() }
                     }
-                    if (idx == NAV_AUDIO || idx == NAV_SETTINGS) refresh++
-                    scope.launch { drawerState.close() }
                 },
                 surface = Card,
                 primary = Primary,
@@ -394,7 +415,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             )
         }
     ) {
-        Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
+        Box(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize()) {
         AppTopBar(
             spec = chrome,
             onMenu = { scope.launch { drawerState.open() } },
@@ -486,6 +508,17 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             bookId = id
             nav.push(Screen.CHAPTERS)
         })
+        }
+        if (inputReadOpen) {
+            InputReadScreen(ctx,
+                onBack = { inputReadOpen = false },
+                onAdded = {
+                    inputReadOpen = false
+                    screen = Screen.LIBRARY
+                    nav.clear()
+                    refresh++
+                })
+        }
     }
     }
 }
@@ -539,15 +572,10 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                            importError: String? = null,
                            onDismissImportError: () -> Unit = {}) {
     val books = remember(refresh) { BookStore.list(c) }
-    val ready = remember(refresh) { ModelStore.ready(c) }
-    val missing = remember(refresh) { ModelStore.missing(c) }
     var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }
     LaunchedEffect(refresh, books) {
         lastReads = withContext(Dispatchers.IO) { ReadingState.allLast(c) }
     }
-    val clipboard = LocalClipboardManager.current
-    var pasteOpen by remember { mutableStateOf(false) }
-    var pasteText by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
 
     confirmDelete?.let { id ->
@@ -579,20 +607,6 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             )
             Spacer(Modifier.height(6.dp))
         }
-        if (!ready) {
-            item(key = "missing") {
-                Row(
-                    Modifier.fillMaxWidth().clickable { onModels() }.padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("还差：" + missing.joinToString("、"), fontSize = 12.sp, color = Warn,
-                        maxLines = 2, modifier = Modifier.weight(1f))
-                    Text("去准备 ›", fontSize = 12.sp, color = Primary)
-                }
-                Spacer(Modifier.height(6.dp))
-            }
-        }
-
         if (importError != null) {
             item(key = "import-error") {
                 CardBox(Modifier.padding(bottom = 12.dp)) {
@@ -613,56 +627,6 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             }
         }
 
-        if (books.isEmpty()) {
-            item(key = "empty") {
-                CardBox(Modifier.padding(bottom = 12.dp)) {
-                    Text("还没有书", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(Modifier.height(4.dp))
-                    Text("导入本地 TXT / EPUB，或先粘一段文字试试", fontSize = 12.sp, color = Sub)
-                    Spacer(Modifier.height(14.dp))
-                    Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
-                        Text("导入一本书", fontSize = 15.sp)
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    TextButton(onClick = { pasteOpen = !pasteOpen }) {
-                        Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
-                    }
-                }
-            }
-        }
-        if (pasteOpen) {
-            item(key = "paste") {
-                CardBox(Modifier.padding(bottom = 12.dp)) {
-                    OutlinedTextField(
-                        value = pasteText,
-                        onValueChange = { pasteText = it },
-                        label = { Text("正文") },
-                        maxLines = 8,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = {
-                            val got = clipboard.getText()?.text ?: ""
-                            if (got.isNotBlank()) pasteText = got
-                            else Toast.makeText(c, "剪贴板里没有文字", Toast.LENGTH_SHORT).show()
-                        }) { Text("粘贴") }
-                        TextButton(onClick = { pasteText = "" }) { Text("清除") }
-                        Spacer(Modifier.weight(1f))
-                        Button(onClick = {
-                            if (pasteText.isBlank()) {
-                                Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
-                            } else {
-                                BookStore.add(c, "粘贴的文字", pasteText)
-                                pasteText = ""; pasteOpen = false
-                                onChanged()
-                                Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
-                            }
-                        }) { Text("建书") }
-                    }
-                }
-            }
-        }
         if (books.isNotEmpty()) {
             item(key = "count") {
                 Text("共 ${books.size} 本", fontSize = 12.sp, color = Sub)
@@ -691,11 +655,46 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     }
                 }
             }
-            item(key = "paste-entry") {
-                TextButton(onClick = { pasteOpen = !pasteOpen }) {
-                    Text(if (pasteOpen) "收起粘贴" else "粘贴文字建书 ›", fontSize = 12.sp, color = Primary)
+        }
+    }
+}
+
+@Composable
+private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    var text by rememberSaveable { mutableStateOf("") }
+    Column(Modifier.fillMaxSize().background(Bg).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("‹", fontSize = 20.sp, color = Primary,
+                modifier = Modifier.clickable { onBack() }.padding(end = 12.dp))
+            Text("输入朗读", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                color = palette.text)
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = text, onValueChange = { text = it },
+            label = { Text("要念的正文", fontSize = 12.sp) },
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            textStyle = TextStyle(fontSize = 14.sp)
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = {
+                val got = clipboard.getText()?.text ?: ""
+                if (got.isNotBlank()) text = got
+                else Toast.makeText(c, "剪贴板里没有文字", Toast.LENGTH_SHORT).show()
+            }) { Text("粘贴", fontSize = 12.sp) }
+            TextButton(onClick = { text = "" }) { Text("清除", fontSize = 12.sp) }
+            Spacer(Modifier.weight(1f))
+            Button(onClick = {
+                if (text.isBlank()) {
+                    Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
+                } else {
+                    BookStore.add(c, "粘贴的文字", text)
+                    onAdded()
+                    Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
                 }
-            }
+            }) { Text("建书", fontSize = 13.sp) }
         }
     }
 }
@@ -1295,23 +1294,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
         }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-        if (tasks.isEmpty()) {
-            item(key = "tasks_empty") {
-                CardBox {
-                    Text("还没有任务", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Text("在书架选一本书，勾选章节后点「合成音频」，这里就会出现进度。",
-                        fontSize = 12.sp, color = Sub)
-                    Spacer(Modifier.height(4.dp))
-                    Text("一本算一个任务；做过的书一直留着，点开能看每一章。",
-                        fontSize = 12.sp, color = Sub)
-                    Spacer(Modifier.height(12.dp))
-                    Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
-                        Text("去书架，选一本书")
-                    }
-                }
-            }
-        } else {
+        if (tasks.isNotEmpty()) {
             item(key = "tasks_count") {
                 Text("共 ${tasks.size} 本 · 一本一个任务",
                     fontSize = 12.sp, color = Sub,
@@ -1674,13 +1657,15 @@ private fun AudioScreen(
                     if (t.kind == 1 && t.files.isNotEmpty()) {
                         TextButton(onClick = {
                             target = null
-                            t.mergeds.forEach { AudioOps.deleteMerged(c, it) }
                             val r = AudioOps.mergeChapter(c, t.bookId,
                                 tree.firstOrNull { it.bookId == t.bookId }?.title ?: t.label,
                                 t.chapter, t.files)
                             if (r.ok) {
-                                toast(if (r.kept > 0) "已拼成整章，有 ${r.kept} 个小块没删掉"
-                                    else "已拼成整章，原来的小块已清理")
+                                if (r.reason.isBlank()) {
+                                    t.mergeds.forEach { AudioOps.deleteMerged(c, it) }
+                                    toast(if (r.kept > 0) "已拼成整章，有 ${r.kept} 个小块没删掉"
+                                        else "已拼成整章，原来的小块已清理")
+                                } else toast(r.reason)
                                 localTick++
                             } else toast(r.reason)
                         }) {
@@ -1721,8 +1706,9 @@ private fun AudioScreen(
                 TextButton(onClick = {
                     var failed = AudioOps.deleteAll(t.files)
                     t.mergeds.forEach { if (!AudioOps.deleteMerged(c, it)) failed++ }
+                    AudioTree.forget(c, t.files.filter { !it.isFile }.map { it.absolutePath })
                     if (t.kind == 1 && t.chapter >= 0) AudioTree.clearDone(c, t.bookId, t.chapter)
-                    if (failed > 0) toast("有 $failed 个删不掉，记录已保留")
+                    if (failed > 0) toast("有 $failed 个没删干净，文件会重新出现在列表里")
                     else toast("已删除 ${t.files.size + t.mergeds.size} 个音频")
                     PlayQueue.release()
                     localTick++
@@ -1813,19 +1799,25 @@ private fun SettingOption(label: String, options: List<String>, current: Int, on
 
 @Composable
 private fun SettingsSection(
-    title: String, badge: String, open: Boolean, onToggle: (Boolean) -> Unit,
+    title: String, badge: String, open: Boolean = true, onToggle: (Boolean) -> Unit = {},
+    collapsible: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
         HorizontalDivider(color = Line)
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth().clickable { onToggle(!open) },
-            verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth()
+                .let { if (collapsible) it.clickable { onToggle(!open) } else it },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                 modifier = Modifier.weight(1f))
-            Text(if (open) "收起 ⌃" else "展开 ›", fontSize = 12.sp, color = Sub)
+            if (collapsible) {
+                Text(if (open) "收起 ⌃" else "展开 ›", fontSize = 12.sp, color = Sub)
+            }
         }
-        if (open) {
+        if (!collapsible || open) {
             Spacer(Modifier.height(7.dp))
             content()
         }
@@ -1866,13 +1858,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                            onMixer: () -> Unit) {
     val missing = remember(refresh) { ModelStore.missing(c) }
     val modeCount = remember(refresh) { ModelStore.installedModes(c).size }
-    var lookOpen by rememberSaveable { mutableStateOf(false) }
-    var dataOpen by rememberSaveable { mutableStateOf(true) }
-    var backOpen by rememberSaveable { mutableStateOf(false) }
-    var moreOpen by rememberSaveable { mutableStateOf(true) }
     var themeMode by remember { mutableStateOf(Prefs.themeMode(c)) }
-    var fontScale by remember { mutableStateOf(Prefs.readerFontScale(c)) }
-    var diagOpen by rememberSaveable { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1887,7 +1873,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
              " / " + (android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: ""),
             fontSize = 12.sp, color = Sub)
 
-        SettingsSection("外观与显示", "软件", lookOpen, { lookOpen = it }) {
+        SettingsSection("外观与显示", "软件", collapsible = false) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("主题", fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Text("切换立即生效", fontSize = 12.sp, color = Sub)
@@ -1904,58 +1890,11 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     }
                 }
             }
-            HorizontalDivider(color = Line)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("正文字号", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Text("看书页长期保留", fontSize = 12.sp, color = Sub)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = {
-                    val v = (fontScale - 1f).coerceIn(12f, 24f)
-                    fontScale = v
-                    Prefs.setReaderFontScale(c, v)
-                }) { Text("A-", fontSize = 12.sp) }
-                Text(fontScale.toInt().toString(), fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 10.dp))
-                TextButton(onClick = {
-                    val v = (fontScale + 1f).coerceIn(12f, 24f)
-                    fontScale = v
-                    Prefs.setReaderFontScale(c, v)
-                }) { Text("A+", fontSize = 12.sp) }
-                Spacer(Modifier.weight(1f))
-                Text("预览：巷口那盏灯还亮着", fontSize = 12.sp, color = Sub)
-            }
-            SettingInfoRow("状态栏安全区", "现有", "已处理", "顶栏已与系统通知栏错开")
         }
 
-        SettingsSection("本机数据", "本机", dataOpen, { dataOpen = it }) {
+        SettingsSection("本机数据", "本机", collapsible = false) {
             ClearSegmentsRow(c)
-            SettingsSection("诊断与试音", "按需", diagOpen, { diagOpen = it }) {
-                DiagnosticsBlock(c, refresh)
-                SoundProbeBlock(c, refresh)
-            }
         }
-
-        SettingsSection("后台与关于", "系统", backOpen, { backOpen = it }) {
-            SettingInfoRow("电池优化", "现有", "去系统设置", "让制作时不被锁屏杀掉") {
-                try {
-                    c.startActivity(android.content.Intent(
-                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-                    EventLog.log(EventLog.Kind.PIPELINE, "BATTERY_SETTINGS_OPEN",
-                        "用户主动打开系统电池优化设置")
-                } catch (_: Throwable) {
-                    Toast.makeText(c, "这台手机没提供该设置入口", Toast.LENGTH_SHORT).show()
-                }
-            }
-            SettingInfoRow("前台服务", "只读",
-                if (ProduceService.status().contains("运行")) "运行中" else "未运行", "只显示状态")
-            SettingInfoRow("第三方许可", "只读", "MIT / Apache-2.0", "")
-            SettingInfoRow("设备与引擎", "只读",
-                android.os.Build.MODEL,
-                if (NativeEngine.isAvailable()) NativeEngine.version() else "引擎未装载")
-        }
-
     }
 }
 
@@ -2179,6 +2118,8 @@ private fun ModelScreen(c: Context, refresh: Int,
         Text("模式主文件 · 装一份就能用", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         Text("App 不联网：复制地址 → 浏览器下 → 回来点导入。",
             fontSize = 12.sp, color = Sub)
+        Text("一次可勾选 4 个文件：1 个共用底座 + 3 个模式主文件。",
+            fontSize = 12.sp, color = Sub)
         Spacer(Modifier.height(8.dp))
 
         ModelStore.Mode.values().forEach { mode ->
@@ -2281,7 +2222,7 @@ private fun ModelScreen(c: Context, refresh: Int,
         }
 
         TextButton(onClick = onPick, enabled = importing == null) {
-            Text("重新导入某个文件 ›", fontSize = 12.sp, color = Primary)
+            Text("一次导入多个模型文件 ›", fontSize = 12.sp, color = Primary)
         }
         if (files.isNotEmpty()) {
             Text("已导入 ${files.size} 个文件", fontSize = 12.sp, color = Sub)
@@ -2315,9 +2256,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var showLeave by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
 
-    var trialText by remember {
-        mutableStateOf("雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。")
-    }
+    var trialText by remember { mutableStateOf(Prefs.trialText(c)) }
+    var savedTrialText by remember { mutableStateOf(Prefs.trialText(c)) }
     var busyTrial by remember { mutableStateOf(false) }
     var trialMsg by remember { mutableStateOf("") }
 
@@ -2384,7 +2324,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
         trialMsg = "已停止"
     }
 
-    fun trial(label: String, src: MixerDraft, out: String) {
+    fun trial(label: String, src: MixerDraft, text: String, out: String) {
         if (Producer.isBusy()) {
             Toast.makeText(c, "正在制作，做完再试听", Toast.LENGTH_SHORT).show()
             return
@@ -2432,13 +2372,13 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     }
                     ensureActive()
                     val f = File(c.filesDir, out)
-                    val code = NativeEngine.ttsSynthesize(h, trialText, v.instruct, v.speaker,
+                    val code = NativeEngine.ttsSynthesize(h, text, v.instruct, v.speaker,
                         "chinese", f.absolutePath, src.knobs)
                     ensureActive()
                     if (code != 0 || !f.exists() || f.length() <= 44)
                         throw IllegalStateException("没生成声音，code=$code")
                     EventLog.log(EventLog.Kind.ENGINE, "MIXER_TRIAL",
-                        "来源=$label · mode=${mode.id} · chars=${trialText.length} · " +
+                        "来源=$label · mode=${mode.id} · chars=${text.length} · " +
                             "seed=${src.knobs.seed} · bytes=${f.length()}")
                     f.absolutePath
                 } finally { NativeEngine.ttsFreeGated(h) }
@@ -2531,7 +2471,6 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             }
             Spacer(Modifier.height(14.dp))
 
-            var useActive by rememberSaveable { mutableStateOf(false) }
             OutlinedTextField(
                 value = trialText, onValueChange = { trialText = it },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
@@ -2540,20 +2479,32 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    enabled = missing.isEmpty(),
-                    onClick = {
-                        if (busyTrial) stopTrial()
-                        else if (useActive) trial("已生效", active, "mixer_trial_active.wav")
-                        else trial("草稿", draft, "mixer_trial_draft.wav")
+                TextButton(onClick = {
+                    if (trialText.isBlank()) {
+                        Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Prefs.setTrialText(c, trialText)
+                        savedTrialText = trialText
+                        Toast.makeText(c, "试听文本已保存", Toast.LENGTH_SHORT).show()
                     }
-                ) { Text(if (busyTrial) "停止" else "试听", fontSize = 12.sp) }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    if (useActive) "用已生效的设置 · 点切换草稿"
-                    else "用当前草稿 · 点切换已生效",
-                    fontSize = 12.sp, color = Sub,
-                    modifier = Modifier.clickable { useActive = !useActive })
+                }) { Text("保存试听文本", fontSize = 12.sp) }
+                Spacer(Modifier.weight(1f))
+                if (busyTrial) {
+                    TextButton(onClick = { stopTrial() }) {
+                        Text("停止", fontSize = 12.sp)
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    enabled = missing.isEmpty() && !busyTrial,
+                    onClick = { trial("已保存", active, savedTrialText, "mixer_trial_saved.wav") }
+                ) { Text("试听 · 已保存", fontSize = 12.sp) }
+                Spacer(Modifier.width(8.dp))
+                TextButton(
+                    enabled = missing.isEmpty() && !busyTrial,
+                    onClick = { trial("未保存", draft, trialText, "mixer_trial_draft.wav") }
+                ) { Text("试听 · 当前", fontSize = 12.sp) }
             }
             if (trialMsg.isNotBlank()) {
                 Text(trialMsg, fontSize = 12.sp,
@@ -2740,6 +2691,7 @@ private fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) {
     val sv = (cur.toFloatOrNull() ?: lo).coerceIn(lo, hi)
     val intLike = spec.key == "seed" || spec.key == "maxNewTokens" ||
         spec.key == "topK" || spec.key == "subTopK"
+    val step = if (spec.key == "maxNewTokens") 64f else 1f
 
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2757,12 +2709,15 @@ private fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) {
         Slider(
             value = sv,
             onValueChange = { v ->
-                val s = if (intLike) v.toLong().toString()
-                        else "%.2f".format(v).trimEnd('0').trimEnd('.')
+                val q = if (intLike) kotlin.math.round(v / step) * step else v
+                val s = if (intLike) q.toLong().toString()
+                        else String.format(java.util.Locale.US, "%.2f", q)
+                            .trimEnd('0').trimEnd('.')
                 onValue(s)
             },
             valueRange = lo..hi,
-            modifier = Modifier.fillMaxWidth().height(18.dp)
+            modifier = Modifier.padding(start = 20.dp, end = 10.dp)
+                .fillMaxWidth().height(18.dp)
         )
     }
 

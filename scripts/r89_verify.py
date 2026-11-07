@@ -29,14 +29,14 @@ def check(files):
         errs.append("调音台仍在「更多」组")
     for s in ('NAV_LIBRARY to "书架"', 'NAV_TASKS to "任务"',
               'NAV_AUDIO to "我的音频"', 'NAV_SETTINGS to "设置"',
-              'NAV_MODELS to "模型"'):
+              'NAV_MODELS to "模型"', 'NAV_INPUT to "输入朗读"'):
         if s not in tm["DRAWER_TOP"] + tm["DRAWER_MORE"]:
             errs.append("抽屉项丢失: " + s[:28])
     n = len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"] + tm["DRAWER_MORE"]))
-    if n != 6:
-        errs.append("抽屉项数不是 6，实得 %d" % n)
-    if len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"])) != 4:
-        errs.append("一级组不是 4 项")
+    if n != 7:
+        errs.append("抽屉项数不是 7，实得 %d" % n)
+    if len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"])) != 5:
+        errs.append("一级组不是 5 项")
 
     EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
                 "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
@@ -64,9 +64,9 @@ def main():
         injections = [
             ("调音台退回更多组",
              lambda t: dict(t, chrome=t["chrome"].replace(
-                 '    NAV_MIXER to "调音台",\n)', ')\n\nprivate val DRAWER_MORE_EXTRA = listOf(\n    NAV_MIXER to "调音台",\n)'))),
+                 '    NAV_MIXER to "调音台",\n    NAV_INPUT to "输入朗读",\n)', '    NAV_INPUT to "输入朗读",\n)\n\nprivate val DRAWER_MORE_EXTRA = listOf(\n    NAV_MIXER to "调音台",\n)'))),
             ("一级组删掉调音台",
-             lambda t: dict(t, chrome=t["chrome"].replace('    NAV_MIXER to "调音台",\n)', ')'))),
+             lambda t: dict(t, chrome=t["chrome"].replace('    NAV_MIXER to "调音台",\n    NAV_INPUT to "输入朗读",\n)', '    NAV_INPUT to "输入朗读",\n)'))),
             ("抽屉多出一项",
              lambda t: dict(t, chrome=t["chrome"].replace(
                  '    NAV_MODELS to "模型",\n)', '    NAV_MODELS to "模型",\n    NAV_SETTINGS to "重复",\n)'))),
@@ -87,7 +87,7 @@ def main():
         print("R89 FAIL", len(errs))
         [print(" -", e) for e in errs]
         return 1
-    print("R89 调音台一级入口 / 抽屉 6 项守恒 / 导航守恒：PASS")
+    print("R89 调音台一级入口 / 抽屉 7 项守恒 / 导航守恒：PASS")
     return 0
 
 if __name__ == "__main__":

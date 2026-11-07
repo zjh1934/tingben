@@ -47,7 +47,11 @@ object AudioTree {
     private fun save(c: Context, o: JSONObject): Boolean =
         AtomicJson.write(metaFile(c), o.toString())
 
+    private fun metaWritable(c: Context): Boolean =
+        AtomicJson.read(metaFile(c)) !is AtomicJson.Read.Corrupt
+
     fun setName(c: Context, key: String, name: String): Boolean {
+        if (!metaWritable(c)) return false
         val o = meta(c)
         val n = o.optJSONObject("names") ?: JSONObject()
         if (name.isBlank()) n.remove(key) else n.put(key, name.trim())
@@ -56,11 +60,22 @@ object AudioTree {
     }
 
     fun moveSegment(c: Context, path: String, bookId: String, chapter: Int): Boolean {
+        if (!metaWritable(c)) return false
         val o = meta(c)
         val m = o.optJSONObject("moves") ?: JSONObject()
         m.put(path, JSONObject().put("book", bookId).put("chapter", chapter))
         o.put("moves", m)
         return save(c, o)
+    }
+
+    fun forget(c: Context, paths: List<String>) {
+        if (paths.isEmpty() || !metaWritable(c)) return
+        val o = meta(c)
+        val n = o.optJSONObject("names") ?: JSONObject()
+        val m = o.optJSONObject("moves") ?: JSONObject()
+        paths.forEach { n.remove(it); m.remove(it) }
+        o.put("names", n).put("moves", m)
+        save(c, o)
     }
 
     fun bookKey(bookId: String) = bookId
@@ -91,10 +106,13 @@ object AudioTree {
         }
         return try {
             val a = JSONArray(body)
-            (0 until a.length()).associate { k ->
-                val o = a.optJSONObject(k) ?: return@associate 0 to ""
-                o.optInt("index", k) to o.optString("title", "")
-            }.filter { it.value.isNotBlank() }
+            val out = mutableMapOf<Int, String>()
+            for (k in 0 until a.length()) {
+                val o = a.optJSONObject(k) ?: continue
+                val title = o.optString("title", "")
+                if (title.isNotBlank()) out[o.optInt("index", k)] = title
+            }
+            out
         } catch (_: Throwable) { null }
     }
 
@@ -137,6 +155,7 @@ object AudioTree {
     }
 
     fun markDone(dir: File, chapter: Int, file: File): Boolean {
+        if (AtomicJson.read(doneFile(dir)) is AtomicJson.Read.Corrupt) return false
         val cur = readDone(dir).toMutableMap()
         cur[chapter] = file
         return writeDone(dir, cur)
@@ -147,6 +166,7 @@ object AudioTree {
         if (!root.isDirectory) return
         try {
             root.walkTopDown().filter { it.isFile && it.name == "chapter_done.json" }.forEach { f ->
+                if (AtomicJson.read(f) is AtomicJson.Read.Corrupt) return@forEach
                 val cur = readDone(f.parentFile ?: return@forEach).toMutableMap()
                 if (cur.remove(chapter) != null) writeDone(f.parentFile ?: return@forEach, cur)
             }

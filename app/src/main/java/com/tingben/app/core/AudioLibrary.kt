@@ -23,6 +23,8 @@ object AudioLibrary {
         private set
     @Volatile var writeError: String? = null
         private set
+    @Volatile var lastRegisterOk: Boolean = true
+        private set
 
     fun dir(c: Context) = File(c.filesDir, "audio").apply { mkdirs() }
     private fun index(c: Context) = File(dir(c), "index.json")
@@ -80,7 +82,7 @@ object AudioLibrary {
             (0 until a.length()).mapNotNull { i ->
                 val o = a.getJSONObject(i)
                 val file = File(o.getString("file"))
-                if (!file.exists()) null else {
+                if (!file.isFile || file.length() <= 44) null else {
                     val (chs, known) = readIndices(o)
                     AudioItem(
                         id = o.optString("id", file.nameWithoutExtension),
@@ -128,6 +130,7 @@ object AudioLibrary {
 
     fun register(c: Context, bookId: String, bookTitle: String, only: Set<Int>?,
                  direct: Boolean, file: File, allChapterCount: Int = -1): AudioItem {
+        lastRegisterOk = false
         val chs: Set<Int> = when {
             !only.isNullOrEmpty() -> only
             allChapterCount > 0 -> (0 until allChapterCount).toSet()
@@ -155,7 +158,7 @@ object AudioLibrary {
         }
         all.removeAll { it.id == item.id }
         all.add(0, item)
-        writeIndex(c, all)
+        lastRegisterOk = writeIndex(c, all)
         return item
     }
 
@@ -163,13 +166,23 @@ object AudioLibrary {
         val items = (readIndex(c) ?: mutableListOf()).toMutableList()
         val known = items.map { it.file.name }.toSet()
         try {
+            val books = BookStore.list(c)
             dir(c).listFiles()
-                ?.filter { it.isFile && it.name.endsWith(".wav") && it.name !in known }
+                ?.filter { it.isFile && it.length() > 44 && it.name.endsWith(".wav") && it.name !in known }
                 ?.forEach { f ->
-                    val b = BookStore.list(c).find { it.id == f.nameWithoutExtension }
-                    items.add(AudioItem(f.nameWithoutExtension, f, b?.id,
-                        b?.title ?: "有声书", "整本（旧版）", "—",
-                        f.lastModified(), f.length()))
+                    val stem = f.nameWithoutExtension
+                    val cm = Regex("""^chapter_([0-9a-fA-F]{8})_(\d{3})_[0-9a-fA-F]{8}$""").matchEntire(stem)
+                    val ch = cm?.groupValues?.get(2)?.toIntOrNull()?.let { it - 1 }
+                    val b = if (cm != null)
+                        books.find { it.id.take(8).equals(cm.groupValues[1], ignoreCase = true) }
+                    else books.find { it.id == stem }
+                    if (cm != null && b != null && ch != null && ch >= 0) {
+                        items.add(AudioItem(stem, f, b.id, b.title, scopeLabel(setOf(ch)), "—",
+                            f.lastModified(), f.length(), setOf(ch), true))
+                    } else {
+                        items.add(AudioItem(stem, f, b?.id, b?.title ?: "有声书",
+                            "整本（旧版）", "—", f.lastModified(), f.length()))
+                    }
                 }
         } catch (_: Throwable) { }
         return items.sortedByDescending { it.createdAt }
@@ -194,9 +207,12 @@ object AudioLibrary {
     fun chapterStartMs(c: Context, item: AudioItem, chapterIndex: Int): Long {
         if (!item.chaptersKnown) return 0L
         val f = File(dir(c), "${item.id}.chapters.json")
-        if (!f.isFile) return 0L
+        val body = when (val r = AtomicJson.read(f)) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return 0L
+        }
         return try {
-            val a = JSONArray(f.readText())
+            val a = JSONArray(body)
             (0 until a.length()).map { a.getJSONObject(it) }
                 .firstOrNull { it.optInt("index", -1) == chapterIndex }
                 ?.optLong("startMs", 0L)?.coerceAtLeast(0L) ?: 0L
@@ -210,11 +226,12 @@ object AudioLibrary {
             return false
         }
         val f = all.find { it.id == id }?.file ?: File(dir(c), "$id.wav")
+        if (!writeIndex(c, all.filter { it.id != id })) return false
         if (f.isFile && !f.delete()) {
-            writeError = "文件删不掉，记录已保留"
+            writeError = "记录已移除，但文件删不掉，会在「我的音频」里重新出现"
             return false
         }
-        return writeIndex(c, all.filter { it.id != id })
+        return true
     }
 
     fun durationMsOfBytes(bytes: Long): Long =

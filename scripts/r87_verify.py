@@ -22,8 +22,8 @@ POS = [
     'private fun ClearSegmentsRow(',
     'Text("清理 ›"',
     'Text("清理分段音频", fontSize = 13.sp)',
-    'SettingInfoRow("电池优化", "现有", "去系统设置", "让制作时不被锁屏杀掉") {',
-    'SettingInfoRow("第三方许可", "只读", "MIT / Apache-2.0", "")',
+    'SettingsSection("外观与显示", "软件", collapsible = false)',
+    'SettingsSection("本机数据", "本机", collapsible = false)',
     'Text("当前配置"',
     'append("\\n声音 · 模式 ")',
     'append(" · 音色 ")',
@@ -58,11 +58,11 @@ KEEP = [
     'private fun SoundProbeBlock(',
     'private fun DiagnosticsBlock(',
     'Prefs.setThemeMode(c, m)',
-    'Prefs.setReaderFontScale(c, v)',
+    'Prefs.setTrialText(c, trialText)',
     'fun commitAll()',
     'fun voiceStamp(c: Context): String',
     'fun synthesisBlockReason(c: Context): String?',
-    'ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS',
+    'ActivityResultContracts.OpenMultipleDocuments()',
 ]
 
 def check(files):

@@ -48,8 +48,11 @@ object ReadingState {
     fun save(c: Context, bookId: String, chapter: Int, para: Int? = null, offset: Int? = null) {
         try {
             val f = file(c)
-            val r = AtomicJson.read(f)
-            val o = if (r is AtomicJson.Read.Ok) JSONObject(r.text) else JSONObject()
+            val o = when (val r = AtomicJson.read(f)) {
+                is AtomicJson.Read.Corrupt -> return
+                is AtomicJson.Read.Missing -> JSONObject()
+                is AtomicJson.Read.Ok -> try { JSONObject(r.text) } catch (_: Throwable) { return }
+            }
             val prev = try { decode(o.opt(bookId)) } catch (_: Throwable) { null }
             val same = prev?.chapter == chapter
             val p = para ?: if (same) prev!!.para else 0
