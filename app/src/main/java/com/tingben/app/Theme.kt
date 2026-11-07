@@ -1,15 +1,19 @@
 package com.tingben.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowInsetsControllerCompat
 
 internal data class Pal(
     val bg: Color, val card: Color, val primary: Color, val primarySoft: Color,
@@ -52,6 +56,16 @@ internal fun applyAppTheme(c: Context, mode: Int) {
 @Composable
 internal fun TingbenTheme(content: @Composable () -> Unit) {
     val dark = appThemeDark
+    val view = LocalView.current
+    DisposableEffect(dark) {
+        val window = (view.context as? Activity)?.window
+        if (window != null) {
+            val controller = WindowInsetsControllerCompat(window, view)
+            controller.isAppearanceLightStatusBars = !dark
+            controller.isAppearanceLightNavigationBars = !dark
+        }
+        onDispose { }
+    }
     val p = palette
     val scheme = if (dark) {
         darkColorScheme(

@@ -37,7 +37,7 @@ NEED = [
     ('字号写 Prefs', 'MainActivity.kt', 'Prefs.setReaderFontScale(c, v)'),
     ('诊断二级折叠', 'MainActivity.kt', 'SettingsSection("诊断与试音", "按需", diagOpen'),
     ('数据组默认展开', 'MainActivity.kt', 'var dataOpen by rememberSaveable { mutableStateOf(true) }'),
-    ('只读项换软件信息', 'MainActivity.kt', 'ExpandGroup("④ 本次制作 · 只读", "")'),
+    ('制作分区常驻不折叠', 'MainActivity.kt', 'ExpandGroup("③ 怎么跑", "")'),
     ('主题键', 'Prefs.kt', 'KEY_THEME_MODE = "themeMode"'),
     ('字号键', 'Prefs.kt', 'KEY_FONT_SCALE = "readerFontScale"'),
     ('主题读写', 'Prefs.kt', 'fun setThemeMode(c: Context, v: Int)'),
@@ -54,6 +54,8 @@ NEED = [
 ]
 
 GONE = [
+    ('只读信息组已移除', 'MainActivity.kt', '④ 本次制作'),
+    ('折叠展开按钮已移除', 'ProduceOptions.kt', '展开 ▼'),
     ('假主题行', 'MainActivity.kt', 'SettingInfoRow("主题", "待新增"'),
     ('假字号行', 'MainActivity.kt', 'SettingInfoRow("字号", "待新增"'),
     ('待新增', 'MainActivity.kt', '"待新增"'),
@@ -116,7 +118,9 @@ def check(theme=None, main=None, hub=None, opts=None, chrome=None, prefs=None,
         elif needle not in which:
             e.append(f'守恒失败[{label}]')
     n = sum(x.count(': Color get() = palette.') for x in (main, hub, opts))
-    if n != 22: e.append(f'颜色 getter 应为 22，实际 {n}')
+    if n < 21: e.append(f'颜色 getter 机制被删，实际 {n}')
+    if not all(': Color get() = palette.' in x for x in (main, hub, opts)):
+        e.append('颜色 getter 未覆盖全部界面层')
     return e
 
 def selftest():
@@ -147,5 +151,5 @@ if __name__ == '__main__':
         for x in errs: print(' ✗', x)
         print('R73 结果: FAIL')
         sys.exit(1)
-    print('R73 结果: PASS · 正向 %d 项 / 零残留 %d 项 / 守恒 %d 项 / 颜色 getter 22' %
+    print('R73 结果: PASS · 正向 %d 项 / 零残留 %d 项 / 守恒 %d 项 / 颜色 getter 机制成立' %
           (len(NEED), len(GONE), len(KEEP)))

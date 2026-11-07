@@ -18,37 +18,24 @@ import androidx.compose.ui.unit.sp
 private val OptCard: Color get() = palette.card
 private val OptChip: Color get() = palette.primarySoft
 private val OptChipOn: Color get() = palette.primarySoft
-private val OptPrimary: Color get() = palette.primary
 private val OptSub: Color get() = palette.sub
 
 @Composable
 fun ExpandGroup(
     title: String,
     subtitle: String = "",
-    defaultOpen: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    var open by remember(title) { mutableStateOf(defaultOpen) }
     Card(
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
         colors = CardDefaults.cardColors(containerColor = OptCard),
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(Modifier.padding(14.dp)) {
-            Row(
-                Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    if (subtitle.isNotBlank()) Text(subtitle, fontSize = 11.sp, color = OptSub)
-                }
-                Text(if (open) "收起 ▲" else "展开 ▼", fontSize = 11.5.sp, color = OptPrimary)
-            }
-            if (open) {
-                Spacer(Modifier.height(10.dp))
-                content()
-            }
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            if (subtitle.isNotBlank()) Text(subtitle, fontSize = 12.sp, color = OptSub)
+            Spacer(Modifier.height(10.dp))
+            content()
         }
     }
 }
@@ -62,8 +49,8 @@ fun <T> OptionRow(
     onChange: (T) -> Unit
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-        if (hint.isNotBlank()) Text(hint, fontSize = 10.5.sp, color = OptSub)
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        if (hint.isNotBlank()) Text(hint, fontSize = 12.sp, color = OptSub)
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth()) {
             options.forEach { (v, name) ->

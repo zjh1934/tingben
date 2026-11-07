@@ -1,8 +1,15 @@
 package com.tingben.app.core
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.PlaybackParams
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -28,9 +35,67 @@ object PlayQueue {
     private var index = -1
     private var speed = 1f
     private var queueId = ""
+    private var appCtx: Context? = null
+    private var focusRequest: AudioFocusRequest? = null
+    private var noisyReceiver: BroadcastReceiver? = null
 
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> get() = _state
+
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> pause()
+        }
+    }
+
+    fun attach(c: Context) {
+        if (appCtx != null) return
+        val ctx = c.applicationContext
+        appCtx = ctx
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) pause()
+            }
+        }
+        try {
+            ContextCompat.registerReceiver(
+                ctx, r, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            noisyReceiver = r
+        } catch (_: Throwable) { }
+    }
+
+    private fun ensureFocus(): Boolean {
+        val ctx = appCtx ?: return true
+        abandonFocus()
+        return try {
+            val am = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return true
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(focusListener)
+                .build()
+            focusRequest = req
+            am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } catch (_: Throwable) { true }
+    }
+
+    private fun abandonFocus() {
+        val req = focusRequest ?: return
+        focusRequest = null
+        val ctx = appCtx ?: return
+        try {
+            (ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
+                ?.abandonAudioFocusRequest(req)
+        } catch (_: Throwable) { }
+    }
 
     fun setTracks(list: List<Track>, id: String = "") {
         if (list == tracks && id == queueId) return
@@ -62,6 +127,7 @@ object PlayQueue {
     fun resume() {
         val p = player
         if (p == null) { if (index >= 0) open(index); return }
+        if (!ensureFocus()) { pause(); return }
         try {
             p.start()
             _state.value = _state.value.copy(isPlaying = true, ended = false)
@@ -127,6 +193,7 @@ object PlayQueue {
                     try { it.playbackParams = PlaybackParams().setSpeed(speed).setPitch(1f) }
                     catch (_: Throwable) { }
                     if (from > 0L) { try { it.seekTo(from.toInt()) } catch (_: Throwable) { } }
+                    if (!ensureFocus()) { pause(); return@setOnPreparedListener }
                     it.start()
                     _state.value = _state.value.copy(isPlaying = true, ended = false)
                 }
@@ -161,6 +228,7 @@ object PlayQueue {
     }
 
     fun release() {
+        abandonFocus()
         releasePlayer()
         tracks = emptyList()
         index = -1

@@ -50,7 +50,9 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'AUDIO', 'SETTINGS',
             'MODELS', 'MIXER', 'CHAPTERS'}
     if got != want: e.append('Screen 枚举不是 9 值或仍含旧页: ' + str(got ^ want))
-    if 'private enum class ProduceMode { DIRECT }' not in main: e.append('制作档位没收敛成一种')
+    if re.search(r'enum class ProduceMode\s*\{[^}]*,', main): e.append('制作档位又出现多档枚举')
+    if 'ProduceMode.ANNOTATE' in main or 'HubAction.ANNOTATE' in main:
+        e.append('旧标注档回潮')
     if 'HubTitles = listOf("章节", "合成", "可播")' not in hub: e.append('目录页不是三列')
     if 'repeat(3) { col ->' not in hub: e.append('目录页仍渲染四列')
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
@@ -119,8 +121,8 @@ def main():
             'listOf("拆章", "生成声音", "整理音频", "完成")',
             'listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")'))),
         ('界面旧说法回潮', lambda: check(
-            main=MAIN.replace('Text("直接朗读",', 'Text("语言模型设置 ›",'),
-            allkt=ALL_KT.replace('Text("直接朗读",', 'Text("语言模型设置 ›",'))),
+            main=MAIN.replace('Text("原文整段送声音模型",', 'Text("语言模型设置 ›",'),
+            allkt=ALL_KT.replace('Text("原文整段送声音模型",', 'Text("语言模型设置 ›",'))),
         ('制作入口分叉回潮', lambda: check(pipe=PIPE.replace(
             'run(c, book, onlyChapters, true, thinkOverride, config)',
             'run(c, book, onlyChapters, directRead, thinkOverride, config)'))),

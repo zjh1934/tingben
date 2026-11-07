@@ -19,9 +19,11 @@ POS = [
     '上次读到 第 ${lastRead + 1} 章',
     'Text("共 ${books.size} 本"',
     '.clickable { onOpen(b.id) }',
-    'Text("删除", fontSize = 11.sp, color = Sub)',
+    'Text("删除"',
 ]
 BAN = [
+    'fontSize = 11.sp',
+    'fontSize = 10.sp',
     'FilledTonalButton(onClick = onModels, Modifier.fillMaxWidth()) { Text("去准备") }',
     'Text("粘贴文字", fontSize = 12.5.sp, fontWeight = FontWeight.Bold',
     'Text("书架还是空的"',

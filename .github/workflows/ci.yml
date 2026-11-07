@@ -129,6 +129,8 @@ jobs:
         run: python3 scripts/r112_verify.py --selftest
       - name: R113 清单收尾验证（F-20 / F-13 / F-17 / F-23 / 反向注入）
         run: python3 scripts/r113_verify.py --selftest
+      - name: R114 字号与交互收敛验证（F-08 / F-26 / F-27 / F-28 / 反向注入）
+        run: python3 scripts/r114_verify.py --selftest
 
 
 

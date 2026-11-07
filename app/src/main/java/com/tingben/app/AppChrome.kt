@@ -64,11 +64,11 @@ internal fun AppTopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onMenu) {
-            Text("☰", fontSize = 19.sp, color = primary)
+            Text("☰", fontSize = 20.sp, color = primary)
         }
         Text(
             spec.title,
-            fontSize = 17.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             color = primary,
             modifier = Modifier.weight(1f)

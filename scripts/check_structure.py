@@ -121,10 +121,12 @@ R25_ALL = ["TextSplitter", "SPLIT_STATS", "directWithStats"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
 R25_MAIN = ["private fun GroupLabel(", "private fun SettingsSection(",
-            "SettingsSection(\"外观与显示\", \"软件\"", "仅本次",
-            "ProduceMode.DIRECT"]
+            "SettingsSection(\"外观与显示\", \"软件\"", "directRead = true",
+            "private fun ProduceScreen("]
 for sym in R25_MAIN:
     if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
+if re.search(r'enum class ProduceMode\s*\{[^}]*,', main_src):
+    errs.append("R114 回潮：制作档位又出现多档枚举")
 if re.search(r"if\s*\(\s*buf\.length\s*>=\s*110", pipe_src):
     errs.append("R25 回退：又出现按 110 字腰斩的旧切分")
 if "mutableStateOf(if (t != null && t.bookId == id && t.direct)" in main_src:
