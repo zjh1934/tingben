@@ -422,7 +422,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
-                    onProgress = { taskBookId = bookId; taskChapter = null; nav.push(Screen.TASK_DETAIL) },
+                    onProgress = { taskBookId = bookId; taskChapter = null; nav.push(Screen.PROGRESS) },
                     onDone = { nav.clear(); screen = Screen.AUDIO; refresh++ },
                     onStarted = { taskBookId = bookId; lastSelection = it })
                 Screen.PROGRESS -> ProgressScreen(ctx, taskBookId, taskChapter,
@@ -873,6 +873,8 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
                     ?.chapters?.firstOrNull { it.chapter == chapter }
             }
     }
+    val mergedOnly = chapter != null && treeChapter?.segments.isNullOrEmpty() &&
+        treeChapter?.merged?.isFile == true
     val fallbackSegs = if (chapter != null && segChapters != null)
         allSegs.filter { segChapters[it.index] == chapter } else allSegs
     val chapterRows = treeChapter?.segments?.map { s ->
@@ -895,9 +897,13 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
             Text(treeChapter?.title ?: "第 ${chapter + 1} 章",
                 fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Primary)
             Spacer(Modifier.height(3.dp))
-            Text("第 ${chapter + 1} 章 · 本章 ${segs.count { it.hasAudio }}/${segs.size} 段",
+            Text(if (mergedOnly) "第 ${chapter + 1} 章 · 已拼成整章音频"
+                else "第 ${chapter + 1} 章 · 本章 ${segs.count { it.hasAudio }}/${segs.size} 段",
                 fontSize = 12.sp, color = Sub)
-            if (segChapters == null && treeChapter == null) {
+            if (mergedOnly) {
+                Spacer(Modifier.height(4.dp))
+                Text("这一章已拼成整章音频，小块已清理", fontSize = 12.sp, color = Good)
+            } else if (segChapters == null && treeChapter == null) {
                 Spacer(Modifier.height(4.dp))
                 Text("旧记录没记章，这里显示整次分段", fontSize = 12.sp, color = Warn)
             }
@@ -925,14 +931,16 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
                 }
                 Column(Modifier.weight(1f)) {
                     LinearProgressIndicator(
-                        progress = { if (chapter != null && segs.isNotEmpty())
+                        progress = { if (mergedOnly) 1f
+                            else if (chapter != null && segs.isNotEmpty())
                             segs.count { it.hasAudio }.toFloat() / segs.size else pct },
                         modifier = Modifier.fillMaxWidth().height(6.dp))
                     Spacer(Modifier.height(5.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(st.stage, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             maxLines = 1, modifier = Modifier.weight(1f))
-                        Text(if (chapter != null && segs.isNotEmpty())
+                        Text(if (mergedOnly) "100%" else
+                            if (chapter != null && segs.isNotEmpty())
                             "${(segs.count { it.hasAudio } * 100 / segs.size)}%" else
                             if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
                             fontSize = 12.sp, color = Primary)
@@ -941,7 +949,9 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                if (chapter != null) "本章 ${segs.count { it.hasAudio }}/${segs.size} 段" +
+                if (mergedOnly) "这一章已拼成整章音频" +
+                        if (st.total > 0) " · 整本 ${st.done}/${st.total} 块" else ""
+                else if (chapter != null) "本章 ${segs.count { it.hasAudio }}/${segs.size} 段" +
                         if (st.total > 0) " · 整本 ${st.done}/${st.total} 块" else ""
                 else if (st.total > 0) "已完成 ${st.done}/${st.total} 块" +
                         if (st.failed > 0) " · ${st.failed} 块改走直读" else ""
@@ -983,6 +993,16 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
             Spacer(Modifier.height(10.dp))
         }
         CardBox {
+            if (mergedOnly) {
+                Text("整章音频", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    val f = treeChapter?.merged ?: return@Button
+                    PlayQueue.setTracks(listOf(Track(f, treeChapter?.title ?: "整章",
+                        id = "merged:${f.absolutePath}")), "chapterMerged")
+                    PlayQueue.playFrom(0, id = "chapterMerged")
+                }) { Text("▶ 播这一章", fontSize = 13.sp) }
+            } else {
             Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
             if (segs.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
@@ -1025,6 +1045,7 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
                     Spacer(Modifier.height(5.dp))
                 }
             }
+            }
         }
         Spacer(Modifier.height(18.dp))
     }
@@ -1037,6 +1058,9 @@ private data class TaskDetailData(
     val task: TaskInfo?,
     val chapters: List<Chapter>,
     val finished: Map<Int, AudioItem>,
+    val chapterReady: Set<Int>,
+    val chapterStarted: Set<Int>,
+    val chapterMerged: Map<Int, File>,
     val real: Int,
     val invalidate: String?
 )
@@ -1050,12 +1074,31 @@ private fun buildTaskDetail(c: Context, bookId: String?): TaskDetailData {
     val finished = bookId?.let { AudioLibrary.latestByChapter(c, it) } ?: emptyMap()
     val real = task?.let { TaskResume.realProgress(c, it) } ?: 0
     val invalidate = task?.let { TaskResume.invalidationReason(c, it) }
+    val plan = task?.let { Workbench.segChapters(c, it) }
+    val perChapter = plan?.values?.groupingBy { it }?.eachCount() ?: emptyMap()
+    val ready = mutableSetOf<Int>()
+    val startedCh = mutableSetOf<Int>()
+    val mergedCh = mutableMapOf<Int, File>()
+    AudioTree.load(c).firstOrNull { it.bookId == bookId }?.chapters?.forEach { ch ->
+        ch.merged?.takeIf { it.isFile }?.let { mergedCh[ch.chapter] = it }
+        if (ch.segments.isNotEmpty()) startedCh.add(ch.chapter)
+        val planned = perChapter[ch.chapter] ?: 0
+        if (ch.merged != null || (planned > 0 && ch.segments.size >= planned)) ready.add(ch.chapter)
+    }
+    finished.keys.forEach { ready.add(it) }
     return TaskDetailData(book?.title ?: task?.title ?: "这本书不在了",
-        book != null, task, chapters, finished, real, invalidate)
+        book != null, task, chapters, finished, ready, startedCh, mergedCh, real, invalidate)
 }
 
-private fun playChapterAudio(c: Context, bookId: String?, ch: Int) {
+private fun playChapterAudio(c: Context, bookId: String?, ch: Int, merged: File? = null) {
     if (bookId == null) return
+    if (merged != null && merged.isFile) {
+        val q = "chapterMerged:$bookId:$ch"
+        PlayQueue.setTracks(listOf(Track(merged, "第 ${ch + 1} 章 · 整章",
+            id = "merged:${merged.absolutePath}")), q)
+        PlayQueue.playFrom(0, id = q)
+        return
+    }
     val a = AudioLibrary.audioFor(c, bookId, ch) ?: return
     val q = "chapter:$bookId"
     PlayQueue.setTracks(listOf(Track(a.file, "${a.title} · 第 ${ch + 1} 章",
@@ -1135,12 +1178,11 @@ private fun TaskDetailScreen(
             }
         } else {
             items(d.chapters, key = { it.index }) { ch ->
-                val done = d.finished.containsKey(ch.index)
+                val done = ch.index in d.chapterReady || d.finished.containsKey(ch.index)
                 val inScope = t?.only == null || ch.index in t.only!!
                 val livePct = if (runningHere) st.chapterProgress[ch.index] else null
-                val started = done || livePct != null ||
-                    ((t?.phase == "stopped" || t?.phase == "interrupted" ||
-                        t?.phase == "running") && inScope)
+                val started = done || ch.index in d.chapterStarted || livePct != null ||
+                    (runningHere && inScope)
                 val label = when {
                     done -> "已做好"
                     livePct != null -> "正在制作 ${(livePct * 100).toInt()}%"
@@ -1168,7 +1210,7 @@ private fun TaskDetailScreen(
                             }
                         }
                         if (done) {
-                            TextButton(onClick = { playChapterAudio(c, bookId, ch.index) }) {
+                            TextButton(onClick = { playChapterAudio(c, bookId, ch.index, d.chapterMerged[ch.index]) }) {
                                 Text("▶ 播放", fontSize = 12.sp)
                             }
                         }
@@ -1373,7 +1415,8 @@ private data class AudioMenu(
     val chapter: Int,
     val seg: SegAudio?,
     val label: String,
-    val files: List<File>
+    val files: List<File>,
+    val mergeds: List<File> = emptyList()
 )
 
 @Composable
@@ -1428,13 +1471,25 @@ private fun AudioScreen(
 
     fun toast(s: String) = Toast.makeText(c, s, Toast.LENGTH_SHORT).show()
 
-    fun exportParts(t: AudioMenu, m4a: Boolean) {
-        val merged = AudioOps.mergedTemp(c, t.files)
-        if (!merged.ok || merged.file == null) {
-            toast(merged.reason)
-            return
+    fun partsFor(t: AudioMenu): List<File> {
+        if (t.kind == 2) return t.files
+        if (t.kind == 1) return t.mergeds.ifEmpty { t.files }
+        val out = mutableListOf<File>()
+        tree.firstOrNull { it.bookId == t.bookId }?.chapters?.forEach { ch ->
+            val m = ch.merged?.takeIf { it.isFile }
+            if (m != null) out.add(m) else out.addAll(ch.segments.map { it.file })
         }
-        pendingSrc = merged.file
+        return out.ifEmpty { t.files + t.mergeds }
+    }
+
+    fun exportParts(t: AudioMenu, m4a: Boolean) {
+        val parts = partsFor(t)
+        val src = if (parts.size == 1 && parts[0].isFile) parts[0]
+            else AudioOps.mergedTemp(c, parts).let { r ->
+                if (!r.ok || r.file == null) { toast(r.reason); return }
+                r.file!!
+            }
+        pendingSrc = src
         pendingName = t.label
         val base = t.label.filter { ch -> ch.isLetterOrDigit() || ch == '_' || ch == '-' }
             .take(40).ifBlank { "audio" }
@@ -1455,7 +1510,7 @@ private fun AudioScreen(
         val q = "chapter:${ch.bookId}:${ch.chapter}"
         val tracks = AudioTree.chapterTracks(c, ch)
         if (tracks.isEmpty()) { toast("这一章还没有音频小块"); return }
-        if (pq.queueId == q && pq.trackId == tracks.first().id) {
+        if (pq.queueId == q) {
             PlayQueue.toggle()
         } else {
             PlayQueue.setTracks(tracks, q)
@@ -1464,17 +1519,21 @@ private fun AudioScreen(
     }
 
     fun bookMenu(b: BookAudio) = AudioMenu(0, b.bookId, -1, null, b.title,
-        AudioTree.allSegments(b).map { it.file })
+        AudioTree.allSegments(b).map { it.file },
+        b.chapters.mapNotNull { it.merged?.takeIf { f -> f.isFile } })
     fun chapterMenu(ch: ChapterAudio) = AudioMenu(1, ch.bookId, ch.chapter, null, ch.title,
-        ch.segments.map { it.file })
+        ch.segments.map { it.file },
+        listOfNotNull(ch.merged?.takeIf { it.isFile }))
     fun segMenu(s: SegAudio) = AudioMenu(2, s.bookId, s.chapter, s, s.name, listOf(s.file))
 
     val segCount = tree.sumOf { b -> b.chapters.sumOf { ch -> ch.segments.size } }
     val chCount = tree.sumOf { it.chapters.size }
+    val mergedCount = tree.sumOf { b -> b.chapters.count { it.merged != null } }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item(key = "audio_tree_summary") {
-            Text("共 ${tree.size} 本 · $chCount 章 · $segCount 块",
+            Text("共 ${tree.size} 本 · $chCount 章 · $segCount 块" +
+                if (mergedCount > 0) " · $mergedCount 章已拼成整章" else "",
                 fontSize = 12.sp, color = Sub, modifier = Modifier.padding(bottom = 10.dp))
         }
         if (pq.trackId.isNotEmpty()) {
@@ -1519,6 +1578,8 @@ private fun AudioScreen(
                         Column(Modifier.weight(1f)) {
                             Text(b.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2)
                             Text("${b.chapters.size} 章 · ${AudioTree.allSegments(b).size} 块" +
+                                (if (b.chapters.any { it.merged != null })
+                                    " · ${b.chapters.count { it.merged != null }} 章已拼好" else "") +
                                 if (b.onShelf) "" else " · 不在书架上",
                                 fontSize = 12.sp, color = Sub)
                         }
@@ -1541,8 +1602,10 @@ private fun AudioScreen(
                             }, verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(ch.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2)
-                                    Text("${ch.segments.size} 块" +
-                                        if (ch.merged != null) " · 已拼成整章" else "",
+                                    Text(
+                                        if (ch.segments.isEmpty() && ch.merged != null) "已拼成整章 · 1 个音频"
+                                        else "${ch.segments.size} 块" +
+                                            if (ch.merged != null) " · 已拼成整章" else "",
                                         fontSize = 12.sp, color = Sub)
                                 }
                                 TextButton(onClick = { playChapter(ch) }) {
@@ -1551,7 +1614,7 @@ private fun AudioScreen(
                             }
                         }
                     }
-                    if (chOpen) {
+                    if (chOpen && ch.segments.isNotEmpty()) {
                         item(key = "audio_seg_grid_$ck") {
                             CardBox(Modifier.padding(start = 24.dp, bottom = 6.dp)) {
                                 ch.segments.chunked(8).forEach { row ->
@@ -1608,14 +1671,22 @@ private fun AudioScreen(
                     TextButton(onClick = { target = null; exportParts(t, true) }) {
                         Text("转格式（WAV → M4A）", fontSize = 14.sp)
                     }
-                    if (t.kind == 1) {
+                    if (t.kind == 1 && t.files.isNotEmpty()) {
                         TextButton(onClick = {
                             target = null
-                            val r = AudioOps.mergeChapter(c, t.bookId, tree.firstOrNull { it.bookId == t.bookId }?.title ?: t.label,
+                            t.mergeds.forEach { AudioOps.deleteMerged(c, it) }
+                            val r = AudioOps.mergeChapter(c, t.bookId,
+                                tree.firstOrNull { it.bookId == t.bookId }?.title ?: t.label,
                                 t.chapter, t.files)
-                            if (r.ok) { toast("已拼成整章，原来的小块可以删掉了"); localTick++ }
-                            else toast(r.reason)
-                        }) { Text("把这一章拼成一个音频", fontSize = 14.sp, color = Primary) }
+                            if (r.ok) {
+                                toast(if (r.kept > 0) "已拼成整章，有 ${r.kept} 个小块没删掉"
+                                    else "已拼成整章，原来的小块已清理")
+                                localTick++
+                            } else toast(r.reason)
+                        }) {
+                            Text(if (t.mergeds.isNotEmpty()) "重新拼成整章（会替换旧的）"
+                                else "把这一章拼成一个音频", fontSize = 14.sp, color = Primary)
+                        }
                     }
                     if (t.kind == 2 && t.seg != null) {
                         TextButton(onClick = {
@@ -1639,13 +1710,20 @@ private fun AudioScreen(
         AlertDialog(
             onDismissRequest = { confirmDel = null },
             title = { Text("删除「${t.label}」？", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-            text = { Text("共 ${t.files.size} 个音频小块，删掉后不能恢复；已拼好的整章音频会留着。" +
-                "没拼过的章，下次续跑会重新生成这些段。", fontSize = 13.sp) },
+            text = {
+                Text(if (t.mergeds.isNotEmpty())
+                    "会删掉拼好的整章音频和 ${t.files.size} 个小块，不能恢复。" +
+                        if (t.files.isEmpty()) "" else "没拼过的章，下次续跑会重新生成这些段。"
+                else "共 ${t.files.size} 个音频小块，删掉后不能恢复；" +
+                    "没拼过的章，下次续跑会重新生成这些段。", fontSize = 13.sp)
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    val failed = AudioOps.deleteAll(t.files)
+                    var failed = AudioOps.deleteAll(t.files)
+                    t.mergeds.forEach { if (!AudioOps.deleteMerged(c, it)) failed++ }
+                    if (t.kind == 1 && t.chapter >= 0) AudioTree.clearDone(c, t.bookId, t.chapter)
                     if (failed > 0) toast("有 $failed 个删不掉，记录已保留")
-                    else toast("已删除 ${t.files.size} 个小块")
+                    else toast("已删除 ${t.files.size + t.mergeds.size} 个音频")
                     PlayQueue.release()
                     localTick++
                     confirmDel = null

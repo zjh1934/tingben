@@ -715,6 +715,8 @@ object Producer {
                 "命中 $hits/${annotated.size} 段，只增强导演指令，正文未改")
         }
 
+        val doneChapterFiles = try { AudioTree.readDone(work) } catch (_: Throwable) { emptyMap() }
+        val usedDoneChapters = mutableSetOf<Int>()
         val wavs = mutableListOf<File>()
         var synthFails = 0
         val gapBytes = ((config.gapMs.coerceIn(0, 5000) * 48) / 2) * 2
@@ -755,6 +757,10 @@ object Producer {
                 val segStart = wavs.size
                 ProduceService.touch(c.applicationContext, "合成段 ${i + 1}/${toSpeak.size}")
                 val wav = File(work, String.format("direct_%04d.wav", i))
+                val ci = segChapter.getOrElse(i) { -1 }
+                val doneWav = if (ci >= 0) doneChapterFiles[ci] else null
+                val covered = doneWav != null && doneWav.isFile && doneWav.length() > 44 &&
+                    !(wav.exists() && wav.length() > 44)
                 val v = SynthInput.params(c, a.instruct, config.styleInstruct())
                 EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
                     "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
@@ -764,11 +770,21 @@ object Producer {
                         "textChars" to a.text.length.toString(), "instructChars" to (v.instruct?.length ?: 0).toString(),
                         "lang" to "chinese", "mode" to ModelStore.currentMode(c).id,
                         "speakerParam" to (v.speaker ?: "null")))
-                if (wav.exists() && wav.length() > 44) {
-                    wavs.add(wav)
+                if (covered || (wav.exists() && wav.length() > 44)) {
+                    if (covered) {
+                        if (usedDoneChapters.add(ci)) {
+                            wavs.add(doneWav!!)
+                            segStartBytes.add(cursorBytes)
+                            cursorBytes += (doneWav.length() - 44) + gapBytes
+                        } else {
+                            segStartBytes.add(cursorBytes)
+                        }
+                    } else {
+                        wavs.add(wav)
+                        segStartBytes.add(cursorBytes)
+                        cursorBytes += (wav.length() - 44) + gapBytes
+                    }
                     SegPlan.clearRedo(work, "seg:$i")
-                    segStartBytes.add(cursorBytes)
-                    cursorBytes += (wav.length() - 44) + gapBytes
                 } else {
                     var ok = false
                     var lastCode = -1

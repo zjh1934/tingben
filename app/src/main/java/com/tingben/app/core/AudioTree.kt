@@ -100,8 +100,58 @@ object AudioTree {
 
     fun mergedFile(c: Context, bookId: String, chapter: Int): File? =
         AudioLibrary.list(c)
-            .filter { it.bookId == bookId && it.chaptersKnown && chapter in it.chapters && it.file.isFile }
+            .filter { it.bookId == bookId && it.chaptersKnown && it.chapters.size == 1 &&
+                chapter in it.chapters && it.file.name.startsWith("chapter_") && it.file.isFile }
             .maxByOrNull { it.createdAt }?.file
+
+    fun chapterOnlyItems(c: Context): List<AudioItem> =
+        AudioLibrary.list(c).filter {
+            it.bookId != null && it.chaptersKnown && it.chapters.size == 1 &&
+                it.file.name.startsWith("chapter_") && it.file.isFile && it.file.length() > 44
+        }
+
+    private fun doneFile(dir: File) = File(dir, "chapter_done.json")
+
+    fun readDone(dir: File): Map<Int, File> {
+        val body = when (val r = AtomicJson.read(doneFile(dir))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return emptyMap()
+        }
+        return try {
+            val a = JSONArray(body)
+            (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                val ch = o.optInt("index", -1)
+                val f = File(o.optString("file", ""))
+                if (ch >= 0 && f.isFile && f.length() > 44) ch to f else null
+            }.toMap()
+        } catch (_: Throwable) { emptyMap() }
+    }
+
+    private fun writeDone(dir: File, cur: Map<Int, File>): Boolean {
+        val a = JSONArray()
+        cur.toSortedMap().forEach { (k, f) ->
+            a.put(JSONObject().put("index", k).put("file", f.absolutePath))
+        }
+        return AtomicJson.write(doneFile(dir), a.toString())
+    }
+
+    fun markDone(dir: File, chapter: Int, file: File): Boolean {
+        val cur = readDone(dir).toMutableMap()
+        cur[chapter] = file
+        return writeDone(dir, cur)
+    }
+
+    fun clearDone(c: Context, bookId: String, chapter: Int) {
+        val root = File(c.filesDir, "work/$bookId")
+        if (!root.isDirectory) return
+        try {
+            root.walkTopDown().filter { it.isFile && it.name == "chapter_done.json" }.forEach { f ->
+                val cur = readDone(f.parentFile ?: return@forEach).toMutableMap()
+                if (cur.remove(chapter) != null) writeDone(f.parentFile ?: return@forEach, cur)
+            }
+        } catch (_: Throwable) { }
+    }
 
     fun load(c: Context): List<BookAudio> {
         val o = meta(c)
@@ -110,25 +160,30 @@ object AudioTree {
         val root = File(c.filesDir, "work")
         val titles = mutableMapOf<String, MutableMap<Int, String>>()
         val raw = mutableListOf<Triple<String, Int, File>>()
+        val scCache = mutableMapOf<String, Map<Int, Int>?>()
 
         try {
             root.listFiles()?.forEach { bd ->
                 if (!bd.isDirectory) return@forEach
                 val bookId = bd.name
+                bd.walkTopDown().filter { it.isFile && it.name == "chapters.json" }.forEach { f ->
+                    readChapterTitles(f.parentFile ?: return@forEach)?.let {
+                        titles.getOrPut(bookId) { mutableMapOf() }.putAll(it)
+                    }
+                }
                 bd.walkTopDown().filter { it.isFile }.forEach { f ->
                     val m = segRe.matchEntire(f.name) ?: return@forEach
                     if (f.length() <= 44) return@forEach
                     val dir = f.parentFile ?: return@forEach
-                    val sc = readSegChapters(dir)
-                    readChapterTitles(dir)?.let {
-                        titles.getOrPut(bookId) { mutableMapOf() }.putAll(it)
-                    }
+                    val sc = scCache.getOrPut(dir.absolutePath) { readSegChapters(dir) }
                     val seg = m.groupValues[1].toIntOrNull() ?: return@forEach
                     val ch = sc?.getOrElse(seg) { 0 } ?: 0
                     raw.add(Triple(bookId, ch, f))
                 }
             }
         } catch (_: Throwable) { }
+
+        val chapterOnly = chapterOnlyItems(c)
 
         val byBook = mutableMapOf<String, MutableMap<Int, MutableList<SegAudio>>>()
         raw.forEach { (originBook, originCh, f) ->
@@ -150,6 +205,11 @@ object AudioTree {
                 .getOrPut(chapter) { mutableListOf() }.add(item)
         }
 
+        chapterOnly.forEach { a ->
+            val bid = a.bookId ?: return@forEach
+            byBook.getOrPut(bid) { mutableMapOf() }.getOrPut(a.chapters.first()) { mutableListOf() }
+        }
+
         return byBook.map { (bookId, chMap) ->
             val b = books[bookId]
             val bookTitle = nameOf(o, bookKey(bookId)) ?: b?.title ?: "不在书架上的音频"
@@ -159,11 +219,15 @@ object AudioTree {
                 val chapterTitle = nameOf(o, chapterKey(bookId, ch))
                     ?: titles[bookId]?.get(ch)?.takeIf { it.isNotBlank() }
                     ?: "第 ${ch + 1} 章"
-                ChapterAudio(bookId, ch, chapterTitle, numbered, mergedFile(c, bookId, ch))
+                ChapterAudio(bookId, ch, chapterTitle, numbered,
+                    chapterOnly.filter { it.bookId == bookId && ch in it.chapters }
+                        .maxByOrNull { it.createdAt }?.file)
             }
             BookAudio(bookId, bookTitle, b != null, chapters)
         }.sortedByDescending { bk ->
-            bk.chapters.flatMap { it.segments }.maxOfOrNull { it.createdAt } ?: 0L
+            bk.chapters.flatMap { it.segments }.maxOfOrNull { it.createdAt }
+                ?: bk.chapters.mapNotNull { it.merged?.lastModified() }.maxOfOrNull { it }
+                ?: 0L
         }
     }
 

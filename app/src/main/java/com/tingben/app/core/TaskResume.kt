@@ -182,7 +182,19 @@ object TaskResume {
                 f.isFile && (f.name.startsWith("chunk_") || f.name.startsWith("direct_")) &&
                         f.name.endsWith(".wav") && f.length() > 44
             } ?: 0
-            minOf(selected, if (wav > 0) maxOf(wav, ann) else ann)
+            val doneMap = AudioTree.readDone(w)
+            val covered = if (doneMap.isEmpty()) 0 else {
+                val body = when (val r = AtomicJson.read(File(w, "seg_chapters.json"))) {
+                    is AtomicJson.Read.Ok -> r.text
+                    else -> ""
+                }
+                try {
+                    val a = JSONArray(body)
+                    (0 until a.length()).count { a.optInt(it, -1) in doneMap }
+                } catch (_: Throwable) { 0 }
+            }
+            val base = minOf(selected, if (wav > 0) maxOf(wav, ann) else ann)
+            minOf(selected, base + covered)
         } catch (_: Throwable) { t.done }
     }
 }

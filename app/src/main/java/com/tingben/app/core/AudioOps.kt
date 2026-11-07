@@ -10,7 +10,7 @@ import java.io.File
 import java.util.UUID
 
 object AudioOps {
-    data class Result(val ok: Boolean, val file: File? = null, val reason: String = "")
+    data class Result(val ok: Boolean, val file: File? = null, val reason: String = "", val kept: Int = 0)
 
     private fun leInt(b: ByteArray, off: Int): Int =
         (b[off].toInt() and 0xff) or ((b[off + 1].toInt() and 0xff) shl 8) or
@@ -52,7 +52,9 @@ object AudioOps {
             return Result(false, reason = "拼接没成功，原来的小块都留着")
         }
         AudioLibrary.register(c, bookId, bookTitle, setOf(chapter), true, dst, chapter + 1)
-        return Result(true, dst)
+        parts.firstOrNull()?.parentFile?.let { AudioTree.markDone(it, chapter, dst) }
+        val kept = deleteAll(parts)
+        return Result(true, dst, kept = kept)
     }
 
     fun mergedTemp(c: Context, parts: List<File>): Result {
@@ -147,6 +149,12 @@ object AudioOps {
             try { muxer?.stop() } catch (_: Throwable) { }
             try { muxer?.release() } catch (_: Throwable) { }
         }
+    }
+
+    fun deleteMerged(c: Context, file: File): Boolean {
+        val ok = AudioLibrary.remove(c, file.nameWithoutExtension)
+        if (file.isFile) file.delete()
+        return ok
     }
 
     fun deleteAll(files: List<File>): Int {
