@@ -28,7 +28,7 @@ POS = [
     ("main", 'taskChapter = t?.let { TaskResume.currentChapter(ctx, it) }'),
     ("main", 'onPickChapter: (Int) -> Unit'),
     ("main", 'clickable(enabled = started) { onChapter(ch.index) }'),
-    ("main", 'val started = done || livePct != null ||'),
+    ("main", 'livePct != null ||'),
     ("main", '"去选这一章 ›"'),
     ("main", '"还没做"'),
     ("main", '"已做好"'),

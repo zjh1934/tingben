@@ -140,6 +140,8 @@ jobs:
         run: python3 scripts/r118_verify.py --selftest
       - name: R119 音频小格子 / 任务三层 / 章内进度 / 停滞任务续跑验证
         run: python3 scripts/r119_verify.py --selftest
+      - name: R120 拼成整章后删小块闭环验证（章成品进树 / 续跑不重算 / 章状态真值 / 反向注入）
+        run: python3 scripts/r120_verify.py --selftest
 
 
 
