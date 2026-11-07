@@ -4,6 +4,8 @@
 只守结构，不守画法：调音台整页重做仍留待用户引导，本轮不碰界面。
 """
 import pathlib, re, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import nav_semantics as nav
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CHROME = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
@@ -39,16 +41,18 @@ def check(files):
     if len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"])) != 4:
         errs.append("一级组不是 4 项")
 
-    KEEP = [
-        'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
-        'Screen.MIXER -> NAV_MIXER',
-        'NAV_MIXER -> Screen.MIXER',
-        'fun commitAll()',
-        'if (!st.running) return@LaunchedEffect',
-    ]
-    for s in KEEP:
+    EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+    if nav.screen_enum(main) != EXPECTED:
+        errs.append("Screen 枚举集合与 9 值不符")
+    for pat in (r"Screen\.MIXER\s*->\s*NAV_MIXER", r"NAV_MIXER\s*->\s*Screen\.MIXER"):
+        if not re.search(pat, main + ch):
+            errs.append("导航映射丢失: " + pat)
+    for s in ('fun commitAll()', 'if (!st.running) return@LaunchedEffect'):
         if s not in main + ch:
             errs.append("守恒丢失: " + s[:52])
+    for msg in nav.semantics(main):
+        errs.append("导航语义: " + msg)
     if 'r89_verify.py' not in ci:
         errs.append("CI 未挂 r89_verify")
     return errs

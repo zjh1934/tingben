@@ -8,6 +8,7 @@ App() 之外的业务代码、Screen 9 分支、外部导入落地、通知回�
 import os, pathlib, re, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from r45_common import canon
+import nav_semantics as nav
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MAIN_P = "app/src/main/java/com/tingben/app/MainActivity.kt"
@@ -41,11 +42,6 @@ MAIN_POS = [
     "scope.launch { drawerState.close() }",
     "onMenu = { scope.launch { drawerState.open() } }",
     ".navigationBarsPadding()",
-    "var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }",
-    "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })",
-    "BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }",
-    "var refresh by remember { mutableStateOf(0) }",
-    "var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }",
 ]
 OLD_SHELL = ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS", "AppTab(",
              "onMenu = { idx ->", "ModalNavigationDrawer("]
@@ -86,10 +82,10 @@ def check(main, chrome, tag):
         ck(s in chrome, "AppChrome 缺符号: " + s[:60])
     for s in OLD_SHELL:
         ck(s not in main and s not in chrome, "旧壳残留: " + s)
-    # 抽屉 BackHandler 必须排在原 BackHandler 之后（LIFO 优先）
-    a = main.find("BackHandler(enabled = screen != Screen.LIBRARY)")
-    b = main.find("BackHandler(enabled = drawerState.isOpen)")
-    ck(a >= 0 and b > a, "抽屉 BackHandler 没排在原 BackHandler 之后")
+    for msg in nav.semantics(main):
+        ck(False, "导航语义: " + msg)
+    # 抽屉回退优先（语义定位，不锁字面量）
+    ck(nav.back_order_ok(main), "抽屉 BackHandler 没排在全局回退之后")
     EXPECTED_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
                         "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
     n = len(EXPECTED_SCREENS)
@@ -98,8 +94,9 @@ def check(main, chrome, tag):
     ck(chrome_count(main) == n, "chromeOf 没覆盖 %d 个目的地" % n)
     ck(chrome_set(main) == EXPECTED_SCREENS, "chromeOf 目的地集合与枚举不一致")
     for s in ["fun importBook(uri: Uri?", "incoming: String?", "EXTERNAL_INTENT",
-              "ProduceService", "screen = Screen.LIBRARY"]:
+              "ProduceService"]:
         ck(s in main, "外部导入/通知回跳落地丢失: " + s)
+    ck(nav.library_reachable(main), "书架不再是可达目的地")
     # 底部安全区：statusBarsPadding 与 navigationBarsPadding 都在根 Column 上
     ck("statusBarsPadding().navigationBarsPadding()" in main,
        "根 Column 没同时让开状态栏与系统手势区")
@@ -108,18 +105,21 @@ def check(main, chrome, tag):
 errs = check(MAIN, CHROME, "基线")
 
 # ── 2) 反向注入：任一处改坏，断言必须响 ────────────────────────────────
+# F-25 · 注入锚点从基线源码动态提取，不再写死导航实现字面量
+_mixer_back_lit = "Screen.MIXER -> MixerScreen(ctx, onBack = { %s })" % nav._on_back(nav._branch(MAIN, "MIXER"))
+_mixer_line = re.search(r"^\s*Screen\.MIXER -> MixerScreen.*$", MAIN, re.M).group(0) + "\n"
+_global_frag = nav.global_back(MAIN)[2]
 INJECT = [
     ("删抽屉返回键", MAIN, "    BackHandler(enabled = drawerState.isOpen) {\n        scope.launch { drawerState.close() }\n    }\n", ""),
     ("关掉官方手势", MAIN, "gesturesEnabled = true", "gesturesEnabled = false"),
     ("恢复底栏", MAIN, "        // V1 · 3 个顶层 Tab 已收进左侧抽屉", "        AppBottomBar(active = 0, onTab = {}, surface = Card, primary = Primary, primarySoft = PrimarySoft, sub = Sub)\n        // V1 · 3 个顶层 Tab 已收进左侧抽屉"),
     ("☰ 回退成浮层菜单", CHROME, "IconButton(onClick = onMenu)", "DropdownMenu(expanded = false, onDismissRequest = {}) {}; IconButton(onClick = onMenu)"),
     ("去掉底部安全区", MAIN, ".statusBarsPadding().navigationBarsPadding()", ".statusBarsPadding()"),
-    ("调音台返回写死设置页", MAIN, "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })", "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = Screen.SETTINGS })"),
+    ("调音台返回写死设置页", MAIN, _mixer_back_lit,
+     "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = Screen.SETTINGS })"),
     ("调音台不再是独立项", CHROME, 'NAV_MIXER to "调音台",\n', ""),
-    ("删一个分发分支", MAIN, "                Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })\n", ""),
-    ("抽屉 BackHandler 排到原条之前", MAIN,
-     "    BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }\n    // V1 · 后注册的 callback 优先：抽屉开着时先收抽屉，不误退回书架。\n    BackHandler(enabled = drawerState.isOpen) {\n        scope.launch { drawerState.close() }\n    }",
-     "    BackHandler(enabled = drawerState.isOpen) {\n        scope.launch { drawerState.close() }\n    }\n    BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }"),
+    ("删一个分发分支", MAIN, _mixer_line, ""),
+    ("全局回退失效", MAIN, _global_frag, "(enabled = false)"),
 ]
 for name, which, old, new in INJECT:
     if old not in which:

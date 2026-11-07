@@ -441,7 +441,11 @@ Java_com_tingben_app_engine_NativeEngine_ttsSynthesizeRaw(
         jfloat subTemperature, jint subTopK, jfloat subTopP) {
     auto * q = (qt_context *)(intptr_t)handle;
     if (!q) { throwJava(env, "TTS 未加载"); return -1; }
-    g_cancel.store(false);
+    // R108 · F-19：不在这里复位。停止信号属于「整次任务」，只能由 nativeCancelReset()
+    // 在整次制作 / 每次试听开始时清一次。旧写法每段进门就 g_cancel.store(false)，
+    // 于是「停止 → 当前段被 ttsCancelCb 打断 → R100 的重试或下一段一进来又清零 → 接着算」，
+    // UI 显示已停止、native 还在跑完整段。llmGenerate 早在 R9 就按这个规矩改过，
+    // 这里是 TTS 路径最后一处漏网；段队列、写盘、JNI 回调全程不再复位。
     std::unique_lock<std::mutex> refLock(g_refMu, std::defer_lock);
 
     const char * text     = env->GetStringUTFChars(jText, nullptr);

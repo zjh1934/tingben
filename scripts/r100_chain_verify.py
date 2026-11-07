@@ -74,9 +74,11 @@ RULES = [
     ('app/src/main/cpp/qwen.h', 'const float * ref_audio_24k;', '引擎：字段语义以随包头文件为准'),
     ('.github/workflows/ci.yml',
      'python3 scripts/r100_chain_verify.py --selftest', 'CI：链路自检真挂上'),
+    # R108 · F-19：这轮动了 JNI 桥，缓存键必须与它解耦；不再锁 key 原文（R107 解绑思路）。
     ('.github/workflows/ci.yml',
-     "hashFiles('scripts/build_native.sh', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/cpp/tingben_native.cpp'",
-     'CI：native 缓存键守恒（本轮不动 C++，不触发上游重编译）'),
+     'key: tingben-native-v2-', 'CI：native 缓存键与 JNI 桥解耦（改 JNI 不触发上游重编译）'),
+    ('.github/workflows/ci.yml',
+     'restore-keys:', 'CI：native 缓存有回退键，未命中时复用已验证的 .so'),
 ]
 
 

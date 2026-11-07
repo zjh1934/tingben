@@ -116,6 +116,12 @@ jobs:
       - name: R46 V1 抽屉壳验证（正向形态 / 旧壳零残留 / 反向注入 / 守恒）
         run: python3 scripts/r46_verify.py
 
+      - name: R107 导航语义解绑验证（6 脚本解绑 / 双形态成立 / R109 镜像复跑 / 反向注入）
+        run: python3 scripts/r107_verify.py --selftest
+
+      - name: R108 F-19 停止标志验证（任务级复位 / TTS 零逐段复位 / 缓存解耦 / 反向注入）
+        run: python3 scripts/r108_verify.py --selftest
+
 
 
       - name: JDK 17
@@ -154,8 +160,10 @@ jobs:
           gradle-version: "8.9"
           cache-read-only: false
 
-      # 缓存键必须覆盖 JNI 源码 + CMake + 构建脚本 + 上游头文件；
-      # 只缓存 .so 会在跳过编译后报 ggml.h not found。
+      # R108 · JNI 桥（tingben_native.cpp / CMakeLists）由 Gradle 的 externalNativeBuild
+      # 按源码增量编译，不是 build_native.sh 的产物。把它放进 key 会让「改一行 JNI」
+      # 误触发上游两个引擎重编译；编译失败时守门会删掉 jniLibs，APK 降级成纯 Kotlin 包。
+      # restore-keys 让新 key 未命中时回退到最近一次成功的 native 缓存，不重编上游。
       - name: 原生引擎缓存
         id: ncache
         uses: actions/cache@v4
@@ -163,7 +171,10 @@ jobs:
           path: |
             app/src/main/jniLibs/arm64-v8a
             app/src/main/cpp/upstream_include
-          key: tingben-native-v1-${{ hashFiles('scripts/build_native.sh', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/cpp/tingben_native.cpp', 'app/src/main/cpp/llama.h', 'app/src/main/cpp/qwen.h') }}
+          key: tingben-native-v2-${{ hashFiles('scripts/build_native.sh', 'app/src/main/cpp/llama.h', 'app/src/main/cpp/qwen.h') }}
+          restore-keys: |
+            tingben-native-v2-
+            tingben-native-v1-
 
       - name: 检查缓存完整性
         id: chk

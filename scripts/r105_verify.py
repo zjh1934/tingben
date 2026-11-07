@@ -56,7 +56,7 @@ trial = main[main.index('private fun MixerScreen('):]
 errs += check(trial, 'trial', [
     'var trialJob by remember { mutableStateOf<Job?>(null) }',
     'var trialToken by remember { mutableStateOf(0L) }',
-    'DisposableEffect(Unit) { onDispose { trialJob?.cancel() } }',
+    'DisposableEffect(Unit)', 'onDispose {', 'trialJob?.cancel()',
     'fun stopTrial()',
     'trialToken++',
     'NativeEngine.nativeCancel()',
@@ -83,8 +83,12 @@ errs += check(main, '守恒/界面', [
     'commitAll(',
     'PlayQueue.setTracks(',
     'Screen.MIXER -> MixerScreen',
-    'BackHandler(enabled = screen != Screen.LIBRARY)',
 ])
+# F-25 · 全局回退按语义守恒，不锁字面量
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import nav_semantics as _nav
+if _nav.global_back(main) is None:
+    errs.append('全局回退处理器丢失')
 errs += check(trial, '守恒/三模式', [
     'ModelStore.Mode.BASE ->',
     'ModelStore.Mode.CUSTOM_VOICE ->',
@@ -104,7 +108,7 @@ def violates(a, b, c):
     t2 = a[a.index('private fun MixerScreen('):]
     for s in ('val myToken = trialToken + 1',
               'if (myToken != trialToken || !isActive) return@withContext',
-              'DisposableEffect(Unit) { onDispose { trialJob?.cancel() } }',
+              'DisposableEffect(Unit)', 'onDispose {', 'trialJob?.cancel()',
               'onClick = { stopTrial() }',
               'fun stopTrial()'):
         if s not in t2:
@@ -129,7 +133,7 @@ if '--selftest' in sys.argv:
         ('释放退回裸调用', lambda a, b, c: (
             a.replace('NativeEngine.ttsFreeGated(', 'NativeEngine.ttsFree('), b, c)),
         ('撤掉离页取消', lambda a, b, c: (
-            a.replace('DisposableEffect(Unit) { onDispose { trialJob?.cancel() } }', '', 1), b, c)),
+            a.replace('trialJob?.cancel()', 'Unit'), b, c)),
         ('撤掉停止入口', lambda a, b, c: (
             a.replace('onClick = { stopTrial() }', 'onClick = { }', 1), b, c)),
     ]

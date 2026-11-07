@@ -98,7 +98,7 @@ def upload(item):
 entries = []
 # R89 · 活跃目录按本地清单对齐：远端残留的旧文档 / 一次性脚本只在这两个前缀下删。
 # LOCAL_ONLY 是本地专用脚本，远端若已有也不动它。
-PRUNE_PREFIXES = ("docs/", "scripts/")
+PRUNE_PREFIXES = ("docs/", "scripts/", "logs/")  # logs/ 是 CI 失败时的临时回写
 auto_deletes = [p for p in remote
                 if p.startswith(PRUNE_PREFIXES)
                 and p not in files and p not in LOCAL_ONLY]

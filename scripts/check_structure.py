@@ -3,6 +3,8 @@
 from pathlib import Path
 import os, re, sys
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import nav_semantics as nav
 errs = []
 REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts",
  "gradle/libs.versions.toml", "gradle.properties", "app/build.gradle.kts",
@@ -222,8 +224,8 @@ for sid in ["upstream", "stable", "drama", "deterministic"]:
     if sid not in mixer_src: errs.append("Mixer.kt 缺少采样预设: " + sid)
 if "Screen.MIXER -> MixerScreen" not in main_src:
     errs.append("R31 回退：调音台页没接进导航")
-if "onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER }" not in main_src:
-    errs.append("R31 回退：设置页没有调音台入口")
+if not nav.mixer_entries(main_src):
+    errs.append("R31 回退：设置页没有记录来源的调音台入口")
 # 调音台只读汇总，不许自己存一份 TtsKnobs 副本
 if "private val knobs" in mixer_src or "var knobs" in mixer_src:
     errs.append("R31 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
@@ -276,14 +278,10 @@ for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip"]:
 for sym in ["⟳ 刷新", "TabButton(", '把小说变成能听的音频", fontSize = 11',
             "下拉刷新 · 或点右上角", '听本", fontSize = 22']:
     if sym in main_src: errs.append("U1 回退：旧 UI 残留 " + sym)
-# 导航骨架守恒：这些一行都不许动
-for sym in [
-    "BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }",
-    "var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }",
-    "onBack = { screen = modelsFrom }",
-    "screen = Screen.LIBRARY",
-]:
-    if sym not in main_src: errs.append("U1 回退：导航骨架被改动 " + sym)
+# F-25 · 导航骨架守恒：只问语义，不锁实现字面量
+# （F-04/F-07 改 rememberSaveable / 返回栈时不会集体假红）
+for msg in nav.semantics(main_src):
+    errs.append("U1 回退：导航语义丢失 — " + msg)
 # R61 · 目的地随版本增长：白名单显式列出，数量一律由它推算，不再写死 10。
 WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
                 "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
@@ -398,9 +396,10 @@ R36_ALL = ["ModeTabs(", "MixerPresetStore", "MixerPreset(",
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
 for sym in ["private fun ModeTabs(", "Screen.MIXER -> MixerScreen",
-            "onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER }",
             "t.config else Prefs.defaultPerf(c)"]:
     if sym not in main_src: errs.append("缺少 R36 界面符号: " + sym)
+if not nav.mixer_entries(main_src):
+    errs.append("缺少 R36 调音台入口语义")
 # 反向：设置页不许再画第二遍 9 项采样，不许出现第二份真值源
 for banned in ["声音采样（进阶）", "putKnobs(", "descDraft"]:
     if banned in main_src: errs.append("R36 回退：设置页又出现第二套采样 " + banned)
@@ -424,19 +423,19 @@ for sym in ["DismissibleNavigationDrawer(", "drawerState = drawerState",
 # R51 · 覆盖式抽屉必须真的换掉（注释里提到名字不带 "("，不算命中）
 if "ModalNavigationDrawer(" in main_src:
     errs.append("R51 回退：又用回覆盖式 ModalNavigationDrawer(")
-# 后注册的 callback 优先：抽屉 BackHandler 必须紧跟在原 BackHandler 之后
-i_old = main_src.find("BackHandler(enabled = screen != Screen.LIBRARY)")
-i_new = main_src.find("BackHandler(enabled = drawerState.isOpen)")
-if i_old < 0 or i_new < 0 or i_new <= i_old:
-    errs.append("R46 回退：抽屉 BackHandler 没排在原 BackHandler 之后")
+# 后注册的 callback 优先：抽屉回退必须排在全局回退之后（语义定位）
+if not nav.back_order_ok(main_src):
+    errs.append("R46 回退：抽屉 BackHandler 没排在全局回退之后")
 # 旧壳零残留（底栏 / 下拉菜单 / 旧 Tab 表 / 旧菜单回调）
 for sym in ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS",
             "onMenu = { idx ->", "AppTab("]:
     if sym in main_src or sym in chrome_src:
         errs.append("R46 回退：旧壳残留 " + sym)
 # 二级页返回回「进入前的那一页」，不再写死 SETTINGS
-for sym in ["Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })"]:
-    if sym not in main_src: errs.append("R46 回退：二级页返回没回来源 " + sym)
+if not nav.mixer_back_ok(main_src):
+    errs.append("R46 回退：调音台返回没按来源")
+if not nav.models_back_ok(main_src):
+    errs.append("R46 回退：模型页返回没按来源")
 
 # ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
 R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "保存",

@@ -2007,8 +2007,12 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     var trialJob by remember { mutableStateOf<Job?>(null) }
     var trialToken by remember { mutableStateOf(0L) }
 
-    // 离页只断协程，不发 nativeCancel：全局停止标志会把后台正在跑的正式制作一起停掉。
-    DisposableEffect(Unit) { onDispose { trialJob?.cancel() } }
+    // R108 · 离页只在本页确实起过试听时才发 nativeCancel：正式制作在跑时本页
+    // 根本不会起试听（trial 里先拦 Producer.isBusy），这样不会误停后台任务。
+    DisposableEffect(Unit) { onDispose {
+        trialJob?.cancel()
+        if (busyTrial) { try { NativeEngine.nativeCancel() } catch (_: Throwable) { } }
+    } }
 
     fun stopTrial() {
         trialJob?.cancel()
@@ -2021,9 +2025,17 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
 
     /** 两态试听按传入的 src 完整组装，草稿与已生效各自独立，不写 Prefs。 */
     fun trial(label: String, src: MixerDraft, out: String) {
-        // R105 · 旧请求先取消；native 的逐采样检查点由 nativeCancel 通知。
+        // R108 · F-19：正式制作在跑时，native 的取消标志属于那次任务，碰它会把后台制作停掉。
+        if (Producer.isBusy()) {
+            Toast.makeText(c, "正在制作，做完再试听", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // R108 · 连点直接忽略，不再「先发 nativeCancel 停掉上一次、第二次又被门闩拦下」。
+        if (busyTrial) return
+        // R108 · 取消标志只在「整次任务开始」复位；JNI 已不再逐段清零，这一步不能省，
+        // 否则上次点过停止后 g_cancel 恒为 true，之后所有试听都会立刻被取消。
+        try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         trialJob?.cancel()
-        try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
         val myToken = trialToken + 1
         trialToken = myToken
         busyTrial = true

@@ -884,6 +884,12 @@ object Producer {
                     var ok = false
                     var lastCode = -1
                     for (attempt in 0..1) {
+                        // R108 · F-19：点停止后当前段会被 native 取消并返回非 0；
+                        // 不在重试前拦住就会白跑第二次（旧 JNI 还会顺手把停止标志清零）。
+                        if (cancelRequested) {
+                            _state.value = halted(i, annotated.size, gateFails + synthFails)
+                            return
+                        }
                         val code = try {
                             // 官方 Qwen3-TTS README：目标语言已知时显式传，别用 auto；全中文书固定 chinese。
                             NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, "chinese",

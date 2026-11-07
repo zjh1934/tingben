@@ -4,7 +4,9 @@
 守的是四件事：空态有下一步、播放控制默认收起但功能不丢、
 首屏不再出现第二张播放卡、列表容器与播放实例一行不动。
 """
-import pathlib, sys
+import pathlib, re, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import nav_semantics as nav
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BASE = ROOT / "app/src/main/java/com/tingben/app"
@@ -17,8 +19,6 @@ M, H = "main", "hub"
 
 POS = [
     (M, 'onLibrary: () -> Unit, onModels: () -> Unit'),
-    (M, 'onLibrary = { screen = Screen.LIBRARY }'),
-    (M, 'onModels = { modelsFrom = Screen.AUDIO; screen = Screen.MODELS }'),
     (M, 'var controlsOpen by remember { mutableStateOf(false) }'),
     (M, 'item(key = "audio_summary")'),
     (M, '共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}'),
@@ -55,9 +55,9 @@ KEEP = [
     (M, 'itemsIndexed(items, key = { _, it -> it.id })'),
     (M, 'PlayQueue.setTracks(items.map'),
     (M, 'ActivityResultContracts.CreateDocument("audio/wav")'),
-    (M, 'AudioLibrary.remove(c, item.id); localTick++'),
+    (M, 'AudioLibrary.remove(c, item.id)'),
+    (M, 'localTick++'),
     (M, 'val pq by PlayQueue.state.collectAsState()'),
-    (M, 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }'),
     (M, 'MiniPlayBar(ctx, miniBook'),
     (H, 'internal fun MiniPlayBar'),
     (H, 'if (!st.isPlaying) return@LaunchedEffect'),
@@ -73,6 +73,20 @@ def audio_body(text):
 
 def check(files):
     errs = []
+    # F-25 · 导航语义守恒（不锁 onLibrary / onModels 字面量）
+    EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+    if nav.screen_enum(files[M]) != EXPECTED:
+        errs.append("Screen 枚举集合与 9 值不符")
+    for msg in nav.semantics(files[M]):
+        errs.append("导航语义: " + msg)
+    try:
+        body = audio_body(files[M])
+        # onModels 是参数，lambda 定义在 App() 分发块里；这里查「页内真的用了入口」
+        if "onModels" not in body or not nav.model_entries(files[M]):
+            errs.append("我的音频页没有去模型页的入口")
+    except ValueError:
+        errs.append("音频页函数体边界定位失败")
     for f, s in POS:
         if s not in files[f]: errs.append("缺正向[%s]: %s" % (f, s[:50]))
     for f, s in BAN:
@@ -145,8 +159,6 @@ def selftest():
         ('item(key = "audio_summary")', 'item(key = "audio_summary_old")', "汇总行消失"),
         ('items.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }',
          'items.sumOf { AudioLibrary.durationMs(it.file) }', "汇总行改读磁盘"),
-        ('onModels = { modelsFrom = Screen.AUDIO; screen = Screen.MODELS }',
-         'onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS }', "模型页返回跳错"),
         ('Text("保存到手机", fontSize = 11.sp, color = Sub)',
          'FilledTonalButton(onClick = {}) { Text("保存到手机", fontSize = 12.sp) }', "第二个实心块回来"),
     ]

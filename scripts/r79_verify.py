@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """R79 · P4 性能二期验证：正向 / 零残留 / 守恒 / 函数体结构 / 反向注入。"""
-import pathlib, sys
+import pathlib, re, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import nav_semantics as nav
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BASE = ROOT / "app/src/main/java/com/tingben/app"
@@ -22,7 +24,6 @@ POS = [
     (M, 'item(key = "audio_empty")'),
     (M, 'AudioLibrary.durationMsOfBytes(current.bytes)'),
     (M, 'AudioLibrary.durationMsOfBytes(item.bytes)'),
-    (M, 'LaunchedEffect(st.running) {\n        if (!st.running) return@LaunchedEffect\n        while (true) { delay(2000); loadTick++ }\n    }'),
     (M, 'val seenTask = remember(st.done, redoNonce) { TaskResume.load(c) }'),
     (M, 'val segs = remember(st.done, seenTask, redoNonce)'),
     (M, 'val rest = remember(st.done, seenTask, redoNonce)'),
@@ -46,7 +47,6 @@ BAN = [
 KEEP = [
     (M, 'val scroll = rememberScrollState()'),
     (M, 'Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp))'),
-    (M, 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }'),
     (M, 'MiniPlayBar(ctx, miniBook'),
     (M, 'val pq by PlayQueue.state.collectAsState()'),
     (M, 'PlayQueue.setTracks(items.map'),
@@ -66,6 +66,18 @@ def audio_body(text):
 
 def check(files):
     errs = []
+    # F-25 · 导航守恒改语义判据（枚举集合 / 全局语义），不再锁整行字面量
+    EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+    if nav.screen_enum(files[M]) != EXPECTED:
+        errs.append("Screen 枚举集合与 9 值不符")
+    for msg in nav.semantics(files[M]):
+        errs.append("导航语义: " + msg)
+    # R101 后任务页改成「停止即时置位」；按语义判，不锁旧 while 字面量
+    wins = [m.group(1) for m in re.finditer(
+        r"LaunchedEffect\(st\.running\)\s*\{(.{0,320})", files[M], re.S)]
+    if not any("!st.running" in w and "loadTick++" in w for w in wins):
+        errs.append("任务页缺「运行中才轮询 + 停止时即时刷新」")
     for f, s in POS:
         if s not in files[f]: errs.append("缺正向[%s]: %s" % (f, s[:52]))
     for f, s in BAN:
