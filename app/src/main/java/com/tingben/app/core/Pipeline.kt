@@ -353,9 +353,30 @@ object WavMerger {
         return h
     }
 
-    fun merge(parts: List<File>, out: File, gapMs: Int = 0): Boolean {
+    private fun declick(pcm: ByteArray, ms: Int): ByteArray {
+        if (ms <= 0 || pcm.size < 4) return pcm
+        val frames = (24000 * ms / 1000).coerceIn(1, pcm.size / 2)
+        val out = pcm.copyOf()
+        fun ramp(at: Int, gain: Float) {
+            val p = at * 2
+            if (p < 0 || p + 1 >= out.size) return
+            val s = ((out[p].toInt() and 0xff) or
+                ((out[p + 1].toInt() and 0xff) shl 8)).toShort().toInt()
+            val v = (s * gain).toInt().coerceIn(-32768, 32767)
+            out[p] = (v and 0xff).toByte()
+            out[p + 1] = ((v shr 8) and 0xff).toByte()
+        }
+        for (j in 0 until frames) {
+            val g = j.toFloat() / frames
+            ramp(j, g)
+            ramp(pcm.size / 2 - 1 - j, g)
+        }
+        return out
+    }
+
+    fun merge(parts: List<File>, out: File, gapMs: Int = 0, declickMs: Int = 30): Boolean {
         return try {
-            val chunks = parts.mapNotNull { pcmOf(it) }
+            val chunks = parts.mapNotNull { p -> pcmOf(p)?.let { declick(it, declickMs) } }
             if (chunks.isEmpty()) false else {
                 val gapBytes = (gapMs.coerceIn(0, 5000) * 48 / 2) * 2
                 val silence = if (gapBytes > 0) ByteArray(gapBytes) else ByteArray(0)
@@ -591,6 +612,11 @@ object Producer {
             val sc = JSONArray()
             segChapter.forEach { sc.put(it) }
             AtomicJson.write(File(work, "seg_chapters.json"), sc.toString())
+            val ct = JSONArray()
+            chapters.forEach { ch ->
+                ct.put(JSONObject().put("index", ch.index).put("title", ch.title))
+            }
+            AtomicJson.write(File(work, "chapters.json"), ct.toString())
         } catch (_: Throwable) { }
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
 

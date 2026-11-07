@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1322,218 +1323,210 @@ private fun fmtTime(ms: Long): String {
     return "%02d:%02d".format(s / 60, s % 60)
 }
 
+private data class AudioMenu(
+    val kind: Int,
+    val bookId: String,
+    val chapter: Int,
+    val seg: SegAudio?,
+    val label: String,
+    val files: List<File>
+)
+
 @Composable
 private fun AudioScreen(
     c: Context, refresh: Int,
     onLibrary: () -> Unit, onModels: () -> Unit
 ) {
     var localTick by remember { mutableStateOf(0) }
-    val items = remember(refresh, localTick) { AudioLibrary.list(c) }
-    val indexError = AudioLibrary.readError ?: AudioLibrary.writeError
-    var exportId by remember { mutableStateOf<String?>(null) }
-    var controlsOpen by remember { mutableStateOf(false) }
-    var dropGroup by remember { mutableStateOf<String?>(null) }
+    var tree by remember { mutableStateOf(emptyList<BookAudio>()) }
+    LaunchedEffect(refresh, localTick) {
+        tree = withContext(Dispatchers.IO) { AudioTree.load(c) }
+    }
     val pq by PlayQueue.state.collectAsState()
-    val queue = remember(items) {
-        items.map {
-            Track(it.file, "${it.title} · ${it.scope}",
-                id = "audio:${it.id}:${it.file.absolutePath}")
+    var openBooks by remember { mutableStateOf(setOf<String>()) }
+    var openChapters by remember { mutableStateOf(setOf<String>()) }
+    var target by remember { mutableStateOf<AudioMenu?>(null) }
+    var confirmDel by remember { mutableStateOf<AudioMenu?>(null) }
+    var rename by remember { mutableStateOf<AudioMenu?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var moveSeg by remember { mutableStateOf<SegAudio?>(null) }
+    var moveText by remember { mutableStateOf("") }
+    var pendingSrc by remember { mutableStateOf<File?>(null) }
+    var pendingName by remember { mutableStateOf("") }
+
+    val saveWav = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
+        val src = pendingSrc
+        if (uri != null && src != null) {
+            val ok = AudioOps.copyTo(c, src, uri)
+            Toast.makeText(c, if (ok) "已复制" else "复制失败", Toast.LENGTH_SHORT).show()
         }
+        if (src != null && src.name.startsWith("audio_copy_")) src.delete()
+        pendingSrc = null
     }
-    LaunchedEffect(items) { PlayQueue.setTracks(queue, "audio") }
-    val isPlaying = pq.isPlaying
-    val posMs = pq.positionMs
-    val durMs = pq.durationMs
-    val current = items.firstOrNull {
-        val tid = "audio:${it.id}:${it.file.absolutePath}"
-        pq.trackId.isNotEmpty() && pq.trackId == tid
-    }
-    var bookNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    LaunchedEffect(items) {
-        bookNames = withContext(Dispatchers.IO) {
-            BookStore.list(c).associate { it.id to it.title }
+    val saveM4a = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/mp4")) { uri ->
+        val src = pendingSrc
+        if (uri != null && src != null) {
+            val tmp = File(c.cacheDir, "conv_${System.currentTimeMillis()}.m4a")
+            val r = AudioOps.toM4a(c, src, tmp)
+            if (r.ok) {
+                val ok = AudioOps.copyTo(c, tmp, uri)
+                Toast.makeText(c, if (ok) "已转存 M4A" else "写出失败", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(c, r.reason, Toast.LENGTH_LONG).show()
+            }
+            tmp.delete()
         }
-    }
-    val groups = remember(items, bookNames) {
-        items.groupBy { it.bookId ?: "" }.toList()
-            .sortedByDescending { g -> g.second.maxOf { it.createdAt } }
+        if (src != null && src.name.startsWith("audio_copy_")) src.delete()
+        pendingSrc = null
     }
 
-    val release: () -> Unit = { PlayQueue.release() }
-    val step: (Int) -> Unit = { d -> if (d < 0) PlayQueue.previous() else PlayQueue.next() }
-    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
-        val f = items.find { it.id == exportId }?.file
-        if (uri != null && f != null) {
-            try {
-                c.contentResolver.openOutputStream(uri)?.use { o -> f.inputStream().copyTo(o) }
-                Toast.makeText(c, "已保存", Toast.LENGTH_SHORT).show()
-            } catch (_: Throwable) { Toast.makeText(c, "保存失败", Toast.LENGTH_SHORT).show() }
+    fun toast(s: String) = Toast.makeText(c, s, Toast.LENGTH_SHORT).show()
+
+    fun exportParts(t: AudioMenu, m4a: Boolean) {
+        val merged = AudioOps.mergedTemp(c, t.files)
+        if (!merged.ok || merged.file == null) {
+            toast(merged.reason)
+            return
+        }
+        pendingSrc = merged.file
+        pendingName = t.label
+        val base = t.label.filter { ch -> ch.isLetterOrDigit() || ch == '_' || ch == '-' }
+            .take(40).ifBlank { "audio" }
+        if (m4a) saveM4a.launch("$base.m4a") else saveWav.launch("$base.wav")
+    }
+
+    fun playSeg(s: SegAudio) {
+        val tid = "seg:${s.file.absolutePath}"
+        if (pq.trackId == tid) {
+            PlayQueue.toggle()
+        } else {
+            PlayQueue.setTracks(listOf(Track(s.file, s.name, id = tid)), "seg")
+            PlayQueue.playFrom(0, id = "seg")
         }
     }
+
+    fun playChapter(ch: ChapterAudio) {
+        val q = "chapter:${ch.bookId}:${ch.chapter}"
+        val tracks = AudioTree.chapterTracks(c, ch)
+        if (tracks.isEmpty()) { toast("这一章还没有音频小块"); return }
+        if (pq.queueId == q && pq.trackId == tracks.first().id) {
+            PlayQueue.toggle()
+        } else {
+            PlayQueue.setTracks(tracks, q)
+            PlayQueue.playFrom(0, id = q)
+        }
+    }
+
+    fun bookMenu(b: BookAudio) = AudioMenu(0, b.bookId, -1, null, b.title,
+        AudioTree.allSegments(b).map { it.file })
+    fun chapterMenu(ch: ChapterAudio) = AudioMenu(1, ch.bookId, ch.chapter, null, ch.title,
+        ch.segments.map { it.file })
+    fun segMenu(s: SegAudio) = AudioMenu(2, s.bookId, s.chapter, s, s.name, listOf(s.file))
+
+    val segCount = tree.sumOf { b -> b.chapters.sumOf { ch -> ch.segments.size } }
+    val chCount = tree.sumOf { it.chapters.size }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-
-        if (indexError != null) {
-            item(key = "audio_index_warning") {
-                Text(indexError, fontSize = 12.sp, color = Warn,
-                    modifier = Modifier.padding(bottom = 8.dp))
-            }
+        item(key = "audio_tree_summary") {
+            Text("共 ${tree.size} 本 · $chCount 章 · $segCount 块",
+                fontSize = 12.sp, color = Sub, modifier = Modifier.padding(bottom = 10.dp))
         }
-
-        if (items.isNotEmpty()) {
-            item(key = "audio_summary") {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    val totalMs = items.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }
-                    Text("共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}（按文件大小估算）",
-                        fontSize = 12.sp, color = Sub, modifier = Modifier.weight(1f))
-                    if (current != null) {
-                        TextButton(onClick = { controlsOpen = !controlsOpen }) {
-                            Text(if (controlsOpen) "收起 ⌃" else "播放控制 ›",
-                                fontSize = 12.sp, color = Primary)
-                        }
-                    }
-                }
-            }
-
-            if (current != null && controlsOpen) {
-                item(key = "now_playing") {
-                    CardBox(Modifier.padding(bottom = 10.dp)) {
-                        Text(if (pq.ended) "已播完" else if (isPlaying) "播放中" else "已暂停",
-                            fontSize = 12.sp, color = Primary)
-                        Spacer(Modifier.height(4.dp))
-                        Text("${current.title} · ${current.scope}", fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold, maxLines = 2)
-                        Text("${current.mode} · 约 ${fmtTime(AudioLibrary.durationMsOfBytes(current.bytes))}",
-                            fontSize = 12.sp, color = Sub)
-                        Spacer(Modifier.height(8.dp))
-                        Slider(
-                            value = if (durMs > 0) posMs.toFloat() / durMs.toFloat() else 0f,
-                            onValueChange = { v -> PlayQueue.seekTo((v * durMs.toFloat()).toLong()) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(fmtTime(posMs), fontSize = 12.sp, color = Sub)
-                            Spacer(Modifier.weight(1f))
-                            Text(fmtTime(durMs), fontSize = 12.sp, color = Sub)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { step(-1) }) { Text("⏮ 上一条", fontSize = 12.sp) }
-                            TextButton(onClick = { PlayQueue.seekTo((posMs - 15000).coerceAtLeast(0)) }) {
-                                Text("−15s", fontSize = 12.sp)
-                            }
-                            Button(onClick = { PlayQueue.toggle() }) {
-                                Text(if (isPlaying) "⏸ 暂停" else "▶ 播放", fontSize = 13.sp)
-                            }
-                            TextButton(onClick = { PlayQueue.seekTo((posMs + 15000).coerceAtMost(durMs)) }) {
-                                Text("+15s", fontSize = 12.sp)
-                            }
-                            TextButton(onClick = { step(1) }) { Text("下一条 ⏭", fontSize = 12.sp) }
-                        }
-                        TextButton(onClick = {
-                            val nextSpeed = when (pq.speed) {
-                                1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f
-                            }
-                            PlayQueue.setSpeed(nextSpeed)
-                        }) { Text("倍速 ${"%.2f".format(pq.speed).trimEnd('0').trimEnd('.')}x", fontSize = 12.sp, color = Sub) }
-                        TextButton(onClick = release, Modifier.fillMaxWidth()) {
-                            Text("关闭播放器", fontSize = 12.sp, color = Sub)
-                        }
-                    }
-                }
-            }
-        }
-
-        if (items.isEmpty()) {
-            item(key = "audio_empty") {
-                CardBox {
-                    Text("还没有音频", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    Text("在书架导入一本书，选中章节合成后，成品会出现在这里。",
+        if (pq.trackId.isNotEmpty()) {
+            item(key = "audio_tree_playing") {
+                CardBox(Modifier.padding(bottom = 10.dp)) {
+                    Text(pq.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text("%s · %s / %s".format(
+                        if (pq.isPlaying) "播放中" else "已暂停",
+                        fmtTime(pq.positionMs), fmtTime(pq.durationMs)),
                         fontSize = 12.sp, color = Sub)
-                    Spacer(Modifier.height(4.dp))
-                    Row {
-                        TextButton(onClick = onLibrary) {
-                            Text("去书架 ›", fontSize = 12.sp, color = Primary)
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { PlayQueue.seekTo((pq.positionMs - 15000).coerceAtLeast(0)) }) {
+                            Text("−15s", fontSize = 12.sp)
                         }
-                        TextButton(onClick = onModels) {
-                            Text("去看模型 ›", fontSize = 12.sp, color = Primary)
+                        Button(onClick = { PlayQueue.toggle() }) {
+                            Text(if (pq.isPlaying) "暂停" else "继续", fontSize = 13.sp)
+                        }
+                        TextButton(onClick = { PlayQueue.seekTo((pq.positionMs + 15000).coerceAtMost(pq.durationMs)) }) {
+                            Text("+15s", fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { PlayQueue.release() }) {
+                            Text("关闭", fontSize = 12.sp, color = Sub)
                         }
                     }
                 }
             }
-        } else {
-            groups.forEach { (bid, group) ->
-                val name = bookNames[bid]
-                    ?: if (bid.isEmpty()) "没记书名的音频" else "不在书架上的音频"
-                item(key = "audio_group_$bid") {
-                    CardBox(Modifier.padding(bottom = 8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(name, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f))
-                            Text("${group.size} 个", fontSize = 12.sp, color = Sub)
+        }
+
+        tree.forEach { b ->
+            val bookOpen = b.bookId in openBooks
+            item(key = "audio_book_${b.bookId}") {
+                CardBox(Modifier.padding(bottom = 8.dp)) {
+                    Row(Modifier.fillMaxWidth().pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                openBooks = if (bookOpen) openBooks - b.bookId else openBooks + b.bookId
+                            },
+                            onLongPress = { target = bookMenu(b) })
+                    }, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(b.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+                            Text("${b.chapters.size} 章 · ${AudioTree.allSegments(b).size} 块" +
+                                if (b.onShelf) "" else " · 不在书架上",
+                                fontSize = 12.sp, color = Sub)
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Text("合计 " + fmtTime(group.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }) +
-                            "（按文件大小估算）", fontSize = 12.sp, color = Sub)
-                        Row(Modifier.fillMaxWidth()) {
-                            TextButton(onClick = {
-                                val list = if (bid.isEmpty()) emptyList()
-                                else AudioLibrary.playableItems(c, bid)
-                                if (list.isNotEmpty()) {
-                                    val q = "chapter:$bid"
-                                    PlayQueue.setTracks(list.map { (idx, a) ->
-                                        Track(a.file, "${a.title} · 第 ${idx + 1} 章",
-                                            AudioLibrary.chapterStartMs(c, a, idx),
-                                            id = "chapter:${a.file.absolutePath}")
-                                    }, q)
-                                    PlayQueue.playFrom(0, id = q)
-                                } else {
-                                    Toast.makeText(c, "这一本还没有能按顺序播放的成品",
-                                        Toast.LENGTH_SHORT).show()
+                        Text(if (bookOpen) "▾" else "›", fontSize = 18.sp, color = Sub)
+                    }
+                }
+            }
+            if (bookOpen) {
+                b.chapters.forEach { ch ->
+                    val ck = "${b.bookId}#${ch.chapter}"
+                    val chOpen = ck in openChapters
+                    item(key = "audio_chapter_$ck") {
+                        CardBox(Modifier.padding(start = 12.dp, bottom = 6.dp)) {
+                            Row(Modifier.fillMaxWidth().pointerInput(Unit) {
+                                detectTapGestures(
+                                    onTap = {
+                                        openChapters = if (chOpen) openChapters - ck else openChapters + ck
+                                    },
+                                    onLongPress = { target = chapterMenu(ch) })
+                            }, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(ch.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+                                    Text("${ch.segments.size} 块" +
+                                        if (ch.merged != null) " · 已拼成整章" else "",
+                                        fontSize = 12.sp, color = Sub)
                                 }
-                            }) { Text("按顺序播放 ›", fontSize = 12.sp, color = Primary) }
-                            Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { dropGroup = bid }) {
-                                Text("删除整本 ›", fontSize = 12.sp, color = Warn)
+                                TextButton(onClick = { playChapter(ch) }) {
+                                    Text("▶ 整章", fontSize = 12.sp, color = Primary)
+                                }
                             }
                         }
                     }
-                }
-                itemsIndexed(group, key = { _, it -> it.id }) { _, item ->
-                    val idx = items.indexOfFirst { it.id == item.id }
-                    val on = pq.trackId.isNotEmpty() &&
-                        pq.trackId == "audio:${item.id}:${item.file.absolutePath}"
-                    CardBox(Modifier.padding(start = 10.dp, bottom = 10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp, maxLines = 2)
-                                Text("${item.mode} · 约 ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))} · %.1f MB"
-                                    .format(item.bytes / 1024f / 1024f), fontSize = 12.sp, color = Sub)
-                            }
-                            if (on) Text("●", color = Primary, fontSize = 13.sp)
-                        }
-                        Spacer(Modifier.height(9.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Button(onClick = {
-                                PlayQueue.setTracks(queue, "audio")
-                                if (!on || pq.ended) PlayQueue.playFrom(idx, id = "audio") else PlayQueue.toggle()
-                            }) {
-                                Text(if (on && isPlaying) "暂停" else if (on) "继续" else "试听", fontSize = 12.sp)
-                            }
-                            TextButton(onClick = {
-                                exportId = item.id
-                                export.launch("${item.title}_${item.scope}.wav")
-                            }) { Text("保存到手机", fontSize = 12.sp, color = Sub) }
-                            TextButton(onClick = {
-                                if (on) release()
-                                if (!AudioLibrary.remove(c, item.id)) {
-                                    Toast.makeText(c, AudioLibrary.writeError ?: "删除失败，记录未改动",
-                                        Toast.LENGTH_SHORT).show()
+                    if (chOpen) {
+                        ch.segments.forEach { s ->
+                            val tid = "seg:${s.file.absolutePath}"
+                            val on = pq.trackId == tid
+                            item(key = "audio_seg_${s.key}") {
+                                CardBox(Modifier.padding(start = 24.dp, bottom = 4.dp)) {
+                                    Row(Modifier.fillMaxWidth().pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onTap = { playSeg(s) },
+                                            onLongPress = { target = segMenu(s) })
+                                    }, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(s.name, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                        if (on) Text("●", fontSize = 12.sp, color = Primary)
+                                        Text(fmtTime(AudioLibrary.durationMs(s.file)),
+                                            fontSize = 12.sp, color = Sub)
+                                        Text("  %.1f MB".format(s.bytes / 1024f / 1024f),
+                                            fontSize = 12.sp, color = Sub)
+                                    }
                                 }
-                                localTick++
-                            }) { Text("删除", fontSize = 12.sp, color = Warn) }
+                            }
                         }
                     }
                 }
@@ -1541,30 +1534,121 @@ private fun AudioScreen(
         }
     }
 
-    if (dropGroup != null) {
-        val gid = dropGroup!!
-        val group = groups.firstOrNull { it.first == gid }?.second ?: emptyList()
+    if (target != null) {
+        val t = target!!
         AlertDialog(
-            onDismissRequest = { dropGroup = null },
-            title = { Text("删除这一本的音频？", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-            text = { Text("共 ${group.size} 个成品，删掉后不能恢复；已保存到手机的不受影响。",
-                fontSize = 13.sp) },
+            onDismissRequest = { target = null },
+            title = { Text(t.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        rename = t
+                        renameText = t.label
+                        target = null
+                    }) { Text("重命名", fontSize = 14.sp) }
+                    TextButton(onClick = { target = null; exportParts(t, false) }) {
+                        Text("复制 / 另存为 WAV", fontSize = 14.sp)
+                    }
+                    TextButton(onClick = { target = null; exportParts(t, true) }) {
+                        Text("转格式（WAV → M4A）", fontSize = 14.sp)
+                    }
+                    if (t.kind == 1) {
+                        TextButton(onClick = {
+                            target = null
+                            val r = AudioOps.mergeChapter(c, t.bookId, tree.firstOrNull { it.bookId == t.bookId }?.title ?: t.label,
+                                t.chapter, t.files)
+                            if (r.ok) { toast("已拼成整章，原来的小块可以删掉了"); localTick++ }
+                            else toast(r.reason)
+                        }) { Text("把这一章拼成一个音频", fontSize = 14.sp, color = Primary) }
+                    }
+                    if (t.kind == 2 && t.seg != null) {
+                        TextButton(onClick = {
+                            moveSeg = t.seg
+                            moveText = (t.chapter + 1).toString()
+                            target = null
+                        }) { Text("移动到别的章", fontSize = 14.sp) }
+                    }
+                    TextButton(onClick = { confirmDel = t; target = null }) {
+                        Text("删除", fontSize = 14.sp, color = Warn)
+                    }
+                }
+            },
+            confirmButton = { },
+            dismissButton = { TextButton(onClick = { target = null }) { Text("取消") } }
+        )
+    }
+
+    if (confirmDel != null) {
+        val t = confirmDel!!
+        AlertDialog(
+            onDismissRequest = { confirmDel = null },
+            title = { Text("删除「${t.label}」？", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            text = { Text("共 ${t.files.size} 个音频小块，删掉后不能恢复；已拼好的整章音频会留着。" +
+                "没拼过的章，下次续跑会重新生成这些段。", fontSize = 13.sp) },
             confirmButton = {
                 TextButton(onClick = {
-                    var failed = 0
-                    group.forEach {
-                        val on = pq.trackId == "audio:${it.id}:${it.file.absolutePath}"
-                        if (on) release()
-                        if (!AudioLibrary.remove(c, it.id)) failed++
-                    }
-                    Toast.makeText(c,
-                        if (failed > 0) "有 $failed 个删不掉，记录已保留" else "已删除 ${group.size} 个",
-                        Toast.LENGTH_SHORT).show()
+                    val failed = AudioOps.deleteAll(t.files)
+                    if (failed > 0) toast("有 $failed 个删不掉，记录已保留")
+                    else toast("已删除 ${t.files.size} 个小块")
+                    PlayQueue.release()
                     localTick++
-                    dropGroup = null
+                    confirmDel = null
                 }) { Text("删除", color = Warn) }
             },
-            dismissButton = { TextButton(onClick = { dropGroup = null }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { confirmDel = null }) { Text("取消") } }
+        )
+    }
+
+    if (rename != null) {
+        val t = rename!!
+        AlertDialog(
+            onDismissRequest = { rename = null },
+            title = { Text("重命名", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(value = renameText, onValueChange = { renameText = it },
+                    label = { Text("显示名称") }, singleLine = true)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val key = when (t.kind) {
+                        0 -> AudioTree.bookKey(t.bookId)
+                        1 -> AudioTree.chapterKey(t.bookId, t.chapter)
+                        else -> t.files.firstOrNull()?.absolutePath ?: ""
+                    }
+                    if (key.isNotBlank()) {
+                        if (!AudioTree.setName(c, key, renameText)) toast("名字没写上，记录已保留")
+                        localTick++
+                    }
+                    rename = null
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { rename = null }) { Text("取消") } }
+        )
+    }
+
+    if (moveSeg != null) {
+        val s = moveSeg!!
+        AlertDialog(
+            onDismissRequest = { moveSeg = null },
+            title = { Text("移动到第几章", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(value = moveText, onValueChange = { moveText = it },
+                    label = { Text("章号，从 1 开始") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val n = moveText.trim().toIntOrNull()
+                    if (n == null || n < 1) toast("填一个大于 0 的章号")
+                    else {
+                        if (!AudioTree.moveSegment(c, s.key, s.bookId, n - 1))
+                            toast("移动没写上，记录已保留")
+                        localTick++
+                        moveSeg = null
+                    }
+                }) { Text("移动") }
+            },
+            dismissButton = { TextButton(onClick = { moveSeg = null }) { Text("取消") } }
         )
     }
 }

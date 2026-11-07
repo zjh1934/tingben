@@ -18,11 +18,11 @@ POS = [
     (M, 'import androidx.compose.foundation.lazy.LazyColumn'),
     (M, 'import androidx.compose.foundation.lazy.itemsIndexed'),
     (M, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {'),
-    (M, 'itemsIndexed(group, key = { _, it -> it.id })'),
-    (M, 'item(key = "now_playing")'),
-    (M, 'item(key = "audio_empty")'),
-    (M, 'AudioLibrary.durationMsOfBytes(current.bytes)'),
-    (M, 'AudioLibrary.durationMsOfBytes(item.bytes)'),
+    (M, 'item(key = "audio_book_${b.bookId}")'),
+    (M, 'item(key = "audio_tree_playing")'),
+    (M, 'item(key = "audio_tree_summary")'),
+    (M, 'pq.durationMs'),
+    (M, 'AudioLibrary.durationMs(s.file)'),
     (M, 'val seenTask = remember(st.done, redoNonce, bookId)'),
     (M, 'val allSegs = remember(st.done, seenTask, redoNonce)'),
     (M, 'val rest = remember(st.done, seenTask, redoNonce)'),
@@ -48,7 +48,7 @@ KEEP = [
     (M, 'Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp))'),
     (M, 'MiniPlayBar(ctx, miniBook'),
     (M, 'val pq by PlayQueue.state.collectAsState()'),
-    (M, 'PlayQueue.setTracks(queue, "audio")'),
+    (M, 'PlayQueue.setTracks(listOf(Track(s.file, s.name, id = tid)), "seg")'),
     (M, 'commitAll()'),
     (H, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp))'),
     (H, 'PlayQueue.tick()'),
@@ -86,7 +86,7 @@ def check(files):
         if "LazyColumn(" not in body: errs.append("AudioScreen 内没有 LazyColumn")
         if "verticalScroll" in body: errs.append("AudioScreen 内仍有 verticalScroll")
         if "forEachIndexed" in body: errs.append("AudioScreen 内仍有 forEachIndexed")
-        if body.count("itemsIndexed(") != 1: errs.append("AudioScreen 内 itemsIndexed 数量不是 1")
+        if body.count('item(key = "audio_seg_') != 1: errs.append("AudioScreen 内小块层不是 1 处")
         if "PlayQueue.tick()" in body: errs.append("AudioScreen 内仍在自行 tick")
     except ValueError:
         errs.append("AudioScreen 函数体边界定位失败")

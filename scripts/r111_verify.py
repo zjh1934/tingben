@@ -21,17 +21,17 @@ POS = {
         "queueId = \"\"",
     ],
     "main": [
-        'val queue = remember(items) {',
-        'LaunchedEffect(items) { PlayQueue.setTracks(queue, "audio") }',
-        'PlayQueue.setTracks(queue, "audio")',
-        'PlayQueue.playFrom(idx, id = "audio")',
+        'var tree by remember { mutableStateOf(emptyList<BookAudio>()) }',
+        'LaunchedEffect(refresh, localTick) {',
+        'PlayQueue.setTracks(listOf(Track(s.file, s.name, id = tid)), "seg")',
+        'PlayQueue.playFrom(0, id = "seg")',
         'PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")',
         'PlayQueue.playFrom(0, id = "seg")',
         'PlayQueue.setTracks(listOf(Track(f, "调音台试听", id = "trial:${f.absolutePath}")), "trial")',
         'PlayQueue.playFrom(0, id = "trial")',
-        "（按文件大小估算）",
-        '约 ${fmtTime(AudioLibrary.durationMsOfBytes(current.bytes))}',
-        '约 ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))}',
+        "· $chCount 章",
+        'fmtTime(pq.durationMs)',
+        'AudioLibrary.durationMs(s.file)',
     ],
     "hub": [
         'val q = "chapter:${book.id}"',
@@ -55,8 +55,8 @@ BAN = {
 KEEP = {
     "queue": ["fun toggle()", "fun pause()", "fun resume()", "fun release()",
               "setOnCompletionListener", "val startMs: Long = 0L"],
-    "main": ["共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}",
-             "items.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }",
+    "main": ["共 ${tree.size} 本 · $chCount 章",
+             "val segCount = tree.sumOf",
              "val pq by PlayQueue.state.collectAsState()"],
     "hub": ["internal fun ChapterHubScreen", "PlayQueue.release()"],
 }
@@ -76,7 +76,7 @@ def check(f):
         for s in needles:
             if s not in f[k]:
                 e.append("守恒丢失 %s: %s" % (k, s[:44]))
-    if f["main"].count('PlayQueue.setTracks(queue, "audio")') < 2:
+    if f["main"].count('PlayQueue.setTracks(listOf(Track(s.file, s.name, id = tid)), "seg")') < 1:
         e.append("音频页试听按钮没有先确认队列归属")
     if f["hub"].count("}, q)") < 3:
         e.append("章节页队列未全部带归属 id")
@@ -101,8 +101,8 @@ def main():
              lambda t: dict(t, queue=t["queue"].replace("queueId = id", ""))),
             ("音频页按钮不再重建队列",
              lambda t: dict(t, main=t["main"].replace(
-                 'PlayQueue.setTracks(queue, "audio")\n                                if (!on || pq.ended)',
-                 'if (!on || pq.ended)'))),
+                 'PlayQueue.setTracks(listOf(Track(s.file, s.name, id = tid)), "seg")',
+                 'PlayQueue.setTracks(listOf(Track(s.file, s.name)))'))),
             ("看台单段队列退回无 id",
              lambda t: dict(t, main=t["main"].replace(
                  'PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")',
@@ -110,7 +110,7 @@ def main():
             ("章节页队列退回无 id",
              lambda t: dict(t, hub=t["hub"].replace('), q)', ')'))),
             ("时长退回无口径标注",
-             lambda t: dict(t, main=t["main"].replace("（按文件大小估算）", ""))),
+             lambda t: dict(t, main=t["main"].replace("· $chCount 章", ""))),
             ("CI 漏挂验证",
              lambda t: dict(t, ci=t["ci"].replace("r111_verify.py", "r111_missing.py"))),
         ]

@@ -50,11 +50,11 @@ POS = [
     ("main", '第 ${chapter + 1} 章 · 本章 ${segs.count { it.hasAudio }}/${segs.size} 段'),
     ("main", '旧记录没记章，这里显示整次分段'),
     ("main", '共 ${tasks.size} 本 · 一本一个任务'),
-    ("main", 'items.groupBy { it.bookId ?: "" }'),
-    ("main", '"audio_group_$bid"'),
-    ("main", '删除整本 ›'),
-    ("main", '按顺序播放 ›'),
-    ("main", 'AudioLibrary.playableItems(c, bid)'),
+    ("main", 'AudioTree.load(c)'),
+    ("main", '"audio_book_${b.bookId}"'),
+    ("main", '把这一章拼成一个音频'),
+    ("main", '▶ 整章'),
+    ("main", 'AudioTree.chapterTracks(c, ch)'),
     ("main", '"open_tasks"'),
     ("main", '|tasks:'),
     ("hub", 'onStarted: (String, Set<Int>) -> Unit'),
@@ -114,7 +114,7 @@ def main():
             ('章内看台过滤被删', lambda t: dict(t, main=t['main'].replace(
                 'allSegs.filter { segChapters[it.index] == chapter }', 'allSegs'))),
             ('音频按书分组被删', lambda t: dict(t, main=t['main'].replace(
-                'items.groupBy { it.bookId ?: "" }', 'listOf("" to items)'))),
+                'AudioTree.load(c)', 'listOf("" to items)'))),
             ('合成落任务详情被删', lambda t: dict(t, main=t['main'].replace(
                 'onStarted = { id, sel ->', 'onStartedX = { id, sel ->'))),
             ('通知落点被删', lambda t: dict(t, svc=t['svc'].replace(
