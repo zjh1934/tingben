@@ -51,7 +51,7 @@ POS = [
     ("resume", "AtomicJson.read(file(c))"),
     ("main", "var tree by remember { mutableStateOf(emptyList<BookAudio>()) }"),
     ("main", 'item(key = "audio_tree_summary")'),
-    ("main", "val failed = AudioOps.deleteAll(t.files)"),
+    ("main", "AudioOps.deleteAll(t.files)"),
     ("pipe", "val regWarn = AudioLibrary.writeError"),
     ("pipe", "if (regWarn != null) \"音频已生成，但记录没写上：$regWarn"),
     ("ci", "r104_verify.py"),

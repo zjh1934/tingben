@@ -69,8 +69,7 @@ POS = [
 ZERO = [
     ("main", '已拼成整章，原来的小块可以删掉了'),
     ("main", '已拼好的整章音频会留着'),
-    ("main", 'val started = done || livePct != null ||
-                    ((t?.phase'),
+    ("main", 'val started = done || livePct != null ||'),
     ("tree", '.filter { it.bookId == bookId && it.chaptersKnown && chapter in it.chapters && it.file.isFile }'),
 ]
 
