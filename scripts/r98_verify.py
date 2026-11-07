@@ -48,7 +48,7 @@ POS = [
     ("main", "ParamCatalog.SAMPLING.forEach { spec ->"),
     ("main", "Text(cur, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary"),
     ("main", ".clickable { buf = cur; edit = true }"),
-    ("main", "modifier = Modifier.padding(start = 20.dp, end = 10.dp)"),
+    ("main", "Modifier.padding(start = 32.dp, end = 24.dp)"),
     ("main", "fun commitAll()"),
     ("main", "MixerCommit.commit(c, draft, n)"),
     ("main", "trial(\"未保存\", draft, trialText, \"mixer_trial_draft.wav\")"),

@@ -586,7 +586,7 @@ object Producer {
             return
         }
 
-        emit("正在分章", 0, 0, 0, "正在把这本书切成能读的小块…")
+        emit("正在分章", 0, 0, 0, "先分章，再按标点把每章切成能读的小块…")
         val text = BookStore.read(c, book)
         val (chapters, allChunks) = ChapterSplitter.split(text)
         val chunks = if (only == null) allChunks else allChunks.filter { it.chapter in only }
@@ -610,7 +610,7 @@ object Producer {
             segs
         }
         EventLog.log(EventLog.Kind.PIPELINE, "SPLIT_STATS",
-            "${chunks.size} 块 → ${annotated.size} 段 · 只在标点/段落边界断 · " +
+            "${chapters.size} 章 → ${chunks.size} 块 → ${annotated.size} 段 · 只在标点/段落边界断 · " +
                 "字符硬切 0 · 句段边界 ${stats.sumOf { it.sentenceCuts }} · " +
                 "次级边界 ${stats.sumOf { it.softCuts }} · " +
                 "超长整句保留 ${stats.sumOf { it.oversize }} · " +
@@ -621,7 +621,7 @@ object Producer {
                 "hardCuts" to "0", "lossless" to
                     (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
         EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
-            "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
+            "${chapters.size} 章切成 ${chunks.size} 块，块内再按标点切成 ${annotated.size} 段，逐段送给音频模型")
         try {
             val sc = JSONArray()
             segChapter.forEach { sc.put(it) }

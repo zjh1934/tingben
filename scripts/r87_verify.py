@@ -24,7 +24,7 @@ POS = [
     'Text("清理分段音频", fontSize = 13.sp)',
     'SettingsSection("外观与显示", "软件", collapsible = false)',
     'SettingsSection("本机数据", "本机", collapsible = false)',
-    'Text("当前配置"',
+ 'SettingsSection("通知与权限", "系统", collapsible = false)',
     'append("\\n声音 · 模式 ")',
     'append(" · 音色 ")',
     'append(" · seed ")',
@@ -51,12 +51,13 @@ BAN = [
     'const val LLM =',
     'const val LLM_LEGACY =',
     'const val TALKER =',
+ 'private fun SoundProbeBlock(',
+ 'private fun DiagnosticsBlock(',
 ]
 
 KEEP = [
     'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
-    'private fun SoundProbeBlock(',
-    'private fun DiagnosticsBlock(',
+    'SettingSwitchRow("通知栏播放控制", notifyOn)',
     'Prefs.setThemeMode(c, m)',
     'Prefs.setTrialText(c, trialText)',
     'fun commitAll()',
@@ -120,8 +121,8 @@ def main():
              lambda t: dict(t, main=t["main"].replace('Text("清理 ›"', 'Text("已清理"'))),
             ("真点击被降级为只读",
              lambda t: dict(t, main=t["main"].replace('onClick: (() -> Unit)? = null', ''))),
-            ("当前配置被改成旧标题",
-             lambda t: dict(t, main=t["main"].replace('Text("当前配置"', 'Text("静态快照"'))),
+            ("通知与权限被删",
+             lambda t: dict(t, main=t["main"].replace('SettingsSection("通知与权限"', 'SettingsSection("旧分区"'))),
             ("拦截文案回潮",
              lambda t: dict(t, pipe=t["pipe"] + '\n这个模式的合成界面还没做完\n')),
         ]

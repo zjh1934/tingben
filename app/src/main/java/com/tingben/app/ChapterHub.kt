@@ -182,18 +182,31 @@ internal fun ChapterHubScreen(
     }
     LaunchedEffect(current) { savedCol = current }
     LaunchedEffect(Unit) {
-        snapshotFlow { hScroll.isScrollInProgress }
-            .distinctUntilChanged()
-            .collect { moving ->
+        var wasMoving = false
+        var startPx = 0
+        snapshotFlow { Pair(hScroll.isScrollInProgress, hScroll.value) }
+            .collect { (moving, v) ->
                 val px = pagePxState.value
-                if (!moving && px > 0f) {
-                    val target = (current * px).toInt()
-                    if (hScroll.value != target) hScroll.animateScrollTo(target)
+                if (moving && !wasMoving) startPx = v
+                if (!moving && wasMoving && px > 0f) {
+                    val from = ((startPx + px / 2f) / px).toInt().coerceIn(0, 2)
+                    val delta = v - startPx
+                    val step = when {
+                        delta > px / 6f -> 1
+                        delta < -px / 6f -> -1
+                        else -> 0
+                    }
+                    val target = (from + step).coerceIn(0, 2)
+                    val dest = (target * px).toInt()
+                    if (v != dest) hScroll.animateScrollTo(dest)
                 }
+                wasMoving = moving
             }
     }
 
-    fun jumpTo(col: Int) { scope.launch { hScroll.animateScrollTo((col * pagePx).toInt()) } }
+    fun jumpTo(col: Int) {
+        scope.launch { hScroll.animateScrollTo((col * pagePxState.value).toInt()) }
+    }
 
     fun playChapter(i: Int, single: Boolean) {
         val q = "chapter:${book.id}"

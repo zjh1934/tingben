@@ -246,9 +246,11 @@ for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip", "ChromeSpec",
 for sym in ["chromeOf(screen)",
             "onMenu = { scope.launch { drawerState.open() } }"]:
     if sym not in main_src: errs.append("U1 回退：MainActivity 没接壳层: " + sym)
-for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip"]:
+for sym in ["AppTopBar", "AppDrawerSheet"]:
     if not re.search(r"^\s*" + sym + r"\(", main_src, re.M):
         errs.append("U1 回退：MainActivity 没有真实调用 " + sym)
+if re.search(r"^\s*RefreshStrip\(", main_src, re.M):
+    errs.append("U1 回退：书架刷新条又回到 MainActivity")
 for sym in ["⟳ 刷新", "TabButton(", '把小说变成能听的音频", fontSize = 11',
             "下拉刷新 · 或点右上角", '听本", fontSize = 22']:
     if sym in main_src: errs.append("U1 回退：旧 UI 残留 " + sym)
@@ -432,7 +434,7 @@ prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text
 if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
 R99_MUST = ['Text("采样参数 · 9 项"', 'Text("自定义"', 'Text("保存"',
-            'Text("试听"', '改动还没保存', '离开会丢掉这次改动。',
+            'Text("试听 · 已保存"', 'Text("试听 · 当前"', '改动还没保存', '离开会丢掉这次改动。',
             'val mode = remember(tick) { ModelStore.currentMode(c) }']
 for sym in R99_MUST:
     if sym not in main_src: errs.append("R99 回退：新调音台缺 " + sym)

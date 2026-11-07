@@ -42,6 +42,11 @@ object PlayQueue {
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> get() = _state
 
+    private fun push() {
+        val ctx = appCtx ?: return
+        PlaybackNotifier.update(ctx, _state.value)
+    }
+
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS,
@@ -103,6 +108,7 @@ object PlayQueue {
         tracks = list
         queueId = id
         _state.value = PlaybackState(speed = speed, queueId = id)
+        push()
     }
 
     fun playFrom(i: Int, startMs: Long? = null, id: String? = null) {
@@ -123,6 +129,7 @@ object PlayQueue {
         abandonFocus()
         try { player?.pause() } catch (_: Throwable) { }
         _state.value = _state.value.copy(isPlaying = false)
+        push()
     }
 
     fun resume() {
@@ -132,6 +139,7 @@ object PlayQueue {
         try {
             p.start()
             _state.value = _state.value.copy(isPlaying = true, ended = false)
+            push()
         } catch (_: Throwable) { open(index) }
     }
 
@@ -185,6 +193,7 @@ object PlayQueue {
         }
         _state.value = PlaybackState(index = i, label = t.label, trackId = t.id,
             isPlaying = false, positionMs = from, speed = speed, queueId = queueId)
+        push()
         try {
             player = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder()
@@ -198,6 +207,7 @@ object PlayQueue {
                     if (!ensureFocus()) { pause(); return@setOnPreparedListener }
                     it.start()
                     _state.value = _state.value.copy(isPlaying = true, ended = false)
+                    push()
                 }
                 setOnCompletionListener {
                     it.release()
@@ -225,6 +235,7 @@ object PlayQueue {
     private fun finish() {
         abandonFocus()
         _state.value = PlaybackState(speed = speed, ended = true, queueId = queueId)
+        push()
     }
 
     private fun releasePlayer() {
@@ -239,5 +250,6 @@ object PlayQueue {
         index = -1
         queueId = ""
         _state.value = PlaybackState(speed = speed)
+        push()
     }
 }

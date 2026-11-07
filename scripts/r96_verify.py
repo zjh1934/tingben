@@ -22,14 +22,10 @@ POS = {
         'var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }',
         'LaunchedEffect(refresh, books) {',
         'lastReads = withContext(Dispatchers.IO) { ReadingState.allLast(c) }',
-        'contentPadding = PaddingValues(16.dp),',
-        'item(key = "head") {',
+        'contentPadding = PaddingValues(16.dp)',
         'if (importError != null) {',
         'item(key = "import-error") {',
-        'if (books.isNotEmpty()) {',
         'private fun InputReadScreen(',
-        'item(key = "count") {',
-        'Text("共 ${books.size} 本"',
         'items(books, key = { it.id }) { b ->',
         'val lastRead = lastReads[b.id]',
         '上次读到 第 ${lastRead + 1} 章',
@@ -51,9 +47,9 @@ POS = {
 KEEP = {
     "main": [
         'BookStore.list(c)', 'ModelStore.installedModes(c)', 'ModelStore.missing(c)',
-        'RefreshStrip(', 'AlertDialog(', 'onOpen(b.id)', 'onChanged()',
+        'AlertDialog(', 'onOpen(b.id)', 'onChanged()',
         'BookStore.add(c, "粘贴的文字", text)', 'BookStore.delete(c, id)',
-        'Text("共 ${books.size} 本"', 'private fun InputReadScreen(', '再选一次文件 ›',
+        'private fun InputReadScreen(', '再选一次文件 ›',
     ],
     "reading": [
         'reading_state.json',
@@ -105,11 +101,15 @@ def check(f):
             e.append('AlertDialog 又塞回列表 DSL 内')
         if body.find('LaunchedEffect(refresh, books)') > body.find('LazyColumn('):
             e.append('后台加载塞回列表 DSL 内')
-        if not (body.find('item(key = "head")') < body.find('item(key = "count")')
-                < body.find('items(books, key = { it.id })')):
-            e.append('item 顺序错乱')
-        if body.count('item(key = ') != 3:
-            e.append('固定 item 数不是 3')
+        if 'item(key = "import-error") {' not in body:
+            e.append('导入失败卡被删')
+        if body.find('item(key = "import-error")') >= body.find('items(books, key = { it.id })'):
+            e.append('导入失败卡没排在书卡之前')
+        if body.count('item(key = ') != 1:
+            e.append('固定 item 不是只剩导入失败卡一张')
+    for s in ('RefreshStrip(', 'Text("共 ${books.size} 本"', 'item(key = "head")', 'item(key = "count")'):
+        if s in f['main']:
+            e.append('书架旧形态回潮: ' + s[:40])
     return e
 
 def load():
@@ -138,7 +138,7 @@ def selftest():
         ('书卡退回全量 forEach', 'main',
          lambda t: t.replace('items(books, key = { it.id }) { b ->', 'books.forEach { b ->')),
         ('书架退回全量 Column', 'main',
-         lambda t: t.replace('contentPadding = PaddingValues(16.dp),',
+         lambda t: t.replace('contentPadding = PaddingValues(16.dp)',
                              'Modifier.verticalScroll(rememberScrollState()),')),
         ('删 items 导入', 'main',
          lambda t: t.replace('import androidx.compose.foundation.lazy.items\n', '')),
@@ -154,17 +154,15 @@ def selftest():
                              'is AtomicJson.Read.Ok -> JSONObject(r.text).opt(bookId) as? Pos')),
         ('删批量遍历', 'reading',
          lambda t: t.replace('for (k in o.keys())', 'for (k in listOf<String>())')),
-        ('Dialog 塞回列表', 'main',
-         lambda t: t.replace('    confirmDelete?.let { id ->', '    if (true) { } //', 1)
-                     .replace('        item(key = "head") {',
+         ('Dialog 塞回列表', 'main', lambda t: t.replace('    confirmDelete?.let { id ->', '    if (true) { } //', 1)
+                     .replace('        if (importError != null) {',
                               '        confirmDelete?.let { id -> AlertDialog(onDismissRequest = {}) }\n'
-                              '        item(key = "head") {', 1)),
-        ('头部顺序破坏', 'main',
-         lambda t: t.replace('item(key = "head")', 'item(key = "count")', 1)),
+                              '        if (importError != null) {', 1)),
+         ('导入失败卡被改名', 'main', lambda t: t.replace('item(key = "import-error")', 'item(key = "late")', 1)),
         ('CI 摘验证', 'ci', lambda t: t.replace('scripts/r96_verify.py', 'x.py')),
         ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r96_read_parity.py', 'x.py')),
         ('对拍脚本被掏空', 'parity', lambda t: t.replace('CASES = [', 'DATA = [', 1)),
-        ('守恒破坏·刷新条', 'main', lambda t: t.replace('RefreshStrip(', 'NoStrip(')),
+         ('旧刷新条回潮', 'main', lambda t: t + '\nRefreshStrip(\n'),
         ('守恒破坏·抽屉', 'chrome',
          lambda t: t.replace('NAV_MIXER to "调音台"', 'NAV_MIXER to "调音台2"')),
         ('旧说法回潮', 'reading', lambda t: t + '\n// 语言模型\n'),

@@ -94,7 +94,7 @@ KEEP = [
     ("hub", 'Producer.start(c, book, selected'),
     ("hub", 'onStarted(book.id, selected)'),
     ("hub", 'LaunchedEffect(pagePx)'),
-    ("hub", 'snapshotFlow { hScroll.isScrollInProgress }'),
+    ("hub", 'snapshotFlow { Pair(hScroll.isScrollInProgress, hScroll.value) }'),
 ]
 
 

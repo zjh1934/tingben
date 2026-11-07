@@ -20,18 +20,18 @@ FILES = {
 POS = {
     "main": [
         "ActivityResultContracts.OpenMultipleDocuments()",
-        "一次可勾选 4 个文件：1 个共用底座 + 3 个模式主文件。",
+        "App 不联网：复制地址 → 浏览器下载 → 回来一次勾选 4 个文件导入。",
         "private fun InputReadScreen(",
         "NAV_INPUT",
         "if (tasks.isNotEmpty()) {",
-        "if (books.isNotEmpty()) {",
+        "items(books, key = { it.id }) { b ->",
         "collapsible = false",
         "Prefs.setTrialText(c, trialText)",
         'Text("保存试听文本"',
         'Text("试听 · 已保存"',
         'Text("试听 · 当前"',
         'Text("停止", fontSize = 12.sp)',
-        "Modifier.padding(start = 20.dp, end = 10.dp)",
+        "Modifier.padding(start = 32.dp, end = 24.dp)",
         'trial("已保存", active, savedTrialText, "mixer_trial_saved.wav")',
         'trial("未保存", draft, trialText, "mixer_trial_draft.wav")',
         "NativeEngine.ttsSynthesize(h, text",
@@ -51,7 +51,7 @@ POS = {
         "O8 官方生成参数与范围",
     ],
     "hub": [
-        "snapshotFlow { hScroll.isScrollInProgress }",
+        "snapshotFlow { Pair(hScroll.isScrollInProgress, hScroll.value) }",
         "LaunchedEffect(pagePx)",
         "savedCol",
     ],
@@ -73,7 +73,7 @@ KEEP = {
     "main": [
         "fun commitAll()", "ModeTabs(mode, installed)",
         "ParamCatalog.SAMPLING.forEach", "Screen.MIXER -> MixerScreen",
-        "ModelStore.import(ctx, name, s)", "private fun DiagnosticsBlock(",
+        "ModelStore.import(ctx, name, s)", "SettingsSection(\"通知与权限\"",
     ],
     "chrome": ['NAV_MIXER to "调音台"', 'NAV_MODELS to "模型"'],
 }
@@ -123,9 +123,9 @@ def selftest():
         "采样范围退回": lambda x: dict(x, param=x["param"].replace(
             "min = 64.0, max = 8192.0", "min = 256.0, max = 8192.0")),
         "章节页吸附被删": lambda x: dict(x, hub=x["hub"].replace(
-            "snapshotFlow { hScroll.isScrollInProgress }", "")),
+            "snapshotFlow { Pair(hScroll.isScrollInProgress, hScroll.value) }", "")),
         "滑条回到整宽": lambda x: dict(x, main=x["main"].replace(
-            "Modifier.padding(start = 20.dp, end = 10.dp)", "Modifier")),
+            "Modifier.padding(start = 32.dp, end = 24.dp)", "Modifier")),
     }
     bad = 0
     for name, fn in cases.items():

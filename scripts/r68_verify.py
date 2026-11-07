@@ -68,7 +68,8 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     for g in GONE:
         if g in allkt: e.append('R68 旧形态残留: ' + g)
     if 'delay(3000)' in main: e.append('诊断区 3 秒定时器还在')
-    if 'private fun DiagnosticsBlock(c: Context, _refresh' not in main: e.append('诊断区没换成精简版')
+    if 'private fun DiagnosticsBlock(' in main: e.append('诊断区旧组件回潮')
+    if 'SettingsSection("诊断与试音"' in main: e.append('设置页诊断区回潮')
     for s in ['AuditLog', 'RawDump']:
         if s in main: e.append('MainActivity 仍引用 ' + s)
     for rel, txt in [('Pipeline.kt', pipe), ('MainActivity.kt', main), ('ChapterHub.kt', hub)]:
@@ -110,9 +111,8 @@ def main():
         ('ThinkingStore 回潮', lambda: check(extra='\nobject ThinkingStore {}\n')),
         ('审计前置回潮', lambda: check(extra='\nAuditLog.summaryText(c)\n')),
         ('原始产出回潮', lambda: check(extra='\nRawDump.latest(c)\n')),
-        ('3 秒定时器回潮', lambda: check(main=MAIN.replace('Text("当前配置"',
-            'LaunchedEffect(Unit) { while (true) { delay(3000); auditTick++ } }\n    Text("当前配置"'),
-            allkt=ALL + '\ndelay(3000); auditTick++\n')),
+         ('3 秒定时器回潮', lambda: check(main=MAIN + '\nLaunchedEffect(Unit) { while (true) { delay(3000); auditTick++ } }\n',
+                     allkt=ALL + '\ndelay(3000); auditTick++\n')),
         ('直接朗读主体被删', lambda: check(pipe=PIPE.replace('val annotated = chunks.flatMap', 'val annotatedX = chunks.flatMap'))),
         ('WAV 双命名回潮', lambda: check(pipe=PIPE.replace('String.format("direct_%04d.wav", i)',
             'String.format(if (direct) "direct_%04d.wav" else "chunk_%04d.wav", i)'))),
