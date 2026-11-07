@@ -18,7 +18,8 @@ data class PlaybackState(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val speed: Float = 1f,
-    val ended: Boolean = false
+    val ended: Boolean = false,
+    val queueId: String = ""
 )
 
 object PlayQueue {
@@ -26,18 +27,21 @@ object PlayQueue {
     private var tracks: List<Track> = emptyList()
     private var index = -1
     private var speed = 1f
+    private var queueId = ""
 
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> get() = _state
 
-    fun setTracks(list: List<Track>) {
-        if (list == tracks) return
+    fun setTracks(list: List<Track>, id: String = "") {
+        if (list == tracks && id == queueId) return
         release()
         tracks = list
-        _state.value = PlaybackState(speed = speed)
+        queueId = id
+        _state.value = PlaybackState(speed = speed, queueId = id)
     }
 
-    fun playFrom(i: Int, startMs: Long? = null) {
+    fun playFrom(i: Int, startMs: Long? = null, id: String? = null) {
+        if (id != null && id != queueId) return
         if (tracks.isEmpty() || i < 0 || i >= tracks.size) return
         open(i, startMs)
     }
@@ -72,8 +76,9 @@ object PlayQueue {
     fun next() {
         if (tracks.isEmpty()) return
         if (index + 1 >= tracks.size) {
+            val q = queueId
             release()
-            _state.value = PlaybackState(speed = speed, ended = true)
+            _state.value = PlaybackState(speed = speed, ended = true, queueId = q)
             return
         }
         open(index + 1)
@@ -108,10 +113,10 @@ object PlayQueue {
         val from = (overrideStartMs ?: t.startMs).coerceAtLeast(0L)
         if (!t.file.isFile) {
             if (i + 1 < tracks.size) open(i + 1)
-            else { _state.value = PlaybackState(speed = speed, ended = true); return }
+            else { _state.value = PlaybackState(speed = speed, ended = true, queueId = queueId); return }
         }
         _state.value = PlaybackState(index = i, label = t.label, trackId = t.id,
-            isPlaying = false, positionMs = from, speed = speed)
+            isPlaying = false, positionMs = from, speed = speed, queueId = queueId)
         try {
             player = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder()
@@ -159,6 +164,7 @@ object PlayQueue {
         releasePlayer()
         tracks = emptyList()
         index = -1
+        queueId = ""
         _state.value = PlaybackState(speed = speed)
     }
 }

@@ -171,12 +171,13 @@ internal fun ChapterHubScreen(
     fun jumpTo(col: Int) { scope.launch { hScroll.animateScrollTo((col * pagePx).toInt()) } }
 
     fun playChapter(i: Int, single: Boolean) {
+        val q = "chapter:${book.id}"
         if (single) {
             val a = ui.getOrNull(i)?.audio ?: return
             PlayQueue.setTracks(listOf(Track(a.file, "${book.title} · 第 ${i + 1} 章",
                 AudioLibrary.chapterStartMs(c, a, i),
-                id = "chapter:${a.file.absolutePath}")))
-            PlayQueue.playFrom(0)
+                id = "chapter:${a.file.absolutePath}")), q)
+            PlayQueue.playFrom(0, id = q)
         } else {
             val list = AudioLibrary.playableItems(c, book.id)
             if (list.isEmpty()) return
@@ -184,8 +185,8 @@ internal fun ChapterHubScreen(
                 Track(a.file, "${book.title} · 第 ${idx + 1} 章",
                     AudioLibrary.chapterStartMs(c, a, idx),
                     id = "chapter:${a.file.absolutePath}")
-            })
-            PlayQueue.playFrom(list.indexOfFirst { it.first == i }.coerceAtLeast(0))
+            }, q)
+            PlayQueue.playFrom(list.indexOfFirst { it.first == i }.coerceAtLeast(0), id = q)
         }
         onPlayBook(book.id)
     }
@@ -262,12 +263,13 @@ internal fun ChapterHubScreen(
                                 onAll = {
                                     val list = AudioLibrary.playableItems(c, book.id)
                                     if (list.isNotEmpty()) {
+                                        val q = "chapter:${book.id}"
                                         PlayQueue.setTracks(list.map { (idx, a) ->
                                             Track(a.file, "${book.title} · 第 ${idx + 1} 章",
                                                 AudioLibrary.chapterStartMs(c, a, idx),
                                                 id = "chapter:${a.file.absolutePath}")
-                                        })
-                                        PlayQueue.playFrom(0)
+                                        }, q)
+                                        PlayQueue.playFrom(0, id = q)
                                         onPlayBook(book.id)
                                     }
                                 },
@@ -500,12 +502,13 @@ internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit
                         items(list) { (idx, a) ->
                             Row(Modifier.fillMaxWidth().height(44.dp)
                                 .clickable {
+                                    val q = "chapter:${book.id}"
                                     PlayQueue.setTracks(list.map { (j, x) ->
                                         Track(x.file, "${x.title} · 第 ${j + 1} 章",
                                             AudioLibrary.chapterStartMs(c, x, j),
                                             id = "chapter:${x.file.absolutePath}")
-                                    })
-                                    PlayQueue.playFrom(list.indexOfFirst { it.first == idx })
+                                    }, q)
+                                    PlayQueue.playFrom(list.indexOfFirst { it.first == idx }, id = q)
                                     showList = false
                                 }.padding(horizontal = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically) {

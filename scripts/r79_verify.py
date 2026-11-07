@@ -48,7 +48,7 @@ KEEP = [
     (M, 'Column(Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp))'),
     (M, 'MiniPlayBar(ctx, miniBook'),
     (M, 'val pq by PlayQueue.state.collectAsState()'),
-    (M, 'PlayQueue.setTracks(items.map'),
+    (M, 'PlayQueue.setTracks(queue, "audio")'),
     (M, 'commitAll()'),
     (H, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp))'),
     (H, 'PlayQueue.tick()'),

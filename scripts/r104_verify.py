@@ -84,7 +84,7 @@ KEEP = [
     ("preset", "fun delete(c: Context, id: String): Boolean"),
     ("resume", "fun save(c: Context, t: TaskInfo)"),
     ("resume", "fun load(c: Context): TaskInfo?"),
-    ("main", '"共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}"'),
+    ("main", '共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}（按文件大小估算）'),
     ("main", '"还没有音频"'),
     ("pipe", '"做好了，可以去「我的音频」听"'),
 ]

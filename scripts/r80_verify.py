@@ -52,7 +52,7 @@ BAN = [
 KEEP = [
     (M, 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {'),
     (M, 'itemsIndexed(items, key = { _, it -> it.id })'),
-    (M, 'PlayQueue.setTracks(items.map'),
+    (M, 'PlayQueue.setTracks(queue, "audio")'),
     (M, 'ActivityResultContracts.CreateDocument("audio/wav")'),
     (M, 'AudioLibrary.remove(c, item.id)'),
     (M, 'localTick++'),

@@ -54,8 +54,8 @@ BAN_ALL = [
 ]
 
 KEEP = [
-    ("queue", "fun setTracks(list: List<Track>)"),
-    ("queue", "fun playFrom(i: Int, startMs: Long? = null)"),
+    ("queue", 'fun setTracks(list: List<Track>, id: String = "")'),
+    ("queue", 'fun playFrom(i: Int, startMs: Long? = null, id: String? = null)'),
     ("queue", "fun toggle()"),
     ("queue", "fun pause()"),
     ("queue", "fun resume()"),

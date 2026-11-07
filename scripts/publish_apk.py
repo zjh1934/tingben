@@ -6,7 +6,7 @@ import base64, json, os, pathlib, sys, urllib.request, urllib.error
 
 T = os.environ.get("GH_PAT")
 if not T: sys.exit("缺少 GH_PAT")
-PUB = "https://api.github.com/repos/zjh1934/tingben-apk"
+PUB = "https://api.github.com/repos/zjh1934/ting-ben-apk"
 H = {"Authorization": f"token {T}", "Accept": "application/vnd.github+json",
      "Content-Type": "application/json", "X-GitHub-Api-Version": "2022-11-28",
      "User-Agent": "tingben-publish"}
@@ -44,7 +44,7 @@ c, t = api("POST", "/git/trees", {"base_tree": None,
     "tree": [{"path": "app-debug.apk", "mode": "100644", "type": "blob", "sha": b["sha"]},
              {"path": "README.md", "mode": "100644", "type": "blob",
               "sha": api("POST", "/git/blobs",
-                  {"content": base64.b64encode("# 听本安装包\n\n浏览器直接打开 app-debug.apk 即可下载；源码与签名在 zjh1934/tingben-android。\n".encode()).decode(),
+                  {"content": base64.b64encode("# 听本安装包\n\n浏览器直接打开 app-debug.apk 即可下载；源码与 CI 在 zjh1934/tingben。\n".encode()).decode(),
                    "encoding": "base64"})[1]["sha"]}]})
 if c not in (200, 201): sys.exit("tree 失败 %s %s" % (c, t))
 c, cm = api("POST", "/git/commits",

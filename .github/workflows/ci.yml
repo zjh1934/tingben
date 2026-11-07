@@ -122,6 +122,9 @@ jobs:
       - name: R108 F-19 停止标志验证（任务级复位 / TTS 零逐段复位 / 缓存解耦 / 反向注入）
         run: python3 scripts/r108_verify.py --selftest
 
+      - name: R111 播放队列归属与时长口径验证（F-24 / F-22 / 反向注入）
+        run: python3 scripts/r111_verify.py --selftest
+
 
 
       - name: JDK 17

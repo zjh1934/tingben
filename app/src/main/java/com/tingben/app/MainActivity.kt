@@ -965,8 +965,8 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                                         if (playing) PlayQueue.pause()
                                         else if (onThis) PlayQueue.resume()
                                         else sg.wav?.let { wav ->
-                                            PlayQueue.setTracks(listOf(Track(wav, label, id = segId)))
-                                            PlayQueue.playFrom(0)
+                                            PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")
+                                            PlayQueue.playFrom(0, id = "seg")
                                         }
                                     },
                                 contentAlignment = Alignment.Center
@@ -1129,12 +1129,13 @@ private fun AudioScreen(
     var exportId by remember { mutableStateOf<String?>(null) }
     var controlsOpen by remember { mutableStateOf(false) }
     val pq by PlayQueue.state.collectAsState()
-    LaunchedEffect(items) {
-        PlayQueue.setTracks(items.map {
+    val queue = remember(items) {
+        items.map {
             Track(it.file, "${it.title} · ${it.scope}",
                 id = "audio:${it.id}:${it.file.absolutePath}")
-        })
+        }
     }
+    LaunchedEffect(items) { PlayQueue.setTracks(queue, "audio") }
     val isPlaying = pq.isPlaying
     val posMs = pq.positionMs
     val durMs = pq.durationMs
@@ -1168,7 +1169,7 @@ private fun AudioScreen(
             item(key = "audio_summary") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     val totalMs = items.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }
-                    Text("共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}",
+                    Text("共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}（按文件大小估算）",
                         fontSize = 12.sp, color = Sub, modifier = Modifier.weight(1f))
                     if (current != null) {
                         TextButton(onClick = { controlsOpen = !controlsOpen }) {
@@ -1187,7 +1188,7 @@ private fun AudioScreen(
                         Spacer(Modifier.height(4.dp))
                         Text("${current.title} · ${current.scope}", fontSize = 15.sp,
                             fontWeight = FontWeight.Bold, maxLines = 2)
-                        Text("${current.mode} · ${fmtTime(AudioLibrary.durationMsOfBytes(current.bytes))}",
+                        Text("${current.mode} · 约 ${fmtTime(AudioLibrary.durationMsOfBytes(current.bytes))}",
                             fontSize = 12.sp, color = Sub)
                         Spacer(Modifier.height(8.dp))
                         Slider(
@@ -1255,7 +1256,7 @@ private fun AudioScreen(
                         Column(Modifier.weight(1f)) {
                             Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
                                 fontSize = 14.5.sp, maxLines = 2)
-                            Text("${item.mode} · ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))} · %.1f MB"
+                            Text("${item.mode} · 约 ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))} · %.1f MB"
                                 .format(item.bytes / 1024f / 1024f), fontSize = 12.sp, color = Sub)
                         }
                         if (on) Text("●", color = Primary, fontSize = 13.sp)
@@ -1263,7 +1264,8 @@ private fun AudioScreen(
                     Spacer(Modifier.height(9.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Button(onClick = {
-                            if (!on || pq.ended) PlayQueue.playFrom(idx) else PlayQueue.toggle()
+                            PlayQueue.setTracks(queue, "audio")
+                            if (!on || pq.ended) PlayQueue.playFrom(idx, id = "audio") else PlayQueue.toggle()
                         }) {
                             Text(if (on && isPlaying) "暂停" else if (on) "继续" else "试听", fontSize = 12.sp)
                         }
@@ -1862,8 +1864,8 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     fun play(path: String) {
         val f = File(path)
         if (!f.isFile) { Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show(); return }
-        PlayQueue.setTracks(listOf(Track(f, "调音台试听", id = "trial:${f.absolutePath}")))
-        PlayQueue.playFrom(0)
+        PlayQueue.setTracks(listOf(Track(f, "调音台试听", id = "trial:${f.absolutePath}")), "trial")
+        PlayQueue.playFrom(0, id = "trial")
     }
 
     var trialJob by remember { mutableStateOf<Job?>(null) }

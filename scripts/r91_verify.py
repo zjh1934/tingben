@@ -18,8 +18,8 @@ def check(files):
         '.clickable(enabled = playable) {',
         'if (playing) PlayQueue.pause()',
         'else if (onThis) PlayQueue.resume()',
-        'PlayQueue.setTracks(listOf(Track(wav, label, id = segId)))',
-        'PlayQueue.playFrom(0)',
+        'PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")',
+        'PlayQueue.playFrom(0, id = "seg")',
         'val playing = onThis && pqSeg.isPlaying',
         'val onThis = playable && pqSeg.trackId == segId',
     ]:
