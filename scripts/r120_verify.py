@@ -127,8 +127,8 @@ def main():
             ('章成品节点被删', lambda t: dict(t, tree=t['tree'].replace(
                 'chapterOnly.forEach { a ->', 'chapterOnly.forEach { a -> return@forEach'))),
             ('整本成品又被当章成品', lambda t: dict(t, tree=t['tree'].replace(
-                'it.chapters.size == 1 &&
-                chapter in it.chapters', 'chapter in it.chapters'))),
+                'it.chapters.size == 1 &&\n                chapter in it.chapters',
+                'chapter in it.chapters'))),
             ('拼接后不清理小块', lambda t: dict(t, ops=t['ops'].replace(
                 'val kept = deleteAll(parts)', 'val kept = 0'))),
             ('章完成表不写', lambda t: dict(t, ops=t['ops'].replace(
