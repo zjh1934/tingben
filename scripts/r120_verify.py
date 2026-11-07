@@ -108,6 +108,9 @@ def check(f):
     detail = m[d:dend]
     if 'chapterReady' not in detail:
         e.append('任务详情章状态没用真实完成度')
+    mf = f['tree'][f['tree'].index('fun mergedFile('):f['tree'].index('fun chapterOnlyItems(')]
+    if 'it.chapters.size == 1' not in mf or 'startsWith("chapter_")' not in mf:
+        e.append('mergedFile 没把整本成品排除在章成品之外')
     p = m.index('private fun ProgressScreen(')
     pend = m.index('private data class TaskDetailData(', p)
     prog = m[p:pend]
@@ -125,7 +128,7 @@ def main():
     if '--selftest' in sys.argv:
         inj = [
             ('章成品节点被删', lambda t: dict(t, tree=t['tree'].replace(
-                'chapterOnly.forEach { a ->', 'chapterOnly.forEach { a -> return@forEach'))),
+                'chapterOnly.forEach { a ->', 'listOf<AudioItem>().forEach { a ->'))),
             ('整本成品又被当章成品', lambda t: dict(t, tree=t['tree'].replace(
                 'it.chapters.size == 1 &&\n                chapter in it.chapters',
                 'chapter in it.chapters'))),
