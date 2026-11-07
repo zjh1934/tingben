@@ -74,13 +74,11 @@ RULES = [
     ('app/src/main/cpp/qwen.h', 'const float * ref_audio_24k;', '引擎：字段语义以随包头文件为准'),
     ('.github/workflows/ci.yml',
      'python3 scripts/r100_chain_verify.py --selftest', 'CI：链路自检真挂上'),
-    # R108 · F-19：这轮动了 JNI 桥，缓存键必须与它解耦；不再锁 key 原文（R107 解绑思路）。
     ('.github/workflows/ci.yml',
      'key: tingben-native-v2-', 'CI：native 缓存键与 JNI 桥解耦（改 JNI 不触发上游重编译）'),
     ('.github/workflows/ci.yml',
      'restore-keys:', 'CI：native 缓存有回退键，未命中时复用已验证的 .so'),
 ]
-
 
 def verify(texts):
     bad = []
@@ -89,25 +87,20 @@ def verify(texts):
             bad.append(label)
     return bad
 
-
 def load():
     return {rel: (ROOT / rel).read_text() for rel, _, _ in RULES}
 
-
 def parity():
     """纯 Python 对拍：与 Kotlin 侧同一公式，不引入第二套算法。"""
-    # ① 参考音频：48kHz / 立体声 / 16bit / 1s → 24kHz / 单声道 / 16bit
     rate, target_rate, frames = 48000, 24000, 48000
     target = frames * target_rate // rate
     assert target == 24000, target
     out_bytes = 44 + target * 2
     assert out_bytes == 48044, out_bytes
-    # 线性插值：i=0 取 mono[0]，i=target-1 不越界
     src_last = (target - 1) * rate / target_rate
     assert int(src_last) < frames, src_last
-    # ② 章节偏移：24k/16bit/mono 48 字节每毫秒；gap 与 WavMerger 同式
     gap_bytes = (300 * 48 // 2) * 2
-    seg_bytes = 48000  # 1 秒一段
+    seg_bytes = 48000
     seg_chapter = [0, 0, 1, 2, 2]
     starts, cursor = [], 0
     for _ in seg_chapter:
@@ -116,11 +109,9 @@ def parity():
     first = {}
     for off, ch in zip(starts, seg_chapter):
         first.setdefault(ch, off // 48)
-    assert first == {0: 0, 1: 2600, 2: 3900}, first  # 每段 1000ms + 300ms 静音
-    # 合并后总字节（最后一段后不插静音）
+    assert first == {0: 0, 1: 2600, 2: 3900}, first
     total = len(seg_chapter) * seg_bytes + (len(seg_chapter) - 1) * gap_bytes
     assert total == 5 * 48000 + 4 * gap_bytes
-    # ③ 失败中止：第 3 段两次都失败 → 不合并、不登记，保留前 2 段
     codes = [0, 0, -3, -3]
     kept = 0
     aborted = False
@@ -135,7 +126,6 @@ def parity():
             break
         kept += 1
     assert aborted and kept == 2, (aborted, kept)
-    # ④ 三模式字段（qwen.h:285-301）
     modes = {
         'voice_design': dict(instruct=True, speaker=False, ref=False),
         'custom_voice': dict(instruct=None, speaker=True, ref=False),
@@ -145,7 +135,6 @@ def parity():
     assert modes['base']['instruct'] is False and modes['base']['ref'] is True
     assert modes['custom_voice']['speaker'] is True
     return True
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -173,7 +162,6 @@ def main():
             return 1
         print('反向注入 %d/%d 全拦下' % (len(RULES), len(RULES)))
     return 0
-
 
 if __name__ == '__main__':
     sys.exit(main())

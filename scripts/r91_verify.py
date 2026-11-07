@@ -10,12 +10,10 @@ MAIN = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
 CI = ROOT / ".github/workflows/ci.yml"
 INDEX = ROOT / "真机截图/INDEX.md"
 
-
 def check(files):
     e = []
     m, ci, idx = files["main"], files["ci"], files["index"]
 
-    # ① 格子本身就是播放开关：点一下读、再点停、点别的段切过去
     for s in [
         '.clickable(enabled = playable) {',
         'if (playing) PlayQueue.pause()',
@@ -28,7 +26,6 @@ def check(files):
         if s not in m:
             e.append("格子两态缺失: " + s[:48])
 
-    # ② 不画独立播放键、不展开正文、不摆解释文字
     BAN = [
         'segSel',
         '点格子看正文',
@@ -43,7 +40,6 @@ def check(files):
         if s in m:
             e.append("旧形态残留: " + s[:40])
 
-    # ③ 守恒：看台板块、8 格分块、单一播放器实例、悬浮条、四步
     KEEP = [
         'Text("分段看台 · ${segs.size} 段"',
         'segs.chunked(8)',
@@ -54,7 +50,6 @@ def check(files):
         if s not in m:
             e.append("守恒丢失: " + s[:48])
 
-    # ④ 真值源与 CI
     if '点格子即播 / 再点停' not in idx:
         e.append("索引没记新交互")
     if '看台 8 格展开正文' in idx:
@@ -63,10 +58,8 @@ def check(files):
         e.append("CI 未挂 r91_verify")
     return e
 
-
 def txt(p):
     return p.read_text(encoding="utf-8", errors="replace")
-
 
 def main():
     files = {"main": txt(MAIN), "ci": txt(CI), "index": txt(INDEX)}
@@ -118,7 +111,6 @@ def main():
         return 1
     print("R91 格子即播停 / 独立播放键零残留 / 解释文字零残留 / 守恒：PASS")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

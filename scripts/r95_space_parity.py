@@ -8,10 +8,9 @@ import pathlib, sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PIPE = ROOT / "app/src/main/java/com/tingben/app/core/Pipeline.kt"
 
-SEG_FALLBACK = 24_000 * 2 * 60          # 24kHz / 16bit / mono / 60s
-FACTOR_NUM, FACTOR_DEN = 3, 2           # 1.5 倍余量
-HEADROOM = 16 * 1024 * 1024             # 合并与文件系统开销预留
-
+SEG_FALLBACK = 24_000 * 2 * 60
+FACTOR_NUM, FACTOR_DEN = 3, 2
+HEADROOM = 16 * 1024 * 1024
 
 def estimate(nseg, existing, work_free, out_free):
     """existing: {段号: 字节}; 返回 (need, free, blocked, pending, seg)。"""
@@ -23,16 +22,13 @@ def estimate(nseg, existing, work_free, out_free):
     free = min(work_free, out_free)
     return need, free, need > free, pending, seg
 
-
 def merge_need(parts, out_free):
     need = sum(parts) + HEADROOM
     return need, need > out_free
 
-
 def main():
     errs = []
     src = PIPE.read_text(encoding="utf-8")
-    # 常量与比较符必须与 Kotlin 实现一致，防止对拍脚本和实现各说各话
     for s in ["24_000L * 2L * 60L", "* 3L / 2L + mergeBytes + 16L * 1024 * 1024",
               "16L * 1024 * 1024", "if (needBytes > freeBytes)",
               "if (finalBytes > outFile.parentFile!!.usableSpace)",
@@ -44,7 +40,6 @@ def main():
 
     MB = 1024 * 1024
     cases = [
-        # 名称, 段数, 已落盘样本, 工作区可用, 成品区可用, 期望拦?, 期望 pending
         ("新书 100 段 / 空间足", 100, {}, 800 * MB, 800 * MB, False, 100),
         ("新书 100 段 / 只剩 1MB", 100, {}, 1 * MB, 1 * MB, True, 100),
         ("续跑已落 80 段 / 中等空间", 100,
@@ -78,7 +73,6 @@ def main():
         print("  %-28s need=%4dMB free=%4dMB 拦=%s pending=%d seg=%dMB" %
               (name, need // MB, free // MB, blocked, pend, seg // MB))
 
-    # 合并第二道：分段够、成品不够时也必须拦
     parts = [3 * MB] * 20
     mn, mb = merge_need(parts, 70 * MB)
     if not mb:
@@ -96,7 +90,6 @@ def main():
         return 1
     print("OK · R95 落盘预检对拍 %d 组 + 合并边界 2 组 + 公式常量一致" % len(cases))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

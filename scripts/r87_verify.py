@@ -18,29 +18,24 @@ GRADLE = ROOT / "app/build.gradle.kts"
 CI = ROOT / ".github/workflows/ci.yml"
 
 POS = [
-    # 真入口，不再是只读假文字
     'onClick: (() -> Unit)? = null',
     'private fun ClearSegmentsRow(',
     'Text("清理 ›"',
     'Text("清理分段音频", fontSize = 13.sp)',
     'SettingInfoRow("电池优化", "现有", "去系统设置", "让制作时不被锁屏杀掉") {',
     'SettingInfoRow("第三方许可", "只读", "MIT / Apache-2.0", "")',
-    # 当前配置：只报人能核对的真值
     'Text("当前配置"',
     'append("\\n声音 · 模式 ")',
     'append(" · 音色 ")',
     'append(" · seed ")',
-    # 模型说明面向用户
     '用一段文字描述想要的嗓音，可叠加速度、情绪等可调项。',
     '从模型自带的音色里挑一个，再给它一句念法要求。',
     '给一小段人声做样本，照着这个声音来念；不再用文字描述。',
     '先在调音台点「读取模型自带的音色表」挑一个音色，再合成。',
-    # 错误提示不再指向已删功能
     '没能生成音频，可以回书架重新合成这一本',
 ]
 
 BAN = [
-    # 旧话术 / 内部字段名
     'Text("静态快照"',
     'Text("复制诊断信息（摘要）")',
     'Text("清理制作过程的分段音频"',
@@ -53,14 +48,12 @@ BAN = [
     '合成界面下一轮做',
     '请点设置页复制诊断信息发我',
     '这个模式的合成界面还没做完',
-    # 语言模型时代的死常量
     'const val LLM =',
     'const val LLM_LEGACY =',
     'const val TALKER =',
 ]
 
 KEEP = [
-    # 守恒：导航、主链、试音、主题与字号
     'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
     'private fun SoundProbeBlock(',
     'private fun DiagnosticsBlock(',
@@ -71,7 +64,6 @@ KEEP = [
     'fun synthesisBlockReason(c: Context): String?',
     'ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS',
 ]
-
 
 def check(files):
     errs = []
@@ -93,10 +85,8 @@ def check(files):
         errs.append("版本口径被改")
     return errs
 
-
 def txt(path, encoding="utf-8"):
     return path.read_text(encoding=encoding, errors="replace")
-
 
 def main():
     files = {
@@ -147,7 +137,6 @@ def main():
         return 1
     print("R87 文案净化 / 零残留 / 守恒：PASS")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

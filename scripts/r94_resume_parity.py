@@ -62,7 +62,6 @@ def case(name, work, cfg, selected, expect_reason=None):
     kept = len(wavs(after))
     reason = invalidation(work, cfg)
     ok = shown == kept and shown <= selected and reason == expect_reason
-    # 文本分段必须留着：作废只删 WAV
     nonwav = [k for k in work if not k.endswith(".wav")]
     if any(k not in after for k in nonwav): ok = False
     print("  %-34s 界面=%d 继续后保留=%d 作废=%-5s %s"
@@ -73,38 +72,31 @@ def main():
     W = wav_files(3)
     cases = []
 
-    # 1 首次开工，两枚 stamp 都还没写
     cases.append(case("首次：3 段 WAV，无 stamp", dict(W), dict(BASE), 3, None))
 
-    # 2 两枚 stamp 都与当前设置一致
     w2 = dict(W); w2["voice_stamp.txt"] = expected_voice(BASE)
     w2["mode_stamp.txt"] = expected_mode(BASE)
     cases.append(case("设置没变：3 段照旧跳过", w2, dict(BASE), 3, None))
 
-    # 3 换模式 / 换音色输入 → 点继续会全删
     cfg3 = dict(BASE, mode="custom_voice", speaker="Vivian")
     w3 = dict(W); w3["voice_stamp.txt"] = expected_voice(BASE)
     w3["mode_stamp.txt"] = expected_mode(BASE)
     cases.append(case("换模式：界面不许说不用重算", w3, cfg3, 3, "mode"))
 
-    # 4 调音台描述改了 → voice_stamp 不一致
     cfg4 = dict(BASE, voice="描述B")
     w4 = dict(W); w4["voice_stamp.txt"] = expected_voice(BASE)
     w4["mode_stamp.txt"] = expected_mode(BASE)
     cases.append(case("改调音台：界面不许说不用重算", w4, cfg4, 3, "voice"))
 
-    # 5 旧版指纹命中 legacy 兼容 → 不作废
     w5 = dict(W); w5["voice_stamp.txt"] = BASE["legacy_voice"]
     w5["mode_stamp.txt"] = expected_mode(BASE)
     cases.append(case("旧版 voice 指纹：升级不误删", w5, dict(BASE), 3, None))
 
-    # 6 坏 WAV（<=44 字节）不算完成
     w6 = dict(W); w6["chunk_0002.wav"] = 30; w6["ann_0001.json"] = 120
     w6["voice_stamp.txt"] = expected_voice(BASE)
     w6["mode_stamp.txt"] = expected_mode(BASE)
     cases.append(case("坏 WAV + 分段文件：只数 2", w6, dict(BASE), 3, None))
 
-    # 7 不同选章分桶互不干扰
     wA = dict(W); wA["voice_stamp.txt"] = expected_voice(BASE)
     wA["mode_stamp.txt"] = expected_mode(BASE)
     cfgA = dict(BASE, mode="base", ref="ref.wav|1234")
@@ -114,7 +106,6 @@ def main():
     okB, _, _ = case("only=B 没变：B 目录仍 2", wB, dict(BASE), 2, None)
     cases.append((okA and okB))
 
-    # 8 作废后 stamp 已重写，再恢复一次不该再误判
     cfg8 = dict(BASE, mode="custom_voice", speaker="Vivian")
     w8 = dict(W); w8["voice_stamp.txt"] = expected_voice(BASE)
     w8["mode_stamp.txt"] = expected_mode(BASE)

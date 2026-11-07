@@ -62,6 +62,38 @@ import java.io.File
 
 private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }
 
+private class NavHost(
+    initialStack: String,
+    private val read: () -> Screen,
+    private val write: (Screen) -> Unit,
+    private val persist: (String) -> Unit
+) {
+    private var stack = initialStack
+    private fun parts(): List<String> = stack.split(',').filter { it.isNotEmpty() }
+    fun canPop(): Boolean = parts().isNotEmpty()
+    fun push(target: Screen) {
+        val cur = read()
+        if (target == cur) return
+        stack = (parts() + cur.name).joinToString(",")
+        persist(stack)
+        write(target)
+    }
+    fun pop() {
+        val p = parts()
+        if (p.isEmpty()) {
+            write(Screen.LIBRARY)
+            return
+        }
+        write(runCatching { Screen.valueOf(p.last()) }.getOrDefault(Screen.LIBRARY))
+        stack = p.dropLast(1).joinToString(",")
+        persist(stack)
+    }
+    fun clear() {
+        stack = ""
+        persist(stack)
+    }
+}
+
 private enum class ProduceMode { DIRECT }
 
 private val Bg: Color get() = palette.bg
@@ -74,8 +106,6 @@ private val Line: Color get() = palette.line
 private val Warn: Color get() = palette.warn
 
 class MainActivity : ComponentActivity() {
-    /**
-     */
     private val incomingFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,22 +160,24 @@ class MainActivity : ComponentActivity() {
 private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var screen by remember { mutableStateOf(Screen.LIBRARY) }
-    var bookId by remember { mutableStateOf<String?>(null) }
-    var miniBook by remember { mutableStateOf<String?>(null) }
-    var lastSelection by remember { mutableStateOf<Set<Int>?>(null) }
-    var refresh by remember { mutableStateOf(0) }
-    var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }
-    var importing by remember { mutableStateOf<String?>(null) }
+    var screen by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
+    var bookId by rememberSaveable { mutableStateOf<String?>(null) }
+    var miniBook by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastSelection by rememberSaveable { mutableStateOf<Set<Int>?>(null) }
+    var refresh by rememberSaveable { mutableStateOf(0) }
+    var modelsFrom by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
+    var importing by rememberSaveable { mutableStateOf<String?>(null) }
     val importBytesFlow = remember { MutableStateFlow(0L) }
     val importBytes by importBytesFlow.collectAsState()
-    var importError by remember { mutableStateOf<String?>(null) }
-    var bookImportError by remember { mutableStateOf<String?>(null) }
+    var importError by rememberSaveable { mutableStateOf<String?>(null) }
+    var bookImportError by rememberSaveable { mutableStateOf<String?>(null) }
 
+    var navStack by rememberSaveable { mutableStateOf("") }
+    val nav = remember { NavHost(navStack, { screen }, { screen = it }, { navStack = it }) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }
+    var drawerReturn by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
 
-    BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }
+    BackHandler(enabled = screen != Screen.LIBRARY || nav.canPop()) { nav.pop() }
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
@@ -218,7 +250,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
     }
 
-    var pendingIncoming by remember { mutableStateOf<String?>(null) }
+    var pendingIncoming by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(incoming) { if (incoming != null) pendingIncoming = incoming }
     LaunchedEffect(pendingIncoming) {
         val full = pendingIncoming ?: return@LaunchedEffect
@@ -309,7 +341,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         else -> drawerReturn
                     }
                     drawerReturn = from
-                    screen = when (idx) {
+                    if (idx == NAV_MODELS) modelsFrom = from
+                    val target = when (idx) {
                         NAV_LIBRARY -> Screen.LIBRARY
                         NAV_TASKS -> Screen.TASKS
                         NAV_AUDIO -> Screen.AUDIO
@@ -318,8 +351,13 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         NAV_MODELS -> Screen.MODELS
                         else -> Screen.LIBRARY
                     }
+                    if (target == Screen.LIBRARY) {
+                        screen = Screen.LIBRARY
+                        nav.clear()
+                    } else {
+                        nav.push(target)
+                    }
                     if (idx == NAV_AUDIO || idx == NAV_SETTINGS) refresh++
-                    if (idx == NAV_MODELS) modelsFrom = from
                     scope.launch { drawerState.close() }
                 },
                 surface = Card,
@@ -338,26 +376,25 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         )
         Box(Modifier.weight(1f)) {
             when (screen) {
-                // R51 · producing / progressText / onProgress / pendingTask / onTasks
                 Screen.LIBRARY -> LibraryScreen(ctx, refresh,
-                    onOpen = { bookId = it; screen = Screen.CHAPTERS },
-                    onModels = { modelsFrom = Screen.LIBRARY; screen = Screen.MODELS },
+                    onOpen = { bookId = it; nav.push(Screen.CHAPTERS) },
+                    onModels = { modelsFrom = Screen.LIBRARY; nav.push(Screen.MODELS) },
                     onImportBook = { openBookPicker() },
                     onChanged = { refresh++ },
                     importError = bookImportError,
                     onDismissImportError = { bookImportError = null })
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
-                    onBack = { screen = Screen.LIBRARY },
-                    onProgress = { screen = Screen.PROGRESS },
+                    onBack = { nav.pop() },
+                    onProgress = { nav.push(Screen.PROGRESS) },
                     onPlayBook = { miniBook = it },
-                    onMixer = { drawerReturn = Screen.CHAPTERS; screen = Screen.MIXER })
+                    onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
-                    onBack = { screen = Screen.LIBRARY },
-                    onProgress = { screen = Screen.PROGRESS },
-                    onDone = { screen = Screen.AUDIO; refresh++ },
+                    onBack = { nav.pop() },
+                    onProgress = { nav.push(Screen.PROGRESS) },
+                    onDone = { nav.clear(); screen = Screen.AUDIO; refresh++ },
                     onStarted = { lastSelection = it })
                 Screen.PROGRESS -> ProgressScreen(ctx,
-                    onBack = { screen = Screen.LIBRARY },
+                    onBack = { nav.pop() },
                     onResume = {
                         val t = Producer.resume.value
                         val b = if (t != null) BookStore.list(ctx).find { x -> x.id == t.bookId }
@@ -371,47 +408,44 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         }
                     })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
-                    onProgress = { screen = Screen.PROGRESS },
-                    onAudio = { screen = Screen.AUDIO; refresh++ },
-                    onLibrary = { screen = Screen.LIBRARY },
+                    onProgress = { nav.push(Screen.PROGRESS) },
+                    onAudio = { nav.push(Screen.AUDIO); refresh++ },
+                    onLibrary = { screen = Screen.LIBRARY; nav.clear() },
                     onResume = { t ->
                         val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
                         if (b != null) {
                             bookId = b.id; lastSelection = t.only
                             Producer.start(ctx, b, t.only, true, t.think, t.config)
-                            screen = Screen.PROGRESS
+                            nav.push(Screen.PROGRESS)
                         } else {
                             Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
                         }
                     })
                 Screen.AUDIO -> AudioScreen(ctx, refresh,
-                    onLibrary = { screen = Screen.LIBRARY },
-                    onModels = { modelsFrom = Screen.AUDIO; screen = Screen.MODELS })
+                    onLibrary = { screen = Screen.LIBRARY; nav.clear() },
+                    onModels = { modelsFrom = Screen.AUDIO; nav.push(Screen.MODELS) })
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
-                    onModels = { modelsFrom = Screen.SETTINGS; screen = Screen.MODELS },
-                    onLibrary = { screen = Screen.LIBRARY },
-                    onMixer = { drawerReturn = Screen.SETTINGS; screen = Screen.MIXER })
-                Screen.MIXER -> MixerScreen(ctx, onBack = { screen = drawerReturn })
+                    onModels = { modelsFrom = Screen.SETTINGS; nav.push(Screen.MODELS) },
+                    onLibrary = { screen = Screen.LIBRARY; nav.clear() },
+                    onMixer = { drawerReturn = Screen.SETTINGS; nav.push(Screen.MIXER) })
+                Screen.MIXER -> MixerScreen(ctx, onBack = { nav.pop() })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },
-                    onBack = { screen = modelsFrom },
-                    onLibrary = { screen = Screen.LIBRARY },
+                    onBack = { nav.pop() },
+                    onLibrary = { screen = Screen.LIBRARY; nav.clear() },
                     onChanged = { refresh++ })
             }
         }
 
         MiniPlayBar(ctx, miniBook, onGoBook = { id ->
             bookId = id
-            screen = Screen.CHAPTERS
+            nav.push(Screen.CHAPTERS)
         })
     }
     }
 }
 
-
-/**
- */
 @Composable
 private fun KeepScreenOn() {
     val st by Producer.state.collectAsState()
@@ -432,8 +466,6 @@ private fun queryName(c: Context, uri: Uri): String {
     return name
 }
 
-/**
- */
 private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.LIBRARY  -> ChromeSpec("书架", TAB_LIBRARY, showImport = true)
     Screen.PRODUCE  -> ChromeSpec("制作", TAB_LIBRARY)
@@ -508,9 +540,9 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     Modifier.fillMaxWidth().clickable { onModels() }.padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("还差：" + missing.joinToString("、"), fontSize = 11.5.sp, color = Warn,
+                    Text("还差：" + missing.joinToString("、"), fontSize = 12.sp, color = Warn,
                         maxLines = 2, modifier = Modifier.weight(1f))
-                    Text("去准备 ›", fontSize = 11.5.sp, color = Primary)
+                    Text("去准备 ›", fontSize = 12.sp, color = Primary)
                 }
                 Spacer(Modifier.height(6.dp))
             }
@@ -523,11 +555,11 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                         Text("上次没导进来", fontWeight = FontWeight.Bold, fontSize = 14.sp,
                             color = Warn, modifier = Modifier.weight(1f))
                         TextButton(onClick = onDismissImportError) {
-                            Text("关闭", fontSize = 11.5.sp, color = Sub)
+                            Text("关闭", fontSize = 12.sp, color = Sub)
                         }
                     }
                     Spacer(Modifier.height(3.dp))
-                    Text(importError, fontSize = 11.5.sp, color = Sub)
+                    Text(importError, fontSize = 12.sp, color = Sub)
                     Spacer(Modifier.height(6.dp))
                     TextButton(onClick = onImportBook) {
                         Text("再选一次文件 ›", fontSize = 12.sp, color = Primary)
@@ -541,7 +573,7 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                 CardBox(Modifier.padding(bottom = 12.dp)) {
                     Text("还没有书", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text("导入本地 TXT / EPUB，或先粘一段文字试试", fontSize = 11.5.sp, color = Sub)
+                    Text("导入本地 TXT / EPUB，或先粘一段文字试试", fontSize = 12.sp, color = Sub)
                     Spacer(Modifier.height(14.dp))
                     Button(onClick = onImportBook, Modifier.fillMaxWidth().height(48.dp)) {
                         Text("导入一本书", fontSize = 15.sp)
@@ -588,7 +620,7 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         }
         if (books.isNotEmpty()) {
             item(key = "count") {
-                Text("共 ${books.size} 本", fontSize = 11.5.sp, color = Sub)
+                Text("共 ${books.size} 本", fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(8.dp))
             }
             items(books, key = { it.id }) { b ->
@@ -598,10 +630,10 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                         Column(Modifier.weight(1f)) {
                             Text(b.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
                             Spacer(Modifier.height(3.dp))
-                            Text("${b.chars} 字", fontSize = 11.5.sp, color = Sub)
+                            Text("${b.chars} 字", fontSize = 12.sp, color = Sub)
                             if (lastRead != null) {
                                 Spacer(Modifier.height(3.dp))
-                                Text("上次读到 第 ${lastRead + 1} 章", fontSize = 11.sp, color = Primary)
+                                Text("上次读到 第 ${lastRead + 1} 章", fontSize = 12.sp, color = Primary)
                             }
                         }
                         Text("›", fontSize = 18.sp, color = Sub)
@@ -609,7 +641,7 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = { confirmDelete = b.id }) {
-                            Text("删除", fontSize = 11.sp, color = Sub)
+                            Text("删除", fontSize = 12.sp, color = Sub)
                         }
                     }
                 }
@@ -735,7 +767,7 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         }
 
         ExpandGroup("② 怎么读 · 仅本次", cfg.summary()) {
-            OptionRow("朗读档位", "", 
+            OptionRow("朗读档位", "",
                 ReadingStyle.values().map { it to it.label }, cfg.style) { cfg = cfg.copy(style = it) }
             OptionRow("语速倾向", "",
                 Pace.values().map { it to it.label }, cfg.pace) { cfg = cfg.copy(pace = it) }
@@ -757,8 +789,8 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 "软件版本" to com.tingben.app.BuildConfig.VERSION_NAME
             ).forEach { (k, v) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text(k, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
-                    Text(v, fontSize = 11.5.sp)
+                    Text(k, fontSize = 12.sp, color = Sub, modifier = Modifier.weight(1f))
+                    Text(v, fontSize = 12.sp)
                 }
             }
             TextButton(onClick = { cfg = Prefs.defaultPerf(c) }) { Text("本次恢复默认", fontSize = 12.sp) }
@@ -863,7 +895,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                         Text(st.stage, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             maxLines = 1, modifier = Modifier.weight(1f))
                         Text(if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
-                            fontSize = 11.sp, color = Primary)
+                            fontSize = 12.sp, color = Primary)
                     }
                 }
             }
@@ -872,10 +904,10 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                 if (st.total > 0) "已完成 ${st.done}/${st.total} 块" +
                         if (st.failed > 0) " · ${st.failed} 块改走直读" else ""
                 else st.message.ifBlank { "还没开始" },
-                fontSize = 11.5.sp, color = Sub)
+                fontSize = 12.sp, color = Sub)
             if (st.running) {
                 Spacer(Modifier.height(6.dp))
-                Text(heartbeat, fontSize = 11.sp, color = Primary)
+                Text(heartbeat, fontSize = 12.sp, color = Primary)
             }
         }
 
@@ -894,7 +926,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                 val doneStep = curStep > i
                 val nowStep = curStep == i
                 Column(Modifier.weight(1f)) {
-                    Text(stepName, fontSize = 10.sp, maxLines = 1,
+                    Text(stepName, fontSize = 12.sp, maxLines = 1,
                         textAlign = TextAlign.Center,
                         fontWeight = if (nowStep || doneStep) FontWeight.Bold else FontWeight.Normal,
                         color = if (nowStep || doneStep) Primary else Sub,
@@ -911,7 +943,7 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
             Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
             if (segs.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text("还没有分段", fontSize = 10.sp, color = Sub)
+                Text("还没有分段", fontSize = 12.sp, color = Sub)
             } else {
                 Spacer(Modifier.height(9.dp))
                 segs.chunked(8).forEach { row ->
@@ -939,10 +971,10 @@ private fun ProgressScreen(c: Context, onBack: () -> Unit, onResume: () -> Unit)
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("${sg.index + 1}", fontSize = 10.sp,
+                                Text("${sg.index + 1}", fontSize = 12.sp,
                                     color = if (playing) Primary else base)
                                 if (playable)
-                                    Text(if (playing) "⏸" else "▶", fontSize = 6.sp, color = Good,
+                                    Text(if (playing) "⏸" else "▶", fontSize = 12.sp, color = Good,
                                         modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
                             }
                         }
@@ -1007,14 +1039,14 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                         t.phase == "stopped" -> "已停止"
                         else -> "已中断"
                     }
-                    Text(badge, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold,
+                    Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                         color = if (st.running) Primary else if (t.phase == "done") Good else Warn)
                 }
                 Spacer(Modifier.height(6.dp))
                 Text("$modeText · $scopeText", fontSize = 12.sp, color = Sub)
                 if (invalidate != null) {
                     Spacer(Modifier.height(4.dp))
-                    Text(invalidate!!, fontSize = 11.sp, color = Warn)
+                    Text(invalidate!!, fontSize = 12.sp, color = Warn)
                 }
                 val total = maxOf(t.total, real, if (st.running) st.total else 0)
                 val doneNow = (if (st.running) st.done else real).coerceIn(0, total)
@@ -1028,7 +1060,7 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onProgress: () -> Unit,
                 }
                 Spacer(Modifier.height(5.dp))
                 Text("最后更新 " + java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
-                    .format(java.util.Date(t.updatedAt)), fontSize = 11.sp, color = Sub)
+                    .format(java.util.Date(t.updatedAt)), fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(8.dp))
 
                 when {
@@ -1096,7 +1128,6 @@ private fun AudioScreen(
     val indexError = AudioLibrary.readError ?: AudioLibrary.writeError
     var exportId by remember { mutableStateOf<String?>(null) }
     var controlsOpen by remember { mutableStateOf(false) }
-    // / AlexExoPlayerMP3 PlayerController / ensemble-reads PlaybackController）。
     val pq by PlayQueue.state.collectAsState()
     LaunchedEffect(items) {
         PlayQueue.setTracks(items.map {
@@ -1138,11 +1169,11 @@ private fun AudioScreen(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     val totalMs = items.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }
                     Text("共 ${items.size} 个音频 · 合计 ${fmtTime(totalMs)}",
-                        fontSize = 11.sp, color = Sub, modifier = Modifier.weight(1f))
+                        fontSize = 12.sp, color = Sub, modifier = Modifier.weight(1f))
                     if (current != null) {
                         TextButton(onClick = { controlsOpen = !controlsOpen }) {
                             Text(if (controlsOpen) "收起 ⌃" else "播放控制 ›",
-                                fontSize = 11.5.sp, color = Primary)
+                                fontSize = 12.sp, color = Primary)
                         }
                     }
                 }
@@ -1152,12 +1183,12 @@ private fun AudioScreen(
                 item(key = "now_playing") {
                     CardBox(Modifier.padding(bottom = 10.dp)) {
                         Text(if (pq.ended) "已播完" else if (isPlaying) "播放中" else "已暂停",
-                            fontSize = 11.5.sp, color = Primary)
+                            fontSize = 12.sp, color = Primary)
                         Spacer(Modifier.height(4.dp))
                         Text("${current.title} · ${current.scope}", fontSize = 15.sp,
                             fontWeight = FontWeight.Bold, maxLines = 2)
                         Text("${current.mode} · ${fmtTime(AudioLibrary.durationMsOfBytes(current.bytes))}",
-                            fontSize = 11.5.sp, color = Sub)
+                            fontSize = 12.sp, color = Sub)
                         Spacer(Modifier.height(8.dp))
                         Slider(
                             value = if (durMs > 0) posMs.toFloat() / durMs.toFloat() else 0f,
@@ -1165,9 +1196,9 @@ private fun AudioScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(fmtTime(posMs), fontSize = 11.sp, color = Sub)
+                            Text(fmtTime(posMs), fontSize = 12.sp, color = Sub)
                             Spacer(Modifier.weight(1f))
-                            Text(fmtTime(durMs), fontSize = 11.sp, color = Sub)
+                            Text(fmtTime(durMs), fontSize = 12.sp, color = Sub)
                         }
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1188,9 +1219,9 @@ private fun AudioScreen(
                                 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f
                             }
                             PlayQueue.setSpeed(nextSpeed)
-                        }) { Text("倍速 ${"%.2f".format(pq.speed).trimEnd('0').trimEnd('.')}x", fontSize = 11.5.sp, color = Sub) }
+                        }) { Text("倍速 ${"%.2f".format(pq.speed).trimEnd('0').trimEnd('.')}x", fontSize = 12.sp, color = Sub) }
                         TextButton(onClick = release, Modifier.fillMaxWidth()) {
-                            Text("关闭播放器", fontSize = 11.5.sp, color = Sub)
+                            Text("关闭播放器", fontSize = 12.sp, color = Sub)
                         }
                     }
                 }
@@ -1203,14 +1234,14 @@ private fun AudioScreen(
                     Text("还没有音频", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Text("在书架导入一本书，选中章节合成后，成品会出现在这里。",
-                        fontSize = 11.sp, color = Sub)
+                        fontSize = 12.sp, color = Sub)
                     Spacer(Modifier.height(4.dp))
                     Row {
                         TextButton(onClick = onLibrary) {
-                            Text("去书架 ›", fontSize = 11.5.sp, color = Primary)
+                            Text("去书架 ›", fontSize = 12.sp, color = Primary)
                         }
                         TextButton(onClick = onModels) {
-                            Text("去看模型 ›", fontSize = 11.5.sp, color = Primary)
+                            Text("去看模型 ›", fontSize = 12.sp, color = Primary)
                         }
                     }
                 }
@@ -1225,7 +1256,7 @@ private fun AudioScreen(
                             Text("${item.title} · ${item.scope}", fontWeight = FontWeight.Bold,
                                 fontSize = 14.5.sp, maxLines = 2)
                             Text("${item.mode} · ${fmtTime(AudioLibrary.durationMsOfBytes(item.bytes))} · %.1f MB"
-                                .format(item.bytes / 1024f / 1024f), fontSize = 11.5.sp, color = Sub)
+                                .format(item.bytes / 1024f / 1024f), fontSize = 12.sp, color = Sub)
                         }
                         if (on) Text("●", color = Primary, fontSize = 13.sp)
                     }
@@ -1239,7 +1270,7 @@ private fun AudioScreen(
                         TextButton(onClick = {
                             exportId = item.id
                             export.launch("${item.title}_${item.scope}.wav")
-                        }) { Text("保存到手机", fontSize = 11.sp, color = Sub) }
+                        }) { Text("保存到手机", fontSize = 12.sp, color = Sub) }
                         TextButton(onClick = {
                             if (on) release()
                             if (!AudioLibrary.remove(c, item.id)) {
@@ -1247,7 +1278,7 @@ private fun AudioScreen(
                                     Toast.LENGTH_SHORT).show()
                             }
                             localTick++
-                        }) { Text("删除", fontSize = 11.sp, color = Warn) }
+                        }) { Text("删除", fontSize = 12.sp, color = Warn) }
                     }
                 }
             }
@@ -1255,12 +1286,11 @@ private fun AudioScreen(
     }
 }
 
-
 @Composable
 private fun GroupLabel(title: String, sub: String) {
     Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
         Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
-        if (sub.isNotBlank()) Text(sub, fontSize = 11.sp, color = Sub)
+        if (sub.isNotBlank()) Text(sub, fontSize = 12.sp, color = Sub)
     }
 }
 
@@ -1292,9 +1322,7 @@ private fun SettingsSection(
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                 modifier = Modifier.weight(1f))
-            Text(badge, fontSize = 10.sp, color = Sub,
-                modifier = Modifier.padding(end = 8.dp))
-            Text(if (open) "收起 ⌃" else "展开 ›", fontSize = 11.5.sp, color = Sub)
+            Text(if (open) "收起 ⌃" else "展开 ›", fontSize = 12.sp, color = Sub)
         }
         if (open) {
             Spacer(Modifier.height(7.dp))
@@ -1309,7 +1337,7 @@ private fun SettingSwitchRow(label: String, checked: Boolean, onChange: (Boolean
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Text(if (checked) "开" else "关", fontSize = 11.5.sp,
+        Text(if (checked) "开" else "关", fontSize = 12.sp,
             color = if (checked) Primary else Sub)
         Spacer(Modifier.width(8.dp))
         Switch(checked = checked, onCheckedChange = onChange)
@@ -1323,17 +1351,13 @@ private fun SettingInfoRow(label: String, badge: String, value: String, note: St
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, fontSize = 13.sp)
-            if (note.isNotBlank()) Text(note, fontSize = 10.5.sp, color = Sub)
+            if (note.isNotBlank()) Text(note, fontSize = 12.sp, color = Sub)
         }
-        Text(badge, fontSize = 10.sp, color = Sub,
-            modifier = Modifier.padding(end = 8.dp))
-        Text(value, fontSize = 11.5.sp, color = Primary,
+        Text(value, fontSize = 12.sp, color = Primary,
             modifier = if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     }
 }
 
-/**
- */
 @Composable
 @Suppress("UNUSED_PARAMETER")
 private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
@@ -1360,12 +1384,12 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         Text("软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME +
              " · 本机 Android " + android.os.Build.VERSION.RELEASE +
              " / " + (android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: ""),
-            fontSize = 10.5.sp, color = Sub)
+            fontSize = 12.sp, color = Sub)
 
         SettingsSection("外观与显示", "软件", lookOpen, { lookOpen = it }) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("主题", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Text("切换立即生效", fontSize = 10.5.sp, color = Sub)
+                Text("切换立即生效", fontSize = 12.sp, color = Sub)
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 listOf("跟随系统" to 0, "浅色" to 1, "深色" to 2).forEach { (label, m) ->
@@ -1374,7 +1398,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         Prefs.setThemeMode(c, m)
                         applyAppTheme(c, m)
                     }, modifier = Modifier.weight(1f).padding(horizontal = 2.dp)) {
-                        Text(label, fontSize = 11.5.sp,
+                        Text(label, fontSize = 12.sp,
                             color = if (themeMode == m) Primary else Sub)
                     }
                 }
@@ -1382,7 +1406,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             HorizontalDivider(color = Line)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("正文字号", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Text("看书页长期保留", fontSize = 10.5.sp, color = Sub)
+                Text("看书页长期保留", fontSize = 12.sp, color = Sub)
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = {
@@ -1398,7 +1422,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Prefs.setReaderFontScale(c, v)
                 }) { Text("A+", fontSize = 12.sp) }
                 Spacer(Modifier.weight(1f))
-                Text("预览：巷口那盏灯还亮着", fontSize = 11.sp, color = Sub)
+                Text("预览：巷口那盏灯还亮着", fontSize = 12.sp, color = Sub)
             }
             SettingInfoRow("状态栏安全区", "现有", "已处理", "顶栏已与系统通知栏错开")
         }
@@ -1438,7 +1462,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 private fun DiagnosticsBlock(c: Context, _refresh: Int) {
     Spacer(Modifier.height(10.dp))
     Text("当前配置", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-    Text(Prefs.summary(c), fontSize = 11.5.sp, color = Sub)
+    Text(Prefs.summary(c), fontSize = 12.sp, color = Sub)
 }
 
 @Composable
@@ -1449,9 +1473,9 @@ private fun ClearSegmentsRow(c: Context) {
         Column(Modifier.weight(1f)) {
             Text("清理分段音频", fontSize = 13.sp)
             Text("只删制作过程的分段 WAV，不碰原书、成品与模型",
-                fontSize = 10.5.sp, color = Sub)
+                fontSize = 12.sp, color = Sub)
         }
-        Text("清理 ›", fontSize = 11.5.sp, color = Primary,
+        Text("清理 ›", fontSize = 12.sp, color = Primary,
             modifier = Modifier.clickable { confirmClear = true })
     }
     if (confirmClear) {
@@ -1546,7 +1570,7 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
     if (probeResult.isNotBlank()) {
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(probeResult, fontSize = 11.5.sp, color = Sub, modifier = Modifier.weight(1f))
+            Text(probeResult, fontSize = 12.sp, color = Sub, modifier = Modifier.weight(1f))
             if (probeResult.startsWith("出声了") && probeFile.isNotBlank()) {
                 TextButton(onClick = {
                     try {
@@ -1561,7 +1585,7 @@ private fun SoundProbeBlock(c: Context, refresh: Int) {
             }
         }
     }
-    if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 11.sp, color = Sub)
+    if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 12.sp, color = Sub)
 }
 
 @Composable
@@ -1594,7 +1618,7 @@ private fun ModelScreen(c: Context, refresh: Int,
             Spacer(Modifier.weight(1f))
             Text(if (allReady) "已就绪 · ${installed.size} 个模式"
                  else if (baseFile == null) "还缺共用底座" else "还缺模式主文件",
-                fontSize = 11.5.sp, color = if (allReady) Good else Warn)
+                fontSize = 12.sp, color = if (allReady) Good else Warn)
         }
         Spacer(Modifier.height(6.dp))
 
@@ -1607,7 +1631,7 @@ private fun ModelScreen(c: Context, refresh: Int,
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(5.dp))
                 Spacer(Modifier.height(5.dp))
-                Text("文件很大，可能要一两分钟。", fontSize = 11.5.sp, color = Sub)
+                Text("文件很大，可能要一两分钟。", fontSize = 12.sp, color = Sub)
             }
         }
         if (importError != null) {
@@ -1616,36 +1640,36 @@ private fun ModelScreen(c: Context, refresh: Int,
                 Spacer(Modifier.height(4.dp))
                 Text(importError, fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(5.dp))
-                Text("重新下载再导入一次，或先重启 App。", fontSize = 11.5.sp, color = Sub)
+                Text("重新下载再导入一次，或先重启 App。", fontSize = 12.sp, color = Sub)
             }
         }
 
         CardBox(Modifier.padding(bottom = 10.dp)) {
             Text("共用底座 · 三个模式都要用", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(4.dp))
-            Text("12Hz 码 ↔ 24kHz 波形，导入一次就够。", fontSize = 11.sp, color = Sub)
+            Text("12Hz 码 ↔ 24kHz 波形，导入一次就够。", fontSize = 12.sp, color = Sub)
             Spacer(Modifier.height(8.dp))
-            Text(ModelStore.TOKENIZER, fontSize = 10.sp, color = Sub,
+            Text(ModelStore.TOKENIZER, fontSize = 12.sp, color = Sub,
                 fontFamily = FontFamily.Monospace)
             Spacer(Modifier.height(6.dp))
             if (baseFile != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("已导入 ✓ · %.2f GB".format(
                         baseFile.length() / 1024f / 1024f / 1024f),
-                        fontSize = 11.5.sp, color = Good, modifier = Modifier.weight(1f))
+                        fontSize = 12.sp, color = Good, modifier = Modifier.weight(1f))
                     TextButton(onClick = { ModelStore.delete(c, baseFile); onChanged() }) {
-                        Text("删除重试", fontSize = 10.5.sp, color = Sub)
+                        Text("删除重试", fontSize = 12.sp, color = Sub)
                     }
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("还缺这一份", fontSize = 11.5.sp, color = Warn,
+                    Text("还缺这一份", fontSize = 12.sp, color = Warn,
                         modifier = Modifier.weight(1f))
                     TextButton(onClick = { copyUrl(cnUrl(ModelStore.TOKENIZER)) }) {
-                        Text("复制国内地址 ›", fontSize = 11.5.sp, color = Primary)
+                        Text("复制国内地址 ›", fontSize = 12.sp, color = Primary)
                     }
                     TextButton(onClick = { copyUrl(hfUrl(ModelStore.TOKENIZER)) }) {
-                        Text("备用 ›", fontSize = 10.5.sp, color = Sub)
+                        Text("备用 ›", fontSize = 12.sp, color = Sub)
                     }
                 }
             }
@@ -1653,7 +1677,7 @@ private fun ModelScreen(c: Context, refresh: Int,
 
         Text("模式主文件 · 装一份就能用", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
         Text("App 不联网：复制地址 → 浏览器下 → 回来点导入。",
-            fontSize = 10.5.sp, color = Sub)
+            fontSize = 12.sp, color = Sub)
         Spacer(Modifier.height(8.dp))
 
         ModelStore.Mode.values().forEach { mode ->
@@ -1665,52 +1689,52 @@ private fun ModelScreen(c: Context, refresh: Int,
                         Text(mode.label + (if (isCurrent) " · 当前启用" else ""),
                             fontWeight = FontWeight.Bold, fontSize = 13.5.sp,
                             color = if (isCurrent) Primary else Color.Unspecified)
-                        Text(mode.id, fontSize = 10.sp, color = Sub)
+                        Text(mode.id, fontSize = 12.sp, color = Sub)
                     }
                     if (isCurrent) Text("✓", fontSize = 14.sp, color = Good)
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(mode.file, fontSize = 10.sp, color = Sub,
+                Text(mode.file, fontSize = 12.sp, color = Sub,
                     fontFamily = FontFamily.Monospace)
                 Spacer(Modifier.height(3.dp))
-                Text(mode.hint, fontSize = 10.5.sp, color = Sub)
+                Text(mode.hint, fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(7.dp))
                 if (f != null) {
                     Text("已导入 · %.2f GB".format(f.length() / 1024f / 1024f / 1024f),
-                        fontSize = 11.sp, color = Good)
+                        fontSize = 12.sp, color = Good)
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (!isCurrent) {
                             TextButton(onClick = {
                                 if (!st.running) { Prefs.setModelMode(c, mode.id); onChanged() }
                             }, enabled = !st.running) {
-                                Text("启用这个模式", fontSize = 11.5.sp, color = Primary)
+                                Text("启用这个模式", fontSize = 12.sp, color = Primary)
                             }
                         } else {
-                            Text("这是当前模式", fontSize = 11.sp, color = Sub)
+                            Text("这是当前模式", fontSize = 12.sp, color = Sub)
                         }
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) {
-                            Text("删除重试", fontSize = 10.5.sp, color = Sub)
+                            Text("删除重试", fontSize = 12.sp, color = Sub)
                         }
                     }
                     if (!isCurrent && st.running) {
-                        Text("正在制作，这一本跑完之前不能切", fontSize = 10.5.sp, color = Warn)
+                        Text("正在制作，这一本跑完之前不能切", fontSize = 12.sp, color = Warn)
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("待导入", fontSize = 11.sp, color = Warn,
+                        Text("待导入", fontSize = 12.sp, color = Warn,
                             modifier = Modifier.weight(1f))
                         TextButton(onClick = onPick, enabled = importing == null) {
-                            Text("导入这份 ›", fontSize = 11.5.sp, color = Primary)
+                            Text("导入这份 ›", fontSize = 12.sp, color = Primary)
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = { copyUrl(cnUrl(mode.file)) }) {
-                            Text("复制国内地址 ›", fontSize = 11.sp, color = Primary)
+                            Text("复制国内地址 ›", fontSize = 12.sp, color = Primary)
                         }
                         TextButton(onClick = { copyUrl(hfUrl(mode.file)) }) {
-                            Text("备用 ›", fontSize = 10.5.sp, color = Sub)
+                            Text("备用 ›", fontSize = 12.sp, color = Sub)
                         }
                     }
                 }
@@ -1724,7 +1748,7 @@ private fun ModelScreen(c: Context, refresh: Int,
                 Text(current.label + " 是当前模式。" + (if (current == ModelStore.Mode.VOICE_DESIGN)
                     "可以合成音频了。"
                 else "还不能用来合成音频，切回「描述造音色」后即可继续。"),
-                    fontSize = 11.5.sp, color = Sub)
+                    fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(12.dp))
                 if (current == ModelStore.Mode.VOICE_DESIGN) {
                     Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
@@ -1746,7 +1770,7 @@ private fun ModelScreen(c: Context, refresh: Int,
                 Text("还差 " + missing.joinToString("、"), fontWeight = FontWeight.Bold,
                     fontSize = 15.sp)
                 Spacer(Modifier.height(4.dp))
-                Text("缺件就出不了声，先补齐上面高亮的那一份。", fontSize = 11.5.sp, color = Sub)
+                Text("缺件就出不了声，先补齐上面高亮的那一份。", fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = onPick, enabled = importing == null,
                     modifier = Modifier.fillMaxWidth().height(48.dp)) {
@@ -1756,21 +1780,14 @@ private fun ModelScreen(c: Context, refresh: Int,
         }
 
         TextButton(onClick = onPick, enabled = importing == null) {
-            Text("重新导入某个文件 ›", fontSize = 11.5.sp, color = Primary)
+            Text("重新导入某个文件 ›", fontSize = 12.sp, color = Primary)
         }
         if (files.isNotEmpty()) {
-            Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
+            Text("已导入 ${files.size} 个文件", fontSize = 12.sp, color = Sub)
         }
         Spacer(Modifier.height(24.dp))
     }
 }
-
-
-/**
- *
- *
- */
-
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1954,7 +1971,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                 Button(onClick = { commitAll() },
                     modifier = Modifier.height(32.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-                    Text("保存", fontSize = 11.sp)
+                    Text("保存", fontSize = 12.sp)
                 }
             }
         }
@@ -1967,7 +1984,7 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             if (mode.id !in installed) {
                 Text("「${mode.label}」的主文件还没导入，到「模型」页导入后才能出声。",
-                    fontSize = 10.5.sp, color = Warn)
+                    fontSize = 12.sp, color = Warn)
                 Spacer(Modifier.height(8.dp))
             }
 
@@ -2005,43 +2022,44 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     }
                 }
                 TextButton(onClick = { draft = draft.copy(knobs = TtsKnobs()) }) {
-                    Text("全部恢复默认", fontSize = 10.5.sp, color = Sub)
+                    Text("全部恢复默认", fontSize = 12.sp, color = Sub)
                 }
             } else {
                 Text("采样参数沿用全局设置，在「描述造音色」里调",
-                    fontSize = 10.5.sp, color = Sub)
+                    fontSize = 12.sp, color = Sub)
             }
             Spacer(Modifier.height(14.dp))
 
-            Text("试听", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.text)
-            Spacer(Modifier.height(6.dp))
-            val canTrial = missing.isEmpty() && !busyTrial
+            var useActive by rememberSaveable { mutableStateOf(false) }
             OutlinedTextField(
                 value = trialText, onValueChange = { trialText = it },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("试听文本", fontSize = 10.sp) },
+                label = { Text("试听文本", fontSize = 12.sp) },
                 textStyle = TextStyle(fontSize = 12.sp)
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (busyTrial) {
-                    TextButton(onClick = { stopTrial() }) { Text("停止", fontSize = 11.sp) }
-                } else {
-                    TextButton(onClick = { trial("草稿", draft, "mixer_trial_draft.wav") },
-                        enabled = canTrial) { Text("试听草稿", fontSize = 11.sp) }
-                    Spacer(Modifier.width(10.dp))
-                    TextButton(onClick = { trial("已生效", active, "mixer_trial_active.wav") },
-                        enabled = canTrial) { Text("试听已生效", fontSize = 11.sp) }
-                }
-                Spacer(Modifier.weight(1f))
-                if (busyTrial) Text("合成中…", fontSize = 10.5.sp, color = Sub)
+                TextButton(
+                    enabled = missing.isEmpty(),
+                    onClick = {
+                        if (busyTrial) stopTrial()
+                        else if (useActive) trial("已生效", active, "mixer_trial_active.wav")
+                        else trial("草稿", draft, "mixer_trial_draft.wav")
+                    }
+                ) { Text(if (busyTrial) "停止" else "试听", fontSize = 12.sp) }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    if (useActive) "用已生效的设置 · 点切换草稿"
+                    else "用当前草稿 · 点切换已生效",
+                    fontSize = 12.sp, color = Sub,
+                    modifier = Modifier.clickable { useActive = !useActive })
             }
             if (trialMsg.isNotBlank()) {
-                Text(trialMsg, fontSize = 10.5.sp,
+                Text(trialMsg, fontSize = 12.sp,
                     color = if (trialMsg.startsWith("试听失败")) Warn else Sub)
             }
             if (missing.isNotEmpty()) {
-                Text("还缺模型文件，去「模型」页导入。", fontSize = 10.5.sp, color = Warn)
+                Text("还缺模型文件，去「模型」页导入。", fontSize = 12.sp, color = Warn)
             }
             Spacer(Modifier.height(14.dp))
 
@@ -2081,7 +2099,7 @@ private fun ModeTabs(
                     .padding(horizontal = 9.dp, vertical = 9.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(m.label, fontSize = 11.5.sp, fontWeight = FontWeight.Bold,
+                Text(m.label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     color = if (on) Primary else palette.text)
                 Text(
                     when (m) {
@@ -2102,14 +2120,14 @@ private fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("声音描述", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.text)
         Spacer(Modifier.weight(1f))
-        Text("清空", fontSize = 10.5.sp, color = Sub,
+        Text("清空", fontSize = 12.sp, color = Sub,
             modifier = Modifier.clickable { onDraft(draft.copy(voice = "")) })
     }
     Spacer(Modifier.height(6.dp))
     OutlinedTextField(
         value = draft.voice, onValueChange = { onDraft(draft.copy(voice = it)) },
         modifier = Modifier.fillMaxWidth(), minLines = 4, maxLines = 8,
-        placeholder = { Text("例如：温和的中年女声，吐字清晰，语速偏慢", fontSize = 11.sp) },
+        placeholder = { Text("例如：温和的中年女声，吐字清晰，语速偏慢", fontSize = 12.sp) },
         textStyle = TextStyle(fontSize = 12.5.sp, lineHeight = 18.sp)
     )
 }
@@ -2152,7 +2170,7 @@ private fun CustomVoicePane(
                 }
             }
         }, enabled = !speakerBusy) {
-            Text(if (speakerBusy) "正在读模型…" else "读取模型自带的音色表 ›", fontSize = 11.sp)
+            Text(if (speakerBusy) "正在读模型…" else "读取模型自带的音色表 ›", fontSize = 12.sp)
         }
     } else {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2161,7 +2179,7 @@ private fun CustomVoicePane(
                 FilterChip(
                     selected = draft.speaker == name,
                     onClick = { onDraft(draft.copy(speaker = name)) },
-                    label = { Text(name, fontSize = 10.5.sp) }
+                    label = { Text(name, fontSize = 12.sp) }
                 )
             }
         }
@@ -2172,7 +2190,7 @@ private fun CustomVoicePane(
     OutlinedTextField(
         value = draft.cvStyle, onValueChange = { onDraft(draft.copy(cvStyle = it)) },
         modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4,
-        placeholder = { Text("例如：语速放慢，句尾别上扬（叠加在所选音色上）", fontSize = 11.sp) },
+        placeholder = { Text("例如：语速放慢，句尾别上扬（叠加在所选音色上）", fontSize = 12.sp) },
         textStyle = TextStyle(fontSize = 12.5.sp, lineHeight = 18.sp)
     )
 }
@@ -2189,17 +2207,17 @@ private fun BasePane(
     Text("参考音频", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.text)
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(refState, fontSize = 11.sp,
+        Text(refState, fontSize = 12.sp,
             color = if (VoiceRef.exists(ctx)) Good else Warn,
             modifier = Modifier.weight(1f))
         if (VoiceRef.exists(ctx)) {
-            Text("删掉", fontSize = 10.5.sp, color = Warn,
+            Text("删掉", fontSize = 12.sp, color = Warn,
                 modifier = Modifier.clickable { onClear() }.padding(start = 8.dp))
         }
     }
     Spacer(Modifier.height(6.dp))
-    TextButton(onClick = onPick) { Text("导入一小段人声 ›", fontSize = 11.sp) }
-    Text("一段 3~30 秒的人声录音（WAV 即可，App 自动转成 24kHz 单声道）", fontSize = 10.sp, color = Sub)
+    TextButton(onClick = onPick) { Text("导入一小段人声 ›", fontSize = 12.sp) }
+    Text("一段 3~30 秒的人声录音（WAV 即可，App 自动转成 24kHz 单声道）", fontSize = 12.sp, color = Sub)
     Spacer(Modifier.height(12.dp))
     Text("这段录音念的是什么（可留空）", fontSize = 12.sp,
         fontWeight = FontWeight.Bold, color = palette.text)
@@ -2207,13 +2225,11 @@ private fun BasePane(
     OutlinedTextField(
         value = draft.refText, onValueChange = { onDraft(draft.copy(refText = it)) },
         modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4,
-        placeholder = { Text("填上原文克隆更准；留空就只按声音克隆", fontSize = 11.sp) },
+        placeholder = { Text("填上原文克隆更准；留空就只按声音克隆", fontSize = 12.sp) },
         textStyle = TextStyle(fontSize = 12.5.sp, lineHeight = 18.sp)
     )
 }
 
-/**
- */
 @Composable
 private fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) {
     var edit by remember { mutableStateOf(false) }
@@ -2226,7 +2242,7 @@ private fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) {
 
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(spec.label, fontSize = 11.sp, color = palette.text,
+            Text(spec.label, fontSize = 12.sp, color = palette.text,
                 modifier = Modifier.weight(1f))
             Text(cur, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary,
                 modifier = Modifier
@@ -2263,8 +2279,8 @@ private fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) {
                         isError = err != null
                     )
                     Spacer(Modifier.height(6.dp))
-                    Text("范围 ${spec.rangeLabel} · 默认 ${spec.def}", fontSize = 10.5.sp, color = Sub)
-                    if (err != null) Text(err, fontSize = 10.5.sp, color = Warn)
+                    Text("范围 ${spec.rangeLabel} · 默认 ${spec.def}", fontSize = 12.sp, color = Sub)
+                    if (err != null) Text(err, fontSize = 12.sp, color = Warn)
                 }
             },
             confirmButton = {

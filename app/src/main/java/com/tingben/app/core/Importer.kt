@@ -12,6 +12,9 @@ object Importer {
 
     const val MAX_BYTES = 64 * 1024 * 1024
 
+    private const val MAX_ENTRY_BYTES = 8 * 1024 * 1024
+    private const val MAX_UNZIPPED_BYTES = 96 * 1024 * 1024
+
     private fun readLimited(s: InputStream): ByteArray {
         val out = java.io.ByteArrayOutputStream()
         val buf = ByteArray(64 * 1024)
@@ -97,14 +100,32 @@ object Importer {
         return utf8
     }
 
+    private fun keepEntry(name: String): Boolean {
+        val n = name.lowercase()
+        return n.endsWith(".xml") || n.endsWith(".opf") || n.endsWith(".ncx") ||
+                n.endsWith(".xhtml") || n.endsWith(".html") || n.endsWith(".htm")
+    }
+
     private fun readZipEntries(s: InputStream): LinkedHashMap<String, ByteArray> {
-        val all = s.readBytes()
         val entries = LinkedHashMap<String, ByteArray>()
-        ZipInputStream(ByteArrayInputStream(all)).use { zis ->
+        var total = 0L
+        ZipInputStream(s.buffered()).use { zis ->
             while (true) {
                 val e = zis.nextEntry ?: break
-                if (!e.isDirectory) {
-                    try { entries[e.name] = zis.readBytes() } catch (_: Throwable) { }
+                if (!e.isDirectory && keepEntry(e.name)) {
+                    val out = java.io.ByteArrayOutputStream()
+                    val buf = ByteArray(16 * 1024)
+                    var size = 0L
+                    while (true) {
+                        val n = zis.read(buf)
+                        if (n < 0) break
+                        size += n
+                        total += n
+                        if (size > MAX_ENTRY_BYTES || total > MAX_UNZIPPED_BYTES)
+                            throw IllegalStateException("这个 epub 解压后太大，先拆成几本再导入")
+                        out.write(buf, 0, n)
+                    }
+                    entries[e.name] = out.toByteArray()
                 }
                 zis.closeEntry()
             }

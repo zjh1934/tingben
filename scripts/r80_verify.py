@@ -29,8 +29,8 @@ POS = [
     (M, 'item(key = "audio_empty")'),
     (M, 'Text("去书架 ›"'),
     (M, 'Text("去看模型 ›"'),
-    (M, 'Text("保存到手机", fontSize = 11.sp, color = Sub)'),
-    (M, 'Text("删除", fontSize = 11.sp, color = Warn)'),
+    (M, 'Text("保存到手机", fontSize = 12.sp, color = Sub)'),
+    (M, 'Text("删除", fontSize = 12.sp, color = Warn)'),
     (M, '"−15s"'),
     (M, '"+15s"'),
     (M, '"⏮ 上一条"'),
@@ -40,7 +40,6 @@ POS = [
     (M, 'Slider('),
 ]
 
-# 旧形态（全局字面量；追加到文件末尾也应被拦下）
 BAN = [
     (M, 'FilledTonalButton(onClick = {\n                            exportId = item.id'),
     (M, 'if (current != null) {\n            item(key = "now_playing")'),
@@ -73,7 +72,6 @@ def audio_body(text):
 
 def check(files):
     errs = []
-    # F-25 · 导航语义守恒（不锁 onLibrary / onModels 字面量）
     EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
                 "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
     if nav.screen_enum(files[M]) != EXPECTED:
@@ -82,7 +80,6 @@ def check(files):
         errs.append("导航语义: " + msg)
     try:
         body = audio_body(files[M])
-        # onModels 是参数，lambda 定义在 App() 分发块里；这里查「页内真的用了入口」
         if "onModels" not in body or not nav.model_entries(files[M]):
             errs.append("我的音频页没有去模型页的入口")
     except ValueError:
@@ -136,8 +133,6 @@ def run():
 def selftest():
     files = load()
     n = fails = 0
-    # 同一字面量在源码里可能多处出现（例如 onLibrary 两个分发都写），
-    # 只替换第 1 处会留下另一处、造成「明明注入了却没拦下」的假绿 —— 必须全替换。
     for f, s in POS:
         n += 1
         b = dict(files); b[f] = b[f].replace(s, "___INJECTED___")
@@ -150,7 +145,6 @@ def selftest():
         n += 1
         b = dict(files); b[f] = b[f].replace(s, "___GONE___")
         if not check(b): fails += 1; print("未拦下守恒丢失:", s[:46])
-    # 结构注入：直接改函数体，验「默认收起 / 零播放卡 / 汇总不读盘」三条
     injections = [
         ("var controlsOpen by remember { mutableStateOf(false) }",
          "var controlsOpen by remember { mutableStateOf(true) }", "默认展开"),
@@ -159,7 +153,7 @@ def selftest():
         ('item(key = "audio_summary")', 'item(key = "audio_summary_old")', "汇总行消失"),
         ('items.sumOf { AudioLibrary.durationMsOfBytes(it.bytes) }',
          'items.sumOf { AudioLibrary.durationMs(it.file) }', "汇总行改读磁盘"),
-        ('Text("保存到手机", fontSize = 11.sp, color = Sub)',
+        ('Text("保存到手机", fontSize = 12.sp, color = Sub)',
          'FilledTonalButton(onClick = {}) { Text("保存到手机", fontSize = 12.sp) }', "第二个实心块回来"),
     ]
     for old, new, label in injections:

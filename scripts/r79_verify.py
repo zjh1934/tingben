@@ -14,7 +14,6 @@ CONTRACT = ROOT / "docs/00_现行契约.md"
 
 M, H, A = "main", "hub", "lib"
 
-# (文件, 字面量)
 POS = [
     (M, 'import androidx.compose.foundation.lazy.LazyColumn'),
     (M, 'import androidx.compose.foundation.lazy.itemsIndexed'),
@@ -66,14 +65,12 @@ def audio_body(text):
 
 def check(files):
     errs = []
-    # F-25 · 导航守恒改语义判据（枚举集合 / 全局语义），不再锁整行字面量
     EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
                 "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
     if nav.screen_enum(files[M]) != EXPECTED:
         errs.append("Screen 枚举集合与 9 值不符")
     for msg in nav.semantics(files[M]):
         errs.append("导航语义: " + msg)
-    # R101 后任务页改成「停止即时置位」；按语义判，不锁旧 while 字面量
     wins = [m.group(1) for m in re.finditer(
         r"LaunchedEffect\(st\.running\)\s*\{(.{0,320})", files[M], re.S)]
     if not any("!st.running" in w and "loadTick++" in w for w in wins):
@@ -84,7 +81,6 @@ def check(files):
         if s in files[f]: errs.append("旧形态残留[%s]: %s" % (f, s[:52]))
     for f, s in KEEP:
         if s not in files[f]: errs.append("守恒丢失[%s]: %s" % (f, s[:52]))
-    # 函数体结构：音频页必须换成 LazyColumn，且块内不再有 verticalScroll / forEachIndexed
     try:
         body = audio_body(files[M])
         if "LazyColumn(" not in body: errs.append("AudioScreen 内没有 LazyColumn")
@@ -94,7 +90,6 @@ def check(files):
         if "PlayQueue.tick()" in body: errs.append("AudioScreen 内仍在自行 tick")
     except ValueError:
         errs.append("AudioScreen 函数体边界定位失败")
-    # 调音台锚点整块不动：MixerScreen 内仍是 Column + scroll
     try:
         ms = files[M].index("private fun MixerScreen")
         mb = files[M][ms:]
@@ -135,7 +130,6 @@ def selftest():
         n += 1
         b = dict(files); b[f] = b[f].replace(s, "___GONE___")
         if not check(b): fails += 1; print("未拦下守恒丢失:", s[:46])
-    # 函数体结构注入：把音频页换回 Column、把调音台 verticalScroll 抹掉
     n += 1
     b = dict(files)
     b[M] = b[M].replace("LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {",

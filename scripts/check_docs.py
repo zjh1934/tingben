@@ -13,26 +13,20 @@ ACTIVE_DOCS = {
     '03_调音台延迟与一级目录现状.md', 'THIRD_PARTY_NOTICES.md',
     '修复清单_按优先级.md', '源代码中文清理清单.md',
 }
-# 缺陷台账天然要写历史词与过程语，不参与方向词扫描 / docs 引用检查。
 AUDIT_DOC = '修复清单_按优先级.md'
-# 执行明细要逐字引用待删的旧说法，同样不参与方向词扫描；其 docs 引用仍受第 4 步检查。
 AUDIT_DOC_2 = '源代码中文清理清单.md'
-# 方向变更后不应再出现在「现行」文件里的词：旧方向实体 + 历轮补丁话术
 NOISE = [
     '语言模型', '标注', '4B', 'Huihui', 'no_think', 'A/B gate',
     '待新增', '已作废', '订正', '已退场', '两份声音', '权重不换',
     '零业务代码', '不用重装', '本轮性质', 'Rxx 订正',
 ]
 
-
 def read(p):
     return pathlib.Path(p).read_text(encoding='utf-8')
-
 
 def current_version(text):
     m = re.search(r'\| 版本 \| `([^`]+)`', text)
     return m.group(1) if m else ''
-
 
 def checks(base=ROOT):
     errs, notes = [], []
@@ -53,19 +47,16 @@ def checks(base=ROOT):
     if errs:
         return errs, notes
 
-    # 1. 版本口径一致
     for n in ('STATUS.md', 'README.md', 'ROADMAP.md'):
         if ver and ver not in read(base / n):
             errs.append('%s 未写当前版本 %s' % (n, ver))
 
-    # 2. 现行文档不堆积
     actual = {p.name for p in (base / 'docs').glob('*') if p.is_file()}
     extra = actual - ACTIVE_DOCS
     if extra:
         errs.append('docs/ 又堆进了非现行文件：%s' % ', '.join(sorted(extra)))
     notes.append('现行 docs %d 份' % len(actual))
 
-    # 3. 旧方向词与补丁话术零残留
     scanned = ['STATUS.md', 'README.md', 'ROADMAP.md',
                'contracts/pipeline_spec.md'] + ['docs/' + n for n in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md', AUDIT_DOC, AUDIT_DOC_2})]
     for n in scanned:
@@ -74,20 +65,17 @@ def checks(base=ROOT):
         if hit:
             errs.append('%s 残留噪声词：%s' % (n, ', '.join(hit)))
 
-    # 4. 现行引用不指已删文件
     for n in ('STATUS.md', 'README.md', 'ROADMAP.md') + tuple('docs/' + x for x in sorted(ACTIVE_DOCS - {'THIRD_PARTY_NOTICES.md', AUDIT_DOC})):
         for ref in re.findall(r'docs/([\w\u4e00-\u9fff\-_.]+?\.(?:md|png|html))', read(base / n)):
             if not (base / 'docs' / ref).exists():
                 errs.append('%s 引用了不存在的 docs/%s' % (n, ref))
 
-    # 5. 队列唯一真源
     for n in ('STATUS.md', 'README.md'):
         if 'ROADMAP.md' not in read(base / n):
             errs.append('%s 未指向唯一队列 ROADMAP.md' % n)
     if 'docs/' + AUDIT_DOC not in read(base / 'ROADMAP.md'):
         errs.append('ROADMAP.md 未指向唯一排期真源 docs/' + AUDIT_DOC)
 
-    # 6. CI 依赖脚本齐全
     ci = read(base / '.github/workflows/ci.yml')
     deps = set(re.findall(r'python3 scripts/([\w\.]+)', ci)) | set(re.findall(r'\./scripts/([\w\.]+)', ci))
     deps |= {'build_native.sh', 'r45_common.py', 'check_structure.py', 'publish_apk.py',
@@ -97,7 +85,6 @@ def checks(base=ROOT):
             errs.append('CI 依赖脚本缺失：scripts/%s' % d)
     notes.append('CI 依赖 %d 项全在' % len(deps))
 
-    # 7. 真机截图索引与文件对齐
     idx = read(base / '真机截图/INDEX.md')
     listed = set(re.findall(r'`(CMP_[\w\.]+\.jpeg)`', idx))
     on_disk = {p.name for p in (base / '真机截图').glob('*.jpeg')}
@@ -107,7 +94,6 @@ def checks(base=ROOT):
         errs.append('截图目录有未登记的孤儿文件 %s' % f)
     notes.append('真机截图 %d 张，索引与文件对齐' % len(on_disk))
 
-    # 8. 模型清单 = 1 底座 + 3 模式
     try:
         m = json.loads(read(base / 'contracts/model-manifest.json'))
         files = [x['file'] for x in m['models']]
@@ -122,7 +108,6 @@ def checks(base=ROOT):
     except Exception as e:
         errs.append('model-manifest 解析失败：%s' % e)
     return errs, notes
-
 
 def selftest():
     """反向注入：复制一份树，故意破坏 5 处，确认检查真会响。"""
@@ -160,7 +145,6 @@ def selftest():
         return True, '5/5 反向注入均被拦下'
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-
 
 if __name__ == '__main__':
     errs, notes = checks()

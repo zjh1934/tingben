@@ -24,14 +24,12 @@ POS = [
     'Text("从头重做", fontSize = 12.sp)',
     'Text("放弃任务", fontSize = 12.sp, color = Warn)',
     'Text("清除这条失效任务", fontSize = 12.sp)',
-    # R101 · 轮询门控语义没变，只是停跑时也补一次重读；断言跟着新写法走。
     'if (!st.running) { loadTick++; return@LaunchedEffect }',
     'delay(2000); loadTick++',
     'TaskResume.realProgress(c, it)',
 ]
 
 BAN = [
-    # 旧形态：重复卡 / 整宽跳转按钮 / 旧空态按钮
     'Text("最近完成"',
     'Text("去试听 ›")',
     'Text("查看实时进度")',
@@ -50,12 +48,10 @@ KEEP = [
     'BookStore.list(c).find { x -> x.id == t.bookId }',
 ]
 
-
 def section(text):
     i = text.find('private fun TaskCenterScreen')
     j = text.find('private fun fmtTime(', i)
     return text[i:j] if i >= 0 and j > i else ''
-
 
 def check(files):
     errs = []
@@ -80,10 +76,8 @@ def check(files):
         errs.append('版本口径被改')
     return errs
 
-
 def txt(p):
     return p.read_text(encoding='utf-8', errors='replace')
-
 
 def main():
     files = {"main": txt(MAIN), "chrome": txt(CHROME),
@@ -136,7 +130,6 @@ def main():
         return 1
     print('R88 任务中心页收敛 / 去重 / 四项操作守恒：PASS')
     return 0
-
 
 if __name__ == '__main__':
     sys.exit(main())

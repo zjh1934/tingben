@@ -21,7 +21,6 @@ MAIN_P = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
 TARGETS = ["check_structure.py", "r46_verify.py", "r89_verify.py",
            "r105_verify.py", "r80_verify.py", "r79_verify.py"]
 
-# 这些字面量曾把导航实现锁死；解绑后不得再出现在验证脚本里
 BANNED = [
     "BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }",
     "var modelsFrom by remember { mutableStateOf(Screen.LIBRARY) }",
@@ -33,7 +32,6 @@ BANNED = [
     "var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }",
     "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }",
 ]
-
 
 def banned_hits(files=None):
     """返回 [(脚本, 字面量)]；无即解绑干净。"""
@@ -47,13 +45,11 @@ def banned_hits(files=None):
                 out.append((name, lit))
     return out
 
-
 def ci_commands():
     s = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     cmds = [m.group(1).strip() for m in re.finditer(
         r"run:\s*(python3 scripts/[^ \n]+(?:\s+--selftest)?)", s)]
     return [c for c in cmds if "publish_apk.py" not in c]
-
 
 def _exec_script(path, extra_args=()):
     """进程内跑一份验证脚本；runpy 会把 __file__ 指向镜像路径，ROOT 自动落到镜像仓库。"""
@@ -73,7 +69,6 @@ def _exec_script(path, extra_args=()):
     finally:
         sys.argv = old
 
-
 def mirror_check():
     """把 MainActivity 临时换成 R109 计划形态，就地复跑相关脚本后立刻还原。
 
@@ -85,16 +80,14 @@ def mirror_check():
     os.environ["CI"] = "true"
     try:
         MAIN_P.write_text(nav.simulate_r109(original), encoding="utf-8")
-        # 只复跑会读导航实现、且曾锁死字面量的那些脚本；其余与导航无关，不占轮次
         focus = [c for c in ci_commands() if any(t in c for t in TARGETS)]
-        focus.append("python3 scripts/r107_verify.py")  # 不带 --selftest，避免递归
+        focus.append("python3 scripts/r107_verify.py")
         fails = []
         for c in focus:
             parts = c.split()
             selftest = parts[-1] == "--selftest"
             name = parts[-2] if selftest else parts[-1]
             script = SCRIPTS / pathlib.Path(name).name
-            # 先跑基线 run()：CI 只挂 --selftest 时，基线假红会被整条绕过
             code, out = _exec_script(script, [])
             if code != 0:
                 fails.append((c + " [基线]", out.strip().splitlines()[-2:]))
@@ -110,29 +103,34 @@ def mirror_check():
         else:
             os.environ["CI"] = old_ci
 
-
 def injections():
     """真破坏导航语义时，semantics 必须报错。"""
     src = MAIN_P.read_text(encoding="utf-8")
     g = nav.global_back(src)[2]
     d = nav.drawer_back(src)[2]
-    # 锚点按当前源码形态动态提取：remember / rememberSaveable、赋值 / 返回栈都认
-    mixer_lit = "onBack = { %s }" % nav._on_back(nav._branch(src, "MIXER"))
-    models_lit = "onBack = { %s }" % nav._on_back(nav._branch(src, "MODELS"))
+    def in_branch(s, name, repl):
+        win = nav._branch(s, name)
+        lit = "onBack = { %s }" % nav._on_back(win)
+        i = s.find(win)
+        j = s.find(lit, i) if i >= 0 else -1
+        return s if j < 0 else s[:j] + repl + s[j + len(lit):]
+
+    def break_mixer(s):
+        return in_branch(s, "MIXER", "onBack = { screen = Screen.SETTINGS }")
+
+    def break_models(s):
+        return in_branch(s, "MODELS", "onBack = { screen = Screen.LIBRARY }")
     out = [
         ("全局回退失效", lambda s: s.replace(g, "(enabled = false)", 1)),
         ("抽屉回退失效", lambda s: s.replace(d, "(enabled = false)", 1)),
-        ("调音台返回写死 SETTINGS",
-         lambda s: s.replace(mixer_lit, "onBack = { screen = Screen.SETTINGS }", 1)),
-        ("模型页返回写死 LIBRARY",
-         lambda s: s.replace(models_lit, "onBack = { screen = Screen.LIBRARY }", 1)),
+        ("调音台返回写死 SETTINGS", break_mixer),
+        ("模型页返回写死 LIBRARY", break_models),
         ("丢导航字段 modelsFrom",
          lambda s: re.sub(r"\s*var modelsFrom by remember(?:Saveable)? \{[^\n]*\n", "\n", s, count=1)),
         ("丢调音台入口", lambda s: re.sub(r"onMixer\s*=\s*\{[^}]*\}", "onMixer = {}", s)),
         ("抽屉回退排到全局之前", lambda s: swap_enabled(s, g, d)),
     ]
     return src, out
-
 
 def swap_enabled(s, gfrag, dfrag):
     """按位置交换两个 BackHandler 的 enabled 片段；链式 replace 会换过去又换回来。"""
@@ -141,14 +139,12 @@ def swap_enabled(s, gfrag, dfrag):
         return s
     return s[:gi] + dfrag + s[gi + len(gfrag):di] + gfrag + s[di + len(dfrag):]
 
-
 def run():
     errs = []
     hits = banned_hits()
     for name, lit in hits:
         errs.append("仍锁死导航字面量 %s: %s" % (name, lit[:56]))
 
-    # 每个目标脚本都必须委托语义判据
     for name in TARGETS:
         t = (SCRIPTS / name).read_text(encoding="utf-8")
         if "nav_semantics" not in t and "nav." not in t:
@@ -173,7 +169,6 @@ def run():
             blocked += 1
     print("反向注入 %d/%d 全拦下" % (blocked, len(inj)))
 
-    # 脚本里重新写回一条字面量，应当被查出
     fake = {"check_structure.py": (SCRIPTS / "check_structure.py").read_text(encoding="utf-8")
             + '\n# ' + BANNED[0] + '\n'}
     if not banned_hits(fake):
@@ -193,7 +188,6 @@ def run():
         return 1
     print("R107 PASS · 解绑 %d 脚本 / 语义双形态成立 / 反向注入 %d 例" % (len(TARGETS), len(inj)))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(run())

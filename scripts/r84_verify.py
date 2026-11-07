@@ -20,7 +20,6 @@ CI = ROOT / ".github/workflows/ci.yml"
 CONTRACT = ROOT / "docs/00_现行契约.md"
 
 POS = [
-    # ModelStore 结构
     'enum class Mode(',
     'VOICE_DESIGN("voice_design", "描述造音色",',
     'CUSTOM_VOICE("custom_voice", "预设音色",',
@@ -36,18 +35,16 @@ POS = [
     'fun synthesisBlockReason(c: Context): String?',
     'if (tokenizer(c) == null) m.add("共用底座（12Hz）")',
     'if (installedModes(c).isEmpty()) m.add("模式主文件")',
-    # Prefs：模式真值，且不进声音指纹
     'private const val KEY_MODEL_MODE = "modelMode"',
     'fun modelMode(c: Context): String',
     'fun setModelMode(c: Context, v: String)',
-    # 模型页：底座 + 三模式 + 两条地址 + 完整文件名 + 制作中禁切
     'val modeFiles = remember(refresh) { ModelStore.modeFiles(c) }',
     'Text(if (allReady) "已就绪 · ${installed.size} 个模式"',
     'Text("共用底座 · 三个模式都要用"',
-    'Text(ModelStore.TOKENIZER, fontSize = 10.sp, color = Sub,',
+    'Text(ModelStore.TOKENIZER, fontSize = 12.sp, color = Sub,',
     'Text("模式主文件 · 装一份就能用"',
     'ModelStore.Mode.values().forEach { mode ->',
-    'Text(mode.file, fontSize = 10.sp, color = Sub,',
+    'Text(mode.file, fontSize = 12.sp, color = Sub,',
     'Text("复制国内地址 ›"',
     'Text("备用 ›"',
     'Text("启用这个模式"',
@@ -64,10 +61,8 @@ POS = [
     'Prefs.setModelMode(c, ModelStore.Mode.VOICE_DESIGN.id)',
     'Text("重新导入某个文件 ›"',
     'Text("已导入 ${files.size} 个文件"',
-    # 合成前拦截：主链 + 两处试音
     'ModelStore.synthesisBlockReason(c)?.let { reason ->',
     'ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }',
-    # 导出日志删干净后的现行形态
     'SettingsSection("本机数据", "本机", dataOpen',
     'private fun ClearSegmentsRow(',
     'Text("当前配置"',
@@ -78,19 +73,16 @@ POS = [
 ]
 
 BAN = [
-    # 旧模型页形态
     '"声音主文件" to ModelStore.TALKER',
     '"声音配套文件" to ModelStore.TOKENIZER',
-    'Text("需要：$name", fontSize = 10.sp, color = Sub, maxLines = 1)',
+    'Text("需要：$name", fontSize = 12.sp, color = Sub, maxLines = 1)',
     'Text("两份文件都在"',
     'Text("还差 ${missing.size} 份文件"',
     'Text("缺件就出不了声，两份都要放进 App 的模型目录。',
     'Text("2 个声音模型都准备好了"',
     'Text(if (allReady) "已就绪 · 2 份"',
     'slots.forEach',
-    # 旧泛化模糊匹配
     'fun talker(c: Context) = pick(c, TALKER, "talker")',
-    # 导出日志板块
     'SettingsSection("数据与日志"',
     'SettingInfoRow("诊断全文"',
     'SettingInfoRow("分段记录"',
@@ -109,29 +101,24 @@ BAN = [
     'append(" · instruct v")',
     'append(" · 指纹 ")',
     '合成界面下一轮做',
-    # 旧缺件口径
     '"还差：" + miss.joinToString("、") + "。去设置页导入。"',
 ]
 
 KEEP = [
-    # 导航守恒
     'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }',
     'NAV_SETTINGS to "设置"',
     'NAV_MIXER to "调音台"',
     'NAV_MODELS to "模型"',
-    # 导入链路守恒
     'ModelStore.import(ctx, name, s)',
     'ModelStore.delete(c, f); onChanged()',
     'private fun SettingsScreen(',
     'private fun SoundProbeBlock(',
     'private fun DiagnosticsBlock(',
     'private fun ClearSegmentsRow(',
-    # 主链与调音台唯一提交守恒
     'fun commitAll()',
     'NativeEngine.ttsLoadGated(tk.absolutePath, tok.absolutePath, null)',
     'NativeEngine.ttsFreeGated(h)',
     'fun voiceStamp(c: Context): String',
-    # 硬约束
 ]
 
 def model_body(text):
@@ -155,10 +142,8 @@ def check(files):
             errs.append("守恒丢失: " + s[:56])
     if 'versionName = "1.1.0+"' not in gr:
         errs.append("版本号口径丢失")
-    # INTERNET 权限守恒（硬约束）
     if "android.permission.INTERNET" in mf:
         errs.append("AndroidManifest 出现 INTERNET 权限")
-    # 结构：三个模式常量、四条直链、文件名不截断
     try:
         b = model_body(m)
         if b.count("CardBox(Modifier.padding(bottom = 9.dp))") != 1:
@@ -175,14 +160,12 @@ def check(files):
             errs.append("缺件主按钮不唯一")
     except ValueError:
         errs.append("ModelScreen 区块定位失败")
-    # Prefs：模式绝不进声音指纹
     try:
         vs = pf[pf.index("fun voiceStamp"):pf.index("fun legacyVoiceStamp")]
         if "modelMode" in vs:
             errs.append("模式误进声音指纹（会作废旧 WAV）")
     except ValueError:
         errs.append("voiceStamp 定位失败")
-    # Pipeline：精确识别不含泛化 talker 提示
     try:
         ms = p[p.index("object ModelStore"):p.index("object ChapterSplitter {")]
         if 'pick(c, TALKER, "talker")' in ms:
@@ -218,7 +201,7 @@ def main():
             'Text("复制完整日志")',
             'SettingsSection("数据与日志"',
             '"声音主文件" to ModelStore.TALKER',
-            'Text("需要：$name", fontSize = 10.sp, color = Sub, maxLines = 1)',
+            'Text("需要：$name", fontSize = 12.sp, color = Sub, maxLines = 1)',
             'fun talker(c: Context) = pick(c, TALKER, "talker")',
             'Text("2 个声音模型都准备好了"',
             'Text("导出与诊断"',

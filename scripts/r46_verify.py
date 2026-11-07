@@ -16,7 +16,6 @@ CHROME_P = "app/src/main/java/com/tingben/app/AppChrome.kt"
 MAIN = (ROOT / MAIN_P).read_text(encoding="utf-8")
 CHROME = (ROOT / CHROME_P).read_text(encoding="utf-8")
 
-# ── 1) 正向形态断言（查定义/调用形态，不查裸名字） ─────────────────────
 CHROME_POS = [
     "internal fun AppDrawerSheet(",
     "requiredWidth(240.dp)",
@@ -31,7 +30,6 @@ CHROME_POS = [
     "if (acc > 55f) onRefresh()",
 ]
 MAIN_POS = [
-    # R51 · 覆盖式 → 联动式；其余抽屉行为（手势 / 返回键 / 8 目的地）守恒不变
     "DismissibleNavigationDrawer(",
     "drawerState = drawerState",
     "gesturesEnabled = true",
@@ -46,7 +44,6 @@ MAIN_POS = [
 OLD_SHELL = ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS", "AppTab(",
              "onMenu = { idx ->", "ModalNavigationDrawer("]
 
-# 守恒：Screen 枚举 / when 分发 / chromeOf 三处由 EXPECTED_SCREENS 统一推算（R61 不再写死 10）
 def enum_count(s):
     m = re.search(r"private enum class Screen \{([^}]*)\}", s)
     return len(set(re.findall(r"\b[A-Z_]+\b", m.group(1)))) if m else -1
@@ -84,7 +81,6 @@ def check(main, chrome, tag):
         ck(s not in main and s not in chrome, "旧壳残留: " + s)
     for msg in nav.semantics(main):
         ck(False, "导航语义: " + msg)
-    # 抽屉回退优先（语义定位，不锁字面量）
     ck(nav.back_order_ok(main), "抽屉 BackHandler 没排在全局回退之后")
     EXPECTED_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
                         "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
@@ -97,15 +93,12 @@ def check(main, chrome, tag):
               "ProduceService"]:
         ck(s in main, "外部导入/通知回跳落地丢失: " + s)
     ck(nav.library_reachable(main), "书架不再是可达目的地")
-    # 底部安全区：statusBarsPadding 与 navigationBarsPadding 都在根 Column 上
     ck("statusBarsPadding().navigationBarsPadding()" in main,
        "根 Column 没同时让开状态栏与系统手势区")
     return e
 
 errs = check(MAIN, CHROME, "基线")
 
-# ── 2) 反向注入：任一处改坏，断言必须响 ────────────────────────────────
-# F-25 · 注入锚点从基线源码动态提取，不再写死导航实现字面量
 _mixer_back_lit = "Screen.MIXER -> MixerScreen(ctx, onBack = { %s })" % nav._on_back(nav._branch(MAIN, "MIXER"))
 _mixer_line = re.search(r"^\s*Screen\.MIXER -> MixerScreen.*$", MAIN, re.M).group(0) + "\n"
 _global_frag = nav.global_back(MAIN)[2]
@@ -132,7 +125,6 @@ for name, which, old, new in INJECT:
     else:
         print("  反向注入 %-18s 拦下 %d 条" % (name, len(got)))
 
-# ── 3) 业务守恒：App() 之外与 HEAD 逐行一致 + 关键文件逐字节一致 ───────
 KEEP = [
     "app/src/main/assets/prompt_zh.txt",
     "app/src/main/java/com/tingben/app/core/Pipeline.kt",

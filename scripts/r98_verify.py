@@ -18,25 +18,19 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
-
 def load():
     return {k: p.read_text() for k, p in FILES.items()}
-
 
 def mixer(s):
     i = s.find("private fun MixerScreen(")
     return s[i:] if i >= 0 else ""
 
-
-# ① 正向：这次重写必须真实存在
 POS = [
-    # 三种模式并列，点即切，不用去模型页绕
     ("main", "ModeTabs(mode, installed) { switchMode(it) }"),
     ("main", "ModelStore.Mode.values().forEach { m ->"),
     ("main", "fun switchMode(m: ModelStore.Mode)"),
     ("main", "Prefs.setModelMode(c, m.id)"),
     ("main", "Producer.isBusy()"),
-    # 每种模式各自独立输入，互不覆盖
     ("main", "VoiceDesignPane(draft) { draft = it }"),
     ("main", "CustomVoicePane("),
     ("main", "BasePane("),
@@ -50,13 +44,11 @@ POS = [
     ("prefs", "fun cvStyle(c: Context): String"),
     ("synth", "Prefs.cvStyle(c).trim()"),
     ("resume", "Prefs.cvStyle(c), VoiceRef.fingerprint(c)"),
-    # 数值完整可见：普通 Text + 点击弹正常高度输入框，滑块只做粗调
     ("main", "private fun ParamLine("),
     ("main", "ParamCatalog.SAMPLING.forEach { spec ->"),
     ("main", "Text(cur, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Primary"),
     ("main", ".clickable { buf = cur; edit = true }"),
     ("main", "modifier = Modifier.fillMaxWidth().height(18.dp)"),
-    # 唯一提交 / 两态试听 / 参考音频按草稿组装
     ("main", "fun commitAll()"),
     ("main", "MixerCommit.commit(c, draft, n)"),
     ("main", "trial(\"草稿\", draft, \"mixer_trial_draft.wav\")"),
@@ -65,7 +57,6 @@ POS = [
     ("main", "NativeEngine.ttsSetVoiceRef(h, VoiceRef.pcm(c), txt)"),
 ]
 
-# ② 旧形态零残留：用户圈出来那堆东西不许回来
 BAN = [
     ("main", "MixerSection("),
     ("main", "HelpNote("),
@@ -86,7 +77,6 @@ BAN = [
     ("synth", "Prefs.voiceDescription(c).trim()"),
 ]
 
-
 def check(f):
     e = []
     for key, lit in POS:
@@ -95,17 +85,14 @@ def check(f):
     for key, lit in BAN:
         if lit in f[key]:
             e.append("旧形态残留[%s]: %s" % (key, lit))
-    # 旧 WAV 不误删：voiceStamp 公式不许掺进新字段
     vt = f["prefs"].split("fun voiceStamp(c: Context): String = sha(listOf(", 1)[-1].split(").joinToString", 1)[0]
     if "cvStyle" in vt:
         e.append("voiceStamp 掺入 cvStyle，会把所有旧 WAV 误删")
-    # 三模式字段语义不许串台
     if "ModelStore.Mode.BASE -> SynthInput.Params(null, null)" not in mixer(f["main"]):
         e.append("base 仍在传文字指令")
     if "r98_verify.py" not in f["ci"]:
         e.append("CI 没挂 r98_verify")
     return e
-
 
 def run():
     f = load()
@@ -117,7 +104,6 @@ def run():
         return 1
     print("R98 正向 %d / 零残留 %d 全过" % (len(POS), len(BAN)))
     return 0
-
 
 def selftest():
     """反向注入：把这次重写逐项改坏，脚本必须响。"""
@@ -144,7 +130,6 @@ def selftest():
             bad += 1
     print("反向注入 %d/%d 拦下" % (len(cases) - bad, len(cases)))
     return 1 if bad else 0
-
 
 if __name__ == "__main__":
     rc = run()

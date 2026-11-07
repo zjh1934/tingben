@@ -19,7 +19,6 @@ NIGHT = (ROOT / 'app/src/main/res/values-night/themes.xml').read_text(encoding='
 ALLKT = '\n'.join(p.read_text(encoding='utf-8') for p in J.rglob('*.kt'))
 MANIFEST = (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 
-# ① 正向：真按钮 / 真持久化 / 主题链路 / 折叠层级
 NEED = [
     ('两套色板', 'Theme.kt', 'internal val LightPal = Pal('),
     ('暗色板', 'Theme.kt', 'internal val DarkPal = Pal('),
@@ -54,7 +53,6 @@ NEED = [
     ('CI 挂验证', 'ci.yml', 'python3 scripts/r73_verify.py'),
 ]
 
-# ② 旧形态零残留
 GONE = [
     ('假主题行', 'MainActivity.kt', 'SettingInfoRow("主题", "待新增"'),
     ('假字号行', 'MainActivity.kt', 'SettingInfoRow("字号", "待新增"'),
@@ -71,7 +69,6 @@ GONE = [
     ('旧硬编码 OptCard', 'ProduceOptions.kt', 'private val OptCard = Color('),
 ]
 
-# ③ 守恒：R66/R68 之后不该被这轮碰坏
 KEEP = [
     ('Screen 9 值', 'ALLKT', 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }'),
     ('抽屉推走', 'ALLKT', 'DismissibleNavigationDrawer'),
@@ -83,9 +80,8 @@ KEEP = [
     ('底部安全区', 'ALLKT', 'navigationBarsPadding()'),
     ('采样真到引擎', 'ALLKT', 'qt_tts_params'),
     ('前台服务', 'ALLKT', 'ProduceService'),
-    ('无 INTERNET', 'ALLKT', 'android.permission.INTERNET'),  # 反向判定见 check()
+    ('无 INTERNET', 'ALLKT', 'android.permission.INTERNET'),
 ]
-
 
 def check(theme=None, main=None, hub=None, opts=None, chrome=None, prefs=None,
           night=None, ci=None, allkt=None, manifest=None, extra=''):
@@ -119,11 +115,9 @@ def check(theme=None, main=None, hub=None, opts=None, chrome=None, prefs=None,
             if needle in manifest: e.append('守恒失败[Manifest 出现 INTERNET]')
         elif needle not in which:
             e.append(f'守恒失败[{label}]')
-    # 颜色 getter 计数：三文件合计 22 个
     n = sum(x.count(': Color get() = palette.') for x in (main, hub, opts))
     if n != 22: e.append(f'颜色 getter 应为 22，实际 {n}')
     return e
-
 
 def selftest():
     cases = [
@@ -144,7 +138,6 @@ def selftest():
     print('R73 反向注入', len(cases) - len(bad), '/', len(cases), '拦下')
     for b in bad: print('  ✗', b)
     return not bad
-
 
 if __name__ == '__main__':
     if '--selftest' in sys.argv:

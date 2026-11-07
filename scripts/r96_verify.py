@@ -38,7 +38,7 @@ POS = {
         'private fun decode(v: Any?): Pos?',
         'is Number -> v.toInt().takeIf { it >= 0 }?.let { Pos(it) }',
         'is JSONObject -> v.optInt("chapter", -1)',
-        'else decode(JSONObject(f.readText()).opt(bookId))',
+        'is AtomicJson.Read.Ok -> decode(JSONObject(r.text).opt(bookId))',
         'fun last(c: Context, bookId: String): Int? = pos(c, bookId)?.chapter',
         'fun allLast(c: Context): Map<String, Int>',
         'for (k in o.keys())',
@@ -48,7 +48,6 @@ POS = {
     "parity": ['def decode(', 'def all_last(', 'CASES = ['],
 }
 
-# 全局守恒照抄现行契约
 KEEP = {
     "main": [
         'BookStore.list(c)', 'ModelStore.ready(c)', 'ModelStore.missing(c)',
@@ -59,21 +58,19 @@ KEEP = {
     "reading": [
         'reading_state.json',
         'fun save(c: Context, bookId: String, chapter: Int, para: Int? = null, offset: Int? = null)',
-        'val same = old?.chapter == chapter',
+        'val same = prev?.chapter == chapter',
     ],
     "chrome": ['NAV_MIXER to "调音台"', 'NAV_MODELS to "模型"'],
-    "hub": ['ReadingState.last(c, book.id)', 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp)) {'],
+    "hub": ['ReadingState.last(c, b.id)', 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp)) {'],
     "ci": ['scripts/r95_verify.py', 'scripts/r94_verify.py'],
 }
 
 OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '导出日志', '标注进度']
 
-
 def library_body(t):
     start = t.find('private fun LibraryScreen(')
     end = t.find('private fun ProduceScreen(', start)
     return t[start:end] if start >= 0 and end > start else ''
-
 
 def check(f):
     e = []
@@ -104,24 +101,19 @@ def check(f):
             e.append('阅读位置又回到逐本同步读')
         if 'ReadingState.last(c, it.id)' in body:
             e.append('逐本 last() 复现')
-        # Dialog 与后台加载必须在列表 DSL 之外（LazyListScope 不是 Composable 作用域）
         if body.find('confirmDelete?.let') > body.find('LazyColumn('):
             e.append('AlertDialog 又塞回列表 DSL 内')
         if body.find('LaunchedEffect(refresh, books)') > body.find('LazyColumn('):
             e.append('后台加载塞回列表 DSL 内')
-        # 头部顺序：刷新条在最前，计数在书卡之前
         if not (body.find('item(key = "head")') < body.find('item(key = "count")')
                 < body.find('items(books, key = { it.id })')):
             e.append('item 顺序错乱')
-        # item 数与形态：7 个固定区块 + 书卡列表
         if body.count('item(key = ') != 7:
             e.append('固定 item 数不是 7')
     return e
 
-
 def load():
     return {k: p.read_text(encoding='utf-8') for k, p in FILES.items()}
-
 
 def run():
     e = check(load())
@@ -133,7 +125,6 @@ def run():
     print('OK · R96 正向 %d / 守恒 %d / 结构 9 项 / 旧说法零残留全过' %
           (sum(len(v) for v in POS.values()), sum(len(v) for v in KEEP.values())))
     return 0
-
 
 def selftest():
     f = load()
@@ -159,8 +150,8 @@ def selftest():
         ('删批量读', 'reading',
          lambda t: t.replace('fun allLast(c: Context): Map<String, Int>', 'fun nope(c: Context): Map<String, Int>')),
         ('拆成两套解析', 'reading',
-         lambda t: t.replace('else decode(JSONObject(f.readText()).opt(bookId))',
-                             'else JSONObject(f.readText()).opt(bookId) as? Pos')),
+         lambda t: t.replace('is AtomicJson.Read.Ok -> decode(JSONObject(r.text).opt(bookId))',
+                             'is AtomicJson.Read.Ok -> JSONObject(r.text).opt(bookId) as? Pos')),
         ('删批量遍历', 'reading',
          lambda t: t.replace('for (k in o.keys())', 'for (k in listOf<String>())')),
         ('Dialog 塞回列表', 'main',
@@ -188,7 +179,6 @@ def selftest():
     print('SELFTEST 正向 1 + 反向注入 %d 组，拦下 %d，漏 %d' %
           (len(cases), len(cases) - bad, bad))
     return 1 if bad else 0
-
 
 if __name__ == '__main__':
     sys.exit(selftest() if '--selftest' in sys.argv else run())

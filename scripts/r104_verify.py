@@ -19,12 +19,9 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
-
 def load():
     return {k: p.read_text(encoding="utf-8", errors="replace") for k, p in FILES.items()}
 
-
-# ① 正向：本轮修复必须真的在源码里
 POS = [
     ("atomic", "object AtomicJson {"),
     ("atomic", "sealed class Read"),
@@ -60,7 +57,6 @@ POS = [
     ("ci", "r104_verify.py"),
 ]
 
-# ② 零残留：旧写法不准回来（四处索引 + 静默吞异常）
 BAN_ALL = [
     'if (!tmp.renameTo(f)) { f.writeText(a.toString()); tmp.delete() }',
     'if (!tmp.renameTo(file(c))) { file(c).writeText(root.toString(1)); tmp.delete() }',
@@ -73,7 +69,6 @@ BAN_ALL = [
     'part(c) = File(c.filesDir, "mixer_presets.json.part")',
 ]
 
-# ③ 守恒：既有能力一个不少
 KEEP = [
     ("audio", "fun register(c: Context, bookId: String, bookTitle: String"),
     ("audio", "fun list(c: Context): List<AudioItem>"),
@@ -94,7 +89,6 @@ KEEP = [
     ("pipe", '"做好了，可以去「我的音频」听"'),
 ]
 
-
 def check(f):
     errs = []
     for k, needle in POS:
@@ -107,7 +101,6 @@ def check(f):
     for k, needle in KEEP:
         if needle not in f[k]:
             errs.append("守恒缺失: " + needle[:60])
-    # 统一工具必须被四处调用，不能只改了一处
     for k, at in (("audio", 1), ("seg", 1), ("preset", 1), ("resume", 1)):
         if f[k].count("AtomicJson.write(") < at:
             errs.append("%s 没用统一原子写" % k)
@@ -115,7 +108,6 @@ def check(f):
         if "AtomicJson.read(" not in f[k]:
             errs.append("%s 没用统一安全读" % k)
     return errs
-
 
 def selftest():
     f = load()
@@ -156,7 +148,6 @@ def selftest():
             print("反向注入没被拦下:", old[:60]); bad += 1
     print("反向注入 %d/%d 拦下" % (len(cases) - bad, len(cases)))
     return 1 if bad else 0
-
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv:

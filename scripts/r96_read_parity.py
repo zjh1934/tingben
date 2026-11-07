@@ -9,8 +9,6 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 READING = ROOT / "app/src/main/java/com/tingben/app/core/ReadingState.kt"
 
-
-# ── Kotlin decode / pos / allLast 的等价 Python 语义 ──────────────────
 def decode(v):
     if isinstance(v, bool):
         return None
@@ -24,7 +22,6 @@ def decode(v):
         return (ch, max(0, int(v.get("para", 0))), max(0, int(v.get("offset", 0))))
     return None
 
-
 class FakeFile:
     """模拟 f.readText()：每次调用计一次磁盘读。"""
 
@@ -36,15 +33,12 @@ class FakeFile:
         self.reads += 1
         return json.loads(json.dumps(self.data))
 
-
 def last(f, book_id):
     return decode(f.read_text().get(book_id))
-
 
 def all_last(f):
     o = f.read_text()
     return {k: p[0] for k, v in o.items() if (p := decode(v)) is not None}
-
 
 CASES = [
     ("空书架", {}, ["a"]),
@@ -57,7 +51,6 @@ CASES = [
     ("30 本书", {"id%d" % i: (i if i % 3 else {"chapter": i, "para": i * 2})
                for i in range(30)}, ["id%d" % i for i in range(30)] + ["none"]),
 ]
-
 
 def main():
     errors = []
@@ -73,7 +66,6 @@ def main():
                               (name, bid, got.get(bid), want_chapter))
         if f_all.reads != 1:
             errors.append("%s: 批量读盘 %d 次（应为 1）" % (name, f_all.reads))
-        # 逐本读 N 次，批量 1 次；这是本轮要消掉的组合期开销
         n = len(ids)
         f_n = FakeFile(data)
         for bid in ids:
@@ -82,10 +74,9 @@ def main():
             errors.append("%s: 逐本读盘 %d 次（应为 %d）" % (name, f_n.reads, n))
 
     src = READING.read_text(encoding="utf-8")
-    # 静态对照：单本与批量必须共用同一份 decode，不允许两套解析
     if "private fun decode(v: Any?): Pos?" not in src:
         errors.append("Kotlin 侧缺共用 decode")
-    if "else decode(JSONObject(f.readText()).opt(bookId))" not in src:
+    if "decode(JSONObject(r.text).opt(bookId))" not in src:
         errors.append("pos() 不再走 decode")
     if "decode(o.opt(k))?.let { out[k] = it.chapter }" not in src:
         errors.append("allLast() 不再走 decode")
@@ -99,7 +90,6 @@ def main():
         return 1
     print("OK · R96 阅读位置 %d 组对拍：逐本一致 / 批量读盘 1 次 / 共用 decode" % len(CASES))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

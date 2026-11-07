@@ -45,7 +45,6 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     manifest = MANIFEST if manifest is None else manifest
     e = []
 
-    # ① 正向形态
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
     got = set(re.findall(r'[A-Z_]+', m.group(1))) if m else set()
     want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'AUDIO', 'SETTINGS',
@@ -60,12 +59,11 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'val steps = listOf("拆章", "生成声音", "整理音频", "完成")' not in main:
         e.append('进度页不是四步')
     if '送进声音模型的正文' in main: e.append('看台仍留展开正文旧口径（R91 已改格子即播停）')
-    if 'Text("‹ 返回")' in main: pass  # 不强制，避免误伤别处
+    if 'Text("‹ 返回")' in main: pass
     if 'NAV_LLM' in chrome or '语言模型' in chrome or '文本处理' in chrome:
         e.append('抽屉仍残留旧模块项')
     if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉目的地不是 6 项')
 
-    # ② 制作入口恒直接朗读
     if 'run(c, book, onlyChapters, true, thinkOverride, config)' not in pipe:
         e.append('主流程没强制直接朗读')
     if 'if (llm(c) == null)' in pipe: e.append('模型缺失仍拦截制作')
@@ -81,21 +79,18 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'mode = "直接朗读"' not in audio: e.append('成品档位没固定')
     if 'a.mode == "标注后合成"' in audio: e.append('可播门槛仍按旧档位')
 
-    # ③ 用户可见字符串零残留 + 旧标识符零残留
     for s in string_literals(allkt):
         for w in BAN:
             if w in s: e.append('界面/日志字符串残留「%s」: %s' % (w, s[:50])); break
     for g in GONE:
         if g in allkt: e.append('旧标识符残留: ' + g)
 
-    # ④ 模型清单与版本
     slots = [x.get('slot') for x in manifest.get('models', [])]
     want_slots = {'tts_tokenizer', 'tts_talker_voice_design', 'tts_talker_custom_voice', 'tts_talker_base'}
     if set(slots) != want_slots or len(slots) != 4: e.append('模型清单不是 1 底座 + 3 模式: ' + str(slots))
     if 'baseline' in manifest: e.append('模型清单仍留对照基线')
     if 'versionName = "1.1.0+"' not in gradle: e.append('版本号没升到 1.1.0')
 
-    # ⑤ 守恒（一个都不许动）
     KEEP = ['MixerDraft', 'commitAll()', 'PlayQueue', 'DismissibleNavigationDrawer',
             'chapterIndices', 'qt_tts_params', 'TTS_PARAMS_APPLIED',
             'ParamSpec', 'ProduceService', 'navigationBarsPadding']
@@ -113,7 +108,6 @@ def main():
         return 1
     print('R66 正向 / 零残留 / 守恒：PASS')
 
-    # 反向注入：把旧形态塞回去，检查函数必须拦下
     INJ = [
         ('枚举退回 11 值', lambda: check(main=MAIN.replace(
             'MIXER, CHAPTERS }', 'MIXER, LLM, CHAPTERS }'))),
@@ -150,7 +144,6 @@ def main():
 
 if __name__ == '__main__':
     if '--selftest' in sys.argv:
-        # 自检：故意把每个注入都跑一遍，确认检查函数确实会红
         e = check(main=MAIN.replace('MIXER, CHAPTERS }', 'MIXER, LLM, CHAPTERS }'))
         print('自检注入是否报错:', bool(e), e[:2])
         sys.exit(0 if e else 1)

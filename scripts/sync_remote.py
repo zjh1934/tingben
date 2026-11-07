@@ -31,8 +31,6 @@ def api(method, path, data=None, timeout=120):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
-        # GitHub 对部分 POST 端点返回 307（仓库重定向到 /repositories/{id}/...）。
-        # urllib 不自动跟随 307 的 POST，这里显式重发一次，方法与 body 不变。
         loc = e.headers.get("Location")
         if e.code in (301, 302, 307, 308) and loc:
             req2 = urllib.request.Request(loc, data=body, method=method, headers=H)
@@ -46,10 +44,8 @@ def api(method, path, data=None, timeout=120):
 SKIP_DIRS = {".git", "reference", "build", "app/build", ".gradle", ".idea",
              "__pycache__", ".cxx", "logs", "build-report", "node_modules"}
 SKIP_FILE = re.compile(r".*\.(gguf|bin|safetensors|apk|jks|keystore|part|sha256|pyc|zip|tar\.gz)$")
-# 同步脚本只在本地用，不推到公开仓库（避免暴露凭据使用方式）
 LOCAL_ONLY = {"scripts/sync_remote.py"}
 
-# R66 · 随语言模型退场而删除的远端条目（只对远端确实存在的路径发删除，避免 tree 报错）
 DELETE_PATHS = {
     "app/src/main/assets/prompt_zh.txt",
     "app/src/main/assets/prompt_zh_v1.txt",
@@ -96,9 +92,7 @@ def upload(item):
     return path, b["sha"]
 
 entries = []
-# R89 · 活跃目录按本地清单对齐：远端残留的旧文档 / 一次性脚本只在这两个前缀下删。
-# LOCAL_ONLY 是本地专用脚本，远端若已有也不动它。
-PRUNE_PREFIXES = ("docs/", "scripts/", "logs/")  # logs/ 是 CI 失败时的临时回写
+PRUNE_PREFIXES = ("docs/", "scripts/", "logs/")
 auto_deletes = [p for p in remote
                 if p.startswith(PRUNE_PREFIXES)
                 and p not in files and p not in LOCAL_ONLY]
@@ -137,7 +131,6 @@ if code not in (200, 201):
     sys.exit("更新 ref 失败 %s %s" % (code, r))
 print("已提交", cm["sha"][:10], "（base_tree + 显式删除 %d 条）" % len(deletes))
 
-# 核对：本轮上传的文件在远端 tree 里的 sha 必须等于本地
 code, chk = api("GET", "/git/trees/main?recursive=1")
 if code == 200:
     now = {e["path"]: e["sha"] for e in chk["tree"] if e["type"] == "blob"}

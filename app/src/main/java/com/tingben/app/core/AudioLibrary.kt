@@ -172,7 +172,6 @@ object AudioLibrary {
         return items.sortedByDescending { it.createdAt }
     }
 
-
     fun latestByChapter(c: Context, bookId: String): Map<Int, AudioItem> =
         list(c).filter { it.bookId == bookId && it.chaptersKnown && it.file.length() > 44 }
             .flatMap { a -> a.chapters.map { ch -> ch to a } }

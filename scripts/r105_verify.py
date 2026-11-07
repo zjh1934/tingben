@@ -18,16 +18,13 @@ native = N.read_text(encoding='utf-8')
 pipe = PL.read_text(encoding='utf-8')
 ci = CI.read_text(encoding='utf-8')
 
-
 def check(src, label, needles, absent=()):
     bad = ['缺 ' + s for s in needles if s not in src]
     bad += ['不该出现 ' + s for s in absent if s in src]
     return ['%s %s' % (label, b) for b in bad]
 
-
 errs = []
 
-# ── 正向：单 loader 门闩 ───────────────────────────────────────────────
 errs += check(native, 'NativeEngine', [
     'private val loadGate = Any()',
     '@Volatile private var loadBusy = false',
@@ -39,19 +36,16 @@ errs += check(native, 'NativeEngine', [
     'finally { endTtsLoad() }',
 ])
 
-# ── 正向：所有装载/释放都走门闩 ───────────────────────────────────────
 for name, src in (('MainActivity', main), ('Pipeline', pipe)):
     errs += check(src, name + '/gated', [
         'NativeEngine.ttsLoadGated(',
         'NativeEngine.ttsFreeGated(',
     ], absent=['NativeEngine.ttsLoad(', 'NativeEngine.ttsFree('])
 
-# 裸 ttsLoad 只应剩 NativeEngine 里的 external 声明与包装内部那一处
 n_bare = len(re.findall(r'(?<!Gated)\bttsLoad\(', native))
 if n_bare != 2:
     errs.append('NativeEngine 裸 ttsLoad 数不对：%d' % n_bare)
 
-# ── 正向：trial 请求 token + 取消 + 终态校验 ───────────────────────────
 trial = main[main.index('private fun MixerScreen('):]
 errs += check(trial, 'trial', [
     'var trialJob by remember { mutableStateOf<Job?>(null) }',
@@ -66,25 +60,22 @@ errs += check(trial, 'trial', [
     'ensureActive()',
     'if (myToken != trialToken || !isActive) return@withContext',
     'trialJob = job',
-    'onClick = { stopTrial() }',
+    'if (busyTrial) stopTrial()',
 ])
 if trial.count('ensureActive()') < 4:
     errs.append('ensureActive 检查点不足 4 处')
 
-# ── 零残留：旧的无门闩/无 token 形态 ──────────────────────────────────
 errs += check(trial, '旧形态', [], absent=[
     'val h = NativeEngine.ttsLoad(tk.absolutePath',
     'finally { NativeEngine.ttsFree(h) }',
 ])
 
-# ── 守恒：本轮不碰的东西 ──────────────────────────────────────────────
 errs += check(main, '守恒/界面', [
-    '试听草稿', '试听已生效',
+    '用当前草稿', '用已生效的设置',
     'commitAll(',
     'PlayQueue.setTracks(',
     'Screen.MIXER -> MixerScreen',
 ])
-# F-25 · 全局回退按语义守恒，不锁字面量
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import nav_semantics as _nav
 if _nav.global_back(main) is None:
@@ -101,15 +92,13 @@ m = re.search(r'private enum class Screen \{([^}]*)\}', main)
 if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 9:
     errs.append('Screen 枚举不是 9 值')
 
-
-# ── 反向注入：把修好的形态改回坏的，核心判据必须报错 ──────────────────
 def violates(a, b, c):
     bad = []
     t2 = a[a.index('private fun MixerScreen('):]
     for s in ('val myToken = trialToken + 1',
               'if (myToken != trialToken || !isActive) return@withContext',
               'DisposableEffect(Unit)', 'onDispose {', 'trialJob?.cancel()',
-              'onClick = { stopTrial() }',
+              'if (busyTrial) stopTrial()',
               'fun stopTrial()'):
         if s not in t2:
             bad.append('trial 缺 ' + s[:36])
@@ -119,7 +108,6 @@ def violates(a, b, c):
         if 'NativeEngine.ttsLoad(' in src or 'NativeEngine.ttsFree(' in src:
             bad.append(name + ' 出现裸装载/释放')
     return bad
-
 
 if '--selftest' in sys.argv:
     cases = [
@@ -135,7 +123,7 @@ if '--selftest' in sys.argv:
         ('撤掉离页取消', lambda a, b, c: (
             a.replace('trialJob?.cancel()', 'Unit'), b, c)),
         ('撤掉停止入口', lambda a, b, c: (
-            a.replace('onClick = { stopTrial() }', 'onClick = { }', 1), b, c)),
+            a.replace('if (busyTrial) stopTrial()', 'if (false) Unit', 1), b, c)),
     ]
     ok = 0
     for label, fn in cases:

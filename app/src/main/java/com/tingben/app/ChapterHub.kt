@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,8 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
 import com.tingben.app.diag.EventLog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -39,6 +42,14 @@ private val HubWarn: Color get() = palette.warn
 private val HubGrey: Color get() = palette.grey
 
 private val HubTitles = listOf("章节", "合成", "可播")
+
+private data class HubLoad(
+    val book: Book,
+    val chapters: List<Chapter>,
+    val finished: Map<Int, AudioItem>,
+    val playable: Set<Int>,
+    val lastRead: Int?
+)
 
 private sealed class Pane {
     data class Reader(val i: Int) : Pane()
@@ -83,31 +94,59 @@ internal fun ChapterHubScreen(
     onPlayBook: (String) -> Unit,
     onMixer: () -> Unit
 ) {
-    val book = remember(id, refresh) { id?.let { BookStore.list(c).find { b -> b.id == it } } }
-    if (book == null) {
+    var loadDone by remember(id, refresh) { mutableStateOf(false) }
+    var load by remember(id, refresh) { mutableStateOf<HubLoad?>(null) }
+    LaunchedEffect(id, refresh) {
+        val r = withContext(Dispatchers.IO) {
+            val b = id?.let { BookStore.list(c).find { it.id == id } }
+            if (b == null) null else {
+                val s = ChapterSplitter.split(BookStore.read(c, b))
+                HubLoad(b, s.first,
+                    AudioLibrary.latestByChapter(c, b.id),
+                    AudioLibrary.playableChapters(c, b.id),
+                    ReadingState.last(c, b.id))
+            }
+        }
+        load = r
+        loadDone = true
+    }
+    if (!loadDone) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    val snapshot = load
+    if (snapshot == null) {
         Column(Modifier.padding(16.dp)) {
             Text("这本书不在了")
             TextButton(onClick = onBack) { Text("返回书架") }
         }
         return
     }
-
-    val split = remember(book) { ChapterSplitter.split(BookStore.read(c, book)) }
-    val chapters = split.first
-    val chunks = split.second
+    val book = snapshot.book
+    val chapters = snapshot.chapters
     val st by Producer.state.collectAsState()
     val task by Producer.resume.collectAsState()
 
-    val diskKey = "${st.running}|${st.stage}"
-    val finished = remember(book, refresh, diskKey) { AudioLibrary.latestByChapter(c, book.id) }
-    val playable = remember(book, refresh, diskKey) { AudioLibrary.playableChapters(c, book.id) }
-    val ui = remember(book, refresh, diskKey, st.done, st.total, task,
-                      st.chapterProgress) {
-        chapterStates(finished, playable, chapters,
-            st.running, task?.bookId, task?.only, st.chapterProgress, book.id)
+    val diskKey = "${st.running}|${st.stage}|${st.done}"
+    var disk by remember(book.id, refresh, diskKey) {
+        mutableStateOf<Pair<Map<Int, AudioItem>, Set<Int>>?>(null)
+    }
+    LaunchedEffect(book.id, refresh, diskKey) {
+        disk = withContext(Dispatchers.IO) {
+            AudioLibrary.latestByChapter(c, book.id) to AudioLibrary.playableChapters(c, book.id)
+        }
+    }
+    val ui by remember(chapters, disk, task) {
+        derivedStateOf {
+            val d = disk
+            chapterStates(d?.first ?: emptyMap(), d?.second ?: emptySet(), chapters,
+                st.running, task?.bookId, task?.only, st.chapterProgress, book.id)
+        }
     }
 
-    var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
+    var selected by rememberSaveable(book.id) { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by remember(book) { mutableStateOf<Pane?>(null) }
     fun openReader(i: Int) {
         if (i in chapters.indices) {
@@ -115,7 +154,7 @@ internal fun ChapterHubScreen(
             pane = Pane.Reader(i)
         }
     }
-    val lastRead = remember(book, refresh) { ReadingState.last(c, book.id) }
+    val lastRead = snapshot.lastRead
 
     BackHandler(enabled = pane != null) { pane = null }
 
@@ -310,9 +349,9 @@ private fun SynColumn(ui: List<ChapterUi>, onPlay: (Int) -> Unit) {
                         Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
                             color = if (done || (p ?: 0f) > 0f) Color.Unspecified else HubGrey)
                         if (!done && p != null && p > 0f)
-                            Text("本章已生成 ${(p * 100).toInt()}%", fontSize = 10.sp, color = HubSub)
+                            Text("本章已生成 ${(p * 100).toInt()}%", fontSize = 12.sp, color = HubSub)
                         if (!done && p == null)
-                            Text("等待中", fontSize = 10.sp, color = HubSub)
+                            Text("等待中", fontSize = 12.sp, color = HubSub)
                     }
                     if (done) {
                         TextButton(onClick = { onPlay(r.index) }) { Text("▶ 播放", fontSize = 12.sp) }
@@ -344,7 +383,7 @@ private fun PlayColumn(
                     Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
                         color = if (r.playable) Color.Unspecified else HubGrey,
                         modifier = Modifier.weight(1f))
-                    if (r.playable) Text("从本章起播 ›", fontSize = 11.sp, color = HubPrimary)
+                    if (r.playable) Text("从本章起播 ›", fontSize = 12.sp, color = HubPrimary)
                 }
                 HubDivider()
             }
@@ -412,7 +451,6 @@ private fun ReaderPane(
     }
 }
 
-
 @Composable
 internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit) {
     val st by PlayQueue.state.collectAsState()
@@ -439,7 +477,7 @@ internal fun MiniPlayBar(c: Context, bookId: String?, onGoBook: (String) -> Unit
                 Text(st.label.ifBlank { "未在播放" }, fontSize = 13.sp, maxLines = 1,
                     fontWeight = FontWeight.Bold)
                 Text("${st.positionMs / 1000}s / ${st.durationMs / 1000}s",
-                    fontSize = 10.sp, color = HubSub)
+                    fontSize = 12.sp, color = HubSub)
             }
             TextButton(onClick = { PlayQueue.previous() }) { Text("‹", fontSize = 16.sp) }
             TextButton(onClick = { PlayQueue.toggle() }) {

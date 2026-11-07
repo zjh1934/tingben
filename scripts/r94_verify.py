@@ -15,14 +15,12 @@ FILES = {
 def check(f):
     e = []
     r, p, i, m, ch, ci = f["resume"], f["pipe"], f["imp"], f["main"], f["chrome"], f["ci"]
-    # 指纹单一真源 + 作废预判
     for s in ['fun expectedModeStamp(c: Context): String',
               'fun invalidationReason(c: Context, t: TaskInfo): String?',
               'mode_stamp.txt', 'voice_stamp.txt',
               'oldVoice != Prefs.legacyVoiceStamp(c)',
               'if (invalidationReason(c, t) != null) return 0']:
         if s not in r: e.append("续跑对拍缺: " + s)
-    # restore 双文案 / run 共用同一枚指纹
     for s in ['val why = TaskResume.invalidationReason(c, fixed)',
               '分段文字还留着',
               '不用重算。', 'invalidate=$why',
@@ -30,7 +28,6 @@ def check(f):
         if s not in p: e.append("主链缺: " + s)
     if 'val modeStamp = sha(listOf(' in p: e.append("run 仍在自己算指纹（两处会漂移）")
     if '换过模式或音色输入' not in r: e.append("作废原因文案缺")
-    # 导入侧
     for s in ['const val MAX_BYTES = 64 * 1024 * 1024',
               'private fun readLimited(s: InputStream): ByteArray',
               'if (total > MAX_BYTES)', 'f.length() > MAX_BYTES',
@@ -41,7 +38,6 @@ def check(f):
     for s in ['java.io.File(p).readBytes()', 'f.readBytes()',
               'openInputStream(uri)?.use { it.readBytes() }']:
         if s in i: e.append("整文件无上限读取仍在: " + s)
-    # 失败可恢复
     for s in ['var bookImportError by remember { mutableStateOf<String?>(null) }',
               'bookImportError = why', 'bookImportError = null',
               'importError = bookImportError',
@@ -49,11 +45,9 @@ def check(f):
               'importError: String? = null',
               '上次没导进来', '再选一次文件 ›', '关闭']:
         if s not in m: e.append("失败可恢复缺: " + s)
-    # CI 与本轮对拍脚本真挂着
     for s in ['scripts/r94_verify.py', 'scripts/r94_resume_parity.py']:
         if s not in ci: e.append("CI 未挂: " + s)
     if 'def continue_run(' not in f["parity"]: e.append("对拍脚本缺 run 侧模拟")
-    # 守恒（照抄现行契约）
     for s in ['NAV_MIXER to "调音台"', 'NAV_MODELS to "模型"']:
         if s not in ch: e.append("抽屉 6 项守恒失效: " + s)
     if 'SETTINGS, MODELS, MIXER, CHAPTERS }' not in m: e.append("Screen 9 值失效")

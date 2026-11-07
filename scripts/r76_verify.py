@@ -23,11 +23,9 @@ BAN_MAIN = ["Screen.CAST", "NAV_CAST", "CastScreen(", "角色音色", "角色预
             "unbound", "MIXER_CAST", "onGoCast", "onCast"]
 BAN_CHROME = ["NAV_CAST", "角色音色"]
 
-# R77 · 角色表零残留（底层也不许回来）
 BAN_ALLKT = ["VoiceCast.", "CastPresets.", "Prefs.castEnabled", "setCastEnabled",
              "VOICE_UNMAPPED", "KEY_CAST_ENABLED"]
 
-# 指纹迁移 / 主链 / 唯一提交 / 三列四步 —— 一个都不许动
 KEEP = ["Prefs.legacyVoiceStamp(c)",
         "old != voiceStamp && old != legacyStamp",
         "VoiceProfile.buildWithReport(globalVoice,",
@@ -35,7 +33,6 @@ KEEP = ["Prefs.legacyVoiceStamp(c)",
         'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
         "commitAll()", "DismissibleNavigationDrawer", "PlayQueue",
         "run(c, book, onlyChapters, true, thinkOverride, config)"]
-
 
 def check(main=None, chrome=None, allkt=None):
     m = MAIN if main is None else main
@@ -65,7 +62,6 @@ def check(main=None, chrome=None, allkt=None):
         raise AssertionError("; ".join(e))
     return len(WANT), len(BAN_MAIN) + len(BAN_CHROME)
 
-
 def selftest():
     caught = 0
     INJ = [
@@ -93,7 +89,6 @@ def selftest():
         else:
             raise AssertionError("[自检] 注入后没拦下：" + name)
     print("selftest ok · 反向注入 %d/%d 全拦下" % (caught, len(INJ)))
-
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv:

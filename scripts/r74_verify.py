@@ -22,7 +22,7 @@ POS = [
     ("只统计落盘成功的段", PIPE, "val chapterSnapshot = if (wavs.size > segStart)"),
     ("失败段不推进", PIPE, "} else _state.value.chapterProgress"),
     ("逐章快照进 emit", PIPE, "chapterProgress = chapterSnapshot"),
-    ("目录页订阅逐章", HUB, "st.chapterProgress) {"),
+    ("目录页订阅逐章", HUB, "st.chapterProgress"),
     ("逐章真值来源", HUB, "chapterProgress[ch.index] else null"),
     ("三列上界", HUB, "coerceIn(0, 2)"),
     ("阅读位置落盘", HUB, "ReadingState.save(c, book.id, i)"),
@@ -48,13 +48,10 @@ NEG = [
     ("旧四列注释", HUB, "平级排成四列左右滑"),
 ]
 
-
 def brackets(text, name):
-    # 粗检：括号平衡，字符串里的括号会误伤，仅作烟雾测试
     for a, b in [("(", ")"), ("{", "}"), ("[", "]")]:
         assert text.count(a) == text.count(b), f"[{name}] {a}{b} 不平衡"
     return True
-
 
 def check(texts=None):
     t = texts or {p: p.read_text(encoding="utf-8") for p in (PIPE, HUB, READING)}
@@ -66,14 +63,12 @@ def check(texts=None):
         brackets(t[p], p.name)
     return len(POS), len(NEG)
 
-
 def selftest():
     """把每条正向断言逐个破坏，检查脚本自己拦得住。"""
     base = {p: p.read_text(encoding="utf-8") for p in (PIPE, HUB, READING)}
     caught = 0
     for name, path, needle in POS:
         broken = dict(base)
-        # 全局替换：像 catch (_: Throwable) 这类串在文件里出现多次，只换一处会漏拦
         broken[path] = base[path].replace(needle, "@@BROKEN@@")
         try:
             check(broken)
@@ -91,7 +86,6 @@ def selftest():
         else:
             raise AssertionError(f"[自检] 注入旧形态后没拦下：{name}")
     print(f"selftest ok · 反向注入 {caught}/{len(POS) + len(NEG)} 全拦下")
-
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv:

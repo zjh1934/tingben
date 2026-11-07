@@ -1,5 +1,4 @@
 package com.tingben.app.core;
-/** Reflective test adapter exposing Ann-shaped fields without depending on the production type at compile time. */
 public class Annonly {
     public final String text;
     public final String speaker;

@@ -19,14 +19,12 @@ def check(root) -> list:
     def ck(ok, msg):
         if not ok: e.append(msg)
 
-    # ① 两个文件物理删除
     for n in ("CastPresets.kt", "VoiceCast.kt"):
         ck(not (root / CORE / n).exists(), f"① {n} 仍在源码树")
 
     kts = list((root / "app/src/main/java").rglob("*.kt"))
     allkt = "\n".join(p.read_text(encoding="utf-8") for p in kts)
 
-    # ② 旧符号零残留（legacy 兼容读只用字符串常量，不出现函数/字段形态）
     for bad, why in [
         ("VoiceCast.", "② VoiceCast 调用残留"),
         ("CastPresets.", "② CastPresets 调用残留"),
@@ -46,7 +44,6 @@ def check(root) -> list:
     pipe = txt(root, CORE + "/Pipeline.kt")
     draft = txt(root, CORE + "/MixerDraft.kt")
 
-    # ③ 新指纹三项 + 旧指纹四项（迁移专用）
     ck("fun voiceStamp(c: Context): String" in prefs, "③ voiceStamp 不存在")
     ck("VoiceCast.hash(c)" not in prefs, "③ voiceStamp 仍含角色表项")
     ck("ttsKnobs(c).hash()\n    ).joinToString(\"||\"))" in prefs,
@@ -56,7 +53,6 @@ def check(root) -> list:
     ck('getBoolean("castEnabled", true)' in prefs, "③ 缺旧设置键兼容读")
     ck("import java.io.File" in prefs, "③ 缺 File import")
 
-    # ④ 双指纹比对与迁移事件
     ck("old != voiceStamp && old != legacyStamp" in pipe, "④ 双指纹比对被改回单比对")
     ck("VOICE_STAMP_MIGRATE" in pipe, "④ 缺迁移事件")
     ck("Prefs.legacyVoiceStamp(c)" in pipe, "④ Pipeline 没取旧指纹")
@@ -65,7 +61,6 @@ def check(root) -> list:
     ck("VoiceProfile.buildWithReport(globalVoice," in pipe,
        "④ 身份层没直接用全局音色")
 
-    # ⑤ 守恒：仍活的类型一行没删
     for n in ("NonVerbal.kt", "SegPlan.kt", "Workbench.kt", "VoiceProfile.kt"):
         ck((root / CORE / n).exists(), f"⑤ 误删仍在用的 {n}")
     for k, v in [("MAX_NEW_TOKENS = 2048", ""), ("TEMPERATURE = 0.9f", ""),
@@ -78,17 +73,14 @@ def check(root) -> list:
     ck("角色映射" not in prefs, "⑤ 设置摘要仍报角色映射")
     ck("Prefs.setNonVerbal(c, d.nonVerbal)" in draft, "⑤ 调音台提交出口被改")
 
-    # ⑥ 界面零改动
     main = txt(root, MAIN)
     ck("VoiceCast" not in main and "CastPresets" not in main, "⑥ 主界面残留旧模块引用")
 
-    # ⑦ CI 挂上本轮验证
     ci = txt(root, ".github/workflows/ci.yml")
     ck("scripts/r77_verify.py" in ci, "⑦ CI 未挂 r77_verify")
     ck("scripts/r77_stamp_migration.py" in ci, "⑦ CI 未挂迁移对拍")
     return e
 
-# ── 反向注入 ────────────────────────────────────────────────────────────────
 INJECT = [
     ("恢复 VoiceCast.kt", lambda r: (r / CORE / "VoiceCast.kt").write_text(
         "package com.tingben.app.core\nobject VoiceCast {}\n", encoding="utf-8")),

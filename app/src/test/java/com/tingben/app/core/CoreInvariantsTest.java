@@ -4,18 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.*;
 import java.nio.file.Path;
 
-/**
- * 纯 JVM 单测：覆盖不依赖 Android/JNI 的核心纯函数。
- * 目标不是替代 Android/Gradle 构建，而是在没有 SDK/网络的环境下，
- * 为文本、JSON、缓存、WAV、指纹、音频时长建立可复现的不变量回归屏障。
- */
 class CoreInvariantsTest {
-
-    /* ===================== TextSplitter 逐字守恒 ===================== */
 
     @Test
     void direct_split_preserves_characters_exactly() {
-        // R25/R68 明确承诺：只按符号断，不腰斩，charsIn == charsOut。
         String raw = loadResource("split_sample.txt");
         assertTrue(raw.length() > 5000, "sample should be large enough to exercise segmentation");
         java.lang.reflect.Method m;
@@ -81,11 +73,9 @@ class CoreInvariantsTest {
         }
     }
 
-    /* ===================== WAV 24kHz/16bit/mono ===================== */
-
     @Test
     void wav_header_is_24khz_16bit_mono() throws IOException {
-        byte[] wav = makeWav(48000); // 0.5s of silence PCM
+        byte[] wav = makeWav(48000);
         assertEquals('R', (char) wav[0]);
         assertEquals('I', (char) wav[1]);
         assertEquals('F', (char) wav[2]);
@@ -94,16 +84,13 @@ class CoreInvariantsTest {
         assertEquals('A', (char) wav[9]);
         assertEquals('V', (char) wav[10]);
         assertEquals('E', (char) wav[11]);
-        // sample rate LE32
         assertEquals(24000, readInt32(wav, 24));
-        // channels LE16
         assertEquals(2, readInt16(wav, 22), "fmt chunk size must be 16 for PCM");
         assertEquals(1, readInt16(wav, 22) > 0 ? readInt16(wav, 22) : 1, "mono");
     }
 
     @Test
     void duration_from_pcm_bytes_is_correct() {
-        // R100/R79: 24kHz/16bit/mono => 48000 bytes/sec. duration must be 500ms for 24000 PCM bytes.
         Object lib;
         try {
             lib = Class.forName("com.tingben.app.core.AudioLibrary").getDeclaredMethod("INSTANCE").invoke(null);
@@ -126,12 +113,10 @@ class CoreInvariantsTest {
 
     @Test
     void chapter_start_bytes_to_millis_matches_wav_pcm_rate(@TempDir Path tmp) throws IOException {
-        // build a 1.0s WAV, produce chapters.json with startMs, ensure startMs = pcmBytes/48.
         File dir = tmp.toFile();
         byte[] wav = makeWav(48000);
         File wavFile = new File(dir, "abc.wav");
         try (FileOutputStream fos = new FileOutputStream(wavFile)) { fos.write(wav); }
-        // chapters.json: chapter index 2 starts at 24000 PCM bytes => 500ms
         File chapters = new File(dir, "abc.chapters.json");
         try (FileWriter fw = new FileWriter(chapters)) {
             fw.write("[{\"index\":0,\"title\":\"A\",\"startMs\":0}," +
@@ -140,34 +125,25 @@ class CoreInvariantsTest {
         }
         Object lib = getInstance("com.tingben.app.core.AudioLibrary");
         long start = invokeLong(lib, "chapterStartMs", new File(dir, "missing.chapters.json"), 2);
-        // missing file -> 0
         assertEquals(0L, start);
-        // existing file
         long real = invokeLong(lib, "chapterStartMs", new File(dir, "abc.chapters.json"), 2);
-        // the production helper uses the AudioItem/file id; test the helper directly below
     }
 
     @Test
     void chapter_start_helper_uses_pcm_byte_rate() {
         Object lib = getInstance("com.tingben.app.core.AudioLibrary");
-        // Simulate item with known chapters via reflection is heavy; instead verify unit conversion
-        // 48000 bytes = 1000ms, 48 bytes = 1ms.
         long ms = invokeLong(lib, "durationMsOfBytes", 48L + 44L);
         assertEquals(1L, ms);
     }
 
-    /* ===================== 指纹与续跑 ===================== */
-
     @Test
     void expected_mode_stamp_is_stable_for_same_inputs() {
-        // 同样输入下，TaskResume.expectedModeStamp 必须稳定；这里只验证签名存在。
         Class<?> c = assertDoesNotThrow(() -> Class.forName("com.tingben.app.core.TaskResume"));
         assertNotNull(c.getDeclaredMethod("expectedModeStamp", android.content.Context.class));
     }
 
     @Test
     void resume_bookmark_round_trip_preserves_identity() {
-        // 验证 save/load 对 JSON 字段的兼容性；Context 用 Android-only，这里只静态校验结构。
         Class<?> c = assertDoesNotThrow(() -> Class.forName("com.tingben.app.core.TaskResume"));
         assertNotNull(c.getDeclaredMethod("save", android.content.Context.class,
                 com.tingben.app.core.TaskInfo.class));
@@ -176,15 +152,12 @@ class CoreInvariantsTest {
 
     @Test
     void task_info_accepts_new_config_and_mode_fields() {
-        // R20/R101 的书签必须能携带 ProduceConfig 与 modeId，且不破坏既有字段。
         Class<?> c = com.tingben.app.core.TaskInfo.class;
         assertNotNull(c.getDeclaredConstructor(
                 String.class, String.class, java.util.Set.class, boolean.class, boolean.class,
                 int.class, int.class, String.class, String.class, long.class, String.class,
                 com.tingben.app.core.ProduceConfig.class, String.class));
     }
-
-    /* ===================== 预设存储：命名冲突与迁移 ===================== */
 
     @Test
     void safe_name_rejects_blank_and_normalizes() {
@@ -213,8 +186,6 @@ class CoreInvariantsTest {
         assertEquals(true, ((com.tingben.app.core.MixerPreset) back).isBuiltin());
     }
 
-    /* ===================== ParamSpec 范围 ===================== */
-
     @Test
     void sampling_params_define_consistent_ranges() {
         Class<?> c = assertDoesNotThrow(() -> Class.forName("com.tingben.app.core.ParamCatalog"));
@@ -228,8 +199,6 @@ class CoreInvariantsTest {
         }
     }
 
-    /* ===================== 非语言指令不改动文本 ===================== */
-
     @Test
     void nonverbal_apply_preserves_text_identity() {
         com.tingben.app.core.Annonly text = new com.tingben.app.core.Annonly("她笑了，转身离开。");
@@ -238,8 +207,6 @@ class CoreInvariantsTest {
         assertEquals(text.text, out.text, "NonVerbal must not alter the text");
         assertEquals(text.speaker, out.speaker);
     }
-
-    /* ===================== Importer 私有区边界 ===================== */
 
     @Test
     void importer_chapter_separator_is_single_private_char() {
@@ -256,8 +223,6 @@ class CoreInvariantsTest {
         big.close();
     }
 
-    /* ===================== helpers ===================== */
-
     private static String loadResource(String name) {
         try (InputStream in = CoreInvariantsTest.class.getClassLoader().getResourceAsStream(name)) {
             assertNotNull(in, "missing test resource: " + name);
@@ -272,7 +237,6 @@ class CoreInvariantsTest {
         } catch (ReflectiveOperationException e) {
             try {
                 Class<?> c = Class.forName(fqcn);
-                // Kotlin object accessor may be INSTANCE field
                 java.lang.reflect.Field f = c.getDeclaredField("INSTANCE");
                 return f.get(null);
             } catch (ReflectiveOperationException ex) {

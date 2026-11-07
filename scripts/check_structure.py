@@ -21,7 +21,6 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
 for f in REQUIRED:
     if not (ROOT / f).exists(): errs.append("缺少必备文件: " + f)
 
-# R68 · P1b：旧标注管线四个文件已物理删除，不许回潮。
 R68_BANNED_FILES = ["app/src/main/java/com/tingben/app/diag/AuditLog.kt",
  "app/src/main/java/com/tingben/app/core/JsonSalvage.kt",
  "app/src/main/java/com/tingben/app/core/Adoption.kt",
@@ -29,7 +28,6 @@ R68_BANNED_FILES = ["app/src/main/java/com/tingben/app/diag/AuditLog.kt",
 for f in R68_BANNED_FILES:
     if (ROOT / f).exists(): errs.append("R68 回潮：旧标注管线文件仍在 " + f)
 
-# R66 · 语言模型退场：提示词资产不许再进包（源码/契约两处都不留占位）
 for p in list((ROOT / "app/src/main/assets").glob("prompt_zh*")) + list((ROOT / "contracts").glob("prompt_zh*")):
     errs.append("R66 回退：仍带语言模型提示词资产 " + p.relative_to(ROOT).as_posix())
 
@@ -75,10 +73,6 @@ def mask_strings(src):
             out[i] = ' '; i += 1; continue
     return ''.join(out)
 
-
-# R20 踩过的坑：KDoc 正文里写 KEY_ 星斜杠 DEFAULT_星 之类字面量会提前闭合块注释，
-# 后面十几行全变成顶层声明，编译器刷上百条错。括号计数抓不到，这里单独拦。
-# 先 mask 字符串，避免把 type = 星斜杠星 这种正常代码误判成注释。
 for p in kt_files:
     masked = mask_strings(p.read_text(encoding="utf-8", errors="replace"))
     for no, line in enumerate(masked.splitlines(), 1):
@@ -87,7 +81,6 @@ for p in kt_files:
             errs.append("%s:%d KDoc 正文出现注释收尾符（会提前闭合块注释）"
                         % (p.relative_to(ROOT), no))
 
-# R68 · P1b：语言模型退场，审计链路符号一律改成「出现即红」。
 all_src = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in kt_files)
 R68_GONE_A = ["AUDIT_RUN_BEGIN", "AUDIT_SUMMARY", "AbGate", "KEY_THINKING", "PROMPT_VERSION",
               "parseWithMeta", "ruleChecks", "BlockAudit", "ANN_RAW", "ANN_PREVIEW",
@@ -97,7 +90,6 @@ for sym in R68_GONE_A:
 for sym in ["readDetail", "ringTail", "resetEngine", "lastCrash"]:
     if sym not in all_src: errs.append("缺少软件事件日志符号: " + sym)
 
-# R68 · 单一路径后仍活的主链符号（不许被顺手删掉）。
 R68_KEEP_A = ["TTS_INPUT", "SPLIT_STATS", "directWithStats", "lang=chinese",
               "qt_tts_params", "MIXER_TRIAL", "chapterIndices"]
 for sym in R68_KEEP_A:
@@ -108,14 +100,12 @@ for sym in R68_GONE_B:
     if sym in all_src: errs.append("R68 回潮：旧逐条采纳符号 " + sym)
 
 pipe_src = (ROOT / "app/src/main/java/com/tingben/app/core/Pipeline.kt").read_text(encoding="utf-8", errors="replace")
-# R68 · 逐字无损断句仍在，不许退回按字数腰斩。
 if "a.text.take(70)" in pipe_src: errs.append("R68 回退：又把正文截成 70 字")
 
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
 for sym in ["NATIVE_JSON_CLOSE", "jsonDepth", "jsonStarted"]:
     if sym not in cpp_src: errs.append("native 缺少 JSON 闭合早停: " + sym)
 
-# R68 · 移植件整文件删除，出现即红；旧手搓实现同样不许回来。
 R68_GONE_C = ["JsonSalvage", "Adoption", "RawDump", "ANN_RAW_DUMP", "ANN_ADOPT_DETAIL",
               "复制最近一块模型原始产出", "cleanInstruct", "THINK_UNCLOSED",
               "bracket", "DEFAULT_INSTRUCT", "ModelStore.llm", "NativeEngine.llmLoad"]
@@ -126,26 +116,20 @@ if "= raw.lastIndexOf(']')" in pipe_src:
 if "o.optString(\"instruct\", \"平稳叙述\")" in pipe_src:
     errs.append("R68 回退：又出现手搓解析默认指令")
 
-# R25 · 断句移植件 / 设置分层 / 日志不许把零产出写成成功。
 main_src = (ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt").read_text(encoding="utf-8", errors="replace")
 R25_ALL = ["TextSplitter", "SPLIT_STATS", "directWithStats"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
-# R54 · 设置页重设计后不再有圈码分组标题，改验四分区组件与作用域文案。
 R25_MAIN = ["private fun GroupLabel(", "private fun SettingsSection(",
             "SettingsSection(\"外观与显示\", \"软件\"", "仅本次",
             "ProduceMode.DIRECT"]
 for sym in R25_MAIN:
     if sym not in main_src: errs.append("缺少 R25 界面符号: " + sym)
-# 反向断言：按字符腰斩的旧实现、把标注档当默认的旧写法不许回来
-# 只认代码形态；注释里写这个字面量是说明旧 bug，不该把自己拦下。
 if re.search(r"if\s*\(\s*buf\.length\s*>=\s*110", pipe_src):
     errs.append("R25 回退：又出现按 110 字腰斩的旧切分")
 if "mutableStateOf(if (t != null && t.bookId == id && t.direct)" in main_src:
     errs.append("R25 回退：新书默认又变回标注档")
 
-# R26 · 前台服务：manifest 四项权限 + dataSync 服务声明必须真在，
-# 同时把「无障碍 / 浮窗 / 伪装播放」这三条明确不做的路线钉成反向断言。
 for perm in ["android.permission.FOREGROUND_SERVICE",
              "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
              "android.permission.POST_NOTIFICATIONS",
@@ -171,13 +155,11 @@ for call in ["ProduceService.begin(", "ProduceService.finish(", "ProduceService.
 for sym in ["FOREGROUND_SERVICE_TYPE_DATA_SYNC", "PARTIAL_WAKE_LOCK", "startForegroundCompat",
             "STOP_FOREGROUND_DETACH", "START_NOT_STICKY"]:
     if sym not in fgs_src: errs.append("ProduceService 缺少移植件形状: " + sym)
-# 反向断言：唤醒锁不许整轮常驻（必须带超时 acquire），不许变成自动重启
 if "wl.acquire(UNIT_TIMEOUT_MS)" not in fgs_src:
     errs.append("R26 回退：唤醒锁没有按块带超时申请")
 if "START_STICKY" in fgs_src:
     errs.append("R26 回退：前台服务变成自动重启")
 
-# R68 · P1b：R27 那套「模型产出有没有被采纳」的判据随语言模型整套退场。
 R68_GONE_D = ["ADOPT_0_KEPT", "NOT_FOUND_AFTER_", "srcModel", "adoptFirstDrop",
               "finalVerbatim", "未采纳首因", "模型产出未被采纳",
               "旧缓存未记来源", "最终进 TTS", "模型候选",
@@ -186,7 +168,6 @@ R68_GONE_D = ["ADOPT_0_KEPT", "NOT_FOUND_AFTER_", "srcModel", "adoptFirstDrop",
 for sym in R68_GONE_D:
     if sym in all_src: errs.append("R68 回潮：旧标注判据符号 " + sym)
 
-# 反向断言只认代码形态，注释里描述旧 bug 的字面量不该把自己拦下。
 if re.search(r"original\.regionMatches\(\s*cursor", all_src):
     errs.append("R27 回退：又变回「从原文第 0 字严格前缀」")
 if re.search(r"indexOf\(a\.text,\s*cursor\)\s*!=\s*cursor", pipe_src):
@@ -197,7 +178,6 @@ if "if (i < kept) \"MODEL\"" in pipe_src:
     errs.append("R27 回退：逐条来源又按「前 kept 条」猜")
 if '"已标注 ${i + 1}/${chunks.size} 块"' in pipe_src:
     errs.append("R27 回退：进度又按跑完块数写「已标注」")
-# R103 · 看台颜色 / 可点 / 角标同源（playable），身份按稳定 id，不认显示文字。
 if "val base = if (playable) Good else Line" not in main_src:
     errs.append("R91/R103 回退：看台不是绿/灰两态，或可播判定不再同源")
 if "pqSeg.label == label" in main_src:
@@ -205,13 +185,10 @@ if "pqSeg.label == label" in main_src:
 if "val playable = sg.hasAudio && segId.isNotEmpty()" not in main_src:
     errs.append("R103 回退：格子缺少稳定 segmentId")
 
-# R31 · 调音台：12 维网格 / 4 组采样预设 / 生效快照 / A/B 日志必须真在源码里。
-# 反向断言：不许把参数埋回折叠里当唯一入口、不许出现第二份 TtsKnobs 真值源。
 mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
-# R41a · A/B 对比换成「草稿 / 已生效」两态一步试听；日志事件同步改名。
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "ParamLine(", "调音台", "private fun SettingsSection(",
-           "12 维", "试听草稿", "试听已生效",
+           "12 维", "用当前草稿", "用已生效的设置",
            "MixerScreen", "Screen.MIXER", "全部恢复默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
@@ -226,12 +203,10 @@ if "Screen.MIXER -> MixerScreen" not in main_src:
     errs.append("R31 回退：调音台页没接进导航")
 if not nav.mixer_entries(main_src):
     errs.append("R31 回退：设置页没有记录来源的调音台入口")
-# 调音台只读汇总，不许自己存一份 TtsKnobs 副本
 if "private val knobs" in mixer_src or "var knobs" in mixer_src:
     errs.append("R31 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
 if "MIXER_TRIAL" not in main_src:
     errs.append("R41a 回退：两态试听没把完整参数写进日志")
-# R54 · 设置页重设计：界面里不许再出现跳转卡 / 圈码 / 跨页大按钮 / 教程腔。
 _s54 = main_src.split("private fun SettingsScreen(")[-1].split("private fun ModelScreen(")[0]
 for _banned in ["🎛 调音台", "固定音色", "音色 12 维 · 采样 9 项", "去书架制作",
                 "①", "②", "提交变更", "共用一份文件表", "R45_FIXED_VOICE_ENTRY"]:
@@ -245,20 +220,15 @@ notice = (ROOT / "docs/THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 for who in ["Finrandojin", "Xydane", "MIT License", "ensemblereads", "ReaderVoice-Mobile"]:
     if who not in notice: errs.append("第三方声明缺少: " + who)
 
-# R20 补强：mask_strings 会把 KDoc 里提前出现的 */ 当成闭合符抹掉，
-# 于是上面那条检查对「KEY_*/DEFAULT_」这类注入恒不触发。改用原始文本行级检查兜底。
 for p in kt_files:
     raw_src = p.read_text(encoding="utf-8", errors="replace")
     for no, line in enumerate(raw_src.splitlines(), 1):
         s = line.strip()
         if s.startswith('*') and '*/' in s:
-            # 行尾的 */ 是合法收尾（单行 KDoc 会把正文与收尾写在同一行）；
-            # 只拦正文中间出现、其后还有内容的 */ —— 那才会提前闭合块注释。
             body = s[:-2].rstrip() if s.endswith('*/') else s
             if '*/' in body:
                 errs.append("KDoc 正文出现注释收尾符（原始文本）: %s:%d" % (p.relative_to(ROOT), no))
 
-# ── U1 · 全局壳：只许改表现层，导航骨架/数据流必须守恒 ──────────────
 chrome_path = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
 chrome_src = chrome_path.read_text(encoding="utf-8", errors="replace") if chrome_path.exists() else ""
 for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip", "ChromeSpec",
@@ -270,19 +240,14 @@ for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip", "ChromeSpec",
 for sym in ["chromeOf(screen)",
             "onMenu = { scope.launch { drawerState.open() } }"]:
     if sym not in main_src: errs.append("U1 回退：MainActivity 没接壳层: " + sym)
-# 调用必须是真实代码行，注释里出现同名字符串不算（反向验证抓到过这个漏洞）
 for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip"]:
     if not re.search(r"^\s*" + sym + r"\(", main_src, re.M):
         errs.append("U1 回退：MainActivity 没有真实调用 " + sym)
-# 旧 UI 不许残留（产品名/定位/文字刷新按钮/4 Tab 组件/注释式提示）
 for sym in ["⟳ 刷新", "TabButton(", '把小说变成能听的音频", fontSize = 11',
             "下拉刷新 · 或点右上角", '听本", fontSize = 22']:
     if sym in main_src: errs.append("U1 回退：旧 UI 残留 " + sym)
-# F-25 · 导航骨架守恒：只问语义，不锁实现字面量
-# （F-04/F-07 改 rememberSaveable / 返回栈时不会集体假红）
 for msg in nav.semantics(main_src):
     errs.append("U1 回退：导航语义丢失 — " + msg)
-# R61 · 目的地随版本增长：白名单显式列出，数量一律由它推算，不再写死 10。
 WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
                 "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
 enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
@@ -291,14 +256,11 @@ if enum_m:
     if got != WANT_SCREENS: errs.append("U1 回退：Screen 枚举被改 " + str(got ^ WANT_SCREENS))
 else:
     errs.append("U1 回退：找不到 Screen 枚举")
-# mask_strings 保持字符数不变，用它做括号配对定位，避免正则被内层 } 提前截断
 masked_main = mask_strings(main_src)
-# R46：App() 里新增了 drawerSelected / from 两个 when(screen)，
-# 用「Box + 分发 when」这段带上下文的锚点定位真正的 9 分支，避免切错块。
 head = "Box(Modifier.weight(1f)) {\n            when (screen) {"
 start = masked_main.find(head)
 if start >= 0:
-    open_i = start + len(head) - 1  # 指向那个 '{'
+    open_i = start + len(head) - 1
     depth = 0
     end = None
     for k in range(open_i, len(masked_main)):
@@ -313,7 +275,6 @@ if start >= 0:
     if n != len(WANT_SCREENS): errs.append("U1 回退：when(screen) 分发分支 %d 个，应为 %d" % (n, len(WANT_SCREENS)))
 else:
     errs.append("U1 回退：找不到 when(screen) 分发")
-# chromeOf 必须覆盖全部目的地（漏一个 = 那一页顶栏标题为空、Tab 不高亮）
 co_m = re.search(r"private fun chromeOf\(s: Screen\): ChromeSpec = when \(s\) \{(.*?)\n\}",
                  main_src, re.S)
 if co_m:
@@ -321,7 +282,6 @@ if co_m:
     if covered != WANT_SCREENS: errs.append("U1 回退：chromeOf 没覆盖全部目的地 " + str(covered ^ WANT_SCREENS))
 else:
     errs.append("U1 回退：找不到 chromeOf 映射")
-# R89 · 抽屉一列：一级 4 项（调音台与选项卡平级）+ 更多 2 项，总数恒 6
 tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 if tabs_m:
@@ -338,13 +298,10 @@ if more_m:
         errs.append("U1 回退：抽屉仍含已删模块")
 else:
     errs.append("U1 回退：找不到 DRAWER_MORE")
-# 下拉刷新机制保留、阈值不变（必须查代码行，注释里也写了 55f，会被字符串包含骗过）
 if "if (acc > 55f)" not in chrome_src or "onRefresh()" not in chrome_src:
     errs.append("U1 回退：下拉刷新机制或阈值被改动")
-# 真 bug 回归：删书必须触发刷新（R33 起走确认弹窗）
 if "BookStore.delete(c, id); confirmDelete = null; onChanged()" not in main_src:
     errs.append("U1 回退：删书后没调 onChanged()，列表不会刷新")
-# 括号平衡（用项目自带的 mask_strings，避免字符串/注释里的括号误判）
 for p in kt_files:
     masked = mask_strings(p.read_text(encoding="utf-8", errors="replace"))
     depth = 0
@@ -357,13 +314,10 @@ for p in kt_files:
     if not ok or depth != 0:
         errs.append("U1 括号不平衡: %s (depth=%d)" % (p.relative_to(ROOT), depth))
 
-# ── R33 · UI 返工：安全区 / 零文案刷新 / 一级菜单 / 全局清注释 ─────────
 def ui_literals(src):
     """只取字符串字面量；注释里提到「下拉刷新」是说明，不算 UI 文案。"""
     return re.findall(r'"((?:\\.|[^"\\])*)"', src)
 
-# R65 · 贴底任务卡整条删除，taskExpanded 两个符号随之消失；
-# 换成仍存活的 R61 悬浮条与新进度页入口，断言强度不降。
 R33_MUST = ["statusBarsPadding()", "MiniPlayBar(ctx, miniBook", "confirmDelete",
             "AlertDialog(", "onMenu = { scope.launch { drawerState.open() } }",
             "BookStore.delete(c, id); confirmDelete = null; onChanged()",
@@ -386,8 +340,6 @@ for src_name, src in [("MainActivity", main_src), ("AppChrome", chrome_src)]:
 if "statusBarsPadding()" not in main_src:
     errs.append("R33 回退：顶栏又贴回状态栏")
 
-# ── R36 · 调音台重设计：折叠分组 / 自定义预设 / 12 维 / 9 采样 ──
-# R77 · 角色卡整套退场：CastPresets / seedIfEmpty 已随文件删除，换成迁移期符号
 R36_ALL = ["ModeTabs(", "MixerPresetStore", "MixerPreset(",
            "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT",
            "本机数据",
@@ -400,19 +352,16 @@ for sym in ["private fun ModeTabs(", "Screen.MIXER -> MixerScreen",
     if sym not in main_src: errs.append("缺少 R36 界面符号: " + sym)
 if not nav.mixer_entries(main_src):
     errs.append("缺少 R36 调音台入口语义")
-# 反向：设置页不许再画第二遍 9 项采样，不许出现第二份真值源
 for banned in ["声音采样（进阶）", "putKnobs(", "descDraft"]:
     if banned in main_src: errs.append("R36 回退：设置页又出现第二套采样 " + banned)
 if "var knobs" in mixer_src:
     errs.append("R36 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
-# R46：drawerSelected 的 when 里也有一行 Screen.MIXER ->，只数真实分发调用
 if main_src.count("Screen.MIXER -> MixerScreen") != 1:
     errs.append("R36 回退：调音台导航分支异常")
 bld = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8", errors="replace")
 for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
     if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
 
-# ── R46 · V1 抽屉壳：一整页抽屉 / 返回键优先 / 底部安全区 / 旧壳零残留 ──
 for sym in ["DismissibleNavigationDrawer(", "drawerState = drawerState",
             "gesturesEnabled = true", "drawerContent = {",
             "AppDrawerSheet(", "rememberDrawerState(DrawerValue.Closed)",
@@ -420,24 +369,19 @@ for sym in ["DismissibleNavigationDrawer(", "drawerState = drawerState",
             "scope.launch { drawerState.close() }",
             ".navigationBarsPadding()", "drawerReturn"]:
     if sym not in main_src: errs.append("R46/R51 缺 V1 抽屉符号: " + sym)
-# R51 · 覆盖式抽屉必须真的换掉（注释里提到名字不带 "("，不算命中）
 if "ModalNavigationDrawer(" in main_src:
     errs.append("R51 回退：又用回覆盖式 ModalNavigationDrawer(")
-# 后注册的 callback 优先：抽屉回退必须排在全局回退之后（语义定位）
 if not nav.back_order_ok(main_src):
     errs.append("R46 回退：抽屉 BackHandler 没排在全局回退之后")
-# 旧壳零残留（底栏 / 下拉菜单 / 旧 Tab 表 / 旧菜单回调）
 for sym in ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS",
             "onMenu = { idx ->", "AppTab("]:
     if sym in main_src or sym in chrome_src:
         errs.append("R46 回退：旧壳残留 " + sym)
-# 二级页返回回「进入前的那一页」，不再写死 SETTINGS
 if not nav.mixer_back_ok(main_src):
     errs.append("R46 回退：调音台返回没按来源")
 if not nav.models_back_ok(main_src):
     errs.append("R46 回退：模型页返回没按来源")
 
-# ── R38 · 调音台重做：首屏身份输入 / 官方字段一一对应 / 触达证据 ──
 R38_ALL = ["ParamCatalog", "ParamSpec", "TTS_PARAMS", "音色身份", "保存",
            "全部恢复默认", 'Text("采样参数 · 9 项"', "声音描述"]
 for sym in R38_ALL:
@@ -454,7 +398,6 @@ if "ParamCatalog.SAMPLING.forEach" not in main_src:
 if "private fun ParamLine(" not in main_src:
     errs.append("R98 回退：数值控件没走 ParamLine（数字会被裁）")
 
-# ── R40 · 调音台统一提交：唯一编辑态 / 唯一出口 / 旧生效动词零残留 ──────
 draft_path = ROOT / "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
 draft_src = draft_path.read_text(encoding="utf-8", errors="replace") if draft_path.exists() else ""
 R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit(",
@@ -463,7 +406,6 @@ R40_ALL = ["MixerDraft", "MixerCommit", "MIXER_COMMIT", "fun diff(", "fun commit
            "fun commitAll()"]
 for sym in R40_ALL:
     if sym not in all_src: errs.append("缺少 R40 统一提交符号: " + sym)
-# 唯一出口：MixerScreen 区块里禁止出现任何直接写 Prefs 的调用
 blk_i = main_src.find("private fun MixerScreen(")
 mixer_block = main_src[blk_i:] if blk_i >= 0 else ""
 for banned in ["Prefs.setTtsKnobs(", "Prefs.setVoiceDescription(", "Prefs.setDefaultPerf(",
@@ -474,19 +416,15 @@ if "MixerCommit.commit(c, draft, n)" not in mixer_block:
     errs.append("R40 回退：界面没走唯一出口 MixerCommit.commit")
 if draft_src.count("Prefs.set") != 7:
     errs.append("R98 回退：commit 写入口不是 7 个（实际 %d）" % draft_src.count("Prefs.set"))
-if draft_src.count("put(") != 13:  # R98 起 12 次字段调用 + 1 次 put() 定义
+if draft_src.count("put(") != 13:
     errs.append("R98 回退：diff 源码调用数不是 12（实际 %d）" % (draft_src.count("put(") - 1))
-# 旧生效动词（只查字符串字面量，注释里描述旧 bug 不算）
 lits = ui_literals(main_src) + ui_literals(draft_src)
 for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
     if any(banned in x for x in lits):
         errs.append("R40 回退：又出现旧生效动词 " + banned)
-# 默认展开（R41）：身份生成器开、采样组收；展开态由 Prefs 持久化，不再靠字面 true/false
 prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text(encoding="utf-8", errors="replace")
 if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
-# R99 · 折叠整套退场：采样与试听常驻，顶栏只留一枚「保存」，
-# 预设音色多一行「自定义」。反向断言比旧版更严：旧折叠/待提交话术零残留。
 R99_MUST = ['Text("采样参数 · 9 项"', 'Text("自定义"', 'Text("保存"',
             'Text("试听"', '改动还没保存', '离开会丢掉这次改动。',
             'val mode = remember(tick) { ModelStore.currentMode(c) }']
@@ -496,7 +434,6 @@ _mixer99 = main_src[main_src.index("private fun MixerScreen("):]
 for banned in ['MixerFold(', 'samplingOpen', 'trialOpen', '提交变更',
                '待提交', '查看差异', '丢弃待提交', '有未提交变更', 'showDiff']:
     if banned in _mixer99: errs.append("R99 回退：旧折叠/待提交话术残留 " + banned)
-# R97 · 真机红圈反馈：教程腔 / 评审腔 / 重复时机提示一律不许以界面文案回潮。
 R97_GONE = ["当前模式 · 只读", "送进模型 · 可随便改", "这段描述和下面 9 项采样同时生效",
             "每次合成会重新采样音色", "改动先进入待提交", "9 项真到模型", "✅ 可调",
             "改完直接提交，不必先试听", "试听未提交参数", "试听已生效参数",
@@ -513,8 +450,6 @@ for banned in ["音色身份生成器", "固定音色 · 官方模式说明", "�
                "snapshotFlow { scroll.value }"]:
     if banned in _mixer: errs.append("R92 回退：旧调音台形态残留 " + banned)
 
-# R66 · 1.1.0 语言模型退场：4 条旧说法不许以界面字符串回潮。
-# 注释里描述旧 bug 不算；只认字符串字面量，和 r66_verify.py 的口径一致。
 R66_GONE = ["查看标注内容", "查看模型原始产出", "零标注 ⚠️ 白跑", "标注后合成（实验性）"]
 _all_ui = []
 for p in kt_files:

@@ -12,14 +12,12 @@ CHROME = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
 MAIN = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
 CI = ROOT / ".github/workflows/ci.yml"
 
-
 def top_and_more(text):
     out = {}
     for name in ("DRAWER_TOP", "DRAWER_MORE"):
         m = re.search(r"private val %s = listOf\((.*?)\n\)" % name, text, re.S)
         out[name] = m.group(1) if m else ""
     return out
-
 
 def check(files):
     errs = []
@@ -34,7 +32,6 @@ def check(files):
               'NAV_MODELS to "模型"'):
         if s not in tm["DRAWER_TOP"] + tm["DRAWER_MORE"]:
             errs.append("抽屉项丢失: " + s[:28])
-    # 一级 4 项 + 更多 2 项 = 6 项，总数不膨胀
     n = len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"] + tm["DRAWER_MORE"]))
     if n != 6:
         errs.append("抽屉项数不是 6，实得 %d" % n)
@@ -57,10 +54,8 @@ def check(files):
         errs.append("CI 未挂 r89_verify")
     return errs
 
-
 def txt(p):
     return p.read_text(encoding="utf-8", errors="replace")
-
 
 def main():
     files = {"chrome": txt(CHROME), "main": txt(MAIN), "ci": txt(CI)}
@@ -94,7 +89,6 @@ def main():
         return 1
     print("R89 调音台一级入口 / 抽屉 6 项守恒 / 导航守恒：PASS")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

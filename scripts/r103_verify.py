@@ -15,18 +15,14 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
-
 def load():
     return {k: p.read_text(encoding="utf-8", errors="replace") for k, p in FILES.items()}
-
 
 def grid(s):
     i = s.find("private fun ProgressScreen(")
     j = s.find("private fun TaskCenterScreen(", i + 1)
     return s[i:j] if i >= 0 else ""
 
-
-# ① 正向：本轮修复必须真的在源码里
 POS = [
     ("queue", 'val id: String = ""'),
     ("queue", 'val trackId: String = ""'),
@@ -47,7 +43,6 @@ POS = [
     ("ci", "r103_verify.py"),
 ]
 
-# ② 零残留：旧形态不准回来
 BAN_ALL = [
     "pqSeg.label == label",
     "clickable(enabled = sg.wav != null)",
@@ -58,7 +53,6 @@ BAN_ALL = [
     '"${a.title} · 第 ${j + 1} 章"',
 ]
 
-# ③ 守恒：播放器 API 与既有能力一个不少
 KEEP = [
     ("queue", "fun setTracks(list: List<Track>)"),
     ("queue", "fun playFrom(i: Int, startMs: Long? = null)"),
@@ -78,7 +72,6 @@ KEEP = [
     ("hub", "HubTitles"),
 ]
 
-
 def check(f):
     errs = []
     for k, needle in POS:
@@ -96,11 +89,9 @@ def check(f):
                    'Track(wav, label, id = segId)', 'val playable = sg.hasAudio'):
         if needle not in g:
             errs.append("看台内缺失: " + needle)
-    # 看台里不得再出现第二套可播判定
     if "sg.wav != null" in g:
         errs.append("看台里仍有 wav != null 的第二套判定")
     return errs
-
 
 def selftest():
     f = load()
@@ -108,7 +99,6 @@ def selftest():
     if base:
         print("基线自身就不合格：", *base, sep="\n  ")
         return 1
-    # 反向注入：把每个关键修复逐个改回旧形态，check 必须报错
     cases = [
         ("queue", 'val id: String = ""', 'val id: String'),
         ("queue", 'val trackId: String = ""', 'val label2: String = ""'),
@@ -133,7 +123,6 @@ def selftest():
             print("反向注入没被拦下:", old[:60]); bad += 1
     print("反向注入 %d/%d 拦下" % (len(cases) - bad, len(cases)))
     return 1 if bad else 0
-
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv:

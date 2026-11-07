@@ -36,7 +36,6 @@ KEEP = ['HubTitles = listOf("章节", "合成", "可播")',
         'commitAll()', 'DismissibleNavigationDrawer', 'qt_tts_params',
         'navigationBarsPadding', 'MIXER_TRIAL']
 
-
 def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
           gradle=None, manifest=None, android=None, extra='', deleted=None):
     pipe = PIPE if pipe is None else pipe
@@ -51,45 +50,36 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     deleted = DELETED if deleted is None else deleted
     e = []
 
-    # ① 四个旧文件物理不存在
     for rel in DELETED:
         if (J / rel).exists() and rel not in deleted:
-            # deleted 参数用于注入模拟；真实磁盘存在即红
             pass
     for rel in DELETED:
         if (J / rel).exists(): e.append('旧标注管线文件仍在: ' + rel)
     if deleted != DELETED: e.append('注入：旧文件清单被改')
 
-    # ② 单一路径
     if '// ── 标注阶段：只加载 LLM' in pipe: e.append('旧 else 分支还在')
     if '        if (direct) {\n            // 快速出声路径' in pipe: e.append('仍按档位分叉')
     if 'val annotated = chunks.flatMap' not in pipe: e.append('直接朗读主体被删')
     if 'val gateFails = 0' not in pipe: e.append('恒 0 降级计数被删')
     if 'String.format("direct_%04d.wav", i)' not in pipe: e.append('WAV 命名没收敛')
-    # R100 · 单一路径之上又加了「失败中止 / 章节偏移登记」，行数自然增长；
-    # 旧分支回潮仍由上面三条特征断言 + 本脚本注入对拍拦住，不再靠行数卡新代码。
     if pipe.count('\n') > 1100: e.append('Pipeline 异常膨胀，旧分支疑似回潮')
     if 'val stats = mutableListOf<TextSplitter.Stats>()' not in pipe: e.append('缺单一路径主体')
 
-    # ③ 零残留
     for g in GONE:
         if g in allkt: e.append('R68 旧形态残留: ' + g)
     if 'delay(3000)' in main: e.append('诊断区 3 秒定时器还在')
     if 'private fun DiagnosticsBlock(c: Context, _refresh' not in main: e.append('诊断区没换成精简版')
     for s in ['AuditLog', 'RawDump']:
         if s in main: e.append('MainActivity 仍引用 ' + s)
-    # R68 收尾：本轮改过的三个文件里，旧管线说法连注释都不留
     for rel, txt in [('Pipeline.kt', pipe), ('MainActivity.kt', main), ('ChapterHub.kt', hub)]:
         for w in ['4B', '标注', '语言模型', '文本处理', 'Huihui', 'Qwen3-4B', '数据标注']:
             if w in txt: e.append('%s 注释/文案仍残留旧说法: %s' % (rel, w))
     if 'fun llm(c: Context)' in pipe: e.append('ModelStore 旧权重加载函数仍在')
 
-    # ④ 旧数据兼容
     for k in COMPAT:
         if k not in allkt and k not in ('index.json',): e.append('旧数据兼容项缺失: ' + k)
     if 'chapterIndices' not in audio: e.append('旧成品章节索引兼容被删')
 
-    # ⑤ 守恒
     for k in KEEP:
         if k not in allkt: e.append('守恒项缺失: ' + k)
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
@@ -104,7 +94,6 @@ def check(pipe=None, main=None, hub=None, chrome=None, audio=None, allkt=None,
     if 'android.permission.INTERNET' in android: e.append('出现 INTERNET 权限')
     if 'versionName = "1.1.0+"' not in gradle: e.append('版本号不是 1.1.0+')
     return e
-
 
 def main():
     errs = check()
@@ -149,7 +138,6 @@ def main():
         return 1
     print('R68 反向注入 %d/%d 全拦下 · PASS' % (len(INJ), len(INJ)))
     return 0
-
 
 if __name__ == '__main__':
     if '--selftest' in sys.argv:

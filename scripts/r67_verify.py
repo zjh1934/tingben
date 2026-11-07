@@ -19,12 +19,10 @@ GRADLE = (ROOT / 'app/build.gradle.kts').read_text(encoding='utf-8')
 MANIFEST = json.loads((ROOT / 'contracts/model-manifest.json').read_text(encoding='utf-8'))
 ANDROID = (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 
-# 本轮真删掉的形态；不是「用户可见字符串」，是代码标识符/调用点
 GONE = ['AuditLog.beginRun', 'RawDump.begin', 'AUDIT_RUN_BEGIN', 'AbGate',
         'PROMPT_VERSION', 'ENGINE_INFO', 'writeAuditSummary', 'KEY_THINKING',
         'setThinking', 'Prefs.thinking', 'AnnotatedPane', 'AuditLog.crashTail',
         'AUDIT_SUMMARY']
-# 旧成品兼容：这些必须还在，删了旧书/旧 WAV/旧任务就读不出来
 COMPAT = ['AnnCache.dirFor', 'TaskResume.load', 'chapterIndices',
           'Producer.start', 'index.json', 'PlayQueue']
 KEEP = ['HubTitles = listOf("章节", "合成", "可播")',
@@ -47,15 +45,12 @@ def check(pipe=None, prefs=None, main=None, hub=None, event=None, chrome=None,
     manifest = MANIFEST if manifest is None else manifest
     android = ANDROID if android is None else android
     e = []
-    # ① P1a 零残留
     for g in GONE:
         if g in allkt: e.append('P1a 旧形态残留: ' + g)
     if 'val gateFails = 0' not in pipe: e.append('Pipeline 缺单一路径常量')
-    # ② 旧数据兼容
     for k in COMPAT:
         if k not in allkt and k != 'qt_tts_params': e.append('旧数据兼容项缺失: ' + k)
     if 'chapterIndices' not in audio: e.append('AudioLibrary 缺旧成品索引兼容')
-    # ③ 守恒
     for k in KEEP:
         if k not in allkt: e.append('守恒项缺失: ' + k)
     if len(re.findall(r'NAV_\w+ = \d', chrome)) != 6: e.append('抽屉不是 6 项')

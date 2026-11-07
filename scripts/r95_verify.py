@@ -33,7 +33,6 @@ POS = {
         'distinctUntilChanged()',
         'ReadingState.save(c, book.id, i, p, off)',
         'LazyColumn(state = listState,',
-        # 守恒：目录页打开仍记章、书架仍只读章号
         'ReadingState.save(c, book.id, i)',
         'ReadingState.last(c, book.id)',
     ],
@@ -51,7 +50,6 @@ POS = {
         '存储空间不够',
         '清出空间后在任务里点「继续制作」',
         '音频接不起来',
-        # 守恒：合成与合并主链没被改掉
         'WavMerger.merge(wavs, outFile, config.gapMs)',
         'for ((i, a) in toSpeak.withIndex())',
     ],
@@ -65,7 +63,6 @@ BAN = {
     "pipe": [],
 }
 
-# 全局守恒照抄现行契约
 KEEP = {
     "chrome": ['NAV_MIXER to "调音台"', 'NAV_MODELS to "模型"'],
     "main": ['SETTINGS, MODELS, MIXER, CHAPTERS }', 'commitAll()', 'ttsSynthesize('],
@@ -73,9 +70,7 @@ KEEP = {
              'ProduceService.update'],
 }
 
-# 旧时代说法零残留（三个改动文件）
 OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '导出日志', '标注进度']
-
 
 def check(f):
     e = []
@@ -95,7 +90,6 @@ def check(f):
         for k in ('reading', 'hub', 'pipe'):
             if s in f[k]:
                 e.append('[%s] 旧说法残留: %s' % (k, s))
-    # 落盘预检必须在合成循环之前 return，而不是逐段失败后才提示
     p = f['pipe']
     if p.find('if (needBytes > freeBytes)') > p.find('for ((i, a) in toSpeak.withIndex())'):
         e.append('预检写在合成循环之后，等于没拦住')
@@ -103,10 +97,8 @@ def check(f):
         e.append('合并预检写在 merge 之后，等于没拦住')
     return e
 
-
 def load():
     return {k: p.read_text(encoding='utf-8') for k, p in FILES.items()}
-
 
 def run():
     e = check(load())
@@ -119,7 +111,6 @@ def run():
           (sum(len(v) for v in POS.values()), sum(len(v) for v in BAN.values()),
            sum(len(v) for v in KEEP.values()), 2))
     return 0
-
 
 if __name__ == '__main__':
     if '--selftest' in sys.argv:

@@ -19,9 +19,10 @@ object ReadingState {
     }
 
     fun pos(c: Context, bookId: String): Pos? = try {
-        val f = file(c)
-        if (!f.exists()) null
-        else decode(JSONObject(f.readText()).opt(bookId))
+        when (val r = AtomicJson.read(file(c))) {
+            is AtomicJson.Read.Ok -> decode(JSONObject(r.text).opt(bookId))
+            else -> null
+        }
     } catch (_: Throwable) {
         null
     }
@@ -29,15 +30,16 @@ object ReadingState {
     fun last(c: Context, bookId: String): Int? = pos(c, bookId)?.chapter
 
     fun allLast(c: Context): Map<String, Int> = try {
-        val f = file(c)
-        if (!f.exists()) emptyMap()
-        else {
-            val o = JSONObject(f.readText())
-            val out = HashMap<String, Int>()
-            for (k in o.keys()) {
-                decode(o.opt(k))?.let { out[k] = it.chapter }
+        when (val r = AtomicJson.read(file(c))) {
+            is AtomicJson.Read.Ok -> {
+                val o = JSONObject(r.text)
+                val out = HashMap<String, Int>()
+                for (k in o.keys()) {
+                    decode(o.opt(k))?.let { out[k] = it.chapter }
+                }
+                out
             }
-            out
+            else -> emptyMap()
         }
     } catch (_: Throwable) {
         emptyMap()
@@ -45,15 +47,16 @@ object ReadingState {
 
     fun save(c: Context, bookId: String, chapter: Int, para: Int? = null, offset: Int? = null) {
         try {
-            val old = pos(c, bookId)
-            val same = old?.chapter == chapter
-            val p = para ?: if (same) old!!.para else 0
-            val off = offset ?: if (same) old!!.offset else 0
             val f = file(c)
-            val o = if (f.exists()) JSONObject(f.readText()) else JSONObject()
+            val r = AtomicJson.read(f)
+            val o = if (r is AtomicJson.Read.Ok) JSONObject(r.text) else JSONObject()
+            val prev = try { decode(o.opt(bookId)) } catch (_: Throwable) { null }
+            val same = prev?.chapter == chapter
+            val p = para ?: if (same) prev!!.para else 0
+            val off = offset ?: if (same) prev!!.offset else 0
             o.put(bookId, JSONObject()
                 .put("chapter", chapter).put("para", p).put("offset", off))
-            f.writeText(o.toString())
+            AtomicJson.write(f, o.toString())
         } catch (_: Throwable) {
         }
     }

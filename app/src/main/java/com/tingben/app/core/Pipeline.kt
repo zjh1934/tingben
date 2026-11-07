@@ -20,13 +20,11 @@ import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.UUID
 
-
 data class Book(val id: String, val title: String, val path: String, val chars: Int,
                 val sha: String = "")
 data class Chapter(val index: Int, val title: String, val start: Int, val end: Int)
 data class Chunk(val index: Int, val chapter: Int, val text: String, val start: Int, val end: Int)
 data class Ann(val text: String, val speaker: String, val instruct: String)
-
 
 object BookStore {
     private fun dir(c: Context) = File(c.filesDir, "books").apply { mkdirs() }
@@ -59,8 +57,6 @@ object BookStore {
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     } catch (_: Throwable) { "${text.length}_${text.hashCode()}" }
 
-    /**
-     */
     fun add(c: Context, title: String, text: String): Book {
         val sha = fingerprint(text)
         val old = list(c).find {
@@ -89,14 +85,9 @@ object BookStore {
     }
 }
 
-
 object ModelStore {
-    /**
-     */
     const val TOKENIZER = "qwen-tokenizer-12hz-Q8_0.gguf"
 
-    /**
-     */
     enum class Mode(
         val id: String, val label: String, val file: String,
         val key: String, val hint: String
@@ -117,8 +108,6 @@ object ModelStore {
         dir(c).listFiles()?.filter { it.isFile && it.name.endsWith(".gguf") }?.sortedBy { it.name } ?: emptyList()
     } catch (_: Throwable) { emptyList() }
 
-    /**
-     */
     fun import(c: Context, name: String, source: java.io.InputStream,
                onProgress: (Long) -> Unit = {}): File {
         val safe = name.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -174,8 +163,6 @@ object ModelStore {
         return all.firstOrNull { f -> hints.any { f.name.contains(it, true) } }
     }
 
-    /**
-     */
     private fun pickFor(c: Context, m: Mode): File? {
         val all = files(c)
         all.find { it.name.equals(m.file, true) }?.let { return it }
@@ -191,8 +178,6 @@ object ModelStore {
     fun talker(c: Context): File? = pickFor(c, currentMode(c)) ?: pickFor(c, Mode.VOICE_DESIGN)
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
-    /**
-     */
     fun synthesisBlockReason(c: Context): String? {
         val m = currentMode(c)
         if (modeFile(c, m) == null)
@@ -221,7 +206,6 @@ object ModelStore {
     }
     fun ready(c: Context) = missing(c).isEmpty()
 }
-
 
 object ChapterSplitter {
     private val headRe = Regex(
@@ -288,10 +272,7 @@ object ChapterSplitter {
     }
 }
 
-
 object Annotator {
-    /**
-     */
     fun directWithStats(text: String): Pair<List<Ann>, TextSplitter.Stats> {
         val (segs, st) = TextSplitter.split(text)
         return segs.map { Ann(it, "旁白", "平稳、清晰地叙述，句间自然停顿") } to st
@@ -300,8 +281,6 @@ object Annotator {
     fun directSegments(text: String): List<Ann> = directWithStats(text).first
 }
 
-/**
- */
 object AnnCache {
 
     fun count(work: File): Int = try {
@@ -335,8 +314,6 @@ object AnnCache {
     fun dirFor(c: Context, bookId: String, direct: Boolean, think: Boolean, only: Set<Int>?) =
         File(c.filesDir, "work/${bookId}/${bucket(direct, think, only)}").apply { mkdirs() }
 }
-
-
 
 object WavMerger {
     private fun pcmOf(f: File): ByteArray? {
@@ -377,8 +354,6 @@ object WavMerger {
         return h
     }
 
-    /**
-     */
     fun merge(parts: List<File>, out: File, gapMs: Int = 0): Boolean {
         return try {
             val chunks = parts.mapNotNull { pcmOf(it) }
@@ -400,7 +375,6 @@ object WavMerger {
         } catch (_: Throwable) { false }
     }
 }
-
 
 data class Progress(
     val running: Boolean = false,
