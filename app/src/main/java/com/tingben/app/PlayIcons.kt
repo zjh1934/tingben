@@ -1,6 +1,7 @@
 package com.tingben.app
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -62,7 +63,6 @@ internal fun IconSkip(forward: Boolean, tint: Color, modifier: Modifier = Modifi
     }
 }
 
-@Composable
 /** R142 · 代码绘制的返回箭头，给「输入朗读」「调音台弹层」这类独立浮层用。 */
 @Composable
 internal fun IconBack(tint: Color, modifier: Modifier = Modifier) {
@@ -78,6 +78,7 @@ internal fun IconBack(tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
 internal fun IconClose(tint: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val w = size.width

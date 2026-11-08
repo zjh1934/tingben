@@ -47,7 +47,11 @@ POS = {
         "if (onClose != null) BackHandler(enabled = !dirty) { onClose?.invoke() }",
         "showLeave = false; discardAll(); (onClose ?: onBack)()",
     ],
-    "icons": ["internal fun IconBack(", "drawPath(p, color = tint"],
+    "icons": [
+        "internal fun IconBack(", "drawPath(p, color = tint",
+        "import androidx.compose.foundation.layout.size",
+        "@Composable\ninternal fun IconClose(",
+    ],
     "hub": [
         "已选 ${selected.size}/${ui.size} 章",
         '"全选" to { selected = ui.map { it.index }.toSet() }',
@@ -83,6 +87,7 @@ BAN = {
         'Text("‹", fontSize = 20.sp, color = Primary,\n                modifier = Modifier.clickable { onBack() }',
     ],
     "eventlog": ["末尾 400 行", "末尾 800 行", "自行决定发给谁"],
+    "icons": ["@Composable\n@Composable\n"],
     "audit": ["## 批次 A ·", "## 补漏轮"],
 }
 
@@ -119,13 +124,34 @@ def logic_cases(f):
         bad.append("弹层没有关闭叉")
     if "MixerScreen(c, onBack = onClose, onClose = onClose)" not in m:
         bad.append("弹层没有复用整套调音台")
-    # ③ 运行时源码树下零开发者文件
+    # ③ 结构性 Kotlin 检查（run 130 真编译抓到的那类：静态也能拦）
+    for kt in (ROOT / "app/src/main/java/com/tingben/app").rglob("*.kt"):
+        ls = kt.read_text(encoding="utf-8", errors="replace").splitlines()
+        for i, l in enumerate(ls):
+            if not (l.lstrip().startswith("private fun ") or l.lstrip().startswith("internal fun ")
+                    or l.lstrip().startswith("fun ")):
+                continue
+            pre = "\n".join(ls[max(0, i - 3):i])
+            n = pre.count("@Composable")
+            if n > 1:
+                bad.append("%s:%d 同一函数上重复 @Composable" % (kt.name, i + 1))
+            # 函数体里调了 Canvas/drawLine/Text 等 Composable，却没有 @Composable
+            if n == 0:
+                body = "\n".join(ls[i:i + 14])
+                if "Canvas(" in body or "drawPath(" in body or "drawLine(" in body:
+                    bad.append("%s:%d 绘制函数丢了 @Composable" % (kt.name, i + 1))
+    icons = (ROOT / "app/src/main/java/com/tingben/app/PlayIcons.kt").read_text(encoding="utf-8")
+    if "modifier.size(" in icons and "foundation.layout.size" not in icons \
+            and "foundation.layout.*" not in icons:
+        bad.append("PlayIcons 用了 Modifier.size 却没导入 layout.size")
+
+    # ④ 运行时源码树下零开发者文件
     dev_files = [str(p) for p in (ROOT / "app/src/main").rglob("*")
                  if p.is_file() and p.suffix.lower() in
                  (".md", ".py", ".log", ".jpeg", ".jpg")]
     if dev_files:
         bad.append("app/src/main 下混入开发者文件: " + ", ".join(dev_files[:3]))
-    # ④ 现行文档瘦了、归档完整、且归档不被当现行读
+    # ⑤ 现行文档瘦了、归档完整、且归档不被当现行读
     cur_lines = len(f["audit"].splitlines())
     arc_lines = len(f["archive"].splitlines())
     if not (cur_lines < 260 and arc_lines > 900):
@@ -195,6 +221,9 @@ def selftest():
         ("APK 门禁被摘", "ci", "开发者资料（文档/脚本/回执/截图）", ""),
         ("文档分层被摘", "audit", "| F | 浮层返回 / 合成前调音 / 章节批量 / 开发日志 / 产物分层 | R142 |", ""),
         ("CI 漏挂 r142", "ci", "python3 scripts/r142_verify.py --selftest", ""),
+        ("图标重复注解", "icons", "@Composable\ninternal fun IconBack(", "@Composable\n@Composable\ninternal fun IconBack("),
+        ("IconClose 丢注解", "icons", "@Composable\ninternal fun IconClose(", "internal fun IconClose("),
+        ("size 扩展没导入", "icons", "import androidx.compose.foundation.layout.size", ""),
     ]
     bad = 0
     try:
