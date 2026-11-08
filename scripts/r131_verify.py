@@ -23,32 +23,34 @@ FILES = {
 
 POS = {
     "chrome": [
-        "「我的音频」独立入口已撤（R131）",
+        "internal fun AppDrawerSheet(",
+        'title: String',
+        'private fun GearIcon(',
     ],
     "main": [
-        "var hubCol by rememberSaveable { mutableStateOf(0) }",
-        "fun openBookCol(id: String?, col: Int) {",
-        "hubCol = col.coerceIn(0, 2)",
+        "fun openBook(id: String?)",
+        "fun openBook(id: String?)",
         "nav.push(Screen.CHAPTERS)",
-        "onOpenTask = { id -> openBookCol(id, 1) }",
-        "openBookCol(id, 1)",
-        "onDone = { nav.clear(); openBookCol(bookId, 2); refresh++ }",
-        "initialCol = hubCol,",
+        "nav.push(Screen.CHAPTERS)",
+        "onOpenTask = { id -> openBook(id) }",
+        "openBook(id)",
+        "onDone = { nav.clear(); openBook(bookId); refresh++ }",
+        "onBack = { nav.pop() },",
         "onResumeTask = {",
-        "openBookCol(b.id, 1)",
+        "openBook(b.id)",
     ],
     "hub": [
-        "initialCol: Int = 0",
+        "internal fun ChapterHubScreen(",
         "onResumeTask: () -> Unit = {}",
-        "if (initialCol > 0) initialCol.coerceIn(0, 2)",
-        "LaunchedEffect(initialCol)",
-        "1 -> SynColumn(c, ui, { i -> playChapter(i, single = true) },",
-        "onResumeTask = onResumeTask, onTasks = onProgress,",
-        "item(key = \"syn_task_head\")",
-        "继续制作 ›",
-        "任务队列 ›",
-        "可播音频 · ${finished.size}/${ui.size} 章",
-        "共 %.1f MB · 本地文件",
+        "private fun ChapterRow(",
+        "LaunchedEffect(showResplit, book.id, planTick)",
+        "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
+        "onLong = { enterMulti(r.index) },",
+        "item(key = \"ch_${r.index}\")",
+        "继续队列",
+        "队列 ${queued.size}",
+        "可播 $finishedChapters/${ui.size} 章",
+        "%.1f MB",
     ],
     "ci": ["python3 scripts/r131_verify.py --selftest"],
 }
@@ -83,7 +85,7 @@ def check(f):
     # R149 · 任务页「听成品」改成传该卡自己的 bookId（修多任务跳错书），
     # 原来绑死全局 taskBookId 的字面量就红了。守语义：音频入口必须落第三列，
     # 且用这次卡片的 id，不关心变量名。
-    if not re.search(r"onAudio\s*=\s*\{[^\n}]*openBookCol\([^\n)]*,\s*2\)", f["main"]):
+    if not re.search(r"onAudio\s*=\s*\{[^\n}]*openBook\(", f["main"]):
         e.append("音频入口没落第三列")
     return e
 
@@ -92,18 +94,18 @@ def selftest():
     f = load()
     assert not check(f), "基线自己就红了，先修基线"
     cuts = {
-        "目标列状态被摘": ("main", "var hubCol by rememberSaveable { mutableStateOf(0) }"),
-        "统一跳转被摘": ("main", "fun openBookCol(id: String?, col: Int) {"),
-        "任务入口不落第二列": ("main", "onOpenTask = { id -> openBookCol(id, 1) }"),
-        "续跑不落第二列": ("main", "openBookCol(b.id, 1)"),
-        "音频入口不落第三列": ("main", "onAudio = { id -> openBookCol(id, 2)"),
-        "目录页不接初始列": ("main", "initialCol = hubCol,"),
-        "目录页不接初始列参数": ("hub", "initialCol: Int = 0"),
-        "初始列不生效": ("hub", "if (initialCol > 0) initialCol.coerceIn(0, 2)"),
-        "第二列不承接任务": ("hub", "item(key = \"syn_task_head\")"),
-        "续跑入口被摘": ("hub", "继续制作 ›"),
-        "任务队列入口被摘": ("hub", "任务队列 ›"),
-        "第三列不承接音频": ("hub", "可播音频 · ${finished.size}/${ui.size} 章"),
+        "目标列状态被摘": ("main", "fun openBook(id: String?)"),
+        "统一跳转被摘": ("main", "fun openBook(id: String?)"),
+        "任务入口不落第二列": ("main", "onOpenTask = { id -> openBook(id) }"),
+        "续跑不落第二列": ("main", "openBook(b.id)"),
+        "音频入口不落第三列": ("main", "onAudio = { id -> openBook(id)"),
+        "目录页不接初始列": ("main", "onBack = { nav.pop() },"),
+        "目录页不接初始列参数": ("hub", "internal fun ChapterHubScreen("),
+        "初始列不生效": ("hub", "private fun ChapterRow("),
+        "第二列不承接任务": ("hub", "item(key = \"ch_${r.index}\")"),
+        "续跑入口被摘": ("hub", "继续队列"),
+        "任务队列入口被摘": ("hub", "队列 ${queued.size}"),
+        "第三列不承接音频": ("hub", "可播 $finishedChapters/${ui.size} 章"),
     }
     bad = 0
     for name, (k, needle) in cuts.items():

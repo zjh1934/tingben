@@ -43,8 +43,13 @@ POS = {
         '"一键复制摘要"', '"导出完整 .md"', '"开发日志"',
         "var mixerOpen by remember { mutableStateOf(false) }",
         "if (mixerOpen) MixerDialog(c, onClose =",
-        "MixerScreen(c, onBack = onClose, onClose = onClose)",
-        "IconButton(onClick = { leave() }) { IconClose(Sub) }",
+        # R155 · 语义化：调音弹层仍复用整套 MixerScreen，但 R155 给关闭叉
+        # 补了浅底 + 主色、并新增 onRegisterLeave 参数。原来那两条绑死了
+        # 参数个数和灰色 IconButton，属于「改一处 UI 就得哄脚本」的旧债。
+        "MixerScreen(c, onBack = onClose, onClose = onClose,",
+        "onRegisterLeave = { requestLeave = it }",
+        "IconClose(Primary)",
+        ".clickable { leave() }",
         "if (onClose != null) BackHandler(enabled = !dirty) { onClose?.invoke() }",
         "showLeave = false; discardAll(); (onClose ?: onBack)()",
     ],
@@ -56,13 +61,13 @@ POS = {
         "@Composable\ninternal fun IconClose(",
     ],
     "hub": [
-        "已选 ${selected.size}/${ui.size} 章",
-        '"全选" to {',
-        '"反选" to {',
-        '"清空" to {',
-        "Box(Modifier.size(52.dp)",
+        "可播 $finishedChapters/${ui.size} 章",
+        '"全选章节"',
+        'onLong = { enterMulti(r.index) }',
+        'onMore = { enterMulti(r.index) })',
+        "Box(Modifier.size(44.dp)",
         "SelectBox(checked = isChecked",
-        "modifier: Modifier = Modifier.fillMaxSize()",
+        "onTap: () -> Unit",
     ],
     "eventlog": [
         "fun exportBundle(c: Context): String", "fun exportSummary(c: Context): String",
@@ -124,10 +129,12 @@ def logic_cases(f):
         bad.append("弹层无改动时的返回守卫丢了")
     if "showLeave = false; discardAll(); (onClose ?: onBack)()" not in m:
         bad.append("「丢弃并离开」没有关弹层")
-    if "IconButton(onClick = { leave() }) { IconClose(Sub) }" not in m:
+    if "IconClose(Primary)" not in m or ".clickable { leave() }" not in m:
         bad.append("弹层没有关闭叉")
-    if "MixerScreen(c, onBack = onClose, onClose = onClose)" not in m:
+    if "MixerScreen(c, onBack = onClose, onClose = onClose," not in m:
         bad.append("弹层没有复用整套调音台")
+    if "onRegisterLeave = { requestLeave = it }" not in m:
+        bad.append("弹层没把统一 leave 注册给遮罩空白退出")
     # ③ 结构性 Kotlin 检查（run 130 真编译抓到的那类：静态也能拦）
     for kt in (ROOT / "app/src/main/java/com/tingben/app").rglob("*.kt"):
         ls = kt.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -208,15 +215,17 @@ def selftest():
         ("输入朗读回到字符箭头", "icons", "internal fun IconBack(", ""),
         ("合成前调音入口被摘", "main", "if (mixerOpen) MixerDialog(c, onClose =", ""),
         ("调音弹层被摘", "main",
-         "MixerScreen(c, onBack = onClose, onClose = onClose)", ""),
-        ("关闭叉被摘", "main", "IconButton(onClick = { leave() }) { IconClose(Sub) }", ""),
+         "MixerScreen(c, onBack = onClose, onClose = onClose,", ""),
+        ("关闭叉被摘", "main", "IconClose(Primary)", ""),
+        ("遮罩空白退出被摘", "main",
+         "onRegisterLeave = { requestLeave = it }", ""),
         ("未保存返回守卫被摘", "main",
          "if (onClose != null) BackHandler(enabled = !dirty) { onClose?.invoke() }", ""),
         ("章节全选被摘", "hub",
-         '"全选" to {', ""),
+         '"全选章节"', ""),
         ("章节反选被摘", "hub",
-         '"反选" to {', ""),
-        ("勾选热区缩回", "hub", "Box(Modifier.size(52.dp)", "Box(Modifier.size(24.dp)"),
+         'onLong = { enterMulti(r.index) }', ""),
+        ("勾选热区缩回", "hub", "Box(Modifier.size(44.dp)", "Box(Modifier.size(24.dp)"),
         ("日志退回 txt", "main",
          'ActivityResultContracts.CreateDocument("text/markdown")',
          'ActivityResultContracts.CreateDocument("text/plain")'),

@@ -31,8 +31,8 @@ def check(root):
     ck('val stalled: Boolean = false' in hub, 'F-20 缺终态字段')
     ck('st.stage in listOf("没完成", "已停止", "出错了")' in hub, 'F-20 缺终态派生')
     ck('stalled = stalled' in hub, 'F-20 终态没传进每章')
-    ck('Text("等待中"' in hub, 'F-20 本轮没轮到的文案丢了')
-    ck('Text("没做完 · 接着做会续上"' in hub, 'F-20 停在中途的文案缺')
+    ck('Text("没做完 · 已做好的都留着"' in hub, 'F-20 停滞态文案丢了')
+    ck('Text("这本书做好了"' in hub, 'F-20 完成态文案缺')
 
     ck('fun bucket(only: Set<Int>?)' in pipe, 'F-13 分桶仍带旧三态参数')
     ck('"v11/direct/"' in pipe, 'F-13 分桶路径变了，旧 WAV 会找不到')
@@ -66,7 +66,7 @@ def check(root):
     return e
 
 INJECT = [
-    ('F-20 退回单一等待中', 'hub', 'Text("没做完 · 接着做会续上"', 'Text("等待中"'),
+    ('F-20 终态字段被改', 'hub', 'val stalled: Boolean = false', 'val stalled: Boolean = true'),
     ('F-13 分桶路径改掉', 'pipe', '"v11/direct/"', '"v12/annotated/"'),
     ('F-13 dirFor 恢复旧参数', 'pipe',
      'fun dirFor(c: Context, bookId: String, only: Set<Int>?)',

@@ -29,7 +29,7 @@ BAN_ALLKT = ["VoiceCast.", "CastPresets.", "Prefs.castEnabled", "setCastEnabled"
 KEEP = ["Prefs.legacyVoiceStamp(c)",
         "old != voiceStamp && old != legacyStamp",
         "VoiceProfile.buildWithReport(globalVoice,",
-        'HubTitles = listOf("章节", "合成", "可播")',
+        'private fun ChapterRow(',
         'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
         "commitAll()", "DismissibleNavigationDrawer", "PlayQueue",
         "run(c, book, onlyChapters, true, thinkOverride, config)"]
@@ -68,8 +68,10 @@ def selftest():
         ("CAST 枚举回潮", lambda: check(main=MAIN.replace(
             "MODELS, MIXER, CHAPTERS }", "MODELS, CAST, MIXER, CHAPTERS }"))),
         ("抽屉旧项回潮", lambda: check(chrome=CHROME.replace(
-            '    NAV_MODELS to "模型",',
-            '    NAV_MODELS to "模型",' + NL + '    NAV_CAST to "角色音色",'))),
+            'internal const val NAV_INPUT = 6',
+            'internal const val NAV_INPUT = 6' + NL
+            + 'private val DRAWER_TOP = listOf(' + NL
+            + '    NAV_CAST to "角色音色",' + NL + ')'))),
         ("角色页回潮", lambda: check(main=MAIN + NL + "private fun CastScreen() {}" + NL)),
         ("角色预设回潮", lambda: check(main=MAIN + NL + 'MixerSection("角色预设")' + NL)),
         ("评审腔话术回潮", lambda: check(main=MAIN + NL +

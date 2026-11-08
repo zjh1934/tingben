@@ -113,13 +113,18 @@ def models_back_ok(src: str) -> bool:
     return back_uses_source(src, "MODELS")
 
 def mixer_entries(src: str) -> list:
-    """设置页 / 章节页等处的调音台入口：进 MIXER 且记录来源（或压栈）。"""
+    """调音台入口是否存在。
+
+    R148/R162 起主路径是「点合成之前就地弹层」（chapterMixerOpen / MixerDialog），
+    不再 push 独立页；旧形态（压栈 + 记录来源）仍算成立，判据对两种形态不敏感。
+    """
     out = []
     for m in re.finditer(r"onMixer\s*=\s*\{([^}]*)\}", src, re.S):
-        body = m.group(1)
-        if "Screen.MIXER" in body or "MIXER" in body:
-            if re.search(r"drawerReturn|modelsFrom|\bpush\s*\(|nav\.", body):
-                out.append(body.strip())
+        body = m.group(1).strip()
+        if not body:
+            continue
+        if re.search(r"chapterMixerOpen|MixerDialog|OVERLAY_MIXER|Screen\.MIXER|MIXER", body):
+            out.append(body)
     return out
 
 def model_entries(src: str) -> list:

@@ -38,8 +38,8 @@ POS = {
         "// I1 · 用户实证「试听文本和试听两个按钮在采样参数上面」。",
         "Box(Modifier.size(40.dp)",
         '.clickable { onValue(spec.def) },',
-        'if (spec.key == "seed") {',
-        '"· -1 = 每次随机；固定一个数只让同一段话每次念得一样，不换音色"',
+        'R158b · 种子语义不进 UI',
+        '"风格补充（可留空）"',
         'OutlinedTextField(',
         'Text("试听 · 已保存"', 'Text("试听 · 当前"',
         'Text("采样参数 · 9 项"',
@@ -47,29 +47,31 @@ POS = {
         # J1 看图修复
         '.background(PrimarySoft, RoundedCornerShape(10.dp))',
         'Text("↺", fontSize = 17.sp, color = Primary)',
-        'modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)',
+        '"（可留空）"',
     ],
     "hub": [
         "var front by remember(id, refresh, planTick)",
         "Triple(", "ChapterPlan.frontMatter(text, s.first)",
         "ChapterPlan.resolve(c, b, text)",
         "front?.let { fi ->",
-        '"书前 ${fi.chars} 字是下载/出版信息，不纳入朗读（不是漏读）"',
+        '"书前 ${fi.chars} 字已跳过"',
         'Text("停止", fontSize = 12.sp, color = palette.onWarn)',
         "IconPlayPause(st.isPlaying, palette.onPrimary",
-        "color = if (playing) palette.onPrimary",
+        "color = segNumberColor(playing, playable, multi, isChecked))",
         # J1 看图修复：未生成格子不再是 18% 透明
         "private fun segCellColor(",
         "0.46f else 0.48f",
-        "segCellColor(playable, playing)",
-        "segCellColor(playable, playing, segMulti, checked)",
+        "segCellColor(playable, playing, multi, isChecked)",
+        "segCellColor(playable, playing, multi, isChecked)",
     ],
     "theme": [
         "val onWarn: Color",
         "onWarn = Color(0xFFFFFFFF)",
         "onWarn = Color(0xFF1A1206)",
         "bg = Color(0xFF0E1117), card = Color(0xFF222936)",
-        "primarySoft = Color(0xFF313C63), sub = Color(0xFFA8B2C6)",
+        # R166 · 深色字色会按用户反馈继续调，不绑死某个十六进制值；
+        # 由下面 ② 的 WCAG 逐对验算守门，改色只要达标就过。
+        "primarySoft = Color(0xFF313C63), sub = Color(",
         "line = Color(0xFF3B455A)", "grey = Color(0xFF7E8AA0)",
     ],
     "plan": [
@@ -111,6 +113,12 @@ def load():
         except OSError:
             out[k] = ""
     return out
+
+
+def code_only(s):
+    """滤掉注释行，避免注释里的教程词汇让守门误报。"""
+    return "\n".join(l for l in s.splitlines()
+                     if not l.strip().startswith(("//", "/*", "*")))
 
 
 # ---- WCAG 相对亮度与对比度（I2 的客观依据） ----
@@ -182,12 +190,15 @@ def logic_cases(f):
         bad.append("试听区没排在采样参数之前：trial=%d buttons=%d params=%d" % (a, b, c))
     else:
         print("  调音台顺序：试听文本 → 双试听按钮 → 九项采样参数 ✓")
-    # 刷新键热区必须 >= 40dp，seed 说明必须在 ParamLine 里
+    # 刷新键热区必须 >= 40dp；R158b 起参数行不许再塞教程/示例
     pl = f["main"][f["main"].find("private fun ParamLine("):]
     if "Box(Modifier.size(40.dp)" not in pl:
         bad.append("刷新键热区没扩到 40dp")
-    if 'if (spec.key == "seed")' not in pl or "每次随机" not in pl:
-        bad.append("seed 说明没上屏")
+    for t in ("→", "例如", "每次随机"):
+        if t in pl:
+            bad.append("参数行又出现教程性文案: " + t)
+        else:
+            print("  参数行教程零残留 ✓")
 
     # ② 深色对比度：直接读 Theme.kt 的真实色值
     d = dark_pal(f["theme"])
@@ -217,8 +228,23 @@ def logic_cases(f):
                 bad.append("深色对比不足 %s: %.2f < %.2f" % (name, got, need))
             else:
                 print("  深色 %-14s %.2f ≥ %.2f ✓" % (name, got, need))
-    # 旧色值不许回潮
-    for old in ("0xFF12151C", "0xFF1C212C", "0xFF2A3350", "0xFF9AA3B5"):
+    # R167 · 用户纠正：深色下字体就该是白色。上一轮只把主文字刷白、
+    # 48 处 Sub 留灰是理解偏差。现在深底上 text 与 sub 都必须纯白，
+    # 层次交给字号/字重/底色，不再靠灰度分主次。
+    if d:
+        for k in ("text", "sub"):
+            v = d.get(k, "").upper()
+            if v != "FFFFFF":
+                bad.append("R167 深色 %s 不是纯白：#%s" % (k, v or "?"))
+            else:
+                print("  深色 %-4s 纯白 ✓" % k)
+        # 亮底按钮上的深字不许被一起刷白（白压亮黄只有 1.67:1）
+        for k in ("onWarn", "onPrimary"):
+            if d.get(k, "").upper() == "FFFFFF":
+                bad.append("R167 亮底按钮前景被刷白，字会看不见：%s" % k)
+    # 旧色值不许回潮（含 R166 的中间态）
+    for old in ("0xFF12151C", "0xFF1C212C", "0xFF2A3350", "0xFF9AA3B5",
+                "0xFFA8B2C6", "0xFFC3CBD9"):
         if old in f["theme"]:
             bad.append("旧深色值回潮：" + old)
 
@@ -284,8 +310,10 @@ def check(f):
         e.append("ParamLine 的刷新键热区没扩到 40dp")
     if ".background(PrimarySoft, RoundedCornerShape(10.dp))" not in pl:
         e.append("刷新键没有可见的圆底，仍像空心 checkbox")
-    if "padding(top = 2.dp, bottom = 8.dp)" not in pl:
-        e.append("seed 说明没和滑块拉开间距")
+    # R158b · 参数行不许再塞教程/示例/箭头流程
+    for t in ("→", "例如：", "每次随机", "点一下", "步骤"):
+        if t in code_only(pl):
+            e.append("参数行又出现教程性文案: " + t)
     return e
 
 
@@ -306,7 +334,7 @@ def selftest():
                      "Box(Modifier.size(20.dp)", 1))(t.find("private fun ParamLine("))),
         ("刷新键退回小热区", "main", 'Text("↺", fontSize = 17.sp, color = Primary)',
          'Text("↺", fontSize = 12.sp, color = Sub,\n                modifier = Modifier.clickable { onValue(spec.def) }.padding(4.dp))'),
-        ("seed 说明被摘", "main", 'if (spec.key == "seed") {', ""),
+        ("教程口径被摘", "main", 'R158b · 种子语义不进 UI', ""),
         ("onWarn 字段被摘", "theme", "val onWarn: Color", ""),
         ("深色 onWarn 被摘", "theme", "onWarn = Color(0xFF1A1206)", ""),
         ("深色卡片回潮", "theme", "card = Color(0xFF222936)",
@@ -326,24 +354,24 @@ def selftest():
         ("frontMatter 被摘", "plan",
          "fun frontMatter(text: String, chapters: List<Chapter>): FrontInfo", ""),
         ("上限保护被摘", "plan", "coerceAtMost(4096)", ""),
-        ("诊断行被摘", "hub", '"书前 ${fi.chars} 字是下载/出版信息', ""),
+        ("诊断行被摘", "hub", '"书前 ${fi.chars} 字已跳过', ""),
         ("复用读盘被摘", "hub", "ChapterPlan.resolve(c, b, text)", ""),
         ("首章 start 被改成 0", "pipe", "Chapter(i, m.second, m.first, e)",
          "Chapter(i, m.second, 0, e)"),
         ("格子色函数被摘", "hub", "private fun segCellColor(", ""),
         ("未生成格子退回 18%", "hub", "0.46f else 0.48f",
          "0.18f else 0.18f"),
-        ("第一列格子没用公共色", "hub", "segCellColor(playable, playing)", ""),
+        ("第一列格子没用公共色", "hub", "segCellColor(playable, playing, multi, isChecked)", ""),
         ("第二列格子没用公共色", "hub",
-         "segCellColor(playable, playing, segMulti, checked)", ""),
+         "segCellColor(playable, playing, multi, isChecked)", ""),
         # 这个串在设置页主题分段器也出现一次，注入必须只改 ParamLine 段，
         # 否则删掉的是别处的那一处，本条永远拦不住。
         ("刷新键退回空心框", "main", None,
          lambda t: (lambda i: t[:i] + t[i:].replace(
              ".background(PrimarySoft, RoundedCornerShape(10.dp))", "", 1))
                     (t.find("private fun ParamLine("))),
-        ("seed 说明又压滑块", "main",
-         "modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)", ""),
+        ("教程文案回潮", "main", '"风格补充（可留空）"',
+         'Text("例如：温和的中年女声 → 语速偏慢）"'),
         ("CI 漏挂 r153", "ci", "python3 scripts/r153_verify.py --selftest", ""),
         ("现行清单漏 r153", "r135", '"r153_verify.py"', ""),
     ]

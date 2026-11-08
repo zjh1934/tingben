@@ -50,8 +50,8 @@ POS = {
 KEEP = {
     "main": [
         'BookStore.list(c)', 'ModelStore.installedModes(c)', 'ModelStore.missing(c)',
-        'RefreshStrip(', 'AlertDialog(', 'onOpen(b.id)', 'onChanged()',
-        'BookStore.add(c, "粘贴的文字", text)', 'BookStore.delete(c, id)',
+        'RefreshStrip(', 'AlertDialog(', 'onOpen(b.id)', 'refresh++',
+        'BookStore.add(c, "粘贴的文字", text', 'BookStore.delete(c, id)',
         'Text("共 ${books.size} 本"', 'private fun InputReadScreen(', '再选一次文件 ›',
     ],
     "reading": [
@@ -59,8 +59,8 @@ KEEP = {
         'fun save(c: Context, bookId: String, chapter: Int, para: Int? = null, offset: Int? = null)',
         'val same = prev?.chapter == chapter',
     ],
-    "chrome": ['NAV_MIXER to "调音台"', 'NAV_MODELS to "模型"'],
-    "hub": ['ReadingState.last(c, b.id)', 'LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp)) {'],
+    "chrome": ['internal fun AppDrawerSheet(', 'private fun GearIcon('],
+    "hub": ['ReadingState.last(c, b.id)', 'LazyColumn(Modifier.fillMaxSize(),'],
     "ci": ['scripts/r95_verify.py', 'scripts/r94_verify.py'],
 }
 
@@ -189,8 +189,8 @@ def selftest():
         ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r96_read_parity.py', 'x.py')),
         ('对拍脚本被掏空', 'parity', lambda t: t.replace('CASES = [', 'DATA = [', 1)),
         ('守恒破坏·刷新条', 'main', lambda t: t.replace('RefreshStrip(', 'NoStrip(')),
-        ('守恒破坏·抽屉', 'chrome',
-         lambda t: t.replace('NAV_MIXER to "调音台"', 'NAV_MIXER to "调音台2"')),
+        ('守恒破坏·壳层', 'chrome',
+         lambda t: t.replace('private fun GearIcon(', 'private fun BrokenGear(')),
         ('旧说法回潮', 'reading', lambda t: t + '\n// 语言模型\n'),
     ]
     bad = 0

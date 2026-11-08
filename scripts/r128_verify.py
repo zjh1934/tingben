@@ -31,7 +31,7 @@ POS = {
         "r.copy(index = i, wav = w, wavName = w?.name ?: r.wavName)",
         "val w = r.wav ?: treeWav?.get(r.index)",
         "Text(\"分段看台 · ${segs.size} 段\"",
-        "segs.chunked(8)",
+        "segs.chunked(SEG_GRID_COLUMNS)",
         "AudioTree.load(c)",
     ],
     "work": [

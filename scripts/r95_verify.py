@@ -64,7 +64,7 @@ BAN = {
 }
 
 KEEP = {
-    "chrome": ['NAV_MIXER to "调音台"', 'NAV_MODELS to "模型"'],
+    "chrome": ['internal fun AppDrawerSheet(', 'private fun GearIcon('],
     "main": ['SETTINGS, MODELS, MIXER, CHAPTERS }', 'commitAll()', 'ttsSynthesize('],
     "pipe": ['AudioLibrary.register(c, book.id, book.title', 'TaskResume.save(c, done)',
              'ProduceService.update'],
@@ -127,7 +127,7 @@ if __name__ == '__main__':
             ('空间提示塌回笼统', 'pipe', lambda t: t.replace('存储空间不够', '没能生成音频')),
             ('CI 摘验证', 'ci', lambda t: t.replace('scripts/r95_verify.py', 'x.py')),
             ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r95_space_parity.py', 'x.py')),
-            ('守恒破坏', 'chrome', lambda t: t.replace('NAV_MIXER to "调音台"', 'NAV_MIXER to "调音台2"')),
+            ('守恒破坏·壳层', 'chrome', lambda t: t.replace('private fun GearIcon(', 'private fun BrokenGear(')),
         ]
         bad = 0
         for name, key, mut in cases:

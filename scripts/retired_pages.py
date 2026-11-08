@@ -44,7 +44,7 @@ DEAD_TRAITS = [
 # 现行能力必须还在：防止「为了清死代码把活代码一起删了」
 LIVE_SYMBOLS = [
     "private fun App(",
-    "fun openBookCol(id: String?, col: Int)",
+    "fun openBook(id: String?)",
     "internal fun ChapterHubScreen(",   # 在 ChapterHub.kt
     "internal fun PlayerSheet(",        # 在 PlayerSheet.kt
     "internal fun MiniPlayBar(",        # 在 ChapterHub.kt

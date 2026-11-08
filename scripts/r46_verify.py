@@ -9,6 +9,7 @@ import os, pathlib, re, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from r45_common import canon
 import nav_semantics as nav
+import shell_semantics as shell
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MAIN_P = "app/src/main/java/com/tingben/app/MainActivity.kt"
@@ -18,15 +19,12 @@ CHROME = (ROOT / CHROME_P).read_text(encoding="utf-8")
 
 CHROME_POS = [
     "internal fun AppDrawerSheet(",
-    "requiredWidth(240.dp)",
-    "fontSize = 13.sp",
-    "NavigationDrawerItem(",
-    "HorizontalDivider(",
-    "onMenu: () -> Unit",
+    "requiredWidth(272.dp)",
+    "private fun GearIcon(",
+    "showSettings: Boolean = false",
+    "onSettings: () -> Unit",
     "IconButton(onClick = onMenu)",
-    'NAV_MIXER to "调音台"',
-    "private val DRAWER_TOP = listOf(",
-    "private val DRAWER_MORE = listOf(",
+    "internal fun RefreshStrip(",
     "if (acc > 55f) onRefresh()",
 ]
 MAIN_POS = [
@@ -38,7 +36,7 @@ MAIN_POS = [
     "rememberDrawerState(DrawerValue.Closed)",
     "BackHandler(enabled = drawerState.isOpen)",
     "scope.launch { drawerState.close() }",
-    "onMenu = { scope.launch { drawerState.open() } }",
+    'EventLog.ui("DRAWER_NAV", "open")',
     ".navigationBarsPadding()",
 ]
 OLD_SHELL = ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS", "AppTab(",
@@ -79,6 +77,8 @@ def check(main, chrome, tag):
         ck(s in chrome, "AppChrome 缺符号: " + s[:60])
     for s in OLD_SHELL:
         ck(s not in main and s not in chrome, "旧壳残留: " + s)
+    for msg in shell.checks(main, chrome):
+        ck(False, "新壳层语义: " + msg)
     for msg in nav.semantics(main):
         ck(False, "导航语义: " + msg)
     ck(nav.back_order_ok(main), "抽屉 BackHandler 没排在全局回退之后")
@@ -110,7 +110,8 @@ INJECT = [
     ("去掉底部安全区", MAIN, ".statusBarsPadding().navigationBarsPadding()", ".statusBarsPadding()"),
     ("调音台返回写死设置页", MAIN, _mixer_back_lit,
      "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = Screen.SETTINGS })"),
-    ("调音台不再是独立项", CHROME, 'NAV_MIXER to "调音台",\n', ""),
+    ("旧功能菜单回潮", CHROME, "internal const val NAV_INPUT = 6",
+     "internal const val NAV_INPUT = 6\nprivate val DRAWER_TOP = listOf(\n    NAV_MIXER to \"调音台\",\n)"),
     ("删一个分发分支", MAIN, _mixer_line, ""),
     ("全局回退失效", MAIN, _global_frag, "(enabled = false)"),
 ]

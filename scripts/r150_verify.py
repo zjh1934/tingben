@@ -48,18 +48,18 @@ POS = {
         'EventLog.ui("HUB_STOP"', 'EventLog.ui("HUB_RESUME"',
         "Producer.stop()", "onResumeTask()",
         "第 ${chNow + 1} 章 ·",
-        "expanded: Int?, onExpand: (Int) -> Unit,",
-        "segs: List<SegRow>, pq: PlaybackState,",
-        "onTap = { onExpand(r.index) }",
+        "expanded: Boolean,",
+        "row: List<SegRow>, pq: PlaybackState,",
+        "onTap = { openReader(r.index) }",
         'EventLog.ui("HUB_CH_EXPAND"',
-        "TextButton(onClick = { onRead(r.index) }",
+        "IconButton(onClick = onListen",
         "private fun ChapterSegGrid(",
-        '"本章 ${segs.size} 小段 · 点一下试听，再点一下停"',
+        '"本章 ${segs.size} 小段"',
         "val onThis = playable && pq.trackId == segId",
         "val playing = onThis && pq.isPlaying",
         "PlayQueue.pausePreview()", "PlayQueue.resumePreview()",
         'PlayQueue.setTracks(', '"seg")',
-        "clickable(enabled = playable)",
+        ".pointerInput(sg.index, multi, isChecked, playable, playing, onThis)",
     ],
     "ci": ["python3 scripts/r150_verify.py --selftest"],
     "r135": ['"r150_verify.py"'],
@@ -148,8 +148,8 @@ def logic_cases(f):
             print("  第 %d 章 → 小段 %s" % (ch, got))
 
     # ④ 序号上不许盖按钮：格子内容里只允许一个 Text，不许 Icon/播放字符
-    m = re.search(r"private fun ChapterSegGrid\(.*?\n\}\n\n@Composable\nprivate fun SynColumn",
-                  f["hub"], re.S)
+    # R163 · 单列后 ChapterSegGrid 后面直接是 MoreDots，不再接 SynColumn
+    m = re.search(r"private fun ChapterSegGrid\(.*?\n\}\n", f["hub"], re.S)
     if not m:
         bad.append("没圈出 ChapterSegGrid 函数体")
     else:
@@ -196,12 +196,12 @@ def selftest():
         ("停止按钮被摘", "hub", 'EventLog.ui("HUB_STOP"', ""),
         ("停止动作被摘", "hub", "Producer.stop()", ""),
         ("继续按钮被摘", "hub", 'EventLog.ui("HUB_RESUME"', ""),
-        ("点章展开被摘", "hub", "onTap = { onExpand(r.index) }", "onTap = { onRead(r.index) }"),
-        ("阅读入口被摘", "hub", "TextButton(onClick = { onRead(r.index) }", ""),
+        ("点章展开被摘", "hub", "onTap = { openReader(r.index) }", "onTap = { onRead(r.index) }"),
+        ("阅读入口被摘", "hub", "IconButton(onClick = onListen", ""),
         ("展开格组件被摘", "hub", "private fun ChapterSegGrid(", ""),
         ("preview 路由被摘", "hub", "PlayQueue.pausePreview()", "PlayQueue.toggle()"),
         ("resumePreview 被摘", "hub", "PlayQueue.resumePreview()", ""),
-        ("序号上盖按钮", "hub", '"本章 ${segs.size} 小段 · 点一下试听，再点一下停"',
+        ("序号上盖按钮", "hub", '"本章 ${segs.size} 小段"',
          '"▶ 播放"'),
         ("旧文字条回潮", "hub", "val bookRunning = st.running && task?.bookId == book.id",
          '"正在制作 · ${st.done}/${st.total} 块"'),

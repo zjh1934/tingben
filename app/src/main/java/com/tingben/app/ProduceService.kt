@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import com.tingben.app.core.Producer
+import com.tingben.app.core.UiErrors
 import com.tingben.app.diag.EventLog
 
 class ProduceService : Service() {
@@ -68,9 +69,9 @@ class ProduceService : Service() {
             lastDone = 0
             lastTotal = 0
             finished = false
+            // R166 · title/type 已在 detail 里，fields 原样再来一遍纯属双写。
             EventLog.log(EventLog.Kind.PIPELINE, "FGS_BEGIN",
-                "title=$title type=${fgsTypeLabel()} reason=用户从界面主动开始长任务",
-                fields = mapOf("book" to title, "type" to fgsTypeLabel()))
+                "title=$title type=${fgsTypeLabel()} reason=用户从界面主动开始长任务")
             return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     ctx.startForegroundService(startIntent(ctx, title))
@@ -100,12 +101,15 @@ class ProduceService : Service() {
                 if (msg.isNotBlank()) append(" · ").append(msg.take(48))
             }
             publish(c)
+            OverlayProgress.update(c, lastBook, stage, done, total)
         }
 
         fun stopping(c: Context) {
             if (finished) return
             lastText = "正在停止…（已做好的块都留着）"
             publish(c)
+            // R161 · 用户点停止，浮窗立刻收起，绝不留在屏幕上
+            OverlayProgress.hide(c)
         }
 
         fun finish(c: Context, stage: String, done: Int, total: Int) {
@@ -123,10 +127,10 @@ class ProduceService : Service() {
                 append(" · 点开看结果或继续")
             }
             publish(c, final = true)
+            OverlayProgress.hide(c)
             releaseWake()
             EventLog.log(EventLog.Kind.PIPELINE, "FGS_FINISH",
-                "stage=$stage done=$done/$total wake=released",
-                fields = mapOf("stage" to stage, "done" to done.toString(), "total" to total.toString()))
+                "stage=$stage done=$done/$total wake=released")
             try {
                 c.applicationContext.stopService(Intent(c.applicationContext, ProduceService::class.java))
             } catch (_: Throwable) { }
@@ -144,8 +148,7 @@ class ProduceService : Service() {
             }
             EventLog.log(EventLog.Kind.ENGINE, "FGS_WAKELOCK",
                 "unit=$unit type=PARTIAL_WAKE_LOCK timeoutMs=$UNIT_TIMEOUT_MS scope=每块",
-                level = EventLog.Level.TRACE,
-                fields = mapOf("unit" to unit, "timeoutMs" to UNIT_TIMEOUT_MS.toString()))
+                level = EventLog.Level.TRACE)
         }
 
         fun releaseWake() {
@@ -204,16 +207,57 @@ class ProduceService : Service() {
                     publish(this)
                 }
                 EventLog.log(EventLog.Kind.PIPELINE, "FGS_READY",
-                    "notification=visible type=${fgsTypeLabel()} busy=${Producer.isBusy()}",
-                    fields = mapOf("busy" to Producer.isBusy().toString(), "type" to fgsTypeLabel()))
+                    "notification=visible type=${fgsTypeLabel()} busy=${Producer.isBusy()}")
                 if (!Producer.isBusy() || finished) stopSelf()
             }
         }
         return START_NOT_STICKY
     }
 
+    /**
+     * R161 · Android 15（API 35，本仓 targetSdk 35）起，dataSync / mediaProcessing
+     * 前台服务在 24 小时内累计跑满 6 小时会回调这里。回调时服务已经不再被视为
+     * 前台服务，只有几秒钟调用 stopSelf()，否则系统抛 RemoteServiceException 判 ANR。
+     *
+     * 不能等这个回调才保护数据：Android 14 及以下没有 onTimeout，到点直接把进程
+     * 置为 cached。真正的兜底是「每段落盘 + 开软件弹窗续跑」（R159），这里只负责
+     * 优雅收尾，并给用户一句能看懂的原因。
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        super.onTimeout(startId, fgsType)
+        val typeName = when (fgsType) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING -> "mediaProcessing"
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC -> "dataSync"
+            else -> "type=$fgsType"
+        }
+        val why = "已达系统本次运行时长上限，已安全停下，做好的都留着"
+        EventLog.log(EventLog.Kind.PIPELINE, "FGS_TIMEOUT",
+            "startId=$startId type=$typeName done=$lastDone/$lastTotal",
+            fields = mapOf("startId" to startId.toString(), "type" to typeName))
+        UiErrors.report(why)
+        // 复用同一条停止链：写回 stopped、暂停队列、保留断点、释放唤醒锁
+        Producer.onServiceTimeout(applicationContext, fgsType)
+        lastTitle = "听本 · 已到时长上限"
+        lastStage = "已达时长上限"
+        lastText = "《$lastBook》 · $lastDone/$lastTotal · $why"
+        finished = true
+        foreground = false
+        OverlayProgress.hide(this)
+        releaseWake()
+        runCatching {
+            ensureChannel(this)
+            getSystemService(NotificationManager::class.java)?.notify(
+                NOTIF_ID, buildNotification(this, lastTitle, lastText,
+                    lastDone, lastTotal, true))
+        }
+        runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
+        stopSelf()
+    }
+
     override fun onDestroy() {
         releaseWake()
+        // R161 · WindowManager 泄漏 View 是常见崩溃源，销毁必须 remove
+        OverlayProgress.hide(this)
         foreground = false
         try {
             stopForeground(STOP_FOREGROUND_DETACH)

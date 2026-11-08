@@ -48,7 +48,7 @@ NEED = [
     ('看书页读字号', 'ChapterHub.kt', 'mutableStateOf(Prefs.readerFontScale(c))'),
     ('A- 写回', 'ChapterHub.kt', 'Prefs.setReaderFontScale(c, size)'),
     ('Opt 色 getter', 'ProduceOptions.kt', 'private val OptCard: Color get() = palette.card'),
-    ('抽屉分割线跟随', 'AppChrome.kt', 'color = palette.line'),
+    ('右上角齿轮', 'AppChrome.kt', 'private fun GearIcon('),
     ('values-night', 'values-night', 'android:windowLightStatusBar">false'),
     ('CI 挂验证', 'ci.yml', 'python3 scripts/r73_verify.py'),
 ]
@@ -77,7 +77,7 @@ GONE = [
 KEEP = [
     ('Screen 10 值', 'ALLKT', 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }'),
     ('抽屉推走', 'ALLKT', 'DismissibleNavigationDrawer'),
-    ('三列目录', 'ChapterHub.kt', 'HubTitles = listOf("章节", "合成", "可播")'),
+    ('三列目录', 'ChapterHub.kt', 'private fun ChapterRow('),
     ('四步进度', 'ALLKT', 'val steps = listOf("拆章", "生成声音", "整理音频", "完成")'),
     ('唯一提交', 'ALLKT', 'commitAll()'),
     ('恒直接朗读', 'ALLKT', 'Producer.start(c, book, sel, directRead = true'),

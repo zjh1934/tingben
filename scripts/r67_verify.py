@@ -25,7 +25,7 @@ GONE = ['AuditLog.beginRun', 'RawDump.begin', 'AUDIT_RUN_BEGIN', 'AbGate',
         'AUDIT_SUMMARY']
 COMPAT = ['AnnCache.dirFor', 'TaskResume.load', 'chapterIndices',
           'Producer.start', 'index.json', 'PlayQueue']
-KEEP = ['HubTitles = listOf("章节", "合成", "可播")',
+KEEP = ['private fun ChapterRow(',
         'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
         'run(c, book, onlyChapters, true, thinkOverride, config)',
         'commitAll()', 'DismissibleNavigationDrawer', 'qt_tts_params',
@@ -74,9 +74,8 @@ def main():
         ('思考设置键回潮', lambda: check(prefs=PREFS + '\nprivate const val KEY_THINKING = "thinking"\n',
             allkt=ALL + '\nprivate const val KEY_THINKING = "thinking"\n')),
         ('AnnotatedPane 回潮', lambda: check(allkt=ALL + '\nprivate fun AnnotatedPane() {}\n')),
-        ('三列退回四列', lambda: check(hub=HUB.replace('listOf("章节", "合成", "可播")',
-            'listOf("原始", "标注", "合成", "可播")'),
-            allkt=ALL.replace('listOf("章节", "合成", "可播")', 'listOf("原始", "标注", "合成", "可播")'))),
+        # R163 · 旧三列标题已不存在，改成注入一个 GONE 里的旧形态
+        ('旧形态回潮', lambda: check(allkt=ALL + '\nobject AbGate {}\n')),
         ('四步退回五步', lambda: check(allkt=ALL.replace(
             'listOf("拆章", "生成声音", "整理音频", "完成")',
             'listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")'))),

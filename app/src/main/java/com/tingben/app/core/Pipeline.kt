@@ -20,8 +20,12 @@ import java.io.RandomAccessFile
 import java.security.MessageDigest
 import java.util.UUID
 
+// R157 · origin 只用于「导出时归到哪个文件夹」，不参与分章/合成/索引：
+//   file  = 从 txt/md/epub 导入的书
+//   input = 输入框粘贴 / 别的 App 分享文字建的书
+// 老 books.json 没有这个字段，list() 用 optString 兜底成 file，零迁移。
 data class Book(val id: String, val title: String, val path: String, val chars: Int,
-                val sha: String = "")
+                val sha: String = "", val origin: String = "file")
 data class Chapter(val index: Int, val title: String, val start: Int, val end: Int)
 data class Chunk(val index: Int, val chapter: Int, val text: String, val start: Int, val end: Int)
 data class Ann(val text: String, val speaker: String, val instruct: String)
@@ -62,7 +66,8 @@ object BookStore {
             (0 until a.length()).map { i ->
                 val o = a.getJSONObject(i)
                 Book(o.getString("id"), o.getString("title"), o.getString("path"),
-                    o.optInt("chars", 0), o.optString("sha", ""))
+                    o.optInt("chars", 0), o.optString("sha", ""),
+                    o.optString("origin", "file"))
             }.filter { File(it.path).exists() }
             .let { books ->
                 val pins = pinned(c)
@@ -75,7 +80,8 @@ object BookStore {
         val a = JSONArray()
         books.forEach { b ->
             a.put(JSONObject().put("id", b.id).put("title", b.title)
-                .put("path", b.path).put("chars", b.chars).put("sha", b.sha))
+                .put("path", b.path).put("chars", b.chars).put("sha", b.sha)
+                .put("origin", b.origin))
         }
         meta(c).writeText(a.toString())
     }
@@ -85,7 +91,7 @@ object BookStore {
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     } catch (_: Throwable) { "${text.length}_${text.hashCode()}" }
 
-    fun add(c: Context, title: String, text: String): Book {
+    fun add(c: Context, title: String, text: String, origin: String = "file"): Book {
         if (text.length > MAX_TEXT_CHARS)
             throw IllegalStateException(
                 "这本书有 ${text.length / 10000} 万字，超过 ${MAX_TEXT_CHARS / 10000} 万字上限；" +
@@ -101,7 +107,7 @@ object BookStore {
         val id = UUID.randomUUID().toString()
         val f = File(dir(c), "$id.txt")
         f.writeText(text)
-        val b = Book(id, title, f.absolutePath, text.length, sha)
+        val b = Book(id, title, f.absolutePath, text.length, sha, origin)
         val all = list(c).toMutableList().also { it.add(0, b) }
         save(c, all)
         EventLog.log(EventLog.Kind.MODEL, "BOOK_ADD", title)
@@ -616,21 +622,52 @@ object Producer {
         return pumpQueue(c.applicationContext)
     }
 
-    // G1 · 开软件先弹窗问，不再闷头自动跑。纯查询，不启动任何东西：
-    // 只认「真的能自动续跑」的任务（崩溃中断 / 队列里待做），
-    // 用户手动停的、失败的、模型没齐的、切章口径变过的一律不弹，
-    // 沿用 autoResumeBlockReason 那套守卫，避免出现「我明明停了还问我续不续」。
-    fun hasResumable(c: Context): TaskInfo? {
+    // R159 · 开软件时的「待处理任务」。
+    //
+    // 用户实证：「关闭以后重新打开应用，它不一定弹」。查实有四条原因，其中三条
+    // 在这里：原来 hasResumable 只放行「真的能自动续跑」的任务，手动停 / 失败 /
+    // 模型没齐 / 队列暂停一律返回 null，界面就静默不弹；用户眼里就是「看运气」。
+    // 现在改成：只要存在未完成任务就返回，由 PendingTask.action 决定弹窗给什么
+    // 出口（自动续跑 / 继续队列 / 去任务页手动处理）。守卫仍留在 autoResume 里，
+    // 放宽「看不看得见」不等于放宽「能不能自动跑」。
+    enum class ResumeAction { AUTO, QUEUE, VIEW }
+
+    data class PendingTask(
+        val task: TaskInfo,
+        val action: ResumeAction,
+        val label: String,     // 短状态标签，进胶囊，不写成长句解释
+        val reason: String?    // 只进日志，不进 UI
+    )
+
+    fun pending(c: Context): PendingTask? {
         if (busy) return null
-        if (TaskResume.queuePaused(c)) { queuePaused = true; return null }
+        val paused = TaskResume.queuePaused(c)
+        if (paused) queuePaused = true
         val q = TaskResume.queue(c).firstOrNull()
-        if (q != null) return q
+        if (q != null) {
+            return if (paused)
+                PendingTask(q, ResumeAction.QUEUE, "队列已暂停", "队列已暂停")
+            else
+                PendingTask(q, ResumeAction.AUTO, "排队中", null)
+        }
         val t = TaskResume.active(c) ?: return null
         if (t.phase == "done") return null
-        if (TaskResume.autoResumeBlockReason(c, t) != null) return null
         if (BookStore.list(c).none { it.id == t.bookId }) return null
-        return t
+        val why = TaskResume.autoResumeBlockReason(c, t)
+        val label = when {
+            t.stage == "已达时长上限" -> "已达时长上限"
+            t.phase == "stopped" -> "已停止"
+            t.phase == "interrupted" && why == null -> "意外中断"
+            why != null -> "待确认"
+            else -> "未完成"
+        }
+        return PendingTask(
+            t, if (why == null) ResumeAction.AUTO else ResumeAction.VIEW, label, why)
     }
+
+    /** 兼容旧调用：只把「能自动续跑」的挑出来，口径与 pending 同源，不分家。 */
+    fun hasResumable(c: Context): TaskInfo? =
+        pending(c)?.takeIf { it.action == ResumeAction.AUTO }?.task
 
     // 软件重新打开时调用：队列优先（用户要「队列里有任务就自动开始跑」），
     // 没有排队任务才处理崩溃中断的单本续跑。
@@ -687,6 +724,31 @@ object Producer {
             ProduceService.stopping(c)
         }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_STOP", "用户点了停止")
+    }
+
+    /**
+     * R161 · 系统前台服务跑到 6 小时上限（Service.onTimeout）时的统一出口。
+     * 与用户点停止共用 stop()，但把 stage 写成可辨识的「已达时长上限」：
+     * 下次开软件弹窗显示这个原因，而不是「意外中断」，也不会被当成崩溃
+     * 自动续跑（一续跑又会立刻撞上限）。手动停的任务绝不被偷偷跑起来。
+     */
+    fun onServiceTimeout(c: Context, fgsType: Int) {
+        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_FGS_TIMEOUT",
+            "前台服务时长到点，任务安全停下 · fgsType=$fgsType · " +
+                "done=${_state.value.done}/${_state.value.total}",
+            fields = mapOf("fgsType" to fgsType.toString()))
+        if (busy) stop()
+        val ctx = appCtx ?: c.applicationContext
+        val p = _state.value
+        current?.let { t ->
+            val fixed = t.copy(phase = "stopped", stage = "已达时长上限",
+                done = p.done, updatedAt = System.currentTimeMillis())
+            current = fixed
+            TaskResume.save(ctx, fixed)
+            _resume.value = fixed
+        }
+        _state.value = p.copy(running = false, stage = "已达时长上限",
+            message = "已到系统本次运行时长上限，安全停在 ${p.done}/${p.total} 块，做好的都留着。")
     }
 
     private fun halted(done: Int, total: Int, failed: Int): Progress = Progress(
@@ -870,10 +932,7 @@ object Producer {
                 "超长整句保留 ${stats.sumOf { it.oversize }} · " +
                 "最长 ${stats.maxOfOrNull { it.longest } ?: 0} 字 · " +
                 "原文 ${stats.sumOf { it.charsIn }} 字 拼回 ${stats.sumOf { it.charsOut }} 字" +
-                (if (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }) " · 逐字无损" else " · ⚠️字数不一致"),
-            fields = mapOf("chunks" to chunks.size.toString(), "segments" to annotated.size.toString(),
-                "hardCuts" to "0", "lossless" to
-                    (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }).toString()))
+                (if (stats.sumOf { it.charsIn } == stats.sumOf { it.charsOut }) " · 逐字无损" else " · ⚠️字数不一致"))
         EventLog.log(EventLog.Kind.PIPELINE, "DIRECT_READ",
             "${chunks.size} 块跳过分段，切成 ${annotated.size} 段直接朗读")
         try {
@@ -920,9 +979,11 @@ object Producer {
             }
             stampFile.writeText(voiceStamp)
         } catch (_: Throwable) { }
+        // R166 · 括号里那句关于目标语言取值的说明是写给我看的开发依据，
+        // 混进运行时日志只会让每行拖一句解释；依据留在 ParamSpec / 官方文档。
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_MODE",
             "${SynthInput.label(c)} · 指纹=$voiceStamp · seed=${knobs.seed}" +
-                " · temp=${knobs.temperature} · lang=chinese（官方 README：目标语言已知时显式传，别用 auto）")
+                " · temp=${knobs.temperature} · lang=chinese")
 
         val modeStamp = TaskResume.expectedModeStamp(c)
         val modeStampFile = File(work, "mode_stamp.txt")
@@ -1001,6 +1062,9 @@ object Producer {
         val usedDoneChapters = mutableSetOf<Int>()
         val wavs = mutableListOf<File>()
         var synthFails = 0
+        // R157 · 只有真合成的段才算参数；跳过段不碰它（见循环里的 TTS_SKIP）。
+        // 声明成可空并在用时兜底重算，任何意外路径都不会拿到空指令。
+        var lastParams: SynthInput.Params? = null
         val gapBytes = ((config.gapMs.coerceIn(0, 5000) * 48) / 2) * 2
         val segStartBytes = mutableListOf<Long>()
         var cursorBytes = 0L
@@ -1049,22 +1113,40 @@ object Producer {
                     return
                 }
                 val segStart = wavs.size
-                ProduceService.touch(c.applicationContext, "合成段 ${i + 1}/${toSpeak.size}")
                 val wav = File(work, String.format("direct_%04d.wav", i))
                 val ci = segChapter.getOrElse(i) { -1 }
                 val doneWav = if (ci >= 0) doneChapterFiles[ci] else null
                 val covered = doneWav != null && doneWav.isFile && doneWav.length() > 44 &&
                     !(wav.exists() && wav.length() > 44)
-                val v = SynthInput.params(c, a.instruct, config.styleInstruct())
-                EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
-                    "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
-                        a.text.take(50).replace('\n', '⏎') + " → " + (v.instruct ?: "（无指令）"),
-                    level = EventLog.Level.TRACE,
-                    fields = mapOf("seg" to (i + 1).toString(), "speaker" to a.speaker,
-                        "textChars" to a.text.length.toString(), "instructChars" to (v.instruct?.length ?: 0).toString(),
-                        "lang" to "chinese", "mode" to ModelStore.currentMode(c).id,
-                        "speakerParam" to (v.speaker ?: "null")))
-                if (covered || (wav.exists() && wav.length() > 44)) {
+                val already = wav.exists() && wav.length() > 44
+                val skip = covered || already
+                // R157 · 第二份真机日志：每次「继续制作」都从 TTS_INPUT 段 1/88 打起，
+                // 看起来像从头重算，实际前 9 段走的是下面这个「已有音频」跳过分支。
+                // 把日志和前台通知挪到真正要合成的段上；跳过段只记一条精简 SKIP。
+                // 用户之前报过「愣住、不知道后面进哪张」，这条日志误导也占一份。
+                if (skip) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "TTS_SKIP",
+                        "段 ${i + 1}/${toSpeak.size} 已有音频，跳过",
+                        level = EventLog.Level.TRACE,
+                        fields = mapOf("seg" to (i + 1).toString(),
+                            "src" to if (covered) "chapter" else "wav"))
+                } else {
+                    ProduceService.touch(c.applicationContext,
+                        "合成段 ${i + 1}/${toSpeak.size}")
+                    val v = SynthInput.params(c, a.instruct, config.styleInstruct())
+                    EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
+                        "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
+                            a.text.take(50).replace('\n', '⏎') + " → " + (v.instruct ?: "（无指令）"),
+                        level = EventLog.Level.TRACE,
+                        fields = mapOf("seg" to (i + 1).toString(), "speaker" to a.speaker,
+                            "textChars" to a.text.length.toString(),
+                            "instructChars" to (v.instruct?.length ?: 0).toString(),
+                            "lang" to "chinese", "mode" to ModelStore.currentMode(c).id,
+                            "speakerParam" to (v.speaker ?: "null")))
+                    // 参数只给真正合成的那一段用
+                    lastParams = v
+                }
+                if (skip) {
                     if (covered) {
                         if (usedDoneChapters.add(ci)) {
                             wavs.add(doneWav!!)
@@ -1087,6 +1169,8 @@ object Producer {
                             _state.value = halted(i, annotated.size, gateFails + synthFails)
                             return
                         }
+                        val v = lastParams
+                            ?: SynthInput.params(c, a.instruct, config.styleInstruct())
                         val code = try {
                             NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, "chinese",
                                 wav.absolutePath, knobs)

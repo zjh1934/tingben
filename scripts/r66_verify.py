@@ -53,9 +53,10 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if re.search(r'enum class ProduceMode\s*\{[^}]*,', main): e.append('制作档位又出现多档枚举')
     if 'ProduceMode.ANNOTATE' in main or 'HubAction.ANNOTATE' in main:
         e.append('旧标注档回潮')
-    if 'HubTitles = listOf("章节", "合成", "可播")' not in hub: e.append('目录页不是三列')
-    if 'HorizontalPager(' not in hub or 'pageCount = { 3 }' not in hub:
-        e.append('目录页不是三列真分页')
+    if 'private fun ChapterRow(' not in hub: e.append('目录页不是三列')
+    # R163 · 三列并成一列：守「单列 LazyColumn + 分页零回潮」
+    if 'LazyColumn(Modifier.fillMaxSize(),' not in hub or 'pageCount = { 3 }' in hub:
+        e.append('目录页不是单列 / 三列分页回潮')
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
     for s in ['Text("合成音频"', 'Text("调音 ›"', 'onMixer: () -> Unit']:
         if s not in hub: e.append('目录页缺: ' + s)
@@ -115,9 +116,11 @@ def main():
         ('枚举退回 11 值', lambda: check(main=MAIN.replace(
             'MIXER, CHAPTERS }', 'MIXER, LLM, CHAPTERS }'))),
         ('抽屉旧项回潮', lambda: check(chrome=CHROME.replace(
-            '    NAV_MODELS to "模型",', '    NAV_MODELS to "模型",\n    NAV_LLM to "语言模型",'))),
-        ('四列回潮', lambda: check(hub=HUB.replace(
-            'listOf("章节", "合成", "可播")', 'listOf("原始", "标注", "合成", "可播")'))),
+            'internal const val NAV_INPUT = 6',
+            'internal const val NAV_INPUT = 6\nprivate val DRAWER_TOP = listOf('
+            '\n    NAV_LLM to "语言模型",\n)'))),
+        # R163 · 旧三列标题已删，改成注入分页形态看是否被单列判据拦下
+        ('三列分页回潮', lambda: check(hub=HUB + '\nval pageCount = { 3 }\n')),
         ('五步回潮', lambda: check(main=MAIN.replace(
             'listOf("拆章", "生成声音", "整理音频", "完成")',
             'listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")'))),

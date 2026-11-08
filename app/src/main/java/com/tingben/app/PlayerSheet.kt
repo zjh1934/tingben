@@ -79,7 +79,7 @@ internal fun PlayerSheet(
                 color = palette.primary, modifier = Modifier.padding(horizontal = 20.dp))
             Spacer(Modifier.height(8.dp))
             if (list.isEmpty()) {
-                Text("这一本还没有可整本顺序播放的章节", fontSize = 13.sp,
+                Text("暂无可播章节", fontSize = 13.sp,
                     color = palette.sub, modifier = Modifier.padding(horizontal = 20.dp))
             } else {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
@@ -130,12 +130,8 @@ internal fun PlayerSheet(
                 }
                 Spacer(Modifier.height(16.dp))
                 Text("倍速", fontSize = 12.sp, color = palette.sub)
-                // K1 · 用户实证「合成音频速度不好调、调得不准确」：
-                // 合成侧只有「慢/中/快」的文字倾向，没有精确数值，生成后也改不了；
-                // 播放倍速才是可靠控制点。把这层关系直接写在入口旁，不用猜。
-                Text("合成时的语速只是倾向、调不准；这里改播放速度，即时生效，改多少次都行",
-                    fontSize = 10.sp, color = palette.sub,
-                    modifier = Modifier.padding(top = 2.dp))
+                // K1 · 合成侧只有「慢/中/快」倾向，播放倍速才是可靠控制点。
+                // R158b · 这层关系不进 UI（教程），入口够得着就行。
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PlayQueue.SPEED_STEPS.forEach { v ->

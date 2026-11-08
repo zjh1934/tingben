@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- R26 · 长任务前台服务（dataSync）：四个权限跟着 targetSdk 35 一起声明，
-         缺任一权限 startForeground 会抛 SecurityException。绝不申请 INTERNET。 -->
+    <!-- R26 · 长任务前台服务：四个权限跟着 targetSdk 35 一起声明，
+         缺任一权限 startForeground 会抛 SecurityException。绝不申请 INTERNET。
+         R158 · 旧约束「不申请 SYSTEM_ALERT_WINDOW」已由用户推翻：
+         系统级浮窗权限按需申请，用于可选的悬浮进度控件（见 core/KeepAlive.kt）。
+         它不是保活白名单，默认不常显、停止时 removeView；设置页给开关与引导。
+         无障碍权限旧约束同样清掉，但当前无真实用途，暂不声明服务。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".TingbenApp"
@@ -56,9 +61,15 @@
             </intent-filter>
         </activity>
 
-        <!-- R26 · 只从可见界面启动；不导出、不自动重启、不伪装 mediaPlayback。
-             依据 docs/后台保活与浮窗_调研.md：dataSync 在 Android 15 起约 6h 超时，
-             到点停 + 任务页点继续，不承诺永不中断。 -->
+        <!-- R26 · 只从可见界面启动；不导出、不伪装 mediaPlayback。
+             Android 15+ 的 dataSync / mediaProcessing 各有「24h 内累计 6h」上限，
+             长任务靠每段落盘的检查点续跑，不承诺永不中断。
+             R161：onTimeout(int,int) 收尾 6h 上限、ApplicationExitInfo 退出原因
+             进诊断日志、可选悬浮进度（默认关）。
+             不做 START_REDELIVER_INTENT：进程被杀后 Producer 协程已死，系统拿旧
+             Intent 重启的只是一个空壳服务，onStartCommand 会立刻 stopSelf，
+             等于多一次无效启动和日志噪声。恢复靠「每段落盘 + 开软件弹窗续跑」，
+             这条链路在 R159 已验证。 -->
         <service
             android:name=".ProduceService"
             android:exported="false"

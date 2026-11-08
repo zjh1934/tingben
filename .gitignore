@@ -23,3 +23,19 @@ reference/*.tar.gz
 reference/*.zip
 __pycache__/
 *.pyc
+
+# AOCI 宿主 MCP 配置含本机绝对路径，一律不提交；
+# 认知资产 aoci.txt / aoci.meta.txt / aoci.code.txt / AGENTS.md 必须提交，不能加到忽略里
+.mcp.json
+opencode.json
+.codex/
+.claude/
+.cursor/mcp.json
+.aoci/drafts/
+.aoci/recovery/
+.aoci/ledger/
+
+# 令牌接收位在仓库外，这里再兜一层，防误移进版本管理
+.secrets/
+*_token
+

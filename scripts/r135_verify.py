@@ -32,7 +32,7 @@ DEAD_NAMES = [
 
 # 现行能力锚点（防「清理时把活代码一起删了」）
 LIVE_ANCHORS = [
-    "fun openBookCol(id: String?, col: Int)",
+    "fun openBook(id: String?)",
     "var playerOpen by rememberSaveable { mutableStateOf(false) }",
     "PlayerSheet(ctx, miniBook ?: bookId,",
     "onExpand = { playerOpen = true",
@@ -45,9 +45,11 @@ CURRENT_VERIFIERS = ["r131_verify.py", "r132_verify.py", "r133_verify.py",
                     "r141_verify.py", "r142_verify.py", "r147_verify.py", "r148_verify.py",
            "r149_verify.py", "r150_verify.py", "r151_verify.py",
            "r152_verify.py", "r153_verify.py",
-           "r154_verify.py"]
+           "r154_verify.py", "r155_verify.py",
+           "r156_verify.py", "r157_verify.py", "r158_verify.py",
+           "aoci_check.py", "r161_verify.py", "r163_verify.py"]
 
-# R141 · 批次 E 更新后的轻量自检清单：改码轮只跑这 5 项，全套留到发版轮。
+# R141 建立、R160 补第 6 项的轻量自检清单：改码轮只跑这 6 项，全套留到发版轮。
 # 换了三项：退役页统一守门（原来 17 个壳脚本各起一次）、最近两批 R140/R139。
 # 老的 R127/R128/R129 仍挂 CI 全套，只是不再占改码轮的 3 秒预算。
 QUICK = [
@@ -56,6 +58,8 @@ QUICK = [
     "python3 scripts/retired_pages.py --selftest",
     "python3 scripts/r140_verify.py --selftest",
     "python3 scripts/r139_verify.py --selftest",
+    # AOCI 认知守门：受管文件改了而索引/基线没维护，改码轮当场就红
+    "python3 scripts/aoci_check.py",
 ]
 
 
@@ -121,7 +125,7 @@ def selftest():
         ("死代码又长回来", lambda: MAIN.write_text(
             "\n".join(lines + ["", "private fun AudioScreen(c: Context) {}", ""]), encoding="utf-8")),
         ("现行能力被摘", lambda: MAIN.write_text(
-            "\n".join(lines).replace("fun openBookCol(id: String?, col: Int)",
+            "\n".join(lines).replace("fun openBook(id: String?)",
                                      "fun openBookColX(id: String?, col: Int)"), encoding="utf-8")),
         ("现行验证漏挂", lambda: CI.write_text(
             ci.replace("python3 scripts/r134_verify.py --selftest", ""), encoding="utf-8")),

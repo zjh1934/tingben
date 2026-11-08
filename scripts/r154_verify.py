@@ -56,7 +56,7 @@ POS = {
         "PlayQueue.SPEED_STEPS.forEach { v ->",
         "val label = PlayQueue.speedLabel(v)",
         "PlayQueue.setSpeed(v)",
-        "合成时的语速只是倾向、调不准",
+        "R158b · 这层关系不进 UI",
     ],
     "mixer": [
         'RATE("语速", "慢 / 中 / 快；只写稳定倾向"',
@@ -219,7 +219,7 @@ def selftest():
         ("播放器页退回自己一份档位", "player",
          "PlayQueue.SPEED_STEPS.forEach { v ->",
          "listOf(0.75f to \"0.75×\", 1f to \"1.0×\").forEach { (v, label) ->"),
-        ("播放器页说明被摘", "player", "合成时的语速只是倾向、调不准", ""),
+        ("播放器页口径被摘", "player", "R158b · 这层关系不进 UI", ""),
         ("播放器页 setSpeed 被摘", "player", "PlayQueue.setSpeed(v)", ""),
         ("CI 漏挂 r154", "ci", "python3 scripts/r154_verify.py --selftest", ""),
         ("现行清单漏 r154", "r135", '"r154_verify.py"', ""),

@@ -37,10 +37,19 @@ internal val LightPal = Pal(
 // 亮黄警示底上的白字只有 1.67:1，主色底上的白字 1.99:1，基本看不见。
 // 新色板保持深蓝灰调性，把卡片、柔底、分隔线逐层提亮并重算全部配对：
 // 正文/卡 12.34、次要/卡 6.85、主色/柔底 5.38、卡/底 1.29、柔底/卡 1.36。
+// R164 实证补漏：上次只修了写死白字与主色块，漏掉分段格子里的小序号 ——
+// 深色未生成格底 #54607F 配 sub 只有 2.93:1，已生成格底 #326F75 配 primary
+// 只有 2.87:1。序号改取 text 后分别 5.29 / 4.84，才真看得清。
+// R167 · 纠正上一轮的偏差：用户要的是「深色下字体就是白色、对比更明显」，
+// 我上一轮只把主文字给纯白、把 48 处 Sub 留成提亮的灰，还拿对比度解释了一通。
+// 现在深底上的常规文字（text + sub）统一纯白，层次交给字号 / 字重 / 底色块，
+// 不再靠灰度分主次。唯一例外：亮黄警示底、主色按钮底上仍用深字
+// （onWarn / onPrimary），白字压亮黄只有 1.67:1，物理上读不出来。
+// grey 仍保留：它是未生成格子的底色，不是文字前景，刷白会让格子消失。
 internal val DarkPal = Pal(
     bg = Color(0xFF0E1117), card = Color(0xFF222936), primary = Color(0xFFA5B4FC),
-    primarySoft = Color(0xFF313C63), sub = Color(0xFFA8B2C6), good = Color(0xFF34D399),
-    line = Color(0xFF3B455A), warn = Color(0xFFFBBF24), text = Color(0xFFE8ECF5),
+    primarySoft = Color(0xFF313C63), sub = Color(0xFFFFFFFF), good = Color(0xFF34D399),
+    line = Color(0xFF3B455A), warn = Color(0xFFFBBF24), text = Color(0xFFFFFFFF),
     onPrimary = Color(0xFF10131A), grey = Color(0xFF7E8AA0),
     onWarn = Color(0xFF1A1206)
 )

@@ -4,18 +4,16 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -31,6 +29,8 @@ internal const val TAB_TASKS = 1
 internal const val TAB_AUDIO = 2
 internal const val TAB_NONE = -1
 
+// R162 · 抽屉不再是一组功能导航项，而是「我导进去的书」。
+// 这几个 id 只留着给旧状态恢复与历史脚本兼容，界面一处都不再渲染它们。
 internal const val NAV_LIBRARY = 0
 internal const val NAV_TASKS = 1
 internal const val NAV_AUDIO = 2
@@ -43,26 +43,12 @@ internal data class ChromeSpec(
     val title: String,
     val activeTab: Int = TAB_NONE,
     val showImport: Boolean = false,
+    val showSettings: Boolean = false,
     // 统一层级：根级页没有返回键，二级页一律由顶栏给同一枚返回键。
-    // 以前各页自己塞「‹ 目录 / ‹ 任务 / ‹ 返回」，有有无无，位置文案都不齐。
     val canBack: Boolean = false,
 )
 
-private val DRAWER_TOP = listOf(
-    NAV_LIBRARY to "书架",
-    NAV_TASKS to "任务",
-    NAV_MIXER to "调音台",
-    NAV_INPUT to "输入朗读",
-)
-// 「我的音频」独立入口已撤（R131）：音频管理归到书的目录页第三列。
-// NAV_AUDIO / TAB_AUDIO 常量留着，供旧状态恢复与历史索引兼容，不再挂任何抽屉项。
-
-private val DRAWER_MORE = listOf(
-    NAV_SETTINGS to "设置",
-    NAV_MODELS to "模型",
-)
-
-// 代码绘制的返回箭头，不再用「‹」字符当图标（R130 起逐步替换全工程字符图标）。
+// 代码绘制的返回箭头，不再用「‹」字符当图标。
 @Composable
 private fun BackChevron(tint: Color) {
     Canvas(modifier = Modifier.size(22.dp)) {
@@ -84,11 +70,39 @@ private fun BackChevron(tint: Color) {
     }
 }
 
+// R162 · 右上角齿轮：代码绘制，不用「⚙」字符，深浅主题都随色板取色。
+@Composable
+private fun GearIcon(tint: Color) {
+    Canvas(modifier = Modifier.size(21.dp)) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val r = size.minDimension / 2f
+        val center = Offset(cx, cy)
+        for (i in 0 until 8) {
+            val a = (i * kotlin.math.PI.toFloat() / 4f)
+            val c = kotlin.math.cos(a)
+            val s = kotlin.math.sin(a)
+            drawLine(
+                color = tint,
+                start = Offset(cx + c * r * 0.66f, cy + s * r * 0.66f),
+                end = Offset(cx + c * r * 0.96f, cy + s * r * 0.96f),
+                strokeWidth = 2.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+        }
+        drawCircle(tint, radius = r * 0.56f, center = center,
+            style = Stroke(width = 2.dp.toPx()))
+        drawCircle(tint, radius = r * 0.20f, center = center,
+            style = Stroke(width = 2.dp.toPx()))
+    }
+}
+
 @Composable
 internal fun AppTopBar(
     spec: ChromeSpec,
     onMenu: () -> Unit,
     onImport: () -> Unit,
+    onSettings: () -> Unit,
     surface: Color,
     primary: Color,
     onBack: (() -> Unit)? = null,
@@ -100,16 +114,25 @@ internal fun AppTopBar(
         if (spec.canBack && onBack != null) {
             IconButton(onClick = onBack) { BackChevron(primary) }
         }
+        // ☰ 打开的是书抽屉，不再是功能菜单。
         IconButton(onClick = onMenu) {
             Text("☰", fontSize = 20.sp, color = primary)
         }
-        Text(
-            spec.title,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = primary,
-            modifier = Modifier.weight(1f)
-        )
+        // R164 · 首页不显示品牌名（「听本」是画蛇添足），二级页仍显示页面名。
+        if (spec.title.isNotEmpty()) {
+            Text(
+                spec.title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = primary,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        if (spec.showSettings) {
+            IconButton(onClick = onSettings) { GearIcon(primary) }
+        }
         if (spec.showImport) {
             Button(
                 onClick = onImport,
@@ -122,59 +145,45 @@ internal fun AppTopBar(
     }
 }
 
+/**
+ * R162 · 抽屉壳：标题 + 一个导入按钮 + 调用方给的书列表。
+ * 功能导航项（任务 / 调音台 / 模型 / 输入朗读 / 设置）全部撤掉：
+ *   · 设置与导入在右上角齿轮 / ＋
+ *   · 模型收进设置页那张卡
+ *   · 调音台只在合成前弹层
+ *   · 任务能力在书里第二列与开软件弹窗
+ *   · 输入朗读就是主页本身
+ */
 @Composable
 internal fun AppDrawerSheet(
-    selected: Int,
-    onNavigate: (Int) -> Unit,
+    title: String,
+    onImport: () -> Unit,
     surface: Color,
     primary: Color,
     sub: Color,
+    content: @Composable () -> Unit
 ) {
     ModalDrawerSheet(
-        modifier = Modifier.requiredWidth(240.dp),
+        modifier = Modifier.requiredWidth(272.dp),
         drawerContainerColor = surface
     ) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(vertical = 12.dp)
-        ) {
-            DRAWER_TOP.forEach { (idx, label) ->
-                DrawerRow(label, selected == idx, primary, sub) { onNavigate(idx) }
+        Column(Modifier.fillMaxSize().padding(vertical = 12.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                    color = primary, modifier = Modifier.weight(1f))
+                TextButton(onClick = onImport) {
+                    Text("＋ 导入", fontSize = 12.sp, color = primary)
+                }
             }
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                color = palette.line
-            )
-            DRAWER_MORE.forEach { (idx, label) ->
-                DrawerRow(label, selected == idx, primary, sub) { onNavigate(idx) }
-            }
+            Box(Modifier.weight(1f)) { content() }
         }
     }
 }
 
-@Composable
-private fun DrawerRow(
-    label: String,
-    on: Boolean,
-    primary: Color,
-    sub: Color,
-    click: () -> Unit,
-) {
-    NavigationDrawerItem(
-        label = {
-            Text(
-                label,
-                fontSize = 13.sp,
-                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (on) primary else sub
-            )
-        },
-        selected = on,
-        onClick = click,
-        modifier = Modifier.padding(horizontal = 10.dp, vertical = 0.dp)
-    )
-}
-
+/** 书架那条小横条：按住往下拖一段刷新。R155 查实全软件只有这一处刷新手势。 */
 @Composable
 internal fun RefreshStrip(
     onRefresh: () -> Unit,

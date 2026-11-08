@@ -69,6 +69,10 @@ object Prefs {
     private const val KEY_REF_TEXT = "refText"
     private const val KEY_CV_STYLE = "cvStyle"
     private const val KEY_TRIAL_TEXT = "trialText"
+    // R159 · 开软件是否跳过确认直接续跑。默认关（仍弹窗问一句）。
+    private const val KEY_AUTO_RESUME = "autoResumeOnStart"
+    // R161 · 可选悬浮进度控件，默认关。它不是保活手段，只让进度看得见。
+    private const val KEY_OVERLAY_PROGRESS = "overlayProgress"
 
     const val DEFAULT_TRIAL_TEXT = "雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。"
 
@@ -80,6 +84,14 @@ object Prefs {
             s.edit().putInt(KEY_SCHEMA, SCHEMA_VERSION).apply()
         }
     }
+
+    fun autoResumeOnStart(c: Context) = sp(c).getBoolean(KEY_AUTO_RESUME, false)
+    fun setAutoResumeOnStart(c: Context, v: Boolean) =
+        sp(c).edit().putBoolean(KEY_AUTO_RESUME, v).apply()
+
+    fun overlayProgress(c: Context) = sp(c).getBoolean(KEY_OVERLAY_PROGRESS, false)
+    fun setOverlayProgress(c: Context, v: Boolean) =
+        sp(c).edit().putBoolean(KEY_OVERLAY_PROGRESS, v).apply()
 
     fun nCtx(c: Context) = sp(c).getInt(KEY_NCTX, 4096)
     fun setNCtx(c: Context, v: Int) = sp(c).edit().putInt(KEY_NCTX, v).apply()

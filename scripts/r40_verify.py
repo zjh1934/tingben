@@ -154,7 +154,7 @@ def main():
         invariants = [
             "private fun App(", "private enum class Screen {",
             "private class NavHost(", "fun backTargetOf(",
-            "fun openBookCol(id: String?, col: Int)",
+            "fun openBook(id: String?)",
             "fun goBack()", "BackHandler(enabled =",
         ]
         for sym in invariants:

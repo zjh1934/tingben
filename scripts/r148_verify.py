@@ -44,7 +44,7 @@ POS = {
     "split": ["const val TARGET_CHARS = 240", "const val SOFT_CAP = 420"],
     "noise": ["object SiteNoise", "fun clean(text: String)", "章节内容开始",
               "下载和分享更多电子书", "fun droppedCount"],
-    "hub": ["var savedCol by remember(book.id)"],
+    "hub": ["var expandedChapter by remember(book.id)"],
     "main": [
         "var chapterMixerOpen by rememberSaveable",
         "onMixer = { chapterMixerOpen = true",
@@ -121,7 +121,12 @@ def logic_cases(f):
         "「状态：还行吧」她笑着说",
     ]
     import re
-    rules = re.findall(r'Regex\("""(.*?)"""\)', f["noise"], re.S)
+    # R157 · SiteNoise 用 `private const val WS = "[\\s\\u3000\\uFEFF\\u00A0]*"`
+    # 做 Kotlin 字符串模板插值（全角空格必须显式认）。脚本复刻正则时先把
+    # `$WS` 展开成等价的 Python 字符类，否则所有规则都匹配不上。
+    ws_py = r"[\s\u3000\uFEFF\u00A0]*"
+    rules = [r.replace("$WS", ws_py)
+             for r in re.findall(r'Regex\("""(.*?)"""\)', f["noise"], re.S)]
     if len(rules) < 8:
         bad.append("SiteNoise 规则太少：%d 条" % len(rules))
     else:
@@ -180,7 +185,7 @@ def selftest():
         ("调音又跳独立页", "main", "onMixer = { chapterMixerOpen = true",
          "onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) }"),
         ("调音弹层被摘", "main", "if (chapterMixerOpen) {", ""),
-        ("列记忆又跨会话", "hub", "var savedCol by remember(book.id)",
+        ("列记忆又跨会话", "hub", "var expandedChapter by remember(book.id)",
          "var savedCol by rememberSaveable(book.id)"),
         ("顶栏又双出口", "main", "if (onClose == null) {", ""),
         ("CI 漏挂 r148", "ci", "python3 scripts/r148_verify.py --selftest", ""),

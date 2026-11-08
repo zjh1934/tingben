@@ -152,9 +152,19 @@ fgs_types = fgs.group(1).split("|") if fgs else []
 if "dataSync" not in fgs_types: errs.append("前台服务类型缺 dataSync 低版本分支")
 if any(t not in ("dataSync", "mediaProcessing") for t in fgs_types):
     errs.append("前台服务类型出现未复核的类型")
-for banned in ["BIND_ACCESSIBILITY_SERVICE", "SYSTEM_ALERT_WINDOW", "systemExempted",
-               "foregroundServiceType=\"mediaPlayback\""]:
-    if banned in m: errs.append("R26 回退：出现了明确不做的权限/类型 " + banned)
+# R158 · 旧硬约束「绝不申请 SYSTEM_ALERT_WINDOW / 不碰系统级能力」已由用户推翻。
+# SYSTEM_ALERT_WINDOW 现在是**允许且已声明**的：用于可选悬浮进度控件。
+# 改成正向守门：声明了就必须同时有 KeepAlive 引导（否则用户拿不到入口）。
+ka_file = ROOT / "app/src/main/java/com/tingben/app/core/KeepAlive.kt"
+ka_src = ka_file.read_text(encoding="utf-8", errors="replace") if ka_file.exists() else ""
+if "android.permission.SYSTEM_ALERT_WINDOW" in m and "object KeepAlive" not in ka_src:
+    errs.append("声明了浮窗权限却没有 KeepAlive 引导入口")
+if "ACTION_MANAGE_OVERLAY_PERMISSION" in ka_src and "canDrawOverlays" not in ka_src:
+    errs.append("浮窗引导没有设置页返回后的状态复检")
+# 无障碍服务：旧「绝不申请」约束清掉，但当前没有真实用途，先不声明服务；
+# 将来有真实用途（如朗读其他 App 选中文字）评估后再放开，不是永久禁令。
+for banned in ["systemExempted", "foregroundServiceType=\"mediaPlayback\""]:
+    if banned in m: errs.append("R26 回退：出现了未复核的类型 " + banned)
 
 fgs_src = (ROOT / "app/src/main/java/com/tingben/app/ProduceService.kt").read_text(encoding="utf-8", errors="replace")
 R26_ALL = ["FGS_BEGIN", "FGS_READY", "FGS_FINISH", "FGS_DESTROY", "FGS_WAKELOCK",
@@ -249,11 +259,10 @@ chrome_src = chrome_path.read_text(encoding="utf-8", errors="replace") if chrome
 for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip", "ChromeSpec",
             "TAB_LIBRARY", "TAB_TASKS", "TAB_AUDIO", "TAB_NONE",
             "NAV_LIBRARY", "NAV_TASKS", "NAV_AUDIO", "NAV_SETTINGS",
-            "NAV_MIXER", "NAV_MODELS",
-            "ModalDrawerSheet(", "NavigationDrawerItem("]:
+            "NAV_MIXER", "NAV_MODELS", "NAV_INPUT",
+            "ModalDrawerSheet(", "GearIcon("]:
     if sym not in chrome_src: errs.append("U1 缺壳层符号: " + sym)
-for sym in ["chromeOf(screen)",
-            "onMenu = { scope.launch { drawerState.open() } }"]:
+for sym in ["chromeOf(screen)", 'EventLog.ui("DRAWER_NAV", "open")']:
     if sym not in main_src: errs.append("U1 回退：MainActivity 没接壳层: " + sym)
 for sym in ["AppTopBar", "AppDrawerSheet", "RefreshStrip"]:
     if not re.search(r"^\s*" + sym + r"\(", main_src, re.M):
@@ -297,23 +306,12 @@ if co_m:
     if covered != WANT_SCREENS: errs.append("U1 回退：chromeOf 没覆盖全部目的地 " + str(covered ^ WANT_SCREENS))
 else:
     errs.append("U1 回退：找不到 chromeOf 映射")
-tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
-more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
-if tabs_m:
-    body = tabs_m.group(1)
-    # R131：「我的音频」独立入口撤掉，一级组从 5 项收成 4 项。
-    if body.count(" to ") != 4 or "设置" in body or "调音台" not in body:
-        errs.append("U1 回退：抽屉一级不是 4 项 / 调音台不在一级 / 混入了设置")
-else:
-    errs.append("U1 回退：找不到 DRAWER_TOP")
-if more_m:
-    body2 = more_m.group(1)
-    if body2.count(" to ") != 2 or "调音台" in body2:
-        errs.append("U1 回退：更多组不是 2 项或调音台仍留在更多组")
-    if "语言模型" in body2 or "文本处理" in body2:
-        errs.append("U1 回退：抽屉仍含已删模块")
-else:
-    errs.append("U1 回退：找不到 DRAWER_MORE")
+# R162 · 抽屉不再是功能菜单，改守「书列表 + 功能菜单零回潮」语义。
+import shell_semantics as shell
+for msg in shell.checks(main_src, chrome_src):
+    errs.append("U1 回退：新壳层语义 — " + msg)
+if "语言模型" in chrome_src or "文本处理" in chrome_src:
+    errs.append("U1 回退：抽屉仍含已删模块")
 if "if (acc > 55f)" not in chrome_src or "onRefresh()" not in chrome_src:
     errs.append("U1 回退：下拉刷新机制或阈值被改动")
 if "BookStore.delete(c, id); confirmDelete = null; onChanged()" not in main_src:
@@ -335,12 +333,12 @@ def ui_literals(src):
     return re.findall(r'"((?:\\.|[^"\\])*)"', src)
 
 R33_MUST = ["statusBarsPadding()", "MiniPlayBar(ctx, miniBook", "confirmDelete",
-            "AlertDialog(", "onMenu = { scope.launch { drawerState.open() } }",
+            "AlertDialog(", 'EventLog.ui("DRAWER_NAV", "open")',
             "BookStore.delete(c, id); confirmDelete = null; onChanged()",
             "private fun ProgressScreen("]
 for sym in R33_MUST:
     if sym not in main_src: errs.append("R33 缺新壳层符号: " + sym)
-for sym in ["ModalDrawerSheet(", "NavigationDrawerItem(", "width(if (pulled)"]:
+for sym in ["ModalDrawerSheet(", "private fun GearIcon(", "width(if (pulled)"]:
     if sym not in chrome_src: errs.append("R33 缺壳层符号: " + sym)
 R33_BAN = ["下拉刷新", "松开即可刷新", "已刷新", "把小说变成能听的音频",
            "书架只放原书", "每块约 500 字", "算完一块才会往上走一格",
@@ -475,11 +473,61 @@ for p in kt_files:
 def r66_errs(lits):
     return ["R66 回退：又出现已退场文案 " + s for s in R66_GONE if any(s in x for x in lits)]
 errs += r66_errs(_all_ui)
+# R166 · 早期「用语言模型标注 JSON」的管线（R66/R68）早就退场，
+# 但格式残留一直在日志里：detail 用中文说全，fields 又逐字重复一遍英文
+# key=value；连写给我看的开发注释都混进了运行时日志行。
+# 只清重复，不动任何有增量信息的字段（textChars / speakerParam / hash …）。
+_log_src = (ROOT / "app/src/main/java/com/tingben/app/diag/EventLog.kt").read_text(encoding="utf-8", errors="replace")
+_svc_src = (ROOT / "app/src/main/java/com/tingben/app/ProduceService.kt").read_text(encoding="utf-8", errors="replace")
+_pipe_src = pipe_src
+
+def _log_bodies(src):
+    """只圈定真正写进日志的调用体；KDoc / 参数说明里提到同样的话不算。"""
+    return "".join(re.findall(r'EventLog\.log\((?:[^()]|\([^()]*\))*\)', src, re.S))
+
+def r166_errs(lg, sv, pi):
+    e = []
+    if '${k}=${v}" !in detail' not in lg:
+        e.append("R166 回退：日志 detail/fields 双写去重没了")
+    pi_log = _log_bodies(pi)
+    for note in ("官方 README：", "官方评测也用", "别用 auto", "（O1:"):
+        if note in pi_log:
+            e.append("R166 回潮：开发注释又混进运行时日志 " + note)
+    for dup in ('fields = mapOf("book" to title',
+                'fields = mapOf("stage" to stage',
+                'fields = mapOf("unit" to unit',
+                'fields = mapOf("busy" to Producer.isBusy()',
+                'fields = mapOf("chunks" to chunks.size'):
+        if dup in sv or dup in pi:
+            e.append("R166 回潮：日志冗余字段 " + dup[:42])
+    # 增量字段必须还在，别把「去冗余」做成「删日志」
+    for keep in ('"textChars" to a.text.length.toString()', '"speakerParam" to (v.speaker'):
+        if keep not in pi:
+            e.append("R166 误删：有增量信息的字段没了 " + keep[:34])
+    return e
+
+errs += r166_errs(_log_src, _svc_src, _pipe_src)
 if "--selftest" in sys.argv:
     probe = ui_literals('Text("标注后合成（实验性）")')
     ok = bool(r66_errs(_all_ui + probe)) and not r66_errs(_all_ui)
     print("R66 结构自检注入:", "PASS" if ok else "FAIL")
     if not ok: sys.exit(1)
+    r166_cases = [
+        ("官方注释回潮", _log_src, _svc_src,
+         _pipe_src.replace(" · lang=chinese\"", " · lang=chinese（官方 README：别用 auto）\"")),
+        ("冗余字段回潮", _log_src,
+         _svc_src.replace('"stage=$stage done=$done/$total wake=released")',
+                          '"stage=$stage done=$done/$total wake=released",\n'
+                          '                fields = mapOf("stage" to stage)'), _pipe_src),
+        ("去重被摘", _log_src.replace('${k}=${v}" !in detail', 'true'),
+         _svc_src, _pipe_src),
+    ]
+    ok166 = (not r166_errs(_log_src, _svc_src, _pipe_src)) and all(
+        r166_errs(a, b, c) for _, a, b, c in r166_cases)
+    print("R166 日志去冗余注入: %d/%d %s" %
+          (sum(bool(r166_errs(a, b, c)) for _, a, b, c in r166_cases),
+           len(r166_cases), "PASS" if ok166 else "FAIL"))
+    if not ok166: sys.exit(1)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)

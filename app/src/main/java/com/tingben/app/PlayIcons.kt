@@ -120,3 +120,21 @@ internal fun IconQueue(tint: Color, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** R159 · 续跑弹窗：圆形播放标记。纯 Canvas，随主题取色，不用字符「▶」。 */
+@Composable
+internal fun IconResume(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        drawCircle(tint, radius = w * 0.42f, center = Offset(w / 2f, h / 2f),
+            style = Stroke(width = w * 0.06f))
+        val tri = Path().apply {
+            moveTo(w * 0.43f, h * 0.32f)
+            lineTo(w * 0.73f, h * 0.50f)
+            lineTo(w * 0.43f, h * 0.68f)
+            close()
+        }
+        drawPath(tri, tint)
+    }
+}

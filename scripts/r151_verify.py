@@ -5,7 +5,7 @@
 「点开感觉不像在看一本有声书，像是在不同的卡片里面切来切去」。
 
 G2a 已把双进度 / 单停止继续 / 章节就地展开做进目录页；G2b 收尾：
-  · 三个「看进度」入口（续跑 / 制作页 / 任务页）一律 openBookCol(id, 1)，
+  · 三个「看进度」入口（续跑 / 制作页 / 任务页）一律 openBook(id)，
     独立 Screen.PROGRESS 变成完全不可达的能力库（枚举与函数体暂留，
     物理清行留到收口轮，避免连锁 17 个守 8 值枚举的脚本）
   · 第二列升级成完整「分段看台」：模型心跳 + 全量灰/绿格子 +
@@ -29,9 +29,9 @@ FILES = {
 
 POS = {
     "main": [
-        "openBookCol(b.id, 1)",
-        "onProgress = { openBookCol(bookId, 1) }",
-        "onProgress = { id -> openBookCol(id, 1) }",
+        "openBook(b.id)",
+        "onProgress = { openBook(bookId) }",
+        "onProgress = { id -> openBook(id) }",
         "onProgress: (String) -> Unit,",
         "onClick = { onProgress(t.bookId) }",
         "// G2b 起 Screen.PROGRESS 不可达",
@@ -45,21 +45,21 @@ POS = {
         "var beatTick by remember { mutableStateOf(0) }",
         "EventLog.lastEngine()", "EventLog.lastEngineAgeMs()",
         "var confirmSegDel by remember",
-        'item(key = "syn_seg_bench_head")',
-        'item(key = "syn_seg_bench_tail") { HubDivider() }',
-        'items(segs.chunked(10), key = { row -> "seg_row_${row.first().index}" })',
-        "1 -> SynColumn(c, ui,",
-        "segs = hubSegs, pq = pqSeg,",
-        "running = bookRunning, heartbeat = heartbeat,",
-        "onDeleteSegs = { files -> confirmSegDel = files }",
-        "c: Context, ui: List<ChapterUi>, onPlay: (Int) -> Unit,",
-        "segs: List<SegRow>, pq: PlaybackState, running: Boolean,",
-        "heartbeat: String, onDeleteSegs: (List<File>) -> Unit",
+        'item(key = "seg_head_${r.index}")',
+        'HubDivider()',
+        'items(chapterSegs.chunked(SEG_GRID_COLUMNS),',
+        "LazyColumn(Modifier.fillMaxSize(),",
+        "row = row, pq = pqSeg,",
+        "multi = segMulti, checked = segChecked,",
+        "onTap = { sg -> tapSeg(sg) })",
+        "r: ChapterUi, multi: Boolean, checked: Boolean, expanded: Boolean,",
+        "row: List<SegRow>, pq: PlaybackState,",
+        "onTrial: () -> Unit, onDelete: () -> Unit",
         "var segMulti by remember",
         "var segChecked by remember",
-        '"分段看台 · ${segs.size} 段"',
-        '"点格子试听 · 长按可多选"',
-        "items(segs.chunked(10), key =",
+        '"本章 ${segs.size} 小段"',
+        '"暂无小段"',
+        "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
         'EventLog.ui("SEG_ALL"',
         'EventLog.ui("SEG_TRIAL_PICKED"',
         'EventLog.ui("SEG_DELETE_ASK"',
@@ -140,9 +140,9 @@ def logic_cases(f):
         else:
             print("  %-14s → %s 第 %d 列" % (name, screen, col))
     # 入口字面量必须真在代码里，且 PROGRESS 零跳转
-    for s in ("openBookCol(b.id, 1)",
-              "onProgress = { openBookCol(bookId, 1) }",
-              "onProgress = { id -> openBookCol(id, 1) }"):
+    for s in ("openBook(b.id)",
+              "onProgress = { openBook(bookId) }",
+              "onProgress = { id -> openBook(id) }"):
         if s not in f["main"]:
             bad.append("入口没收敛: " + s)
     if "nav.push(Screen.PROGRESS)" in f["main"]:
@@ -170,20 +170,14 @@ def logic_cases(f):
         else:
             print("  多选 %-8s → %s" % (action, got))
 
-    # ④ 第二列看台必须是「全量」而非按章过滤，且每行惰性组合
-    m = re.search(r'item\(key = "syn_seg_bench_head"\) \{(.*?)\n        items\(segs\.chunked\(10\)',
-                  f["hub"], re.S)
-    if not m:
-        bad.append("没圈出第二列看台头部")
-    else:
-        body = m.group(1)
-        if "chapterSegs" in body:
-            bad.append("第二列误用了按章过滤的段（应全量）")
+    # R163 · 单列后展开章的小片就是按章过滤的，守「惰性行」而非「全量」
+    if not re.search(r'items\(chapterSegs\.chunked\(SEG_GRID_COLUMNS\)', f["hub"]):
+        bad.append("展开章小片没有惰性行")
         if "segMulti" not in body or "onDeleteSegs" not in body:
             bad.append("看台缺多选或删段出口")
         if "heartbeat" not in body:
             bad.append("看台缺模型心跳")
-    if "items(segs.chunked(10), key =" not in f["hub"]:
+    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in f["hub"]:
         bad.append("全量格子没拆成惰性行")
     # 9137 段时应是约 914 个行 item，而不是 1 个巨型 item
     n = 9137
@@ -256,10 +250,10 @@ def selftest():
     assert not check(f), "基线自己就红了"
     logic_bad = len(logic_cases(f))
     cuts = [
-        ("续跑收敛被摘", "main", "openBookCol(b.id, 1)", "nav.push(Screen.PROGRESS)"),
-        ("制作页收敛被摘", "main", "onProgress = { openBookCol(bookId, 1) }",
+        ("续跑收敛被摘", "main", "openBook(b.id)", "nav.push(Screen.PROGRESS)"),
+        ("制作页收敛被摘", "main", "onProgress = { openBook(bookId) }",
          "onProgress = { nav.push(Screen.PROGRESS) }"),
-        ("任务页收敛被摘", "main", "onProgress = { id -> openBookCol(id, 1) }", ""),
+        ("任务页收敛被摘", "main", "onProgress = { id -> openBook(id) }", ""),
         ("任务页传自己 bookId 被摘", "main", "onProgress: (String) -> Unit,",
          "onProgress: () -> Unit,"),
         ("任务页调用点被摘", "main", "onClick = { onProgress(t.bookId) }",
@@ -270,13 +264,13 @@ def selftest():
          "val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters)", ""),
         ("心跳刷新被摘", "hub", "var beatTick by remember { mutableStateOf(0) }", ""),
         ("引擎动作被摘", "hub", "EventLog.lastEngine()", ""),
-        ("看台区块被摘", "hub", 'item(key = "syn_seg_bench_head")', ""),
-        ("第二列没拿到全量段", "hub", "segs = hubSegs, pq = pqSeg,",
+        ("看台区块被摘", "hub", 'item(key = "seg_head_${r.index}")', ""),
+        ("第二列没拿到全量段", "hub", "row = row, pq = pqSeg,",
          "segs = chapterSegs, pq = pqSeg,"),
-        ("第二列没拿到心跳", "hub", "running = bookRunning, heartbeat = heartbeat,", ""),
-        ("删段回调被摘", "hub", "onDeleteSegs = { files -> confirmSegDel = files }", ""),
-        ("全量格子被摘", "hub", 'items(segs.chunked(10), key =', ""),
-        ("退回一次性组合", "hub", 'item(key = "syn_seg_bench_tail") { HubDivider() }',
+        ("第二列没拿到心跳", "hub", "multi = segMulti, checked = segChecked,", ""),
+        ("删段回调被摘", "hub", "onTap = { sg -> tapSeg(sg) })", ""),
+        ("全量格子被摘", "hub", 'items(chapterSegs.chunked(SEG_GRID_COLUMNS),', ""),
+        ("退回一次性组合", "hub", 'HubDivider()',
          "segs.chunked(10).forEach"),
         ("多选态被摘", "hub", "var segMulti by remember", ""),
         ("试听选中被摘", "hub", 'EventLog.ui("SEG_TRIAL_PICKED"', ""),

@@ -117,8 +117,16 @@ object EventLog {
             lastEngineAt = System.currentTimeMillis()
         }
         val ts = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
+        // R166 · 早期「给模型标注结构化字段」的方案做了一半就放弃，留下了双写：
+        // detail 已经用中文把状态说全，fields 又逐字重复一遍英文 key=value，
+        // 每行拖一截冗余尾巴（实测 FGS_FINISH 的 stage/done/total 全重复一遍）。
+        // 这里只滤掉「同一 key=value 已在 detail 里逐字出现」的字段，
+        // 有增量信息的字段（textChars / speakerParam / hash / code …）一律保留，
+        // 信息量不减、体积变小、读起来不用人肉去比对两段。
         val kv = if (fields.isEmpty()) "" else
-            fields.entries.joinToString("") { " · ${it.key}=${it.value}" }
+            fields.entries
+                .filter { (k, v) -> "${k}=${v}" !in detail }
+                .joinToString("") { " · ${it.key}=${it.value}" }
         val mainLine = "$ts | $kind | $action | $detail$kv"
         val detailLine = "$ts | $kind | $level | $action | $detail$kv"
         ring.addLast(mainLine)
@@ -139,10 +147,29 @@ object EventLog {
         return lines.subList(from, lines.size).joinToString("\n")
     }
 
-    /** 全量错误行：不管哪一轮，出错都要带进摘要，别被窗口截掉。 */
-    private fun allErrors(): String = readDetail().lines()
-        .filter { " | ERROR | " in it || " | CRASH | " in it || " | WARN | " in it }
-        .takeLast(200).joinToString("\n")
+    /**
+     * 全量错误行：不管哪一轮，出错都要带进摘要，别被窗口截掉。
+     *
+     * R157 · 第二份真机日志实证：摘要里那条 13:51「制作记录写入失败：segmap.json」
+     * 其实是 1.1.3 的历史报错（R148 已修：目录名超长），但摘要区不标版本，
+     * 读起来像 1.1.4 当前还在出错，差点让我去修一个已经修好的东西。
+     * 现在按 SESSION_START 给每条标注产生时的版本；日志被裁剪、找不到会话边界的
+     * 保守标成「旧版本」，不冒充当前版本。
+     */
+    private fun allErrors(): String {
+        var ver = "旧版本"
+        val out = mutableListOf<String>()
+        for (l in readDetail().lines()) {
+            if (l.contains("| UI | SESSION_START |")) {
+                val m = Regex("version=([0-9][^\\s·|]*)").find(l)
+                ver = m?.groupValues?.get(1) ?: "旧版本"
+                continue
+            }
+            if (" | ERROR | " in l || " | CRASH | " in l || " | WARN | " in l)
+                out += "[$ver] $l"
+        }
+        return out.takeLast(200).joinToString("\n")
+    }
 
     fun ringTail(n: Int = 60): String = try {
         ring.toList().takeLast(n).joinToString("\n")
@@ -210,6 +237,69 @@ object EventLog {
             "> 这份日志是**给开发者排查用的**，不是给使用者看的。\n" +
             "> 可能含书名与正文片段，贴出去前自行确认；软件无 INTERNET 权限，日志不会自己离开设备。\n\n"
 
+    /**
+     * R161 · API 30+ 的 ApplicationExitInfo：进程上次是被谁干掉的。
+     * 用户报「切出去再回来任务没了」，光看事件流分不清是用户划掉、
+     * 系统低内存回收还是 ANR；系统记录是唯一能定性的证据。
+     * 厂商 ROM 可能不给历史，读不到就静默（资源读失败属合理静默）。
+     */
+    fun logExitReasons(c: Context) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return
+        try {
+            val am = c.getSystemService(Context.ACTIVITY_SERVICE)
+                    as? android.app.ActivityManager ?: return
+            val list = am.getHistoricalProcessExitReasons(null, 0, 8)
+            if (list.isNullOrEmpty()) return
+            for (r in list) {
+                log(Kind.AUDIT, "APP_EXIT",
+                    "reason=${exitReasonName(r.reason)} ts=${r.timestamp} " +
+                        "pid=${r.pid} importance=${r.importance} " +
+                        "desc=${(r.description ?: "").take(160)}",
+                    fields = mapOf("reason" to r.reason.toString(),
+                        "ts" to r.timestamp.toString()))
+            }
+        } catch (_: Throwable) { }
+    }
+
+    /** 诊断导出用：最近几次进程退出原因，按系统返回顺序（最新在前）。 */
+    fun exitReasonsBlock(c: Context): String {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R)
+            return "（这台系统不提供进程退出原因）"
+        return try {
+            val am = c.getSystemService(Context.ACTIVITY_SERVICE)
+                    as? android.app.ActivityManager ?: return "（取不到 ActivityManager）"
+            val list = am.getHistoricalProcessExitReasons(null, 0, 8)
+            if (list.isNullOrEmpty()) return "（无记录）"
+            buildString {
+                for (r in list) {
+                    val ts = SimpleDateFormat("MM-dd HH:mm:ss", Locale.US)
+                        .format(Date(r.timestamp))
+                    append("- `$ts` · ${exitReasonName(r.reason)} · pid=${r.pid} · " +
+                        "importance=${r.importance} · ${(r.description ?: "").take(120)}\n")
+                }
+            }
+        } catch (t: Throwable) { "（不可用：" + t.javaClass.simpleName + "）" }
+    }
+
+    private fun exitReasonName(r: Int): String = when (r) {
+        android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "用户主动退出"
+        android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "用户强制停止"
+        android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "系统低内存回收"
+        android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+        android.app.ApplicationExitInfo.REASON_CRASH -> "Java 崩溃"
+        android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "native 崩溃"
+        android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "依赖进程死亡"
+        android.app.ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "权限变更"
+        android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "初始化失败"
+        android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "资源占用过高"
+        android.app.ApplicationExitInfo.REASON_SIGNALED -> "收到信号"
+        android.app.ApplicationExitInfo.REASON_FREEZER -> "系统冻结"
+        android.app.ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE -> "包状态变更"
+        android.app.ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "应用更新"
+        android.app.ApplicationExitInfo.REASON_OTHER -> "其他"
+        else -> "未知($r)"
+    }
+
     private fun fence(title: String, body: String): String =
         "## " + title + "\n\n```text\n" +
             (body.ifBlank { "（空）" }) + "\n```\n\n"
@@ -218,6 +308,7 @@ object EventLog {
         append(header())
         append("## 环境\n\n").append(envBlock(c)).append("\n")
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")
+        append("## 进程退出原因（系统记录）\n\n").append(exitReasonsBlock(c)).append("\n")
         append(fence("最近一次崩溃", lastCrash()))
         append(fence("崩溃前事件（环形缓冲）", ringTail(200)))
         append("## 会话边界\n\n本次会话 `$currentSession`；" +
@@ -233,7 +324,10 @@ object EventLog {
         append("> 给开发者排查用，可能含书名与正文片段。完整日志在设置页导出 .md。\n\n")
         append("## 环境\n\n").append(envBlock(c)).append("\n")
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")
+        append("## 进程退出原因（系统记录）\n\n").append(exitReasonsBlock(c)).append("\n")
         append(fence("最近崩溃（尾部）", lastCrash().lines().takeLast(40).joinToString("\n")))
+        append("> 下面是本机累计的全部报错，跨版本；方括号是产生时的版本，" +
+            "**旧版本的报错不代表当前还在出错**。\n\n")
         append(fence("所有报错/警告（不受会话窗口限制）", allErrors()))
         append(fence("最近 3 轮完整事件（按 SESSION_START 分段）", recentSessions(3)))
     }

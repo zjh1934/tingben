@@ -1,20 +1,32 @@
 # -*- coding: utf-8 -*-
-"""R149 · G 批「任务入口层」守门：任务页重做 + 开软件确认弹窗。
+"""R149 · 任务入口层 + 开软件续跑确认（R159 重写）。
 
 用户实证（第一份真机日志后的使用感受）：
   · 全本任务失败后「不知道怎么删任务」「任务页只有一个巨大的继续按钮」
   · 「开软件若有没跑完的任务，希望弹窗：查看 / 继续 / 暂时不继续」
 
+R159 用户新实证：「关闭以后重新打开应用，它不一定弹」「弹窗做的很丑，要重新设计」。
+查实「不一定弹」有四条，全部修掉：
+  ① LaunchedEffect(Unit) 只在首次组合跑一次 → 退后台再回前台不重判
+  ② resumeSkipped 用 rememberSaveable 跨实例残留 → 按返回退出再进（进程没被杀）不弹
+  ③ hasResumable 把手动停 / 失败 / 模型没齐 / 队列暂停全吞成 null → 静默不弹
+  ④ resumeAsk 用普通 remember，转屏时弹窗凭空消失
+
 纠正后按纠正做的：
-  · 弹窗只由 Producer.hasResumable 放行过的任务触发；手动停 / 失败 /
-    模型没齐 / 切章口径变过 / 书删了 / 队列暂停 一律不弹也不跑
-  · 「暂时不继续」本次冷启动不再反复弹（rememberSaveable）
+  · pending() 只要存在未完成任务就返回，由 action 决定弹窗给什么出口；
+    「放宽看得见」**不等于**「放宽自动跑」，autoResume 里的守卫原样保留
+  · 每次 ON_RESUME 都重判；Activity 重建 = 全新状态 = 重新弹
+  · 设置里「打开软件自动续跑」开关（默认关）与弹窗形成闭环：
+    开 = 能自动跑的直接跑不弹，关 = 每次回前台问一句
+  · 弹窗重设计：圆角卡 + 代码画图标 + 状态胶囊 + 真实进度条 + 整宽主按钮；
+    R158b 硬口径，不写教程长句
   · 删任务只删记录 + 出队列，已做好的音频不删，走二次确认
   · 顺手修多任务时「听成品」用全局 taskBookId 跳错书
 
 用法：python3 scripts/r149_verify.py [--selftest]
 """
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -22,39 +34,73 @@ APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "pipe": APP / "core" / "Pipeline.kt",
     "main": APP / "MainActivity.kt",
+    "prefs": APP / "core" / "Prefs.kt",
+    "icons": APP / "PlayIcons.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts" / "r135_verify.py",
 }
 
 POS = {
     "pipe": [
-        "fun hasResumable(c: Context): TaskInfo?",
-        "if (TaskResume.queuePaused(c)) { queuePaused = true; return null }",
-        "if (TaskResume.autoResumeBlockReason(c, t) != null) return null",
+        "enum class ResumeAction { AUTO, QUEUE, VIEW }",
+        "data class PendingTask(",
+        "fun pending(c: Context): PendingTask?",
+        "TaskResume.autoResumeBlockReason(c, t)",
         "BookStore.list(c).none { it.id == t.bookId }",
+        "fun hasResumable(c: Context): TaskInfo? =",
+        # 放宽「看得见」不许顺手放宽「自动跑」：守卫必须在 autoResume 里
+        '"TASK_AUTO_RESUME_SKIP"',
+        '"TASK_AUTO_RESUME"',
     ],
     "main": [
-        "var resumeAsk by remember { mutableStateOf<TaskInfo?>(null) }",
-        "var resumeSkipped by rememberSaveable { mutableStateOf(false) }",
-        "Producer.hasResumable(ctx)",
-        'EventLog.ui("RESUME_ASK_SHOW"',
+        # ① 每次回前台重判，不是一次性
+        "LaunchedEffect(windowVisible) {",
+        "Producer.pending(ctx)",
+        "RESUME_ASK_SKIP",
+        "RESUME_CHECK",
+        "RESUME_AUTO",
+        "RESUME_ASK_SHOW",
+        # ② 三出口（主按钮 / 查看 / 稍后）
+        "RESUME_ASK_PRIMARY",
         'EventLog.ui("RESUME_ASK_VIEW"',
-        'EventLog.ui("RESUME_ASK_CONTINUE"',
         'EventLog.ui("RESUME_ASK_LATER"',
+        # ③ 设置开关与闭环
+        "AutoResumeRow(c)",
+        "Prefs.autoResumeOnStart(ctx)",
+        "Prefs.autoResumeOnStart(c)",
+        "Prefs.setAutoResumeOnStart(c, it)",
+        "RESUME_SETTING",
+        # ④ 重设计：自定义卡 + 图标 + 进度条 + 状态胶囊 + 整宽主按钮
         "private fun ResumeAskDialog(",
-        '"暂时不继续"', '"查看任务 ›"', '"继续制作"',
+        "IconResume(palette.primary",
+        "RoundedCornerShape(24.dp)",
+        "fillMaxWidth(frac)",
+        "coerceIn(0f, 1f)",
+        'Modifier.fillMaxWidth().height(46.dp)',
+        "Producer.ResumeAction.QUEUE -> \"继续队列\"",
+        "Producer.ResumeAction.VIEW -> \"查看任务\"",
+        # 任务页老能力守恒
         "var confirmDelete by remember { mutableStateOf<TaskInfo?>(null) }",
         "confirmDelete?.let { t ->",
         'EventLog.ui("TASK_DELETE"',
         '"删除任务"',
         "TaskResume.dequeue(c, t.bookId)",
         "只删《${t.title}》这条任务记录",
-        "onAudio: (String) -> Unit",
-        "onAudio = { id -> openBookCol(id, 2)",
+        "onAudio = { id -> openBook(id)",
         'EventLog.ui("TASK_RESUME"',
         'EventLog.ui("TASK_PLAY"',
         '"打开这本书 ›"',
         '"听成品 ›"',
+    ],
+    "prefs": [
+        "KEY_AUTO_RESUME",
+        "fun autoResumeOnStart(c: Context)",
+        "fun setAutoResumeOnStart(c: Context, v: Boolean)",
+        "getBoolean(KEY_AUTO_RESUME, false)",
+    ],
+    "icons": [
+        "internal fun IconResume(",
+        "drawCircle(tint",
     ],
     "ci": ["python3 scripts/r149_verify.py --selftest"],
     "r135": ['"r149_verify.py"'],
@@ -65,12 +111,21 @@ BAN = {
         '"继续制作 · 接着已做好的块跑"',
         '"去「我的音频」试听 ›"',
         '"看实时进度 ›"',
-        "snapshotFlow { windowVisible }.first { it }\n        val hint = Producer.autoResume(ctx)",
+        "resumeSkipped",                       # 跨实例残留 → 「不一定弹」
         "onAudio: () -> Unit, onLibrary: () -> Unit",
         "onAudio = { openBookCol(taskBookId, 2)",
-        "Text(\"看章节 ›\", fontSize = 12.sp, color = Primary)",
+        'Text("看章节 ›", fontSize = 12.sp, color = Primary)',
+        # R158b · 教程不进 UI
+        "接着跑不会重算",
+        "也可以先去任务页看看",
     ],
 }
+
+
+def code_only(s):
+    """BAN 只判代码，不判注释 —— 注释里复盘旧 bug 是给我看的，不是给编译器的。"""
+    return "\n".join(l for l in s.splitlines()
+                     if not l.strip().startswith(("//", "/*", "*", " */")))
 
 
 def load():
@@ -83,58 +138,79 @@ def load():
     return out
 
 
-def has_resumable(busy, paused, queue, active_phase, block_reason, book_exists):
-    """复刻 Producer.hasResumable 的分支顺序。返回 (弹不弹, 命中哪条)。"""
+def pending_action(busy, paused, queue, active_phase, block_reason, book_exists):
+    """复刻 Producer.pending 的分支顺序。返回 (action 或 None, 命中哪条)。
+
+    与旧 hasResumable 的关键差别：手动停 / 失败 / 模型没齐 / 队列暂停
+    不再返回 None，而是给 VIEW / QUEUE 出口 —— 用户「不一定弹」的根因。
+    """
     if busy:
-        return False, "busy"
-    if paused:
-        return False, "队列暂停"
+        return None, "正在制作"
     if queue:
-        return True, "队列待做"
+        return ("QUEUE" if paused else "AUTO"), ("队列已暂停" if paused else "排队中")
     if active_phase is None:
-        return False, "没有未完成任务"
+        return None, "没有未完成任务"
     if active_phase == "done":
-        return False, "已完成"
-    if block_reason:
-        return False, "守卫拦下：" + block_reason
+        return None, "已完成"
     if not book_exists:
-        return False, "书已删"
-    return True, "崩溃中断可续跑"
+        return None, "书已删"
+    if block_reason:
+        return "VIEW", "守卫拦下：" + block_reason
+    return "AUTO", "崩溃中断可续跑"
 
 
 def logic_cases(f):
     bad = []
+    # name, busy, paused, queue, phase, block, book, want_action
     cases = [
-        # name, busy, paused, queue, phase, block, book, want
-        ("崩溃中断 → 弹", False, False, [], "interrupted", None, True, True),
-        ("队列里有待做 → 弹", False, False, ["A"], "stopped", "手动停", True, True),
-        ("手动停止 → 不弹", False, False, [], "stopped", "上次是你手动停的", True, False),
-        ("失败中断 → 不弹", False, False, [], "interrupted", "没做完", True, False),
-        ("模型没齐 → 不弹", False, False, [], "interrupted", "模型没齐", True, False),
-        ("切章规则变过 → 不弹", False, False, [], "interrupted", "分章规则变过", True, False),
-        ("书已删 → 不弹", False, False, [], "interrupted", None, False, False),
-        ("队列暂停 → 不弹", False, True, ["A"], "interrupted", None, True, False),
-        ("正在制作 → 不弹", True, False, ["A"], "interrupted", None, True, False),
-        ("任务已完成 → 不弹", False, False, [], "done", None, True, False),
-        ("啥都没有 → 不弹", False, False, [], None, None, True, False),
+        ("崩溃中断 → 继续制作", False, False, [], "interrupted", None, True, "AUTO"),
+        ("队列里有待做 → 继续制作", False, False, ["A"], "stopped", "手动停", True, "AUTO"),
+        ("队列暂停 → 继续队列", False, True, ["A"], "interrupted", None, True, "QUEUE"),
+        ("手动停止 → 查看任务", False, False, [], "stopped", "上次是你手动停的", True, "VIEW"),
+        ("失败中断 → 查看任务", False, False, [], "interrupted", "没做完", True, "VIEW"),
+        ("模型没齐 → 查看任务", False, False, [], "interrupted", "模型没齐", True, "VIEW"),
+        ("切章规则变过 → 查看任务", False, False, [], "interrupted", "分章规则变过", True, "VIEW"),
+        ("书已删 → 不弹", False, False, [], "interrupted", None, False, None),
+        ("正在制作 → 不弹", True, False, ["A"], "interrupted", None, True, None),
+        ("任务已完成 → 不弹", False, False, [], "done", None, True, None),
+        ("啥都没有 → 不弹", False, False, [], None, None, True, None),
     ]
     for name, busy, paused, q, phase, block, book, want in cases:
-        got, why = has_resumable(busy, paused, q, phase, block, book)
+        got, why = pending_action(busy, paused, q, phase, block, book)
         if got != want:
-            bad.append("%s: 弹=%s 期望 %s（%s）" % (name, got, want, why))
+            bad.append("%s: action=%s 期望 %s（%s）" % (name, got, want, why))
         else:
-            print("  %-22s → %s" % (name, why))
+            print("  %-24s → %s" % (name, why))
 
-    # 「暂时不继续」必须跨旋转保存，否则转屏又弹一次
-    if "var resumeSkipped by remember { mutableStateOf(false) }" in f["main"]:
-        bad.append("resumeSkipped 没用 rememberSaveable，转屏会重复弹")
+    # 「不一定弹」的四个根因不许回潮
+    # 一次性检查的判据由下面「没跟随 ON_RESUME 重判」覆盖，不重复判。
+    if "resumeSkipped" in code_only(f["main"]):
+        bad.append("resumeSkipped 跨实例记忆回潮（按返回退出再进会不弹）")
+    if "LaunchedEffect(windowVisible)" not in f["main"]:
+        bad.append("没跟随 ON_RESUME 重判")
 
-    # 弹窗必须三个出口都在，少一个用户就被迫做决定
-    for b in ('RESUME_ASK_VIEW', 'RESUME_ASK_CONTINUE', 'RESUME_ASK_LATER'):
+    # 放宽「看得见」不许顺手放宽「自动跑」
+    ar = f["pipe"][f["pipe"].find("fun autoResume(c: Context)"):]
+    if "autoResumeBlockReason" not in ar:
+        bad.append("autoResume 守卫被摘：手动停的任务会被自动跑起来")
+    if "TASK_AUTO_RESUME_SKIP" not in ar:
+        bad.append("自动续跑被拦时不写日志，真机排查不到原因")
+
+    # 弹窗三出口 + 重设计要素
+    for b in ("RESUME_ASK_PRIMARY", "RESUME_ASK_VIEW", "RESUME_ASK_LATER"):
         if b not in f["main"]:
             bad.append("弹窗缺出口：" + b)
+    dlg = f["main"][f["main"].find("private fun ResumeAskDialog("):]
+    for needle in ("IconResume(", "RoundedCornerShape(24.dp)",
+                   "fillMaxWidth(frac)", "coerceIn(0f, 1f)"):
+        if needle not in dlg:
+            bad.append("弹窗重设计要素被摘：" + needle)
+    # R158b · 弹窗里不许出现教程长句
+    for t in re.findall(r'Text\(\s*"([^"]*)"', dlg):
+        if len(re.findall(r"[\u4e00-\u9fff]", t)) >= 16:
+            bad.append("弹窗又塞回教程式长文案：" + t[:30])
 
-    # 删除不能是「直接删」，必须有二次确认
+    # 删任务必须二次确认
     if "AlertDialog(" not in f["main"] or "confirmDelete?.let" not in f["main"]:
         bad.append("删任务没走二次确认")
 
@@ -150,7 +226,7 @@ def check(f):
                 e.append("正向缺失[%s]: %s" % (key, s[:75]))
     for key, needles in BAN.items():
         for s in needles:
-            if s in f[key]:
+            if s in code_only(f[key]):
                 e.append("旧形态回潮[%s]: %s" % (key, s[:65]))
     return e
 
@@ -160,26 +236,34 @@ def selftest():
     assert not check(f), "基线自己就红了"
     logic_bad = len(logic_cases(f))
     cuts = [
-        ("hasResumable 被摘", "pipe", "fun hasResumable(c: Context): TaskInfo?", ""),
-        ("守卫被摘：手动停也会弹", "pipe",
-         "if (TaskResume.autoResumeBlockReason(c, t) != null) return null", ""),
-        ("守卫被摘：书删了也弹", "pipe",
-         "BookStore.list(c).none { it.id == t.bookId }", "false"),
-        ("队列暂停不同步内存", "pipe",
-         "if (TaskResume.queuePaused(c)) { queuePaused = true; return null }", ""),
-        ("恢复旧自动跑", "main", "Producer.hasResumable(ctx)", "Producer.autoResume(ctx)"),
-        ("弹窗 state 被摘", "main", "var resumeAsk by remember { mutableStateOf<TaskInfo?>(null) }", ""),
+        ("pending 被摘", "pipe", "fun pending(c: Context): PendingTask?", ""),
+        ("动作枚举被摘", "pipe", "enum class ResumeAction { AUTO, QUEUE, VIEW }", ""),
+        ("守卫被摘：手动停也能自动跑", "pipe", '"TASK_AUTO_RESUME_SKIP"', ""),
+        ("书删了也弹", "pipe", "BookStore.list(c).none { it.id == t.bookId }", "false"),
+        ("回前台重判被摘", "main", "LaunchedEffect(windowVisible) {",
+         "LaunchedEffect(Unit) {"),
+        ("跨实例记忆回潮", "main", "LaunchedEffect(windowVisible) {",
+         "LaunchedEffect(windowVisible) { var resumeSkipped = true"),
+        ("待处理查询被摘", "main", "Producer.pending(ctx)", "null"),
+        ("开关被摘", "main", "Prefs.autoResumeOnStart(ctx)", "false"),
+        ("开关落盘被摘", "prefs", "fun setAutoResumeOnStart(c: Context, v: Boolean)", ""),
+        ("开关默认变开", "prefs", "getBoolean(KEY_AUTO_RESUME, false)",
+         "getBoolean(KEY_AUTO_RESUME, true)"),
+        ("主出口被摘", "main", 'EventLog.ui("RESUME_ASK_PRIMARY"', ""),
         ("查看任务出口被摘", "main", 'EventLog.ui("RESUME_ASK_VIEW"', ""),
-        ("暂时不继续出口被摘", "main", 'EventLog.ui("RESUME_ASK_LATER"', ""),
-        ("继续出口被摘", "main", 'EventLog.ui("RESUME_ASK_CONTINUE"', ""),
+        ("稍后出口被摘", "main", 'EventLog.ui("RESUME_ASK_LATER"', ""),
         ("弹窗组件被摘", "main", "private fun ResumeAskDialog(", ""),
-        ("转屏重复弹", "main", "var resumeSkipped by rememberSaveable { mutableStateOf(false) }",
-         "var resumeSkipped by remember { mutableStateOf(false) }"),
+        ("代码图标被摘", "main", "IconResume(palette.primary", ""),
+        ("图标定义被摘", "icons", "internal fun IconResume(", ""),
+        ("进度条被摘", "main", "fillMaxWidth(frac)", ""),
+        ("三态按钮被摘", "main", 'Producer.ResumeAction.VIEW -> "查看任务"', ""),
+        ("教程长句回潮", "main", '"稍后"',
+         '"稍后 · 接着跑不会重算已做好的部分，也可以先去任务页看看"'),
         ("巨大按钮回潮", "main", '"打开这本书 ›"', '"继续制作 · 接着已做好的块跑"'),
         ("删任务被摘", "main", 'EventLog.ui("TASK_DELETE"', ""),
         ("删任务不出队列", "main", "TaskResume.dequeue(c, t.bookId)", ""),
         ("二次确认被摘", "main", "confirmDelete?.let { t ->", ""),
-        ("onAudio 又用全局 id", "main", "onAudio = { id -> openBookCol(id, 2)",
+        ("onAudio 又用全局 id", "main", "onAudio = { id -> openBook(id)",
          "onAudio = { openBookCol(taskBookId, 2)"),
         ("过时音频页文案回潮", "main", '"听成品 ›"', '"去「我的音频」试听 ›"'),
         ("CI 漏挂 r149", "ci", "python3 scripts/r149_verify.py --selftest", ""),
@@ -206,7 +290,7 @@ def main():
         for x in e:
             print(" -", x)
         return 1
-    print("R149 任务入口层（任务页重做 / 删除任务 / 开软件确认弹窗 / 守卫口径）：PASS")
+    print("R149 任务入口层（R159 续跑弹窗 / 开关闭环 / 守卫口径 / 删除任务）：PASS")
     return 0
 
 

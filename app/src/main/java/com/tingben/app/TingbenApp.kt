@@ -10,6 +10,9 @@ class TingbenApp : Application() {
     override fun onCreate() {
         super.onCreate()
         EventLog.init(this)
+        // R161 · 先记下「上一轮进程是被谁干掉的」，再干别的；
+        // 这是排查「切出去回来任务没了」的关键证据，必须在最前面读
+        EventLog.logExitReasons(this)
         val ok = try {
             NativeEngine.isAvailable()
         } catch (_: Throwable) { false }

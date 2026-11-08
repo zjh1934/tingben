@@ -31,7 +31,7 @@ POS = [
     ("main", 'Text("全部恢复默认"'),
     ("main", 'Text("自定义", fontSize = 12.sp'),
     ("main", "value = draft.cvStyle"),
-    ("main", "叠加在所选音色上"),
+    ("main", "风格补充（可留空）"),
     ("main", 'Text("保存", fontSize = 12.sp)'),
     ("main", 'Text("改动还没保存"'),
     ("main", 'Text("离开会丢掉这次改动。"'),

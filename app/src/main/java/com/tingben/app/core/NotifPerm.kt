@@ -40,6 +40,13 @@ object NotifPerm {
         c.getSharedPreferences("tingben_settings", Context.MODE_PRIVATE)
             .edit().putBoolean(KEY, true).apply()
 
+    // R165 · 设置页要按真实权限显示状态；Android 13 以下默认视为已具备。
+    fun granted(c: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return ContextCompat.checkSelfPermission(c, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
     fun ensureForPlayback(c: Context?, actHint: Activity? = null) {
         val ctx = c ?: return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return

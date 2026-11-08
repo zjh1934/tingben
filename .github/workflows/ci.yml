@@ -173,6 +173,20 @@ jobs:
         run: python3 scripts/r153_verify.py --selftest
       - name: R154 倍速验证（常驻条可达 / 档位同源 / 试听恒原速 / 反向注入）
         run: python3 scripts/r154_verify.py --selftest
+      - name: R155 界面讨论轮验证（展开惰性化 / 弹层安全区与空白退出 / 阅读可复制 / 反向注入）
+        run: python3 scripts/r155_verify.py --selftest
+      - name: R156 成品导出地基验证（SAF 目录树 / 持久化授权 / 私有目录结论 / 反向注入）
+        run: python3 scripts/r156_verify.py --selftest
+      - name: R157 第二份真机日志实证验证（站点噪声 / 跳过段日志 / 报错版本 / 导出分目录 / 反向注入）
+        run: python3 scripts/r157_verify.py --selftest
+      - name: R158 硬约束清理 / 分段格子居中 / 后台权限引导验证（反向注入）
+        run: python3 scripts/r158_verify.py --selftest
+      - name: AOCI 认知索引协议级治理（格式 / 覆盖 / 漂移 / 反向注入）
+        run: python3 scripts/aoci_check.py --selftest
+      - name: R161 前台服务生命周期（6h 超时 / 退出原因 / 悬浮进度 / 反向注入）
+        run: python3 scripts/r161_verify.py --selftest
+      - name: R163 目录页三列并一列（单列 / 章级能力守恒 / 小片惰性居中 / 反向注入）
+        run: python3 scripts/r163_verify.py --selftest
 
 
 

@@ -42,11 +42,15 @@ POS = {
         "androidx.lifecycle.compose.LocalLifecycleOwner.current",
         "LifecycleEventObserver",
         "Lifecycle.Event.ON_RESUME",
-        "snapshotFlow { windowVisible }.first { it }",
+        # R159 · 续跑检查改成跟随 ON_RESUME 重判（原 snapshotFlow.first 只看一次，
+        # 是「关闭后重新打开不一定弹」的根因之一）。守的是「等可见才跑」这件事。
+        "LaunchedEffect(windowVisible) {",
         "LaunchedEffect(Unit)",
         "Producer.autoResume(ctx)",
-        "runCatching { BookStore.add(c, \"粘贴的文字\", text) }",
-        "runCatching { BookStore.add(ctx, \"分享的文字\", text) }",
+        # R157 · BookStore.add 新增第 4 个 origin 参数（输入框建的书要单独归类导出），
+        # 这里改成前缀判据，不再绑死参数个数；守恒的是「粘贴/分享会建书」这件事。
+        "runCatching { BookStore.add(c, \"粘贴的文字\", text",
+        "runCatching { BookStore.add(ctx, \"分享的文字\", text",
     ],
     "hub": [
         "var loadError by remember(id, refresh, planTick)",
@@ -172,7 +176,7 @@ def selftest():
         ("Importer 校验被摘", "importer", "private fun checkText(text: String)", ""),
         ("ChapterPlan 校验被摘", "plan",
          "if (text.length > BookStore.MAX_TEXT_CHARS)", ""),
-        ("ON_RESUME 等待被摘", "main", "snapshotFlow { windowVisible }.first { it }", ""),
+        ("ON_RESUME 等待被摘", "main", "LaunchedEffect(windowVisible) {", ""),
         ("生命周期观察被摘", "main", "Lifecycle.Event.ON_RESUME", ""),
         ("begin 不再返回 Boolean", "service",
          "fun begin(c: Context, title: String): Boolean",

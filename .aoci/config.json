@@ -1,0 +1,93 @@
+{
+  "version": 2,
+  "locale": "zh-CN",
+  "index_path": "aoci.txt",
+  "exclude_dirs": [
+    ".git",
+    "build",
+    "dist",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "dev",
+    "reference",
+    "samples",
+    "contracts",
+    "真机截图",
+    "app/src/main/res",
+    "gradle",
+    "logs",
+    "build-report"
+  ],
+  "exclude_files": [
+    "*.apk",
+    "*.gguf",
+    "*.jks",
+    "*.pyc",
+    "*.backup.*",
+    "*.bak"
+  ],
+  "exclude_exts": [],
+  "curation_exclude": [
+    "dev/**",
+    "reference/**",
+    "samples/**",
+    "contracts/**",
+    "真机截图/**",
+    "R*_落地报告.md",
+    "本地改码批次*.md"
+  ],
+  "managed_roots": {
+    "files": [
+      "version.txt",
+      "README.md",
+      "STATUS.md",
+      "ROADMAP.md",
+      "build.gradle.kts",
+      "settings.gradle.kts",
+      "gradle.properties",
+      ".gitignore",
+      "AGENTS.md",
+      "aoci.txt",
+      "aoci.meta.txt",
+      "aoci.code.txt",
+      "app/build.gradle.kts",
+      "app/src/main/AndroidManifest.xml",
+      ".aoci/config.json"
+    ],
+    "dirs": [
+      "app/src/main/java",
+      "app/src/main/cpp",
+      "docs",
+      ".github/workflows"
+    ],
+    "scripts": [
+      "aoci_check.py",
+      "r135_verify.py",
+      "r149_verify.py",
+      "check_docs.py",
+      "check_structure.py",
+      "check_version_bump.py",
+      "retired_pages.py",
+      "publish_apk.py",
+      "r161_verify.py",
+      "shell_semantics.py",
+      "nav_semantics.py",
+      "hub_semantics.py",
+      "r163_verify.py"
+    ]
+  },
+  "hook_strict": false,
+  "ledger_enabled": false,
+  "line_ending_tolerance": true,
+  "cognition_refresh_threshold": 30,
+  "overview_delivery": {
+    "chunk_tokens": 7000
+  },
+  "integration": {
+    "mode": "protocol-level",
+    "official_cli_available": false,
+    "governance_script": "scripts/aoci_check.py",
+    "note": "官方二进制在本构建环境不可得；治理由 aoci_check.py 等价实现，不宣称跑过 aoci verify/check"
+  }
+}
