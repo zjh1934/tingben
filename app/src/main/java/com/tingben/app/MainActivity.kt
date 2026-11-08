@@ -462,7 +462,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     initialCol = hubCol,
                     onBack = { nav.pop() },
                     onResumeTask = {
-                        TaskResume.byBook(ctx, bookId)?.let { resumeTask(it) }
+                        // R137：bookId 是可空 String?，byBook 要非空 String；
+                        // 沙盒无 SDK 时静态脚本抓不到，CI 真编译 run 127 报出，
+                        // 这里显式判空，不改成 !!（没开书时本就不该恢复任务）。
+                        bookId?.let { id -> TaskResume.byBook(ctx, id)?.let { resumeTask(it) } }
                     },
                     onProgress = { taskBookId = bookId; nav.push(Screen.TASKS) },
                     onPlayBook = { miniBook = it },
