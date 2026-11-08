@@ -5,7 +5,7 @@ plugins {
 }
 val key = rootProject.file("keystore.jks")
 val buildNumber = System.getenv("BUILD_NUMBER")?.toIntOrNull()
-val appVersion = rootProject.file("version.txt").readText().trim().ifBlank { "1.1.1" }
+val appVersion = rootProject.file("version.txt").readText().trim().ifBlank { "1.1.2" }
 android {
     namespace = "com.tingben.app"
     compileSdk = 35

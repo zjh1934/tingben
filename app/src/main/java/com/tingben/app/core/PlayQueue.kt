@@ -26,7 +26,10 @@ data class PlaybackState(
     val durationMs: Long = 0L,
     val speed: Float = 1f,
     val ended: Boolean = false,
-    val queueId: String = ""
+    val queueId: String = "",
+    // true = 制作中的小段 / 调音台试听，只在原格子就地播，
+    // 不占底部常驻条、不进播放器页、不进通知栏（R133 两态隔离）。
+    val preview: Boolean = false
 )
 
 object PlayQueue {
@@ -42,7 +45,15 @@ object PlayQueue {
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> get() = _state
 
-    private fun notifyNow() { appCtx?.let { PlayNotif.show(it, _state.value) } }
+    // 只按 queueId 判定，调用点一个都不用改：seg / trial 是临时试听态。
+    private fun isPreview(id: String): Boolean = id == "seg" || id == "trial"
+
+    private fun notifyNow() {
+        val s = _state.value
+        // 小段试听不进通知栏：它是「这一块听起来对不对」，不是一次收听会话。
+        if (s.preview) { clearNotif(); return }
+        appCtx?.let { PlayNotif.show(it, s) }
+    }
     private fun clearNotif() { appCtx?.let { PlayNotif.cancel(it) } }
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
@@ -105,7 +116,8 @@ object PlayQueue {
         release()
         tracks = list
         queueId = id
-        _state.value = PlaybackState(speed = speed, queueId = id)
+        _state.value = PlaybackState(speed = speed, queueId = id,
+            preview = isPreview(id))
         clearNotif()
     }
 
@@ -151,7 +163,8 @@ object PlayQueue {
         if (index + 1 >= tracks.size) {
             val q = queueId
             release()
-            _state.value = PlaybackState(speed = speed, ended = true, queueId = q)
+            _state.value = PlaybackState(speed = speed, ended = true, queueId = q,
+                preview = isPreview(q))
             clearNotif()
             return
         }
@@ -191,7 +204,8 @@ object PlayQueue {
             return
         }
         _state.value = PlaybackState(index = i, label = t.label, trackId = t.id,
-            isPlaying = false, positionMs = from, speed = speed, queueId = queueId)
+            isPlaying = false, positionMs = from, speed = speed, queueId = queueId,
+            preview = isPreview(queueId))
         notifyNow()
         try {
             player = MediaPlayer().apply {
@@ -233,7 +247,8 @@ object PlayQueue {
 
     private fun finish() {
         abandonFocus()
-        _state.value = PlaybackState(speed = speed, ended = true, queueId = queueId)
+        _state.value = PlaybackState(speed = speed, ended = true, queueId = queueId,
+            preview = isPreview(queueId))
         clearNotif()
     }
 

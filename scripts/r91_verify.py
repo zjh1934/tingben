@@ -15,7 +15,8 @@ def check(files):
     m, ci, idx = files["main"], files["ci"], files["index"]
 
     for s in [
-        '.clickable(enabled = playable) {',
+        # R134：格子从 clickable 换成点击试听 / 长按进多选的手势
+        '.pointerInput(sg.index, segMulti, segChecked,',
         'if (playing) PlayQueue.pause()',
         'else if (onThis) PlayQueue.resume()',
         'PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")',
@@ -82,9 +83,9 @@ def main():
              lambda t: dict(t, main=t["main"].replace(
                  '            if (segs.isEmpty()) {',
                  '            Text("第 1 段 · 送进声音模型的正文")\n            if (segs.isEmpty()) {'))),
-            ("格子点击不再判空",
+            ("格子手势不再带播放与勾选态",
              lambda t: dict(t, main=t["main"].replace(
-                 '.clickable(enabled = playable) {', '.clickable {'))),
+                 '.pointerInput(sg.index, segMulti, segChecked,', '.pointerInput(Unit) {'))),
             ("再点变成重播而非停",
              lambda t: dict(t, main=t["main"].replace(
                  'if (playing) PlayQueue.pause()', 'if (playing) PlayQueue.playFrom(0)'))),

@@ -1,0 +1,151 @@
+# -*- coding: utf-8 -*-
+"""R132 · 3c 收尾验证：章级操作进第三列 + 导航收敛 8 值。
+
+守：第三列就地承接拼章 / 另存 WAV / 转 M4A / 删除（含确认框）/
+删除后 localTick 触发重读 / 不在组合期同步读盘 /
+Screen 枚举删掉 AUDIO 与 TASK_DETAIL / 分发与 chromeOf 无旧页分支 /
+历史脚本的枚举期望同步降到 8 值。
+
+沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
+用法：python3 scripts/r132_verify.py [--selftest]
+"""
+import pathlib, re, sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+APP = ROOT / "app/src/main/java/com/tingben/app"
+FILES = {
+    "main": APP / "MainActivity.kt",
+    "hub": APP / "ChapterHub.kt",
+    "chrome": APP / "AppChrome.kt",
+    "ci": ROOT / ".github/workflows/ci.yml",
+    "structure": ROOT / "scripts/check_structure.py",
+}
+
+POS = {
+    "main": [
+        "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }",
+        "R132：任务详情页 / 我的音频页的独立入口与目的地都撤了",
+    ],
+    "hub": [
+        "import androidx.activity.compose.rememberLauncherForActivityResult",
+        "import androidx.activity.result.contract.ActivityResultContracts",
+        "import androidx.compose.foundation.Canvas",
+        "import java.io.File",
+        "var multiMode by remember { mutableStateOf(false) }",
+        "var checked by remember { mutableStateOf(setOf<Int>()) }",
+        "MultiSelectBar(",
+        "SelectBox(",
+        "private fun MoreDots(tint: Color)",
+        "var localTick by remember { mutableStateOf(0) }",
+        "LaunchedEffect(book.id, refresh, diskKey, localTick)",
+        "onChanged = { localTick++ }",
+        "fun filesOf(i: Int): Pair<List<File>, File?>",
+        "把这一章拼成一个音频",
+        "复制 / 另存为 WAV",
+        "转格式（WAV → M4A）",
+        "删除选中",
+        "MoreDots(HubPrimary)",
+        "confirmDel = checked.associateWith { filesOf(it) }",
+        "val all = confirmDel!!",
+        "val (segs, merged) = files",
+        "AudioOps.deleteAll(segs)",
+        "AudioOps.deleteMerged(c, it)",
+        "AudioTree.clearDone(c, book.id, i)",
+        "onChanged()",
+    ],
+    "structure": ['WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",',
+                  '"SETTINGS", "MODELS", "MIXER", "CHAPTERS"}'],
+    "ci": ["python3 scripts/r132_verify.py --selftest"],
+}
+
+BAN = {
+    "main": [
+        "Screen.AUDIO",
+        "Screen.TASK_DETAIL",
+        "Screen.TASK_DETAIL -> TaskDetailScreen",
+        "Screen.AUDIO -> AudioScreen",
+        'Screen.AUDIO    -> ChromeSpec("我的音频"',
+    ],
+    "hub": [
+        # 删除对话框不许回到「组合期直接读盘并解构」的旧形态
+        "val i = confirmDel!!",
+    ],
+}
+
+
+def load():
+    return {k: p.read_text(encoding="utf-8", errors="replace") for k, p in FILES.items()}
+
+
+def check(f):
+    e = []
+    for key, needles in POS.items():
+        for s in needles:
+            if s not in f[key]:
+                e.append("正向缺失[%s]: %s" % (key, s[:66]))
+    for key, needles in BAN.items():
+        for s in needles:
+            if s in f[key]:
+                e.append("旧形态残留[%s]: %s" % (key, s[:66]))
+    # 枚举必须恰好 8 值
+    m = re.search(r"private enum class Screen \{([^}]*)\}", f["main"])
+    n = len([x for x in m.group(1).split(",") if x.strip()]) if m else -1
+    if n != 8:
+        e.append("Screen 枚举不是 8 值，实得 %d" % n)
+    return e
+
+
+def selftest():
+    f = load()
+    assert not check(f), "基线自己就红了，先修基线"
+    cuts = {
+        "章级操作面板被摘": ("hub", "把这一章拼成一个音频"),
+        "删除入口被摘": ("hub", "删除选中"),
+        "删除确认被摘": ("hub", "AudioOps.deleteAll(segs)"),
+        "操作后不重读": ("hub", "onChanged = { localTick++ }"),
+        "图标退回字符": ("hub", "MoreDots(HubPrimary)"),
+        "多选态被摘": ("hub", "var multiMode by remember { mutableStateOf(false) }"),
+        "勾选方块被摘": ("hub", "SelectBox("),
+        "底部条被摘": ("hub", "MultiSelectBar("),
+        "重读键被摘": ("hub", "LaunchedEffect(book.id, refresh, diskKey, localTick)"),
+        "导出被摘": ("hub", "复制 / 另存为 WAV"),
+        "转格式被摘": ("hub", "转格式（WAV → M4A）"),
+        "索引清理被摘": ("hub", "AudioTree.clearDone(c, book.id, i)"),
+        "8 值枚举被改回": ("main", "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }"),
+        "结构脚本集合不跟": ("structure", '"SETTINGS", "MODELS", "MIXER", "CHAPTERS"}'),
+    }
+    bad = 0
+    for name, (k, needle) in cuts.items():
+        x = dict(f)
+        x[k] = f[k].replace(needle, "/* removed */")
+        if not check(x):
+            bad += 1
+            print("  反向注入漏放:", name)
+    for k, olds in BAN.items():
+        for old in olds:
+            x = dict(f)
+            x[k] = f[k] + chr(10) + "// " + old.replace(chr(10), " ") + chr(10)
+            if not check(x):
+                bad += 1
+                print("  旧形态注入漏放:", old[:44])
+    total = len(cuts) + sum(len(v) for v in BAN.values())
+    print("反向注入 %d/%d 全拦下" % (total - bad, total))
+    return bad
+
+
+def main():
+    if "--selftest" in sys.argv:
+        return 1 if selftest() else 0
+    e = check(load())
+    if e:
+        print("R132 FAIL %d" % len(e))
+        for x in e:
+            print(" -", x)
+        return 1
+    print("R132 3c 收尾 正向 %d 条 / 旧形态 %d 条：PASS" %
+          (sum(len(v) for v in POS.values()), sum(len(v) for v in BAN.values())))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

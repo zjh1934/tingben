@@ -131,30 +131,38 @@ INJECT = [
 
 
 def selftest():
+    # 原来每个注入用例都新建临时目录并复制整棵 Kotlin 树（22 次全盘拷贝），
+    # 既慢又偶发 Stale file handle 假红。改成：基准树只建一次，
+    # 每例只改一个文件、检查完立刻写回原文，下一例仍基于同一棵干净基准。
+    # 断言语义完全不变，仍是「基准 + 单一破坏」。
     errs = []
-    for name, key, old, new in INJECT:
-        with tempfile.TemporaryDirectory() as d:
-            r = pathlib.Path(d)
-            for rel in REL.values():
-                p = ROOT / rel
-                if not p.exists():
-                    continue
-                q = r / rel
-                q.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as d:
+        r = pathlib.Path(d)
+        for rel in REL.values():
+            p = ROOT / rel
+            if not p.exists():
+                continue
+            q = r / rel
+            q.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, q)
+        (r / 'app/src/main/java/com/tingben/app/core').mkdir(parents=True, exist_ok=True)
+        for p in (ROOT / 'app/src/main').rglob('*.kt'):
+            q = r / p.relative_to(ROOT)
+            q.parent.mkdir(parents=True, exist_ok=True)
+            if not q.exists():
                 shutil.copy2(p, q)
-            (r / 'app/src/main/java/com/tingben/app/core').mkdir(parents=True, exist_ok=True)
-            for p in (ROOT / 'app/src/main').rglob('*.kt'):
-                q = r / p.relative_to(ROOT)
-                q.parent.mkdir(parents=True, exist_ok=True)
-                if not q.exists():
-                    shutil.copy2(p, q)
-            s = (r / REL[key]).read_text(encoding='utf-8')
+        for name, key, old, new in INJECT:
+            f = r / REL[key]
+            s = f.read_text(encoding='utf-8')
             if old not in s:
                 errs.append('注入锚点不存在：' + name)
                 continue
-            (r / REL[key]).write_text(s.replace(old, new), encoding='utf-8')
-            if not check(r):
-                errs.append('没拦下：' + name)
+            f.write_text(s.replace(old, new), encoding='utf-8')
+            try:
+                if not check(r):
+                    errs.append('没拦下：' + name)
+            finally:
+                f.write_text(s, encoding='utf-8')
     return errs
 
 

@@ -152,6 +152,26 @@ jobs:
         run: python3 scripts/r122_verify.py --selftest
       - name: R123 落盘一致性与音频归位验证
         run: python3 scripts/r123_verify.py --selftest
+      - name: R127 制作任务链自动续跑验证（停止态回写 / 切章规则守卫 / 失败态不重试 / 反向注入）
+        run: python3 scripts/r127_verify.py --selftest
+      - name: R128 分段看台状态重建验证（计划段唯一骨架 / 灰格不消失 / 60 段硬砍零残留 / 反向注入）
+        run: python3 scripts/r128_verify.py --selftest
+      - name: R129 制作任务队列验证（忙时入队 / 完成自动接 / 停止暂停 / 失败不跳过 / 反向注入）
+        run: python3 scripts/r129_verify.py --selftest
+      - name: R130 统一返回表验证（层级收敛 / 顶栏真图标 / 栈空兜底 / 反向注入）
+        run: python3 scripts/r130_verify.py --selftest
+      - name: R131 三列归位验证（独立入口撤除 / 目标列跳转 / 任务与音频能力归并 / 反向注入）
+        run: python3 scripts/r131_verify.py --selftest
+      - name: R132 3c 收尾验证（章级操作进第三列 / 导航收敛 8 值 / 反向注入）
+        run: python3 scripts/r132_verify.py --selftest
+      - name: R133 统一播放器验证（两态隔离 / 真图标 / 通知回跳 / 反向注入）
+        run: python3 scripts/r133_verify.py --selftest
+      - name: R134 统一多选态验证（长按进态 / 勾选方块 / 底部操作条 / 反向注入）
+        run: python3 scripts/r134_verify.py --selftest
+      - name: R135 收口守门（可达性闭包 / 旧页零回潮 / 现行验证在 CI / 轻量清单实跑）
+        run: python3 scripts/r135_verify.py --selftest
+      - name: R136 模型页一屏验证（无整页滚动 / 展开态 / 功能守恒 / 孤儿 import / 反向注入）
+        run: python3 scripts/r136_verify.py --selftest
 
 
 

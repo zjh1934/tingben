@@ -15,11 +15,11 @@ build/
 .cxx/
 app/build/
 .idea/
-__pycache__/
-*.pyc
 .env
 
 # 参考源码不进仓（本地交付件，按来源与许可证在 docs 清单里登记）
 reference/
 reference/*.tar.gz
 reference/*.zip
+__pycache__/
+*.pyc

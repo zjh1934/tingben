@@ -120,7 +120,8 @@ main_src = (ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt").read_tex
 R25_ALL = ["TextSplitter", "SPLIT_STATS", "directWithStats"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
-R25_MAIN = ["private fun GroupLabel(", "private fun SettingsSection(",
+# R135：GroupLabel 是批次 6 删掉的不可达孤儿组件，换成现行播放器浮层状态
+R25_MAIN = ["var playerOpen by rememberSaveable { mutableStateOf(false) }", "private fun SettingsSection(",
             "SettingsSection(\"外观与显示\", \"软件\"", "directRead = true",
             "private fun ProduceScreen("]
 for sym in R25_MAIN:
@@ -254,8 +255,8 @@ for sym in ["⟳ 刷新", "TabButton(", '把小说变成能听的音频", fontSi
     if sym in main_src: errs.append("U1 回退：旧 UI 残留 " + sym)
 for msg in nav.semantics(main_src):
     errs.append("U1 回退：导航语义丢失 — " + msg)
-WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
+WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
 enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
 if enum_m:
     got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))
@@ -292,8 +293,9 @@ tabs_m = re.search(r"DRAWER_TOP\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 more_m = re.search(r"DRAWER_MORE\s*=\s*listOf\((.*?)\n\)", chrome_src, re.S)
 if tabs_m:
     body = tabs_m.group(1)
-    if body.count(" to ") != 5 or "设置" in body or "调音台" not in body:
-        errs.append("U1 回退：抽屉一级不是 5 项 / 调音台不在一级 / 混入了设置")
+    # R131：「我的音频」独立入口撤掉，一级组从 5 项收成 4 项。
+    if body.count(" to ") != 4 or "设置" in body or "调音台" not in body:
+        errs.append("U1 回退：抽屉一级不是 4 项 / 调音台不在一级 / 混入了设置")
 else:
     errs.append("U1 回退：找不到 DRAWER_TOP")
 if more_m:
@@ -432,7 +434,7 @@ prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text
 if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
 R99_MUST = ['Text("采样参数 · 9 项"', 'Text("自定义"', 'Text("保存"',
-            'Text("试听"', '改动还没保存', '离开会丢掉这次改动。',
+            'Text("试听 · 已保存"', '改动还没保存', '离开会丢掉这次改动。',
             'val mode = remember(tick) { ModelStore.currentMode(c) }']
 for sym in R99_MUST:
     if sym not in main_src: errs.append("R99 回退：新调音台缺 " + sym)

@@ -28,18 +28,21 @@ def check(files):
     if "NAV_MIXER" in tm["DRAWER_MORE"]:
         errs.append("调音台仍在「更多」组")
     for s in ('NAV_LIBRARY to "书架"', 'NAV_TASKS to "任务"',
-              'NAV_AUDIO to "我的音频"', 'NAV_SETTINGS to "设置"',
+              'NAV_SETTINGS to "设置"',
               'NAV_MODELS to "模型"', 'NAV_INPUT to "输入朗读"'):
         if s not in tm["DRAWER_TOP"] + tm["DRAWER_MORE"]:
             errs.append("抽屉项丢失: " + s[:28])
+    # R131：音频管理归到目录页第三列，独立入口必须撤掉
+    if 'NAV_AUDIO to "我的音频"' in tm["DRAWER_TOP"] + tm["DRAWER_MORE"]:
+        errs.append("「我的音频」独立入口又回来了")
     n = len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"] + tm["DRAWER_MORE"]))
-    if n != 7:
-        errs.append("抽屉项数不是 7，实得 %d" % n)
-    if len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"])) != 5:
-        errs.append("一级组不是 5 项")
+    if n != 6:
+        errs.append("抽屉项数不是 6，实得 %d" % n)
+    if len(re.findall(r"NAV_\w+ to \"", tm["DRAWER_TOP"])) != 4:
+        errs.append("一级组不是 4 项")
 
-    EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-                "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
+    EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",
+                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
     if nav.screen_enum(main) != EXPECTED:
         errs.append("Screen 枚举集合与 10 值不符")
     for pat in (r"Screen\.MIXER\s*->\s*NAV_MIXER", r"NAV_MIXER\s*->\s*Screen\.MIXER"):
@@ -87,7 +90,7 @@ def main():
         print("R89 FAIL", len(errs))
         [print(" -", e) for e in errs]
         return 1
-    print("R89 调音台一级入口 / 抽屉 7 项守恒 / 导航守恒：PASS")
+    print("R89 调音台一级入口 / 抽屉 6 项守恒 / 导航守恒：PASS")
     return 0
 
 if __name__ == "__main__":

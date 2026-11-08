@@ -1,5 +1,6 @@
 package com.tingben.app
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,20 +43,46 @@ internal data class ChromeSpec(
     val title: String,
     val activeTab: Int = TAB_NONE,
     val showImport: Boolean = false,
+    // 统一层级：根级页没有返回键，二级页一律由顶栏给同一枚返回键。
+    // 以前各页自己塞「‹ 目录 / ‹ 任务 / ‹ 返回」，有有无无，位置文案都不齐。
+    val canBack: Boolean = false,
 )
 
 private val DRAWER_TOP = listOf(
     NAV_LIBRARY to "书架",
     NAV_TASKS to "任务",
-    NAV_AUDIO to "我的音频",
     NAV_MIXER to "调音台",
     NAV_INPUT to "输入朗读",
 )
+// 「我的音频」独立入口已撤（R131）：音频管理归到书的目录页第三列。
+// NAV_AUDIO / TAB_AUDIO 常量留着，供旧状态恢复与历史索引兼容，不再挂任何抽屉项。
 
 private val DRAWER_MORE = listOf(
     NAV_SETTINGS to "设置",
     NAV_MODELS to "模型",
 )
+
+// 代码绘制的返回箭头，不再用「‹」字符当图标（R130 起逐步替换全工程字符图标）。
+@Composable
+private fun BackChevron(tint: Color) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val w = size.width
+        val h = size.height
+        val p = Path().apply {
+            moveTo(w * 0.62f, h * 0.22f)
+            lineTo(w * 0.34f, h * 0.50f)
+            lineTo(w * 0.62f, h * 0.78f)
+        }
+        drawPath(
+            p, color = tint,
+            style = Stroke(
+                width = 2.2.dp.toPx(),
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round
+            )
+        )
+    }
+}
 
 @Composable
 internal fun AppTopBar(
@@ -60,11 +91,15 @@ internal fun AppTopBar(
     onImport: () -> Unit,
     surface: Color,
     primary: Color,
+    onBack: (() -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().background(surface).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (spec.canBack && onBack != null) {
+            IconButton(onClick = onBack) { BackChevron(primary) }
+        }
         IconButton(onClick = onMenu) {
             Text("☰", fontSize = 20.sp, color = primary)
         }

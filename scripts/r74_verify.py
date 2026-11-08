@@ -30,7 +30,7 @@ POS = [
     ("翻章也写位置", HUB, "{ next -> openReader(next) }"),
     ("本章文案", HUB, "本章已生成 ${(p * 100).toInt()}%"),
     ("等待中文案", HUB, "Text(\"等待中\""),
-    ("三列分发", HUB, "repeat(3) { col ->"),
+    ("三列分发", HUB, "HorizontalPager("),
     ("三个标签", HUB, "listOf(\"章节\", \"合成\", \"可播\")"),
     ("阅读位置文件", READING, "reading_state.json"),
     ("纯 UI 状态声明", READING, "fun allLast(c: Context)"),

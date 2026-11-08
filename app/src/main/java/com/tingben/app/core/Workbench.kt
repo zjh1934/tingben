@@ -37,7 +37,8 @@ object Workbench {
         val redo = SegPlan.pending(work)
         val mapped = SegPlan.readMap(work)
         if (mapped != null) {
-            return mapped.take(60).map { m ->
+            // 不截断：看台要显示全部计划段，灰格也是段。段数很多时由 UI 承担滚动成本。
+            return mapped.map { m ->
                 val f = File(work, m.wavName)
                 SegRow(m.seg, m.block, m.ann, m.fromModel,
                     f.takeIf { it.exists() && it.length() > 44 }, m.wavName,
@@ -60,7 +61,9 @@ object Workbench {
             (annSet.maxOrNull() ?: -1), (wavMap.keys.maxOrNull() ?: -1),
             ((t?.total ?: 1) - 1)
         ).coerceAtLeast(0)
-        val upTo = last.coerceAtMost(59)
+        // 兜底（没写 segmap 时）按已落盘最大序号 + 任务总数推算，不再砍到 59；
+        // 只留一个极端保险，避免 total 被写坏时生成上万行把界面拖死。
+        val upTo = last.coerceAtMost(2000)
 
         return (0..upTo).map { i ->
             val annFile = File(work, "ann_%04d.json".format(i))

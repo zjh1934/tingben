@@ -19,12 +19,67 @@ data class TaskInfo(
     val updatedAt: Long,
     val output: String? = null,
     val config: ProduceConfig = ProduceConfig(),
-    val modeId: String = ""
+    val modeId: String = "",
+    val splitRule: Int = 1
 )
 
 object TaskResume {
+    // 1 = 旧整本切分；2 = 逐行多形态组计分。改切章规则时 +1，
+    // 旧任务按旧章号存，不允许自动续跑，避免断点错位到别的章。
+    const val SPLIT_RULE = 2
+
     private fun file(c: Context) = File(c.filesDir, "task_active.json")
     private fun listFile(c: Context) = File(c.filesDir, "tasks.json")
+    private fun queueFile(c: Context) = File(c.filesDir, "queue.json")
+    private fun pauseFile(c: Context) = File(c.filesDir, "queue_paused.json")
+
+    // 队列里存的就是完整 TaskInfo（phase = "queued"），复用同一套 encode/decode，
+    // 不另造一套字段，避免排队项和任务项的口径分家。
+    fun queue(c: Context): List<TaskInfo> {
+        val body = when (val r = AtomicJson.read(queueFile(c))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return emptyList()
+        }
+        return try {
+            val a = JSONArray(body)
+            (0 until a.length()).map { decode(a.getJSONObject(it)) }
+        } catch (_: Throwable) { emptyList() }
+    }
+
+    fun queueSize(c: Context): Int = queue(c).size
+
+    fun enqueue(c: Context, t: TaskInfo) {
+        try {
+            if (AtomicJson.read(queueFile(c)) is AtomicJson.Read.Corrupt) return
+            val all = queue(c).filter { it.bookId != t.bookId }.toMutableList()
+            all.add(t.copy(phase = "queued", stage = "排队中",
+                updatedAt = System.currentTimeMillis()))
+            val a = JSONArray(); all.forEach { a.put(encode(it)) }
+            AtomicJson.write(queueFile(c), a.toString())
+        } catch (_: Throwable) { }
+    }
+
+    fun dequeue(c: Context, bookId: String) {
+        try {
+            val keep = queue(c).filter { it.bookId != bookId }
+            if (keep.isEmpty()) { AtomicJson.delete(queueFile(c)); return }
+            val a = JSONArray(); keep.forEach { a.put(encode(it)) }
+            AtomicJson.write(queueFile(c), a.toString())
+        } catch (_: Throwable) { }
+    }
+
+    fun clearQueue(c: Context) { AtomicJson.delete(queueFile(c)) }
+
+    // 暂停状态落盘：进程被杀后重开软件，不会把用户主动停掉的队列又跑起来。
+    fun queuePaused(c: Context): Boolean = when (val r = AtomicJson.read(pauseFile(c))) {
+        is AtomicJson.Read.Ok -> r.text.trim() == "1"
+        else -> false
+    }
+
+    fun setQueuePaused(c: Context, v: Boolean) {
+        if (v) AtomicJson.write(pauseFile(c), "1")
+        else AtomicJson.delete(pauseFile(c))
+    }
 
     private fun encode(t: TaskInfo): JSONObject {
         val a = JSONArray()
@@ -42,6 +97,7 @@ object TaskResume {
             .put("output", t.output ?: "")
             .put("config", t.config.toJson())
             .put("modeId", t.modeId)
+            .put("splitRule", t.splitRule)
             .put("only", a)
             .put("onlyNull", t.only == null)
     }
@@ -58,7 +114,7 @@ object TaskResume {
             o.optString("phase", "interrupted"), o.optString("stage", ""),
             o.optLong("updatedAt", 0L), out,
             ProduceConfig.fromJson(o.optJSONObject("config")),
-            o.optString("modeId", ""))
+            o.optString("modeId", ""), o.optInt("splitRule", 1))
     }
 
     private fun legacy(c: Context): TaskInfo? {
@@ -155,6 +211,25 @@ object TaskResume {
     } catch (_: Throwable) { null }
 
     fun active(c: Context): TaskInfo? = readAll(c).firstOrNull { it.phase != "done" }
+
+    // 返回 null = 可以自动续跑；非 null = 不自动跑的原因（直接给用户看）。
+    // 只拦「用户主动停 / 失败中断 / 切章规则变了 / 书没了 / 模型没齐 / 调音改过」。
+    // 进程被杀或崩溃留下的 interrupted 任务不拦，正是要自动接上的那种。
+    fun autoResumeBlockReason(c: Context, t: TaskInfo): String? {
+        if (t.phase == "stopped")
+            return "上次是你手动停的，没自动续跑；在任务页点「继续制作」"
+        if (t.phase != "interrupted")
+            return "上次任务状态不是「中断」，没自动续跑"
+        if (t.stage in listOf("没完成", "出错了", "已停止"))
+            return "上次没做完（${t.stage}），没自动续跑；在任务页点「继续制作」"
+        if (t.splitRule != SPLIT_RULE)
+            return "章节切分规则升级过，没自动续跑；请在任务页手动点「继续制作」确认"
+        if (BookStore.list(c).none { it.id == t.bookId })
+            return "这本书已从书架删掉，没法续跑"
+        ModelStore.synthesisBlockReason(c)?.let { return "模型没齐（$it），没自动续跑" }
+        invalidationReason(c, t)?.let { return "$it，没自动续跑；请在任务页手动确认" }
+        return null
+    }
 
     fun currentChapter(c: Context, t: TaskInfo): Int? {
         val body = when (val r = AtomicJson.read(File(AnnCache.dirFor(c, t.bookId, t.only),

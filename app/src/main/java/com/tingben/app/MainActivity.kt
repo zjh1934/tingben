@@ -1,7 +1,6 @@
 package com.tingben.app
 
 import android.content.Context
-import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -14,23 +13,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.*
@@ -61,7 +52,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import java.io.File
 
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }
+// R132：任务详情页 / 我的音频页的独立入口与目的地都撤了，能力已归进目录页三列。
+private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }
 
 private class NavHost(
     initialStack: String,
@@ -94,7 +86,6 @@ private class NavHost(
         persist(stack)
     }
 }
-
 
 private val Bg: Color get() = palette.bg
 private val Card: Color get() = palette.card
@@ -131,6 +122,11 @@ class MainActivity : ComponentActivity() {
         if (i == null) return
         if (i.getBooleanExtra("open_tasks", false)) {
             incomingFlow.value = System.currentTimeMillis().toString() + "|tasks:"
+            return
+        }
+        // 播放控制通知主体：回到软件并直接展开播放器页（R133）
+        if (i.getBooleanExtra("open_player", false)) {
+            incomingFlow.value = System.currentTimeMillis().toString() + "|player:"
             return
         }
         val act = i.action
@@ -171,9 +167,13 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var lastSelection by rememberSaveable { mutableStateOf<Set<Int>?>(null) }
     var taskBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var taskChapter by rememberSaveable { mutableStateOf<Int?>(null) }
+    // 从别处跳进书时落在第几列：0 章节 / 1 合成(任务) / 2 可播(音频)
+    var hubCol by rememberSaveable { mutableStateOf(0) }
     var refresh by rememberSaveable { mutableStateOf(0) }
     var modelsFrom by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
     var inputReadOpen by rememberSaveable { mutableStateOf(false) }
+    // 底部常驻条点开 / 通知点进来，展开同一个全屏播放器浮层
+    var playerOpen by rememberSaveable { mutableStateOf(false) }
     var importing by rememberSaveable { mutableStateOf<String?>(null) }
     val importBytesFlow = remember { MutableStateFlow(0L) }
     val importBytes by importBytesFlow.collectAsState()
@@ -185,12 +185,36 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     var drawerReturn by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
 
-    BackHandler(enabled = screen != Screen.LIBRARY || nav.canPop()) { nav.pop() }
+    // 从任务 / 音频 / 制作完成等入口跳进书时，统一落到目录页并指定目标列。
+    // 必须放在 nav 声明之后：局部函数不能引用尚未声明的局部变量。
+    fun openBookCol(id: String?, col: Int) {
+        if (id != null) bookId = id
+        taskBookId = id ?: taskBookId
+        hubCol = col.coerceIn(0, 2)
+        nav.push(Screen.CHAPTERS)
+    }
+
+    // 全局唯一回退出口：有栈就回来源页，栈被清掉就按统一返回表兜底。
+    fun goBack() {
+        if (nav.canPop()) nav.pop()
+        else {
+            screen = backTargetOf(screen, modelsFrom, drawerReturn)
+            nav.clear()
+        }
+    }
+    val backAction: () -> Unit = { goBack() }
+    BackHandler(enabled = canGoBack(screen) || nav.canPop()) { goBack() }
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
 
     KeepScreenOn()
+
+    // 开软件时自动接上被中断的制作任务；只跑一次（Unit key），旋转/切主题不重跑。
+    LaunchedEffect(Unit) {
+        val hint = Producer.autoResume(ctx)
+        if (hint != null) Toast.makeText(ctx, hint, Toast.LENGTH_LONG).show()
+    }
 
     fun importBook(uri: Uri?, tag: String = "PICKER") {
         if (uri == null) {
@@ -270,6 +294,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 screen = Screen.TASKS
                 refresh++
             }
+            raw == "player:" -> { playerOpen = true }
             raw == "empty:" -> {
                 EventLog.log(EventLog.Kind.CRASH, "EXTERNAL_IMPORT_EMPTY", "收到分享但没拿到 Uri/文字")
                 Toast.makeText(ctx, "听本收到打开了，但对方没给文件；试试先在文件管理器里长按分享",
@@ -353,7 +378,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             taskChapter = TaskResume.currentChapter(ctx, t)
             lastSelection = t.only
             Producer.start(ctx, b, t.only, true, t.think, t.config)
-            nav.push(if (taskChapter != null) Screen.PROGRESS else Screen.TASK_DETAIL)
+            if (taskChapter != null) nav.push(Screen.PROGRESS)
+            else openBookCol(b.id, 1)
         } else {
             Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
         }
@@ -366,8 +392,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     }
     val drawerSelected = when (screen) {
         Screen.LIBRARY, Screen.PRODUCE, Screen.CHAPTERS -> NAV_LIBRARY
-        Screen.PROGRESS, Screen.TASKS, Screen.TASK_DETAIL -> NAV_TASKS
-        Screen.AUDIO -> NAV_AUDIO
+        Screen.PROGRESS, Screen.TASKS -> NAV_TASKS
         Screen.SETTINGS -> NAV_SETTINGS
         Screen.MIXER -> NAV_MIXER
         Screen.MODELS -> NAV_MODELS
@@ -384,7 +409,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         scope.launch { drawerState.close() }
                     } else {
                         val from = when (screen) {
-                            Screen.LIBRARY, Screen.TASKS, Screen.AUDIO,
+                            Screen.LIBRARY, Screen.TASKS,
                             Screen.PRODUCE, Screen.PROGRESS -> screen
                             else -> drawerReturn
                         }
@@ -393,7 +418,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         val target = when (idx) {
                             NAV_LIBRARY -> Screen.LIBRARY
                             NAV_TASKS -> Screen.TASKS
-                            NAV_AUDIO -> Screen.AUDIO
                             NAV_SETTINGS -> Screen.SETTINGS
                             NAV_MIXER -> Screen.MIXER
                             NAV_MODELS -> Screen.MODELS
@@ -405,7 +429,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         } else {
                             nav.push(target)
                         }
-                        if (idx == NAV_AUDIO || idx == NAV_SETTINGS) refresh++
+                        if (idx == NAV_SETTINGS) refresh++
                         scope.launch { drawerState.close() }
                     }
                 },
@@ -422,7 +446,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             onMenu = { scope.launch { drawerState.open() } },
             onImport = { openBookPicker() },
             surface = Card,
-            primary = Primary
+            primary = Primary,
+            onBack = if (chrome.canBack) backAction else null
         )
         Box(Modifier.weight(1f)) {
             when (screen) {
@@ -434,18 +459,22 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     importError = bookImportError,
                     onDismissImportError = { bookImportError = null })
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
+                    initialCol = hubCol,
                     onBack = { nav.pop() },
+                    onResumeTask = {
+                        TaskResume.byBook(ctx, bookId)?.let { resumeTask(it) }
+                    },
                     onProgress = { taskBookId = bookId; nav.push(Screen.TASKS) },
                     onPlayBook = { miniBook = it },
                     onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) },
                     onStarted = { id, sel ->
                         taskBookId = id; lastSelection = sel
-                        nav.push(Screen.TASK_DETAIL)
+                        openBookCol(id, 1)
                     })
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
                     onProgress = { taskBookId = bookId; taskChapter = null; nav.push(Screen.PROGRESS) },
-                    onDone = { nav.clear(); screen = Screen.AUDIO; refresh++ },
+                    onDone = { nav.clear(); openBookCol(bookId, 2); refresh++ },
                     onStarted = { taskBookId = bookId; lastSelection = it })
                 Screen.PROGRESS -> ProgressScreen(ctx, taskBookId, taskChapter,
                     onBack = { nav.pop() },
@@ -462,34 +491,16 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         }
                     })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
-                    onOpenTask = { id -> taskBookId = id; nav.push(Screen.TASK_DETAIL) },
+                    onOpenTask = { id -> openBookCol(id, 1) },
                     onProgress = {
                         val t = Producer.resume.value
                         taskBookId = t?.bookId ?: taskBookId
                         taskChapter = t?.let { TaskResume.currentChapter(ctx, it) }
                         nav.push(Screen.PROGRESS)
                     },
-                    onAudio = { nav.push(Screen.AUDIO); refresh++ },
+                    onAudio = { openBookCol(taskBookId, 2); refresh++ },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
                     onResume = resumeTask)
-                Screen.TASK_DETAIL -> TaskDetailScreen(ctx, taskBookId, refresh,
-                    onBack = { nav.pop() },
-                    onChapter = { ch ->
-                        taskChapter = ch
-                        taskBookId = taskBookId ?: bookId
-                        nav.push(Screen.PROGRESS)
-                    },
-                    onPickChapter = { ch ->
-                        bookId = taskBookId ?: bookId
-                        lastSelection = setOf(ch)
-                        nav.push(Screen.CHAPTERS)
-                    },
-                    onAudio = { nav.push(Screen.AUDIO); refresh++ },
-                    onLibrary = { screen = Screen.LIBRARY; nav.clear() },
-                    onResume = resumeTask)
-                Screen.AUDIO -> AudioScreen(ctx, refresh,
-                    onLibrary = { screen = Screen.LIBRARY; nav.clear() },
-                    onModels = { modelsFrom = Screen.AUDIO; nav.push(Screen.MODELS) })
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; nav.push(Screen.MODELS) },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
@@ -504,10 +515,22 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             }
         }
 
-        MiniPlayBar(ctx, miniBook, onGoBook = { id ->
-            bookId = id
-            nav.push(Screen.CHAPTERS)
-        })
+        MiniPlayBar(ctx, miniBook,
+            onExpand = { playerOpen = true },
+            onGoBook = { id ->
+                bookId = id
+                nav.push(Screen.CHAPTERS)
+            })
+        }
+        // 播放器是覆盖全屏的浮层，不进 Screen 枚举 / 导航栈：
+        // 它不是「另一页」，是同一份 PlayQueue 状态的展开视图。
+        if (playerOpen) {
+            PlayerSheet(ctx, miniBook ?: bookId,
+                onClose = { playerOpen = false },
+                onGoBook = { id ->
+                    bookId = id
+                    nav.push(Screen.CHAPTERS)
+                })
         }
         if (inputReadOpen) {
             InputReadScreen(ctx,
@@ -543,17 +566,32 @@ private fun queryName(c: Context, uri: Uri): String {
     return name
 }
 
+// 统一返回表（R130）：哪一页返回到哪一页，只在这里定义一次。
+// 根级页（书架 / 任务 / 设置）靠抽屉切换，没有返回键；
+// 二级页一律回自己的来源，栈被清掉时也按这张表兜底，不会莫名跳回书架。
+private val ROOT_SCREENS = setOf(
+    Screen.LIBRARY, Screen.TASKS, Screen.SETTINGS)
+
+private fun canGoBack(s: Screen): Boolean = s !in ROOT_SCREENS
+
+private fun backTargetOf(s: Screen, modelsFrom: Screen, drawerReturn: Screen): Screen =
+    when (s) {
+        Screen.LIBRARY, Screen.TASKS, Screen.SETTINGS -> Screen.LIBRARY
+        Screen.CHAPTERS, Screen.PRODUCE -> Screen.LIBRARY
+        Screen.PROGRESS -> Screen.TASKS
+        Screen.MODELS -> modelsFrom
+        Screen.MIXER -> drawerReturn
+    }
+
 private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.LIBRARY  -> ChromeSpec("书架", TAB_LIBRARY, showImport = true)
-    Screen.PRODUCE  -> ChromeSpec("制作", TAB_LIBRARY)
-    Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY)
-    Screen.PROGRESS -> ChromeSpec("进度", TAB_TASKS)
+    Screen.PRODUCE  -> ChromeSpec("制作", TAB_LIBRARY, canBack = true)
+    Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, canBack = true)
+    Screen.PROGRESS -> ChromeSpec("进度", TAB_TASKS, canBack = true)
     Screen.TASKS    -> ChromeSpec("任务", TAB_TASKS)
-    Screen.AUDIO    -> ChromeSpec("我的音频", TAB_AUDIO)
     Screen.SETTINGS -> ChromeSpec("设置")
-    Screen.MODELS   -> ChromeSpec("模型")
-    Screen.MIXER    -> ChromeSpec("调音台")
-    Screen.TASK_DETAIL -> ChromeSpec("章节", TAB_TASKS)
+    Screen.MODELS   -> ChromeSpec("模型", canBack = true)
+    Screen.MIXER    -> ChromeSpec("调音台", canBack = true)
 }
 
 @Composable
@@ -886,14 +924,19 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
     }
     val mergedOnly = chapter != null && treeChapter?.segments.isNullOrEmpty() &&
         treeChapter?.merged?.isFile == true
-    val fallbackSegs = if (chapter != null && segChapters != null)
+    // 看台骨架只认「计划段」：已出声的绿、没出声的灰，段数恒定。
+    // 音频树里只有落盘的小块，拿它当列表来源会让未合成的灰格整片消失，
+    // 再随合成一块块冒出来（页面切出去再回来尤其明显，R128）。
+    // 这里改成：树只负责告诉骨架「这一段已经有音频了」，不决定列表长度。
+    val plannedSegs = if (chapter != null && segChapters != null)
         allSegs.filter { segChapters[it.index] == chapter } else allSegs
-    val chapterRows = treeChapter?.segments?.map { s ->
-        SegRow(s.seq - 1, s.seq - 1, 0, null, s.file, s.file.name,
-            "", "旁白", "", false)
+    // 只认还在盘上的小块：批量删段后索引若还留着 File，格子不该继续显示绿
+    val treeWav = treeChapter?.segments?.associate { (it.seq - 1) to it.file }
+        ?.filterValues { it.isFile && it.length() > 44 }
+    val segs = plannedSegs.mapIndexed { i, r ->
+        val w = r.wav ?: treeWav?.get(r.index)
+        r.copy(index = i, wav = w, wavName = w?.name ?: r.wavName)
     }
-    val segs = if (chapter != null && chapterRows != null) chapterRows else
-        if (chapter != null) fallbackSegs.mapIndexed { i, r -> r.copy(index = i) } else allSegs
     val rest = remember(st.done, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
     val verdict = remember(st.done, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
     var showCompare by remember { mutableStateOf(false) }
@@ -901,7 +944,16 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
     val pqSeg by PlayQueue.state.collectAsState()
     var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(st.running) { if (!st.running) stopping = false }
+    // R134 · 分段看台多选态：长按格子进入、方块勾选、底部条批量操作
+    var segMulti by remember { mutableStateOf(false) }
+    var segChecked by remember { mutableStateOf(setOf<Int>()) }
+    var confirmSegDel by remember { mutableStateOf<List<File>?>(null) }
+    fun exitSegMulti() {
+        segMulti = false
+        segChecked = emptySet()
+    }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
 
         if (chapter != null) {
@@ -1035,21 +1087,44 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
                                     .background(
                                         if (playing) PrimarySoft else base.copy(alpha = 0.18f),
                                         RoundedCornerShape(8.dp))
-                                    .clickable(enabled = playable) {
-                                        if (playing) PlayQueue.pause()
-                                        else if (onThis) PlayQueue.resume()
-                                        else sg.wav?.let { wav ->
-                                            PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")
-                                            PlayQueue.playFrom(0, id = "seg")
-                                        }
+                                    // 播放态与勾选集合都进 key，避免闭包捕获旧状态
+                                    .pointerInput(sg.index, segMulti, segChecked,
+                                        playable, playing, onThis) {
+                                        detectTapGestures(
+                                            onLongPress = {
+                                                if (playable) {
+                                                    segMulti = true
+                                                    segChecked = setOf(sg.index)
+                                                }
+                                            },
+                                            onTap = {
+                                                if (segMulti) {
+                                                    if (playable) segChecked =
+                                                        if (sg.index in segChecked)
+                                                            segChecked - sg.index
+                                                        else segChecked + sg.index
+                                                } else if (playing) PlayQueue.pause()
+                                                else if (onThis) PlayQueue.resume()
+                                                else sg.wav?.let { wav ->
+                                                    PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")
+                                                    PlayQueue.playFrom(0, id = "seg")
+                                                }
+                                            }
+                                        )
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("${sg.index + 1}", fontSize = 12.sp,
-                                    color = if (playing) Primary else base)
-                                if (playable)
-                                    Text(if (playing) "⏸" else "▶", fontSize = 12.sp, color = Good,
-                                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
+                                if (segMulti) {
+                                    SelectBox(checked = sg.index in segChecked,
+                                        tint = Primary, boxColor = Card,
+                                        modifier = Modifier.size(18.dp))
+                                } else {
+                                    Text("${sg.index + 1}", fontSize = 12.sp,
+                                        color = if (playing) Primary else base)
+                                    if (playable)
+                                        Text(if (playing) "⏸" else "▶", fontSize = 12.sp, color = Good,
+                                            modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
+                                }
                             }
                         }
                     }
@@ -1060,224 +1135,65 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
         }
         Spacer(Modifier.height(18.dp))
     }
-}
-
-
-private data class TaskDetailData(
-    val title: String,
-    val exists: Boolean,
-    val task: TaskInfo?,
-    val chapters: List<Chapter>,
-    val finished: Map<Int, AudioItem>,
-    val chapterReady: Set<Int>,
-    val chapterStarted: Set<Int>,
-    val chapterMerged: Map<Int, File>,
-    val real: Int,
-    val invalidate: String?
-)
-
-private fun buildTaskDetail(c: Context, bookId: String?): TaskDetailData {
-    val book = bookId?.let { BookStore.list(c).find { it.id == bookId } }
-    val task = bookId?.let { TaskResume.byBook(c, it) }
-    val chapters = if (book != null) try {
-        ChapterSplitter.split(BookStore.read(c, book)).first
-    } catch (_: Throwable) { emptyList() } else emptyList()
-    val finished = bookId?.let { AudioLibrary.latestByChapter(c, it) } ?: emptyMap()
-    val real = task?.let { TaskResume.realProgress(c, it) } ?: 0
-    val invalidate = task?.let { TaskResume.invalidationReason(c, it) }
-    val plan = task?.let { Workbench.segChapters(c, it) }
-    val perChapter = plan?.values?.groupingBy { it }?.eachCount() ?: emptyMap()
-    val ready = mutableSetOf<Int>()
-    val startedCh = mutableSetOf<Int>()
-    val mergedCh = mutableMapOf<Int, File>()
-    AudioTree.load(c).firstOrNull { it.bookId == bookId }?.chapters?.forEach { ch ->
-        ch.merged?.takeIf { it.isFile }?.let { mergedCh[ch.chapter] = it }
-        if (ch.segments.isNotEmpty()) startedCh.add(ch.chapter)
-        val planned = perChapter[ch.chapter] ?: 0
-        if (ch.merged != null || (planned > 0 && ch.segments.size >= planned)) ready.add(ch.chapter)
-    }
-    finished.keys.forEach { ready.add(it) }
-    return TaskDetailData(book?.title ?: task?.title ?: "这本书不在了",
-        book != null, task, chapters, finished, ready, startedCh, mergedCh, real, invalidate)
-}
-
-private fun playChapterAudio(c: Context, bookId: String?, ch: Int, merged: File? = null) {
-    if (bookId == null) return
-    if (merged != null && merged.isFile) {
-        val q = "chapterMerged:$bookId:$ch"
-        PlayQueue.setTracks(listOf(Track(merged, "第 ${ch + 1} 章 · 整章",
-            id = "merged:${merged.absolutePath}")), q)
-        PlayQueue.playFrom(0, id = q)
-        return
-    }
-    val a = AudioLibrary.audioFor(c, bookId, ch) ?: return
-    val q = "chapter:$bookId"
-    PlayQueue.setTracks(listOf(Track(a.file, "${a.title} · 第 ${ch + 1} 章",
-        AudioLibrary.chapterStartMs(c, a, ch),
-        id = "chapter:${a.file.absolutePath}")), q)
-    PlayQueue.playFrom(0, id = q)
-}
-
-@Composable
-private fun TaskDetailScreen(
-    c: Context, bookId: String?, refresh: Int,
-    onBack: () -> Unit, onChapter: (Int) -> Unit,
-    onPickChapter: (Int) -> Unit,
-    onAudio: () -> Unit, onLibrary: () -> Unit,
-    onResume: (TaskInfo) -> Unit
-) {
-    val st by Producer.state.collectAsState()
-    val live by Producer.resume.collectAsState()
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(st.running) {
-        if (!st.running) { tick++; return@LaunchedEffect }
-        while (true) { delay(2000); tick++ }
-    }
-    var detail by remember { mutableStateOf<TaskDetailData?>(null) }
-    LaunchedEffect(bookId, refresh, tick, st.done, st.stage) {
-        detail = withContext(Dispatchers.IO) { buildTaskDetail(c, bookId) }
-    }
-    val d = detail
-    if (d == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-    val t = d.task
-    val runningHere = st.running && live?.bookId == bookId
-    val otherRunning = st.running && !runningHere
-    val badge = when {
-        runningHere -> "进行中"
-        t?.phase == "done" -> "已完成"
-        t?.phase == "stopped" -> "已停止"
-        else -> "已中断"
-    }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-        item(key = "detail_head") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("‹ 任务", fontSize = 12.sp) }
-                Spacer(Modifier.weight(1f))
-                Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                    color = if (runningHere) Primary else if (t?.phase == "done") Good else Warn)
-            }
-            if (!d.exists) {
-                Text("这本书已从书架删掉，成品仍留在「我的音频」里。",
-                    fontSize = 12.sp, color = Warn)
-            }
-            if (d.invalidate != null) {
-                Text(d.invalidate!!, fontSize = 12.sp, color = Warn)
-            }
-            if (otherRunning) {
-                Text("另一本正在制作，等它跑完或先停它，再续这一本。",
-                    fontSize = 12.sp, color = Warn)
-            }
-            Spacer(Modifier.height(6.dp))
-        }
-        item(key = "detail_chapter_title") {
-            Spacer(Modifier.height(10.dp))
-            Text("章节 · 做过的章点开看它的分段", fontSize = 13.sp,
-                fontWeight = FontWeight.Bold, color = Primary)
-            Spacer(Modifier.height(6.dp))
-        }
-        if (d.chapters.isEmpty()) {
-            item(key = "detail_no_chapter") {
-                CardBox {
-                    Text("这本书的章节读不出来", fontSize = 12.sp, color = Sub)
-                    TextButton(onClick = onLibrary) { Text("去书架 ›", fontSize = 12.sp) }
-                }
-            }
-        } else {
-            items(d.chapters, key = { it.index }) { ch ->
-                val done = ch.index in d.chapterReady || d.finished.containsKey(ch.index)
-                val inScope = t?.only == null || ch.index in t.only!!
-                val livePct = if (runningHere) st.chapterProgress[ch.index] else null
-                val started = done || ch.index in d.chapterStarted || livePct != null ||
-                    (runningHere && inScope)
-                val label = when {
-                    done -> "已做好"
-                    livePct != null -> "正在制作 ${(livePct * 100).toInt()}%"
-                    runningHere && inScope -> "排队中"
-                    !inScope -> "本次没选"
-                    t?.phase == "stopped" || t?.phase == "interrupted" -> "没做完"
-                    else -> "还没做"
-                }
-                val tone = when {
-                    done -> Good
-                    livePct != null || (runningHere && inScope) -> Primary
-                    started -> Warn
-                    else -> Sub
-                }
-                CardBox(Modifier.padding(bottom = 6.dp)) {
-                    Row(Modifier.fillMaxWidth().height(52.dp)
-                        .clickable(enabled = started) { onChapter(ch.index) },
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${ch.index + 1}. ${ch.title}", fontSize = 14.sp, maxLines = 1)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(7.dp).background(tone, RoundedCornerShape(50)))
-                                Spacer(Modifier.width(6.dp))
-                                Text(label, fontSize = 12.sp, color = tone)
-                            }
-                        }
-                        if (done) {
-                            TextButton(onClick = { playChapterAudio(c, bookId, ch.index, d.chapterMerged[ch.index]) }) {
-                                Text("▶ 播放", fontSize = 12.sp)
-                            }
-                        }
-                        if (started) {
-                            Text("本章 ›", fontSize = 12.sp, color = Primary)
-                        } else {
-                            TextButton(onClick = { onPickChapter(ch.index) }) {
-                                Text("去选这一章 ›", fontSize = 12.sp, color = Sub)
-                            }
-                        }
+    if (segMulti) {
+        MultiSelectBar(
+            count = segChecked.size,
+            onSelectAll = {
+                segChecked = segs.filter { it.hasAudio }.map { it.index }.toSet()
+            },
+            onCancel = { exitSegMulti() },
+            allLabel = "全选已生成",
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            TextButton(onClick = {
+                val picked = segChecked.sorted().mapNotNull { i ->
+                    segs.getOrNull(i)?.wav?.let { w ->
+                        Track(w, "第 ${i + 1} 段", id = "seg:${w.absolutePath}")
                     }
                 }
-            }
+                if (picked.isEmpty()) {
+                    Toast.makeText(c, "先勾几个已生成的小块", Toast.LENGTH_SHORT).show()
+                } else {
+                    // preview 队列：不占常驻条、不进播放器页、不进通知栏（R133 两态隔离）
+                    PlayQueue.setTracks(picked, "seg")
+                    PlayQueue.playFrom(0, id = "seg")
+                    exitSegMulti()
+                }
+            }) { Text("试听选中", fontSize = 12.sp, color = Primary) }
+            TextButton(onClick = {
+                val files = segChecked.sorted().mapNotNull { i -> segs.getOrNull(i)?.wav }
+                if (files.isEmpty()) Toast.makeText(c, "先勾几个已生成的小块",
+                    Toast.LENGTH_SHORT).show()
+                else confirmSegDel = files
+            }) { Text("删除选中", fontSize = 12.sp, color = Warn) }
         }
-        item(key = "detail_actions") {
-            Spacer(Modifier.height(8.dp))
-            if (t == null) {
-                TextButton(onClick = onLibrary) { Text("去书架，选一本书 ›", fontSize = 12.sp) }
-            } else when {
-                runningHere -> {
-                    Text("这一本正在跑，点做过的章看它的分段。",
-                        fontSize = 12.sp, color = Sub)
-                }
-                t.phase == "done" -> {
-                    TextButton(onClick = onAudio) {
-                        Text("去「我的音频」试听 ›", fontSize = 12.sp)
-                    }
-                }
-                !d.exists -> {
-                    TextButton(onClick = {
-                        Producer.clearProgress(c, t.bookId, t.only)
-                        tick++
-                    }) { Text("清除这条失效任务", fontSize = 12.sp) }
-                }
-                else -> {
-                    Button(onClick = { if (!otherRunning) onResume(t) },
-                        enabled = !otherRunning,
-                        modifier = Modifier.fillMaxWidth().height(46.dp)) {
-                        Text("继续制作（接着已做好的块跑）", fontSize = 15.sp)
-                    }
-                    Row(Modifier.fillMaxWidth()) {
-                        TextButton(onClick = {
-                            Producer.clearProgress(c, t.bookId, t.only)
-                            val b = BookStore.list(c).find { x -> x.id == t.bookId }
-                            if (b != null) onResume(t)
-                        }, Modifier.weight(1f)) { Text("从头重做", fontSize = 12.sp) }
-                        TextButton(onClick = {
-                            Producer.clearProgress(c, t.bookId, t.only)
-                            tick++
-                        }, Modifier.weight(1f)) {
-                            Text("放弃任务", fontSize = 12.sp, color = Warn)
-                        }
-                    }
-                }
-            }
-        }
+    }
+    }
+
+    if (confirmSegDel != null) {
+        val files = confirmSegDel!!
+        AlertDialog(
+            onDismissRequest = { confirmSegDel = null },
+            title = { Text("删除这 ${files.size} 个小块？", fontSize = 15.sp,
+                fontWeight = FontWeight.Bold) },
+            text = { Text("只删已生成的 WAV，分段计划还在；下次续跑会按原顺序重新生成，" +
+                "已拼好的整章音频不受影响。", fontSize = 13.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val failed = AudioOps.deleteAll(files)
+                    AudioTree.forget(c, files.filter { !it.isFile }.map { it.absolutePath })
+                    if (bookId != null && chapter != null)
+                        AudioTree.clearDone(c, bookId, chapter)
+                    PlayQueue.release()
+                    Toast.makeText(c, if (failed > 0) "有 $failed 个没删干净"
+                        else "已删除 ${files.size} 个小块", Toast.LENGTH_SHORT).show()
+                    confirmSegDel = null
+                    exitSegMulti()
+                    redoNonce++
+                }) { Text("删除", color = Warn) }
+            },
+            dismissButton = { TextButton(onClick = { confirmSegDel = null }) { Text("取消") } }
+        )
     }
 }
 
@@ -1305,7 +1221,34 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
             warnMap = tasks.associate { it.bookId to TaskResume.invalidationReason(c, it) }
         }
     }
+    val queued = remember(refresh, loadTick, st.running) { TaskResume.queue(c) }
+    val qState = remember(refresh, loadTick, st.running) { Producer.queueState(c) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+        if (queued.isNotEmpty() || st.running) {
+            item(key = "tasks_queue") {
+                CardBox(Modifier.padding(bottom = 8.dp)) {
+                    Text(
+                        if (queued.isNotEmpty())
+                            "队列 ${queued.size} 个待做 · 当前这本做完自动接下一个"
+                        else "制作中 · 队列里没有待做任务",
+                        fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        color = if (qState.second) Warn else Primary)
+                    if (queued.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(queued.joinToString("、") { "《${it.title}》" }.take(60),
+                            fontSize = 12.sp, color = Sub, maxLines = 2)
+                    }
+                    if (qState.second) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("队列已暂停 · 停止或失败后不会自动往下跑",
+                            fontSize = 12.sp, color = Warn)
+                        TextButton(onClick = { Producer.resumeQueue(c) }) {
+                            Text("继续队列 ›", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
         if (tasks.isNotEmpty()) {
             item(key = "tasks_count") {
                 Text("共 ${tasks.size} 本 · 一本一个任务",
@@ -1399,416 +1342,6 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
     }
 }
 
-private fun fmtTime(ms: Long): String {
-    val s = (ms / 1000).coerceAtLeast(0)
-    return "%02d:%02d".format(s / 60, s % 60)
-}
-
-private data class AudioMenu(
-    val kind: Int,
-    val bookId: String,
-    val chapter: Int,
-    val seg: SegAudio?,
-    val label: String,
-    val files: List<File>,
-    val mergeds: List<File> = emptyList()
-)
-
-@Composable
-private fun AudioScreen(
-    c: Context, refresh: Int,
-    onLibrary: () -> Unit, onModels: () -> Unit
-) {
-    var localTick by remember { mutableStateOf(0) }
-    var tree by remember { mutableStateOf(emptyList<BookAudio>()) }
-    LaunchedEffect(refresh, localTick) {
-        tree = withContext(Dispatchers.IO) { AudioTree.load(c) }
-    }
-    val pq by PlayQueue.state.collectAsState()
-    var openBooks by remember { mutableStateOf(setOf<String>()) }
-    var openChapters by remember { mutableStateOf(setOf<String>()) }
-    var target by remember { mutableStateOf<AudioMenu?>(null) }
-    var confirmDel by remember { mutableStateOf<AudioMenu?>(null) }
-    var rename by remember { mutableStateOf<AudioMenu?>(null) }
-    var renameText by remember { mutableStateOf("") }
-    var moveSeg by remember { mutableStateOf<SegAudio?>(null) }
-    var moveText by remember { mutableStateOf("") }
-    var pendingSrc by remember { mutableStateOf<File?>(null) }
-    var pendingName by remember { mutableStateOf("") }
-
-    val saveWav = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
-        val src = pendingSrc
-        if (uri != null && src != null) {
-            val ok = AudioOps.copyTo(c, src, uri)
-            Toast.makeText(c, if (ok) "已复制" else "复制失败", Toast.LENGTH_SHORT).show()
-        }
-        if (src != null && src.name.startsWith("audio_copy_")) src.delete()
-        pendingSrc = null
-    }
-    val saveM4a = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("audio/mp4")) { uri ->
-        val src = pendingSrc
-        if (uri != null && src != null) {
-            val tmp = File(c.cacheDir, "conv_${System.currentTimeMillis()}.m4a")
-            val r = AudioOps.toM4a(c, src, tmp)
-            if (r.ok) {
-                val ok = AudioOps.copyTo(c, tmp, uri)
-                Toast.makeText(c, if (ok) "已转存 M4A" else "写出失败", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(c, r.reason, Toast.LENGTH_LONG).show()
-            }
-            tmp.delete()
-        }
-        if (src != null && src.name.startsWith("audio_copy_")) src.delete()
-        pendingSrc = null
-    }
-
-    fun toast(s: String) = Toast.makeText(c, s, Toast.LENGTH_SHORT).show()
-
-    fun partsFor(t: AudioMenu): List<File> {
-        if (t.kind == 2) return t.files
-        if (t.kind == 1) return t.mergeds.ifEmpty { t.files }
-        val out = mutableListOf<File>()
-        tree.firstOrNull { it.bookId == t.bookId }?.chapters?.forEach { ch ->
-            val m = ch.merged?.takeIf { it.isFile }
-            if (m != null) out.add(m) else out.addAll(ch.segments.map { it.file })
-        }
-        return out.ifEmpty { t.files + t.mergeds }
-    }
-
-    fun exportParts(t: AudioMenu, m4a: Boolean) {
-        val parts = partsFor(t)
-        val src = if (parts.size == 1 && parts[0].isFile) parts[0]
-            else AudioOps.mergedTemp(c, parts).let { r ->
-                if (!r.ok || r.file == null) { toast(r.reason); return }
-                r.file!!
-            }
-        pendingSrc = src
-        pendingName = t.label
-        val base = t.label.filter { ch -> ch.isLetterOrDigit() || ch == '_' || ch == '-' }
-            .take(40).ifBlank { "audio" }
-        if (m4a) saveM4a.launch("$base.m4a") else saveWav.launch("$base.wav")
-    }
-
-    fun playSeg(s: SegAudio) {
-        val tid = "seg:${s.file.absolutePath}"
-        if (pq.trackId == tid) {
-            PlayQueue.toggle()
-        } else {
-            PlayQueue.setTracks(listOf(Track(s.file, s.name, id = tid)), "seg")
-            PlayQueue.playFrom(0, id = "seg")
-        }
-    }
-
-    fun playChapter(ch: ChapterAudio) {
-        val q = "chapter:${ch.bookId}:${ch.chapter}"
-        val tracks = AudioTree.chapterTracks(c, ch)
-        if (tracks.isEmpty()) { toast("这一章还没有音频小块"); return }
-        if (pq.queueId == q) {
-            PlayQueue.toggle()
-        } else {
-            PlayQueue.setTracks(tracks, q)
-            PlayQueue.playFrom(0, id = q)
-        }
-    }
-
-    fun bookMenu(b: BookAudio) = AudioMenu(0, b.bookId, -1, null, b.title,
-        AudioTree.allSegments(b).map { it.file },
-        b.chapters.mapNotNull { it.merged?.takeIf { f -> f.isFile } })
-    fun chapterMenu(ch: ChapterAudio) = AudioMenu(1, ch.bookId, ch.chapter, null, ch.title,
-        ch.segments.map { it.file },
-        listOfNotNull(ch.merged?.takeIf { it.isFile }))
-    fun segMenu(s: SegAudio) = AudioMenu(2, s.bookId, s.chapter, s, s.name, listOf(s.file))
-
-    val segCount = tree.sumOf { b -> b.chapters.sumOf { ch -> ch.segments.size } }
-    val chCount = tree.sumOf { it.chapters.size }
-    val mergedCount = tree.sumOf { b -> b.chapters.count { it.merged != null } }
-
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-        item(key = "audio_tree_summary") {
-            Text("共 ${tree.size} 本 · $chCount 章 · $segCount 块" +
-                if (mergedCount > 0) " · $mergedCount 章已拼成整章" else "",
-                fontSize = 12.sp, color = Sub, modifier = Modifier.padding(bottom = 10.dp))
-        }
-        if (pq.trackId.isNotEmpty()) {
-            item(key = "audio_tree_playing") {
-                CardBox(Modifier.padding(bottom = 10.dp)) {
-                    Text(pq.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text("%s · %s / %s".format(
-                        if (pq.isPlaying) "播放中" else "已暂停",
-                        fmtTime(pq.positionMs), fmtTime(pq.durationMs)),
-                        fontSize = 12.sp, color = Sub)
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { PlayQueue.seekTo((pq.positionMs - 15000).coerceAtLeast(0)) }) {
-                            Text("−15s", fontSize = 12.sp)
-                        }
-                        Button(onClick = { PlayQueue.toggle() }) {
-                            Text(if (pq.isPlaying) "暂停" else "继续", fontSize = 13.sp)
-                        }
-                        TextButton(onClick = { PlayQueue.seekTo((pq.positionMs + 15000).coerceAtMost(pq.durationMs)) }) {
-                            Text("+15s", fontSize = 12.sp)
-                        }
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { PlayQueue.release() }) {
-                            Text("关闭", fontSize = 12.sp, color = Sub)
-                        }
-                    }
-                }
-            }
-        }
-
-        tree.forEach { b ->
-            val bookOpen = b.bookId in openBooks
-            item(key = "audio_book_${b.bookId}") {
-                CardBox(Modifier.padding(bottom = 8.dp)) {
-                    Row(Modifier.fillMaxWidth().pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                openBooks = if (bookOpen) openBooks - b.bookId else openBooks + b.bookId
-                            },
-                            onLongPress = { target = bookMenu(b) })
-                    }, verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(b.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2)
-                            Text("${b.chapters.size} 章 · ${AudioTree.allSegments(b).size} 块" +
-                                (if (b.chapters.any { it.merged != null })
-                                    " · ${b.chapters.count { it.merged != null }} 章已拼好" else "") +
-                                if (b.onShelf) "" else " · 不在书架上",
-                                fontSize = 12.sp, color = Sub)
-                        }
-                        Text(if (bookOpen) "▾" else "›", fontSize = 18.sp, color = Sub)
-                    }
-                }
-            }
-            if (bookOpen) {
-                b.chapters.forEach { ch ->
-                    val ck = "${b.bookId}#${ch.chapter}"
-                    val chOpen = ck in openChapters
-                    item(key = "audio_chapter_$ck") {
-                        CardBox(Modifier.padding(start = 12.dp, bottom = 6.dp)) {
-                            Row(Modifier.fillMaxWidth().pointerInput(Unit) {
-                                detectTapGestures(
-                                    onTap = {
-                                        openChapters = if (chOpen) openChapters - ck else openChapters + ck
-                                    },
-                                    onLongPress = { target = chapterMenu(ch) })
-                            }, verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(ch.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2)
-                                    Text(
-                                        if (ch.segments.isEmpty() && ch.merged != null) "已拼成整章 · 1 个音频"
-                                        else "${ch.segments.size} 块" +
-                                            if (ch.merged != null) " · 已拼成整章" else "",
-                                        fontSize = 12.sp, color = Sub)
-                                }
-                                TextButton(onClick = { playChapter(ch) }) {
-                                    Text("▶ 整章", fontSize = 12.sp, color = Primary)
-                                }
-                            }
-                        }
-                    }
-                    if (chOpen && ch.segments.isNotEmpty()) {
-                        item(key = "audio_seg_grid_$ck") {
-                            CardBox(Modifier.padding(start = 24.dp, bottom = 6.dp)) {
-                                ch.segments.chunked(8).forEach { row ->
-                                    Row(Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                        row.forEach { s ->
-                                            val tid = "seg:${s.file.absolutePath}"
-                                            val on = pq.trackId == tid
-                                            val playing = on && pq.isPlaying
-                                            Box(
-                                                Modifier.size(34.dp)
-                                                    .background(
-                                                        if (playing) PrimarySoft else
-                                                            if (on) Good.copy(alpha = 0.35f) else
-                                                                Good.copy(alpha = 0.18f),
-                                                        RoundedCornerShape(8.dp))
-                                                    .pointerInput(Unit) {
-                                                        detectTapGestures(
-                                                            onTap = { playSeg(s) },
-                                                            onLongPress = { target = segMenu(s) })
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text("${s.seq}", fontSize = 12.sp,
-                                                    color = if (playing) Primary else Good)
-                                            }
-                                        }
-                                    }
-                                    Spacer(Modifier.height(5.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (target != null) {
-        val t = target!!
-        AlertDialog(
-            onDismissRequest = { target = null },
-            title = { Text(t.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2) },
-            text = {
-                Column {
-                    TextButton(onClick = {
-                        rename = t
-                        renameText = t.label
-                        target = null
-                    }) { Text("重命名", fontSize = 14.sp) }
-                    TextButton(onClick = { target = null; exportParts(t, false) }) {
-                        Text("复制 / 另存为 WAV", fontSize = 14.sp)
-                    }
-                    TextButton(onClick = { target = null; exportParts(t, true) }) {
-                        Text("转格式（WAV → M4A）", fontSize = 14.sp)
-                    }
-                    if (t.kind == 1 && t.files.isNotEmpty()) {
-                        TextButton(onClick = {
-                            target = null
-                            val r = AudioOps.mergeChapter(c, t.bookId,
-                                tree.firstOrNull { it.bookId == t.bookId }?.title ?: t.label,
-                                t.chapter, t.files)
-                            if (r.ok) {
-                                if (r.reason.isBlank()) {
-                                    t.mergeds.forEach { AudioOps.deleteMerged(c, it) }
-                                    toast(if (r.kept > 0) "已拼成整章，有 ${r.kept} 个小块没删掉"
-                                        else "已拼成整章，原来的小块已清理")
-                                } else toast(r.reason)
-                                localTick++
-                            } else toast(r.reason)
-                        }) {
-                            Text(if (t.mergeds.isNotEmpty()) "重新拼成整章（会替换旧的）"
-                                else "把这一章拼成一个音频", fontSize = 14.sp, color = Primary)
-                        }
-                    }
-                    if (t.kind == 2 && t.seg != null) {
-                        TextButton(onClick = {
-                            moveSeg = t.seg
-                            moveText = (t.chapter + 1).toString()
-                            target = null
-                        }) { Text("移动到别的章", fontSize = 14.sp) }
-                    }
-                    TextButton(onClick = { confirmDel = t; target = null }) {
-                        Text("删除", fontSize = 14.sp, color = Warn)
-                    }
-                }
-            },
-            confirmButton = { },
-            dismissButton = { TextButton(onClick = { target = null }) { Text("取消") } }
-        )
-    }
-
-    if (confirmDel != null) {
-        val t = confirmDel!!
-        AlertDialog(
-            onDismissRequest = { confirmDel = null },
-            title = { Text("删除「${t.label}」？", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-            text = {
-                Text(if (t.mergeds.isNotEmpty())
-                    "会删掉拼好的整章音频和 ${t.files.size} 个小块，不能恢复。" +
-                        if (t.files.isEmpty()) "" else "没拼过的章，下次续跑会重新生成这些段。"
-                else "共 ${t.files.size} 个音频小块，删掉后不能恢复；" +
-                    "没拼过的章，下次续跑会重新生成这些段。", fontSize = 13.sp)
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    var failed = AudioOps.deleteAll(t.files)
-                    t.mergeds.forEach { if (!AudioOps.deleteMerged(c, it)) failed++ }
-                    AudioTree.forget(c, t.files.filter { !it.isFile }.map { it.absolutePath })
-                    if (t.kind == 1 && t.chapter >= 0) AudioTree.clearDone(c, t.bookId, t.chapter)
-                    if (failed > 0) toast("有 $failed 个没删干净，文件会重新出现在列表里")
-                    else toast("已删除 ${t.files.size + t.mergeds.size} 个音频")
-                    PlayQueue.release()
-                    localTick++
-                    confirmDel = null
-                }) { Text("删除", color = Warn) }
-            },
-            dismissButton = { TextButton(onClick = { confirmDel = null }) { Text("取消") } }
-        )
-    }
-
-    if (rename != null) {
-        val t = rename!!
-        AlertDialog(
-            onDismissRequest = { rename = null },
-            title = { Text("重命名", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(value = renameText, onValueChange = { renameText = it },
-                    label = { Text("显示名称") }, singleLine = true)
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val key = when (t.kind) {
-                        0 -> AudioTree.bookKey(t.bookId)
-                        1 -> AudioTree.chapterKey(t.bookId, t.chapter)
-                        else -> t.files.firstOrNull()?.absolutePath ?: ""
-                    }
-                    if (key.isNotBlank()) {
-                        if (!AudioTree.setName(c, key, renameText)) toast("名字没写上，记录已保留")
-                        localTick++
-                    }
-                    rename = null
-                }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { rename = null }) { Text("取消") } }
-        )
-    }
-
-    if (moveSeg != null) {
-        val s = moveSeg!!
-        AlertDialog(
-            onDismissRequest = { moveSeg = null },
-            title = { Text("移动到第几章", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(value = moveText, onValueChange = { moveText = it },
-                    label = { Text("章号，从 1 开始") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val n = moveText.trim().toIntOrNull()
-                    if (n == null || n < 1) toast("填一个大于 0 的章号")
-                    else {
-                        if (!AudioTree.moveSegment(c, s.key, s.bookId, n - 1))
-                            toast("移动没写上，记录已保留")
-                        localTick++
-                        moveSeg = null
-                    }
-                }) { Text("移动") }
-            },
-            dismissButton = { TextButton(onClick = { moveSeg = null }) { Text("取消") } }
-        )
-    }
-}
-
-@Composable
-private fun GroupLabel(title: String, sub: String) {
-    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
-        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Primary)
-        if (sub.isNotBlank()) Text(sub, fontSize = 12.sp, color = Sub)
-    }
-}
-
-@Composable
-private fun SettingOption(label: String, options: List<String>, current: Int, onPick: (Int) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-        Text(label, fontSize = 12.sp, color = Sub)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            options.forEachIndexed { i, o ->
-                TextButton(onClick = { onPick(i) }) {
-                    Text(o, fontSize = 12.sp,
-                        fontWeight = if (i == current) FontWeight.Bold else FontWeight.Normal,
-                        color = if (i == current) Primary else Sub)
-                }
-            }
-        }
-    }
-}
-
 @Composable
 private fun SettingsSection(
     title: String, badge: String, open: Boolean = true, onToggle: (Boolean) -> Unit = {},
@@ -1834,32 +1367,6 @@ private fun SettingsSection(
             content()
         }
         Spacer(Modifier.height(6.dp))
-    }
-}
-
-@Composable
-private fun SettingSwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Text(if (checked) "开" else "关", fontSize = 12.sp,
-            color = if (checked) Primary else Sub)
-        Spacer(Modifier.width(8.dp))
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-@Composable
-private fun SettingInfoRow(label: String, badge: String, value: String, note: String = "",
-                           onClick: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 13.sp)
-            if (note.isNotBlank()) Text(note, fontSize = 12.sp, color = Sub)
-        }
-        Text(value, fontSize = 12.sp, color = Primary,
-            modifier = if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     }
 }
 
@@ -1933,13 +1440,6 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 }
 
 @Composable
-private fun DiagnosticsBlock(c: Context, _refresh: Int) {
-    Spacer(Modifier.height(10.dp))
-    Text("当前配置", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-    Text(Prefs.summary(c), fontSize = 12.sp, color = Sub)
-}
-
-@Composable
 private fun ClearSegmentsRow(c: Context) {
     var confirmClear by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -1976,97 +1476,10 @@ private fun ClearSegmentsRow(c: Context) {
 }
 
 @Composable
-private fun SoundProbeBlock(c: Context, refresh: Int) {
-    val st by Producer.state.collectAsState()
-    val missing = remember(refresh) { ModelStore.missing(c) }
-    var probing by remember { mutableStateOf(false) }
-    var probeResult by remember { mutableStateOf("") }
-    var probeFile by remember { mutableStateOf("") }
-    val probeScope = rememberCoroutineScope()
-    val enabled = !probing && !st.running && missing.isEmpty()
-
-    fun doProbe(text: String, instruct: String, outName: String) {
-        probing = true; probeResult = "正在合成…"; probeFile = ""
-        probeScope.launch(Dispatchers.IO) {
-            val res = runCatching {
-                if (!NativeEngine.isAvailable()) throw IllegalStateException(
-                    NativeEngine.shortReason().ifBlank { "本地引擎没装载，请重启 App" })
-                ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }
-                val tk = ModelStore.modeFile(c, ModelStore.currentMode(c))
-                    ?: throw IllegalStateException("缺这一份模式主文件")
-                val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺共用底座")
-                val h = NativeEngine.ttsLoadGated(tk.absolutePath, tok.absolutePath, null)
-                if (h == 0L) throw IllegalStateException("声音模型打不开")
-                try {
-                    SynthInput.prepare(c, h)
-                    val v = SynthInput.params(c, instruct, null)
-                    val f = File(c.filesDir, outName)
-                    val code = NativeEngine.ttsSynthesize(h, text, v.instruct, v.speaker, "chinese",
-                        f.absolutePath, Prefs.ttsKnobs(c))
-                    if (code != 0 || !f.exists() || f.length() <= 44)
-                        throw IllegalStateException("没生成声音，code=$code")
-                    f.absolutePath
-                } finally { NativeEngine.ttsFreeGated(h) }
-            }
-            withContext(Dispatchers.Main) {
-                probing = false
-                val path = res.getOrNull()
-                probeFile = path ?: ""
-                probeResult = if (path != null)
-                    "出声了 ✓ ${File(path).length()} 字节，点右边试听"
-                else "失败：" + (res.exceptionOrNull()?.message ?: "未知原因")
-                res.exceptionOrNull()?.let {
-                    EventLog.log(EventLog.Kind.ENGINE, "TTS_PROBE_FAIL", it.message ?: "")
-                }
-            }
-        }
-    }
-
-    Spacer(Modifier.height(8.dp))
-    Text("声音自检 · 真合成两句", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-    Row(Modifier.fillMaxWidth()) {
-        OutlinedButton(
-            onClick = { doProbe("你好，这是一句试音。", "平稳、清晰地叙述", "probe.wav") },
-            enabled = enabled, modifier = Modifier.weight(1f)
-        ) { Text(if (probing) "…" else "试合成一句", fontSize = 12.sp) }
-        Spacer(Modifier.width(8.dp))
-        OutlinedButton(
-            onClick = {
-                doProbe(
-                    "她终于忍不住笑出声，又轻轻叹了口气，眼眶却红了。",
-                    "读到笑时带出一点轻声的笑，读到叹气时先有一口听得见的呼气，"
-                        + "结尾带压抑的哭腔、声音微颤，用气声，语气克制；不要另加字词",
-                    "probe_emote.wav")
-            },
-            enabled = enabled, modifier = Modifier.weight(1f)
-        ) { Text(if (probing) "…" else "试哭笑叹气", fontSize = 12.sp) }
-    }
-    if (probeResult.isNotBlank()) {
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(probeResult, fontSize = 12.sp, color = Sub, modifier = Modifier.weight(1f))
-            if (probeResult.startsWith("出声了") && probeFile.isNotBlank()) {
-                TextButton(onClick = {
-                    try {
-                        val mp = MediaPlayer()
-                        mp.setDataSource(File(probeFile).absolutePath)
-                        mp.prepare(); mp.start()
-                        mp.setOnCompletionListener { it.release() }
-                    } catch (_: Throwable) {
-                        Toast.makeText(c, "播放失败", Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("试听") }
-            }
-        }
-    }
-    if (st.running) Text("正在制作整本，等跑完再试。", fontSize = 12.sp, color = Sub)
-}
-
-@Composable
 private fun ModelScreen(c: Context, refresh: Int,
-                        importing: String?, importBytes: Long, importError: String?,
-                        onPick: () -> Unit, onBack: () -> Unit, onLibrary: () -> Unit,
-                        onChanged: () -> Unit) {
+                         importing: String?, importBytes: Long, importError: String?,
+                         onPick: () -> Unit, onBack: () -> Unit, onLibrary: () -> Unit,
+                         onChanged: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val st by Producer.state.collectAsState()
     val files = remember(refresh) { ModelStore.files(c) }
@@ -2076,7 +1489,6 @@ private fun ModelScreen(c: Context, refresh: Int,
     val modeFiles = remember(refresh) { ModelStore.modeFiles(c) }
     val baseFile = remember(refresh) { ModelStore.tokenizer(c) }
     val allReady = missing.isEmpty()
-    val scroll = rememberScrollState()
 
     fun copyUrl(url: String) {
         clipboard.setText(AnnotatedString(url))
@@ -2087,65 +1499,80 @@ private fun ModelScreen(c: Context, refresh: Int,
     fun hfUrl(name: String) =
         "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/$name"
 
-    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(14.dp)) {
+    // R136 · 一屏装得下：去掉整页滚动，默认只显示「缺什么 / 装了什么 / 点哪导入」。
+    // 文件名、下载地址、删除重试、启用模式这些低频细节收进可展开区，
+    // 一次只展开一项 —— 功能一个没删，但常规手机不用往下拉。
+    // 展开态是用户主动操作，不算默认态要滚动。
+    var expanded by remember { mutableStateOf<String?>(null) }
+    fun toggle(key: String) { expanded = if (expanded == key) null else key }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
+
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ 返回", fontSize = 12.sp, color = Primary) }
-            Spacer(Modifier.weight(1f))
+            Text("模型", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f))
             Text(if (allReady) "已就绪 · ${installed.size} 个模式"
                  else if (baseFile == null) "还缺共用底座" else "还缺模式主文件",
                 fontSize = 12.sp, color = if (allReady) Good else Warn)
         }
+        Text("App 不联网：复制地址 → 浏览器下载 → 回来点导入。一次可勾选 4 个文件。",
+            fontSize = 11.sp, color = Sub)
 
         if (importing != null) {
-            CardBox(Modifier.padding(bottom = 8.dp)) {
-                Text("正在复制，别关掉 App", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Primary)
-                Text("已复制 %.2f GB".format(importBytes / 1024f / 1024f / 1024f),
-                    fontSize = 12.sp, color = Sub)
+            CardBox(Modifier.padding(vertical = 4.dp)) {
+                Text("正在复制，别关掉 App · 已复制 %.2f GB".format(
+                    importBytes / 1024f / 1024f / 1024f),
+                    fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Primary)
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(5.dp))
-                Text("文件很大，可能要一两分钟。", fontSize = 12.sp, color = Sub)
             }
         }
         if (importError != null) {
-            CardBox(Modifier.padding(bottom = 8.dp)) {
-                Text("上一个文件没导入成功", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(importError, fontSize = 12.sp, color = Sub)
-                Text("重新下载再导入一次，或先重启 App。", fontSize = 12.sp, color = Sub)
+            CardBox(Modifier.padding(vertical = 4.dp)) {
+                Text("上一个文件没导入成功 · $importError", fontSize = 12.sp, color = Warn)
+                Text("重新下载再导入一次，或先重启 App。", fontSize = 11.sp, color = Sub)
             }
         }
 
-        CardBox(Modifier.padding(bottom = 8.dp)) {
-            Text("共用底座 · 三个模式都要用", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text("12Hz 码 ↔ 24kHz 波形，导入一次就够。", fontSize = 12.sp, color = Sub)
-            Text(ModelStore.TOKENIZER, fontSize = 12.sp, color = Sub,
-                fontFamily = FontFamily.Monospace)
-            if (baseFile != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("已导入 ✓ · %.2f GB".format(
-                        baseFile.length() / 1024f / 1024f / 1024f),
-                        fontSize = 12.sp, color = Good, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { ModelStore.delete(c, baseFile); onChanged() }) {
-                        Text("删除重试", fontSize = 12.sp, color = Sub)
-                    }
+        Spacer(Modifier.height(6.dp))
+
+        // 共用底座：一行摘要 + 点「详情」展开完整信息
+        CardBox(Modifier.padding(bottom = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("共用底座", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(if (baseFile != null)
+                            "已导入 ✓ · %.2f GB".format(baseFile.length() / 1024f / 1024f / 1024f)
+                        else "还缺这一份 · 三个模式都要用",
+                        fontSize = 11.sp, color = if (baseFile != null) Good else Warn)
                 }
-            } else {
+                TextButton(onClick = { toggle("base") }) {
+                    Text(if (expanded == "base") "收起" else "详情",
+                        fontSize = 12.sp, color = Primary)
+                }
+            }
+            if (expanded == "base") {
+                Text(ModelStore.TOKENIZER, fontSize = 11.sp, color = Sub,
+                    fontFamily = FontFamily.Monospace)
+                Text("12Hz 码 ↔ 24kHz 波形，导入一次就够。", fontSize = 11.sp, color = Sub)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("还缺这一份", fontSize = 12.sp, color = Warn,
-                        modifier = Modifier.weight(1f))
                     TextButton(onClick = { copyUrl(cnUrl(ModelStore.TOKENIZER)) }) {
                         Text("复制国内地址 ›", fontSize = 12.sp, color = Primary)
                     }
                     TextButton(onClick = { copyUrl(hfUrl(ModelStore.TOKENIZER)) }) {
                         Text("备用 ›", fontSize = 12.sp, color = Sub)
                     }
+                    Spacer(Modifier.weight(1f))
+                    if (baseFile != null) {
+                        TextButton(onClick = { ModelStore.delete(c, baseFile); onChanged() }) {
+                            Text("删除重试", fontSize = 12.sp, color = Sub)
+                        }
+                    }
                 }
             }
         }
 
-        Text("模式主文件 · 装一份就能用", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        Text("App 不联网：复制地址 → 浏览器下 → 回来点导入。", fontSize = 12.sp, color = Sub)
-        Text("一次可勾选 4 个文件：1 个共用底座 + 3 个模式主文件。",
-            fontSize = 12.sp, color = Sub)
-        Spacer(Modifier.height(6.dp))
+        Text("模式主文件 · 装一份就能用", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
 
         val modes = ModelStore.Mode.values()
         modes.toList().chunked(2).forEach { rowModes ->
@@ -2153,49 +1580,55 @@ private fun ModelScreen(c: Context, refresh: Int,
                 rowModes.forEach { mode ->
                     val f = modeFiles[mode]
                     val isCurrent = mode == current
-                    CardBox(Modifier.weight(1f).padding(bottom = 9.dp)) {
-                        Text(mode.label + (if (isCurrent) " · 当前" else ""),
-                            fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                            color = if (isCurrent) Primary else Color.Unspecified)
-                        Text(mode.id, fontSize = 12.sp, color = Sub)
-                        Text(mode.file, fontSize = 12.sp, color = Sub,
-                            fontFamily = FontFamily.Monospace)
-                        Text(mode.hint, fontSize = 12.sp, color = Sub)
-                        if (f != null) {
-                            Text("已导入 · %.2f GB".format(f.length() / 1024f / 1024f / 1024f),
-                                fontSize = 12.sp, color = Good)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (!isCurrent) {
+                    val open = expanded == mode.id
+                    CardBox(Modifier.weight(1f).padding(bottom = 6.dp)
+                        .clickable { toggle(mode.id) }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(mode.label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f),
+                                color = if (isCurrent) Primary else Color.Unspecified)
+                            Text(if (f != null) "✓" else "＋", fontSize = 12.sp,
+                                color = if (f != null) Good else Warn)
+                        }
+                        Text(if (f != null)
+                                "%.2f GB%s".format(f.length() / 1024f / 1024f / 1024f,
+                                    if (isCurrent) " · 当前" else "")
+                            else "待导入", fontSize = 11.sp,
+                            color = if (f != null) Good else Warn)
+                        if (open) {
+                            Text(mode.id, fontSize = 11.sp, color = Sub)
+                            Text(mode.file, fontSize = 11.sp, color = Sub,
+                                fontFamily = FontFamily.Monospace)
+                            Text(mode.hint, fontSize = 11.sp, color = Sub)
+                            if (f != null) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (!isCurrent) {
+                                        TextButton(onClick = {
+                                            if (!st.running) {
+                                                Prefs.setModelMode(c, mode.id); onChanged()
+                                            }
+                                        }, enabled = !st.running) {
+                                            Text("启用 ›", fontSize = 11.sp, color = Primary)
+                                        }
+                                    } else Text("当前模式", fontSize = 11.sp, color = Sub)
+                                    Spacer(Modifier.weight(1f))
                                     TextButton(onClick = {
-                                        if (!st.running) { Prefs.setModelMode(c, mode.id); onChanged() }
-                                    }, enabled = !st.running) {
-                                        Text("启用这个模式", fontSize = 12.sp, color = Primary)
+                                        ModelStore.delete(c, f); onChanged()
+                                    }) { Text("删除重试", fontSize = 11.sp, color = Sub) }
+                                }
+                                if (!isCurrent && st.running)
+                                    Text("正在制作，跑完前不能切", fontSize = 11.sp, color = Warn)
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(onClick = onPick, enabled = importing == null) {
+                                        Text("导入这份 ›", fontSize = 11.sp, color = Primary)
                                     }
-                                } else {
-                                    Text("这是当前模式", fontSize = 12.sp, color = Sub)
-                                }
-                                Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { ModelStore.delete(c, f); onChanged() }) {
-                                    Text("删除重试", fontSize = 12.sp, color = Sub)
-                                }
-                            }
-                            if (!isCurrent && st.running) {
-                                Text("正在制作，这一本跑完之前不能切", fontSize = 12.sp, color = Warn)
-                            }
-                        } else {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("待导入", fontSize = 12.sp, color = Warn,
-                                    modifier = Modifier.weight(1f))
-                                TextButton(onClick = onPick, enabled = importing == null) {
-                                    Text("导入这份 ›", fontSize = 12.sp, color = Primary)
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { copyUrl(cnUrl(mode.file)) }) {
-                                    Text("复制国内地址 ›", fontSize = 12.sp, color = Primary)
+                                    TextButton(onClick = { copyUrl(cnUrl(mode.file)) }) {
+                                        Text("国内地址", fontSize = 11.sp, color = Primary)
+                                    }
                                 }
                                 TextButton(onClick = { copyUrl(hfUrl(mode.file)) }) {
-                                    Text("备用 ›", fontSize = 12.sp, color = Sub)
+                                    Text("备用地址 ›", fontSize = 11.sp, color = Sub)
                                 }
                             }
                         }
@@ -2205,37 +1638,33 @@ private fun ModelScreen(c: Context, refresh: Int,
             }
         }
 
-        Spacer(Modifier.height(4.dp))
-        if (allReady) {
-            CardBox(Modifier.padding(bottom = 8.dp)) {
-                Text("底座 + 至少 1 个模式都在", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Spacer(Modifier.height(2.dp))
+
+        CardBox(Modifier.padding(bottom = 6.dp)) {
+            if (allReady) {
+                Text("底座 + 至少 1 个模式都在", fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold)
                 Text(current.label + " 是当前模式。" + (if (current == ModelStore.Mode.VOICE_DESIGN)
-                    "可以合成音频了。"
-                else "还不能用来合成音频，切回「描述造音色」后即可继续。"),
-                    fontSize = 12.sp, color = Sub)
-                if (current == ModelStore.Mode.VOICE_DESIGN) {
-                    Button(onClick = onLibrary, Modifier.fillMaxWidth().height(48.dp)) {
-                        Text("回书架，导入一本书", fontSize = 15.sp)
+                    "可以合成音频了。" else "切回「描述造音色」后即可继续。"),
+                    fontSize = 11.sp, color = Sub)
+                val canGo = current == ModelStore.Mode.VOICE_DESIGN
+                Button(onClick = {
+                    if (canGo) onLibrary()
+                    else if (!st.running) {
+                        Prefs.setModelMode(c, ModelStore.Mode.VOICE_DESIGN.id); onChanged()
                     }
-                } else {
-                    Button(onClick = {
-                        if (!st.running) {
-                            Prefs.setModelMode(c, ModelStore.Mode.VOICE_DESIGN.id)
-                            onChanged()
-                        }
-                    }, enabled = !st.running, modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                        Text("切回「描述造音色」", fontSize = 15.sp)
-                    }
+                }, enabled = canGo || !st.running,
+                    modifier = Modifier.fillMaxWidth().height(42.dp)) {
+                    Text(if (canGo) "回书架，导入一本书" else "切回「描述造音色」",
+                        fontSize = 13.sp)
                 }
-            }
-        } else {
-            CardBox(Modifier.padding(bottom = 8.dp)) {
-                Text("还差 " + missing.joinToString("、"), fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp)
-                Text("缺件就出不了声，先补齐上面高亮的那一份。", fontSize = 12.sp, color = Sub)
+            } else {
+                Text("还差 " + missing.joinToString("、"), fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold)
+                Text("缺件就出不了声，先补齐上面高亮的那一份。", fontSize = 11.sp, color = Sub)
                 Button(onClick = onPick, enabled = importing == null,
-                    modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("导入模型文件", fontSize = 15.sp)
+                    modifier = Modifier.fillMaxWidth().height(42.dp)) {
+                    Text("导入模型文件", fontSize = 13.sp)
                 }
             }
         }
@@ -2245,12 +1674,12 @@ private fun ModelScreen(c: Context, refresh: Int,
                 Text("一次导入多个模型文件 ›", fontSize = 12.sp, color = Primary)
             }
             Spacer(Modifier.weight(1f))
-            if (files.isNotEmpty()) {
-                Text("已导入 ${files.size} 个文件", fontSize = 12.sp, color = Sub)
-            }
+            if (files.isNotEmpty())
+                Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
         }
     }
 }
+
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

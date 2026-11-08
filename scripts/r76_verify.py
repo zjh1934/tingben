@@ -14,8 +14,8 @@ MAIN = (KT / "MainActivity.kt").read_text(encoding="utf-8")
 CHROME = (KT / "AppChrome.kt").read_text(encoding="utf-8")
 ALLKT = NL.join(p.read_text(encoding="utf-8") for p in KT.rglob("*.kt"))
 
-WANT = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS", "AUDIO",
-        "SETTINGS", "MODELS", "MIXER", "CHAPTERS", "TASK_DETAIL"}
+WANT = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",
+        "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
 
 BAN_MAIN = ["Screen.CAST", "NAV_CAST", "CastScreen(", "角色音色", "角色预设",
             "角色映射", "给角色单独指定音色", "改动立即保存 · 对所有新任务生效",

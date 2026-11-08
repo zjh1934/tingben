@@ -35,12 +35,15 @@ object PlayNotif {
     }
 
     fun show(c: Context, s: PlaybackState) {
-        if (s.label.isEmpty()) return
+        // 两态隔离：小段 / 调音台试听不占用播放控制通知
+        if (s.label.isEmpty() || s.preview) { cancel(c); return }
         ensureChannel(c)
+        // 点通知主体 = 回到软件并展开播放器页，而不是停在书架猜「刚才播到哪」
         val open = PendingIntent.getActivity(
             c, 0,
             Intent(c, MainActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra("open_player", true),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val b = Notification.Builder(c, CHANNEL)
             .setContentTitle(s.label.ifBlank { "听本" })

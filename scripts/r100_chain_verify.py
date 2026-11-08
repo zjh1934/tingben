@@ -20,7 +20,7 @@ RULES = [
     ('app/src/main/java/com/tingben/app/core/Pipeline.kt',
      'val (chapters, allChunks) = ChapterSplitter.split(text)', '分章：正文切章'),
     ('app/src/main/java/com/tingben/app/ChapterHub.kt',
-     'Producer.start(c, book, selected, directRead = true', '入口：勾选章能启动制作'),
+     'Producer.enqueueOrStart(c, book, selected', '入口：勾选章能启动制作 / 忙时入队'),
     ('app/src/main/java/com/tingben/app/core/Pipeline.kt',
      'ModelStore.synthesisBlockReason(c)?.let { reason ->', '开工：缺件明确拦住'),
     ('app/src/main/java/com/tingben/app/core/Pipeline.kt',

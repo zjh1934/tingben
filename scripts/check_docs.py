@@ -78,7 +78,7 @@ def checks(base=ROOT):
     ci = read(base / '.github/workflows/ci.yml')
     deps = set(re.findall(r'python3 scripts/([\w\.]+)', ci)) | set(re.findall(r'\./scripts/([\w\.]+)', ci))
     deps |= {'build_native.sh', 'r45_common.py', 'check_structure.py', 'publish_apk.py',
-             'check_docs.py', 'sync_remote.py'}
+             'check_docs.py', 'sync_remote.py', 'retired_pages.py'}
     for d in deps:
         if not (base / 'scripts' / d).exists():
             errs.append('CI 依赖脚本缺失：scripts/%s' % d)

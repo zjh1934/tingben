@@ -94,8 +94,8 @@ errs += check(pipe, '守恒/制作', [
 errs += check(ci, 'CI', ['python3 scripts/r108_verify.py --selftest', '交叉编译两个推理引擎'])
 
 m = re.search(r'private enum class Screen \{([^}]*)\}', main)
-if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 10:
-    errs.append('Screen 枚举不是 10 值')
+if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 8:
+    errs.append('Screen 枚举不是 8 值')
 
 if '--selftest' in sys.argv:
     cases = [

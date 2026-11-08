@@ -216,13 +216,102 @@ object ModelStore {
 }
 
 object ChapterSplitter {
-    private val headRe = Regex(
-        """^\s*(第[一二三四五六七八九十百千零〇0-9]+[章节回卷篇].{0,40}|""" +
-        """[0-9]{1,3}[、.．]\s*.{1,40}|""" +
-        """(?:楔子|序章|序言|引子|尾声|后记|番外|楔|序|跋)(?:.{0,30})|""" +
-        """(?:Chapter|CHAPTER|PART|Part)\s*[0-9一二三四五六七八九十]{1,4}(?:.{0,30}))\s*$""",
-        RegexOption.MULTILINE
+    // 参考成熟中文小说目录规则：多形态候选 + 逐行判定 + 组计分 + 序号递增校验。
+    // 只认独占一行的短标题；正文里带句号的句子不会被当成目录。
+    // EPUB 走 Importer.CHAPTER_SEP 分支，完全不经过这里。
+    private val strongPatterns = listOf(
+        // 第 1 章 / 第一章 / 第001回 / 第 1 卷（"第"与编号、编号与章字之间允许空格或全角空格）
+        Regex("""第\s*[零〇一二三四五六七八九十百千两0-9０-９]{1,12}\s*[章节回卷篇集部话](?:[\s　:：·—\-、,，.．]?.*)?"""),
+        // Chapter 1 / Part 2 / Section 3 / Book 4
+        Regex("""(?:[Cc]hapter|[Pp]art|[Ss]ection|[Bb]ook)\s*[0-9０-９一二三四五六七八九十]{1,4}(?:[\s　:：·—\-、,，.．]?.*)?"""),
+        // 卷一 / 卷 1 / 卷12
+        Regex("""卷\s*[零〇一二三四五六七八九十百千两0-9０-９]{1,12}(?:[\s　:：·—\-、,，.．]?.*)?""")
     )
+    private val specialPattern = Regex(
+        """(?:楔子|序章|序言|引子|尾声|后记|番外|楔|序|跋|终章|结局|前言|开篇|卷首语|完本感言)(?:[\s　:：·—\-、,，.．]?.*)?""")
+    private val numericPatterns = listOf(
+        // 1. 标题 / 1、标题 / 1：标题 / 1 - 标题
+        Regex("""[0-9０-９]{1,4}\s*[、.．,，:：）】\-—]\s*\S.{0,36}"""),
+        // 1 标题（数字后直接空格，无标点）
+        Regex("""[0-9０-９]{1,4}\s+\S.{0,36}"""),
+        // 一、标题 / 十二. 标题
+        Regex("""[零〇一二三四五六七八九十百千两]{1,6}\s*[、.．]\s*\S.{0,36}""")
+    )
+
+    private data class Cand(val off: Int, val title: String, val strong: Boolean, val ordinal: Int?)
+
+    private fun cleanLine(raw: String): String {
+        var s = raw.trim().trim('\uFEFF').trim()
+            .trimStart('—', '-', '=', '*', '#', ' ', '　')
+            .trimEnd('—', '-', '=', '*', '#', ' ', '　')
+            .trim()
+        // 成对包裹符剥掉，标题显示更干净，规则也不必处理各种括号形态
+        s = s.replace("【", "").replace("】", "")
+            .replace("[", "").replace("]", "")
+            .replace("（", "").replace("）", "")
+            .replace("(", "").replace(")", "")
+        return s.trim()
+    }
+
+    private fun scanLines(text: String): List<Pair<Int, String>> {
+        val out = ArrayList<Pair<Int, String>>()
+        var i = 0
+        while (i < text.length) {
+            var j = i
+            // 兼容 \n / \r\n / 老式 \r 单独换行
+            while (j < text.length && text[j] != '\n' && text[j] != '\r') j++
+            out.add(i to text.substring(i, j))
+            if (j >= text.length) break
+            i = if (text[j] == '\r' && j + 1 < text.length && text[j + 1] == '\n') j + 2 else j + 1
+        }
+        return out
+    }
+
+    private fun ordinalOf(line: String): Int? {
+        val m = Regex("""[0-9０-９]{1,4}""").find(line) ?: return null
+        return m.value.map { ch -> if (ch in '０'..'９') '0' + (ch - '０') else ch }
+            .joinToString("").toIntOrNull()
+    }
+
+    private fun monotone(cs: List<Cand>): Boolean {
+        val seq = cs.mapNotNull { it.ordinal }
+        if (seq.size < 3) return true
+        var back = 0
+        for (i in 1 until seq.size) if (seq[i] < seq[i - 1]) back++
+        return back * 3 <= seq.size
+    }
+
+    private fun chapterCandidates(text: String): MutableList<Pair<Int, String>> {
+        val strong = ArrayList<Cand>()
+        val numeric = ArrayList<Cand>()
+        scanLines(text).forEach { (off, raw) ->
+            val line = cleanLine(raw)
+            if (line.isEmpty() || line.length > 40) return@forEach
+            if (line.any { it == '。' || it == '！' || it == '？' || it == ';' || it == '；' }) return@forEach
+            val title = line.take(40)
+            when {
+                strongPatterns.any { it.matches(line) } -> strong.add(Cand(off, title, true, null))
+                specialPattern.matches(line) -> strong.add(Cand(off, title, true, null))
+                numericPatterns.any { it.matches(line) } -> numeric.add(Cand(off, title, false, ordinalOf(line)))
+            }
+        }
+        // 编号类至少 3 个且序号大体递增才启用，避免正文里的 "1. 他转身走了" 被当成章节
+        val numericOn = numeric.size >= 3 && monotone(numeric) &&
+                (numeric.mapNotNull { it.ordinal }.maxOrNull() ?: 0) >= 2
+        val kept = ArrayList<Cand>()
+        kept.addAll(strong)
+        if (numericOn) kept.addAll(numeric)
+        val sorted = kept.distinctBy { it.off }.sortedBy { it.off }
+        val filtered = ArrayList<Cand>()
+        sorted.forEach { cand ->
+            val prev = filtered.lastOrNull()
+            if (prev == null || cand.off - prev.off >= 24) filtered.add(cand)
+            else if (cand.strong && !prev.strong) filtered[filtered.lastIndex] = cand
+        }
+        // 只有 1 个候选时不切章，退回整本，宁可不切也不把正文切碎
+        if (filtered.size < 2) return mutableListOf()
+        return filtered.map { it.off to it.title }.toMutableList()
+    }
 
     private fun cut(text: String, s: Int, e: Int, chIndex: Int,
                     out: MutableList<Chunk>, startIdx: Int): Int {
@@ -267,8 +356,7 @@ object ChapterSplitter {
             return chapters to chunks
         }
 
-        val marks = mutableListOf<Pair<Int, String>>()
-        headRe.findAll(text).forEach { marks.add(it.range.first to it.value.trim()) }
+        val marks = chapterCandidates(text)
         if (marks.isEmpty()) marks.add(0 to "整本")
         for (i in marks.indices) {
             val s = marks[i].first
@@ -427,6 +515,7 @@ object Producer {
     val state: StateFlow<Progress> = _state
     @Volatile private var busy = false
     @Volatile private var cancelRequested = false
+    @Volatile private var queuePaused = false
 
     @Volatile private var appCtx: Context? = null
     @Volatile private var current: TaskInfo? = null
@@ -456,14 +545,108 @@ object Producer {
                 (if (why != null) " invalidate=$why" else ""))
     }
 
+    // 软件重新打开时调用：只有「进程被杀 / 崩溃」留下的 interrupted 任务自动接上。
+    // 必须在 Activity 可见之后调，不能在 Application.onCreate 里，
+    // 否则 Android 12+ 会拦后台启动前台服务。
+    fun queueState(c: Context): Pair<Int, Boolean> =
+        TaskResume.queueSize(c) to (queuePaused || TaskResume.queuePaused(c))
+
+    // 目录页点「合成音频」：忙时不再拒绝，排进队列；空闲且队列为空时直接开跑。
+    fun enqueueOrStart(c: Context, book: Book, only: Set<Int>?, think: Boolean?,
+                       config: ProduceConfig): String {
+        val t = TaskInfo(book.id, book.title, only, true, think ?: false,
+            0, 0, "queued", "排队中", System.currentTimeMillis(),
+            config = config, modeId = ModelStore.currentMode(c).id,
+            splitRule = TaskResume.SPLIT_RULE)
+        val paused = TaskResume.queuePaused(c)
+        if (!busy && TaskResume.queue(c).isEmpty() && !paused) {
+            start(c, book, only, true, think, config)
+            return "开始制作《${book.title}》"
+        }
+        TaskResume.enqueue(c, t)
+        if (!busy && !paused) {
+            queuePaused = false
+            TaskResume.setQueuePaused(c, false)
+            scope.launch { pumpQueue(c.applicationContext) }
+        }
+        val n = TaskResume.queueSize(c)
+        return "《${book.title}》已排到队列第 $n 个" +
+            if (paused) "（队列已暂停，点「继续队列」开跑）" else "，做完当前这本自动接着跑"
+    }
+
+    private fun pumpQueue(c: Context): String? {
+        if (busy || queuePaused || TaskResume.queuePaused(c)) return null
+        while (true) {
+            val t = TaskResume.queue(c).firstOrNull() ?: return null
+            val book = BookStore.list(c).find { it.id == t.bookId }
+            if (book == null) {
+                TaskResume.dequeue(c, t.bookId)
+                EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_SKIP", "书没了 book=${t.title}")
+                continue
+            }
+            val why = TaskResume.autoResumeBlockReason(c, t.copy(phase = "interrupted"))
+            if (why != null) {
+                queuePaused = true
+                TaskResume.setQueuePaused(c, true)
+                EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_PAUSE", "reason=$why")
+                return "队列已暂停：$why"
+            }
+            TaskResume.dequeue(c, t.bookId)
+            start(c, book, t.only, true, t.think, t.config)
+            return "队列接着做《${t.title}》 · 还剩 ${TaskResume.queueSize(c)} 个"
+        }
+    }
+
+    fun resumeQueue(c: Context): String? {
+        queuePaused = false
+        TaskResume.setQueuePaused(c, false)
+        EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_RESUME", "用户恢复队列")
+        return pumpQueue(c.applicationContext)
+    }
+
+    // 软件重新打开时调用：队列优先（用户要「队列里有任务就自动开始跑」），
+    // 没有排队任务才处理崩溃中断的单本续跑。
+    fun autoResume(c: Context): String? {
+        if (busy) return null
+        if (TaskResume.queuePaused(c)) queuePaused = true
+        else {
+            val q = pumpQueue(c.applicationContext)
+            if (q != null) return q
+        }
+        val t = TaskResume.active(c) ?: return null
+        if (t.phase == "done") return null
+        val why = TaskResume.autoResumeBlockReason(c, t)
+        if (why != null) {
+            EventLog.log(EventLog.Kind.PIPELINE, "TASK_AUTO_RESUME_SKIP",
+                "book=${t.title} phase=${t.phase} reason=$why")
+            return why
+        }
+        val book = BookStore.list(c).find { it.id == t.bookId }
+            ?: return "这本书已从书架删掉，没法续跑"
+        start(c, book, t.only, true, t.think, t.config)
+        EventLog.log(EventLog.Kind.PIPELINE, "TASK_AUTO_RESUME",
+            "book=${t.title} phase=${t.phase} done=${t.done}/${t.total}")
+        return "已自动接着上次的《${t.title}》继续制作"
+    }
+
     fun stop() {
         if (!busy) return
+        // 用户点停止 = 暂停整个队列，不是只停当前这一本，
+        // 否则停完 finally 又自动接下一个，等于没停。
+        queuePaused = true
+        appCtx?.let { TaskResume.setQueuePaused(it, true) }
         cancelRequested = true
         try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
         appCtx?.let { c ->
-            current?.let { TaskResume.save(c, it.copy(phase = "stopped",
-                stage = _state.value.stage, done = _state.value.done,
-                updatedAt = System.currentTimeMillis())) }
+            current?.let { t ->
+                val stopped = t.copy(phase = "stopped",
+                    stage = _state.value.stage, done = _state.value.done,
+                    updatedAt = System.currentTimeMillis())
+                // 同步内存态：否则 finally 会按 running 再标成 interrupted，
+                // 下次开软件就被当成崩溃中断而自动续跑，违背用户主动停止的意图。
+                current = stopped
+                TaskResume.save(c, stopped)
+            }
             ProduceService.stopping(c)
         }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_STOP", "用户点了停止")
@@ -496,7 +679,8 @@ object Producer {
         val thinkOn = thinkOverride ?: false
         current = TaskInfo(book.id, book.title, onlyChapters, true, thinkOn,
             0, 0, "running", "正在准备", System.currentTimeMillis(),
-            config = config, modeId = ModelStore.currentMode(c).id)
+            config = config, modeId = ModelStore.currentMode(c).id,
+            splitRule = TaskResume.SPLIT_RULE)
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
         _state.value = Progress(true, "正在准备", 0, 0, 0, "正在启动…")
@@ -531,9 +715,23 @@ object Producer {
                 }
             } finally {
                 busy = false
-                if (current?.phase == "running") markInterrupted("中断")
+                if (current?.phase == "running") {
+                    val s = _state.value.stage
+                    markInterrupted(if (s in listOf("没完成", "出错了", "已停止")) s else "中断")
+                }
                 val p = _state.value
                 ProduceService.finish(c.applicationContext, p.stage, p.done, p.total)
+                // 只有真正「完成」才自动接下一个；停止 / 报错 / 存储不足一律停在原地，
+                // 队列保留但暂停，不自动跳过、不无限重试。
+                if (p.stage == "完成" || current?.phase == "done") {
+                    if (!queuePaused && !TaskResume.queuePaused(c.applicationContext))
+                        scope.launch { pumpQueue(c.applicationContext) }
+                } else {
+                    queuePaused = true
+                    TaskResume.setQueuePaused(c.applicationContext, true)
+                    EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_PAUSE",
+                        "stage=${p.stage} 没正常完成，队列停在原地")
+                }
             }
         }
     }

@@ -9,7 +9,7 @@ CI = ROOT / ".github/workflows/ci.yml"
 POS = [
     'val diskKey = "',
     "var disk by remember(book.id, refresh) {",
-    "LaunchedEffect(book.id, refresh, diskKey) {",
+    "LaunchedEffect(book.id, refresh, diskKey, localTick) {",
     "if (disk != null) delay(350)",
     "disk = withContext(Dispatchers.IO) {",
     "AudioLibrary.latestByChapter(c, book.id) to AudioLibrary.playableChapters(c, book.id)",

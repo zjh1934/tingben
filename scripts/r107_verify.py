@@ -18,8 +18,11 @@ sys.path.insert(0, str(SCRIPTS))
 import nav_semantics as nav
 
 MAIN_P = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
+# R135：r79 / r80 验证对象（旧音频页）已物理删除并退役，
+# 不再要求它们接入导航语义判据，改由统一守门约束。
 TARGETS = ["check_structure.py", "r46_verify.py", "r89_verify.py",
-           "r105_verify.py", "r80_verify.py", "r79_verify.py"]
+           "r105_verify.py"]
+RETIRED = ["r79_verify.py", "r80_verify.py"]
 
 BANNED = [
     "BackHandler(enabled = screen != Screen.LIBRARY) { screen = Screen.LIBRARY }",
@@ -30,7 +33,7 @@ BANNED = [
     "onModels = { modelsFrom = Screen.AUDIO; screen = Screen.MODELS }",
     "onLibrary = { screen = Screen.LIBRARY }",
     "var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }",
-    "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, TASK_DETAIL, AUDIO, SETTINGS, MODELS, MIXER, CHAPTERS }",
+    "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }",
 ]
 
 def banned_hits(files=None):
@@ -149,6 +152,9 @@ def run():
         t = (SCRIPTS / name).read_text(encoding="utf-8")
         if "nav_semantics" not in t and "nav." not in t:
             errs.append("未接入语义判据: " + name)
+    for name in RETIRED:
+        if "from retired_pages import run" not in (SCRIPTS / name).read_text(encoding="utf-8"):
+            errs.append("退役脚本未接入统一守门: " + name)
 
     src = MAIN_P.read_text(encoding="utf-8")
     for msg in nav.semantics(src):

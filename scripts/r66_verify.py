@@ -47,14 +47,15 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
 
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
     got = set(re.findall(r'[A-Z_]+', m.group(1))) if m else set()
-    want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'AUDIO', 'SETTINGS',
-            'MODELS', 'MIXER', 'CHAPTERS', 'TASK_DETAIL'}
+    want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'SETTINGS',
+            'MODELS', 'MIXER', 'CHAPTERS'}
     if got != want: e.append('Screen 枚举不是 10 值或仍含旧页: ' + str(got ^ want))
     if re.search(r'enum class ProduceMode\s*\{[^}]*,', main): e.append('制作档位又出现多档枚举')
     if 'ProduceMode.ANNOTATE' in main or 'HubAction.ANNOTATE' in main:
         e.append('旧标注档回潮')
     if 'HubTitles = listOf("章节", "合成", "可播")' not in hub: e.append('目录页不是三列')
-    if 'repeat(3) { col ->' not in hub: e.append('目录页仍渲染四列')
+    if 'HorizontalPager(' not in hub or 'pageCount = { 3 }' not in hub:
+        e.append('目录页不是三列真分页')
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
     for s in ['Text("合成音频"', 'Text("调音 ›"', 'onMixer: () -> Unit']:
         if s not in hub: e.append('目录页缺: ' + s)
