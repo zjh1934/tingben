@@ -28,6 +28,7 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
     "audit": ROOT / "docs/修复清单_按优先级.md",
     "archive": ROOT / "dev/历史回执.md",
+    "gradle": ROOT / "app/build.gradle.kts",
 }
 
 POS = {
@@ -47,6 +48,8 @@ POS = {
         "if (onClose != null) BackHandler(enabled = !dirty) { onClose?.invoke() }",
         "showLeave = false; discardAll(); (onClose ?: onBack)()",
     ],
+    "gradle": ["val signAlias = System.getenv(\"TINGBEN_KEY_ALIAS\")",
+               "keyAlias = signAlias", "!signAlias.isNullOrBlank()"],
     "icons": [
         "internal fun IconBack(", "drawPath(p, color = tint",
         "import androidx.compose.foundation.layout.size",
@@ -88,6 +91,7 @@ BAN = {
     ],
     "eventlog": ["末尾 400 行", "末尾 800 行", "自行决定发给谁"],
     "icons": ["@Composable\n@Composable\n"],
+    "gradle": ["keyAlias = keyAlias"],
     "audit": ["## 批次 A ·", "## 补漏轮"],
 }
 
@@ -224,6 +228,7 @@ def selftest():
         ("图标重复注解", "icons", "@Composable\ninternal fun IconBack(", "@Composable\n@Composable\ninternal fun IconBack("),
         ("IconClose 丢注解", "icons", "@Composable\ninternal fun IconClose(", "internal fun IconClose("),
         ("size 扩展没导入", "icons", "import androidx.compose.foundation.layout.size", ""),
+        ("签名别名同名遮蔽", "gradle", "keyAlias = signAlias", "keyAlias = keyAlias"),
     ]
     bad = 0
     try:

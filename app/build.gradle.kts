@@ -9,9 +9,14 @@ plugins {
 val key = rootProject.file(System.getenv("TINGBEN_KEYSTORE") ?: "keystore.jks")
 val storePass = System.getenv("TINGBEN_STORE_PASSWORD")
 val keyPass = System.getenv("TINGBEN_KEY_PASSWORD")
-val keyAlias = System.getenv("TINGBEN_KEY_ALIAS")
+// R146 · 局部变量不能叫 keyAlias：在 create("tingben") { } 这个带 receiver 的
+// lambda 里，给同名字段赋值时右侧会优先解析成 SigningConfig 自己的属性
+// （初始为 null），而不是外层局部变量 —— 结果自赋值成 null，
+// packageDebug 报 "SigningConfig tingben is missing required property keyAlias"。
+// 改名 signAlias，彻底避开同名遮蔽。
+val signAlias = System.getenv("TINGBEN_KEY_ALIAS")
 val signReady = key.exists() && !storePass.isNullOrBlank() &&
-        !keyPass.isNullOrBlank() && !keyAlias.isNullOrBlank()
+        !keyPass.isNullOrBlank() && !signAlias.isNullOrBlank()
 val buildNumber = System.getenv("BUILD_NUMBER")?.toIntOrNull()
 val appVersion = rootProject.file("version.txt").readText().trim()
     .ifBlank { error("version.txt 为空，不能确定版本号") }
@@ -30,7 +35,7 @@ android {
         if (signReady) create("tingben") {
             storeFile = key
             storePassword = storePass
-            keyAlias = keyAlias
+            keyAlias = signAlias
             keyPassword = keyPass
             enableV1Signing = true; enableV2Signing = true; enableV3Signing = false
         }
