@@ -29,7 +29,6 @@ FILES = {
     "retired": ROOT / "scripts/retired_pages.py",
     "ci": ROOT / ".github/workflows/ci.yml",
     "audit": ROOT / "docs/修复清单_按优先级.md",
-    "card": ROOT.parent / "接手卡片.md",
 }
 
 POS = {
@@ -96,8 +95,15 @@ SHELL = ["r68_verify.py", "r79_verify.py", "r80_verify.py", "r84_verify.py",
 
 
 def load():
-    return {k: p.read_text(encoding="utf-8", errors="replace")
-            for k, p in FILES.items()}
+    # R143 · CI 里仓库外没有沙盒卡片；任何读不到的文件回空串，
+    # 绝不允许「本地绿 / CI 红」因为一个文件不存在就整脚本崩掉。
+    out = {}
+    for k, p in FILES.items():
+        try:
+            out[k] = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            out[k] = ""
+    return out
 
 
 def logic_cases(f):

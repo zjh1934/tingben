@@ -28,7 +28,6 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
     "audit": ROOT / "docs/修复清单_按优先级.md",
     "archive": ROOT / "dev/历史回执.md",
-    "card": ROOT.parent / "接手卡片.md",
 }
 
 POS = {
@@ -72,6 +71,7 @@ POS = {
     "audit": [
         "| F | 浮层返回 / 合成前调音 / 章节批量 / 开发日志 / 产物分层 | R142 |",
         "真机待验清单（定稿 · 26 项",
+        "dev/历史回执.md`，**不读**",
     ],
     "archive": ["# 归档 · 历史批次回执", "## 批次 E", "不参与现行自检"],
 }
@@ -88,8 +88,15 @@ BAN = {
 
 
 def load():
-    return {k: p.read_text(encoding="utf-8", errors="replace")
-            for k, p in FILES.items()}
+    # R143 · CI 里仓库外没有沙盒卡片；任何读不到的文件回空串，
+    # 绝不允许「本地绿 / CI 红」因为一个文件不存在就整脚本崩掉。
+    out = {}
+    for k, p in FILES.items():
+        try:
+            out[k] = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            out[k] = ""
+    return out
 
 
 def logic_cases(f):
@@ -125,8 +132,14 @@ def logic_cases(f):
         bad.append("分层没生效：现行 %d 行 / 归档 %d 行" % (cur_lines, arc_lines))
     else:
         print("文档分层：现行 %d 行 / 归档 %d 行" % (cur_lines, arc_lines))
-    if "dev/历史回执" in f["card"] and "不读" not in f["card"]:
-        bad.append("卡片把归档列进了只读真值源")
+    if "dev/历史回执" in f["audit"] and "不读" not in f["audit"]:
+        bad.append("现行文档把归档列进了只读真值源")
+    # R143 · 防复发：验证脚本不许再依赖仓库外的沙盒文件（本地绿 / CI 红）
+    me = pathlib.Path(__file__).name
+    outside = [q.name for q in (ROOT / "scripts").glob("*.py")
+               if q.name != me and "ROOT.parent" in q.read_text(encoding="utf-8", errors="replace")]
+    if outside:
+        bad.append("验证脚本依赖仓库外路径: " + ", ".join(outside[:3]))
     # ⑤ 日志必须是全量 + 可复制，不是截断的诊断 txt
     if "read().lines().takeLast" in f["eventlog"] and "exportSummary" not in f["eventlog"]:
         bad.append("日志又退回截断版")
