@@ -292,11 +292,15 @@ jobs:
         # 里 build-report 不存在会让整条 add 失败，日志从没进过仓库。改用 Contents API 直写。
         if: steps.gradle.outputs.exit != '0' && steps.gradle.outputs.exit != ''
         env:
-          GH_PAT: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
           RUN_NO: ${{ github.run_number }}
         run: |
           set +e
           mkdir -p logs
+          # R145 · 编译报错行同时打成 annotation，且日志回写改用有 contents 写权限的 PAT。
+          # 之前用 GITHUB_TOKEN 偶发回写失败，导致沙盒拿不到 e: 行，只能靠猜。
+          grep -n -E '^e: |error:|Unresolved reference|None of the following|Type mismatch|FAILURE:|What went wrong' /tmp/gradle.log | head -60 > /tmp/err.txt || true
+          while IFS= read -r ln; do echo "::error::$ln"; done < /tmp/err.txt
           {
             echo "# 构建失败 run ${{ github.run_number }}"
             echo '## 报错行'
