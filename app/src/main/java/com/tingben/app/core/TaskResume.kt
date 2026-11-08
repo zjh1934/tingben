@@ -24,9 +24,11 @@ data class TaskInfo(
 )
 
 object TaskResume {
-    // 1 = 旧整本切分；2 = 逐行多形态组计分。改切章规则时 +1，
-    // 旧任务按旧章号存，不允许自动续跑，避免断点错位到别的章。
-    const val SPLIT_RULE = 2
+    // 1 = 旧整本切分；2 = 逐行多形态组计分；
+    // 3 = 章节表落盘 + 规则集自动选优（R138 批次 B）。改切章口径时 +1。
+    // 旧任务不是一律卡死：老书的章节表会锁 legacy_v2，章号与旧任务一致，
+    // 可以安全提升版本继续跑；只有用户真的换过规则才要求手动确认。
+    const val SPLIT_RULE = 3
 
     private fun file(c: Context) = File(c.filesDir, "task_active.json")
     private fun listFile(c: Context) = File(c.filesDir, "tasks.json")
@@ -222,10 +224,19 @@ object TaskResume {
             return "上次任务状态不是「中断」，没自动续跑"
         if (t.stage in listOf("没完成", "出错了", "已停止"))
             return "上次没做完（${t.stage}），没自动续跑；在任务页点「继续制作」"
-        if (t.splitRule != SPLIT_RULE)
-            return "章节切分规则升级过，没自动续跑；请在任务页手动点「继续制作」确认"
-        if (BookStore.list(c).none { it.id == t.bookId })
-            return "这本书已从书架删掉，没法续跑"
+        val book = BookStore.list(c).find { it.id == t.bookId }
+            ?: return "这本书已从书架删掉，没法续跑"
+        if (t.splitRule != SPLIT_RULE) {
+            // 先确保章节表存在：有成品/任务的老书会锁 legacy_v2，章号不变 → 安全迁移
+            ChapterPlan.resolve(c, book)
+            val rid = ChapterPlan.currentRuleId(c, t.bookId)
+            if (rid == TocRules.LEGACY || rid == ChapterPlan.EPUB) {
+                migrateSplit(c, t.bookId)
+            } else {
+                return "分章规则变过（现在是${ChapterPlan.ruleName(rid)}），章号会变，" +
+                    "请在目录页点「重新分章」后手动继续"
+            }
+        }
         ModelStore.synthesisBlockReason(c)?.let { return "模型没齐（$it），没自动续跑" }
         invalidationReason(c, t)?.let { return "$it，没自动续跑；请在任务页手动确认" }
         return null
@@ -244,11 +255,26 @@ object TaskResume {
         } catch (_: Throwable) { null }
     }
 
+    /**
+     * R138 · 旧断点迁移：只把 splitRule 提到当前值，不动章号、不动 only、不动音频。
+     * 前提是调用方已确认这本书的章节表锁在 legacy_v2 / epub（章号与旧任务一致）。
+     * 用户显式「重新分章」换过规则的书不走这里 —— 那种情况章号真的变了，
+     * 必须让用户重新确认，不能假装把断点搬过去。
+     */
+    fun migrateSplit(c: Context, bookId: String): Boolean {
+        val t = byBook(c, bookId) ?: return false
+        if (t.splitRule >= SPLIT_RULE) return true
+        save(c, t.copy(splitRule = SPLIT_RULE))
+        EventLog.log(EventLog.Kind.PIPELINE, "SPLIT_MIGRATE",
+            "旧任务切章口径升级到 $SPLIT_RULE，章号与音频保持不变 book=$bookId")
+        return true
+    }
+
     fun realProgress(c: Context, t: TaskInfo): Int {
         if (invalidationReason(c, t) != null) return 0
         val book = BookStore.list(c).find { it.id == t.bookId } ?: return t.done
         return try {
-            val (_, chunks) = ChapterSplitter.split(BookStore.read(c, book))
+            val (_, chunks) = ChapterPlan.resolve(c, book)
             val selected = if (t.only == null) chunks.size else chunks.count { it.chapter in t.only!! }
             val w = AnnCache.dirFor(c, t.bookId, t.only)
             val ann = AnnCache.count(w)

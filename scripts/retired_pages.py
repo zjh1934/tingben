@@ -106,3 +106,42 @@ def run(name):
         return 1
     print("%s 已退役（验证对象于批次 6 物理删除）· 旧页零回潮 / 现行能力守恒：PASS" % name)
     return 0
+
+
+def main():
+    """批次 E：17 个旧页壳脚本原先在 CI 各起一次进程跑同一个 check()，
+    语义完全重复。收敛成这一项，仍带反向注入，且覆盖全部退役符号。"""
+    files = sources()
+    errs = check(files)
+    if errs:
+        print("RETIRED FAIL %d" % len(errs))
+        for e in errs:
+            print(" -", e)
+        return 1
+    print("退役页统一守门：旧页符号 %d 项零回潮 / 旧特征串 %d 项零回潮 / "
+          "现行能力 %d 项全在 / 导航 8 值" %
+          (len(DEAD_SYMBOLS), len(DEAD_TRAITS), len(LIVE_SYMBOLS)))
+    if "--selftest" in sys.argv:
+        bad = 0
+        x = dict(files)
+        x["MainActivity.kt"] = files["MainActivity.kt"] + "\n// private fun AudioScreen(\n"
+        if not check(x):
+            bad += 1; print("  反向注入漏放: 旧页符号回潮")
+        y = dict(files)
+        y["PlayerSheet.kt"] = files.get("PlayerSheet.kt", "").replace(
+            "internal fun PlayerSheet(", "internal fun PlayerSheetX(")
+        if not check(y):
+            bad += 1; print("  反向注入漏放: 现行能力被删")
+        z = dict(files)
+        z["MainActivity.kt"] = files["MainActivity.kt"].replace(
+            "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }",
+            "private enum class Screen { LIBRARY, AUDIO }")
+        if not check(z):
+            bad += 1; print("  反向注入漏放: 导航被改回 10 值")
+        print("反向注入 %d/3 全拦下" % (3 - bad))
+        return 1 if bad else 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

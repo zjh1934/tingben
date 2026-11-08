@@ -27,6 +27,11 @@ data class Chunk(val index: Int, val chapter: Int, val text: String, val start: 
 data class Ann(val text: String, val speaker: String, val instruct: String)
 
 object BookStore {
+    // R139 · 文本字符数上限。Importer 的 64MB 是「字节」上限，中文 UTF-8 一个字 3 字节，
+    // 64MB ≈ 2100 万字，JVM 里 String 是 UTF-16（约 42MB），再叠加切块列表与
+    // 正则候选，很容易 OOM。这里按「字符」再设一道更早、更贴合内存的闸门。
+    const val MAX_TEXT_CHARS = 6_000_000
+
     private fun dir(c: Context) = File(c.filesDir, "books").apply { mkdirs() }
     private fun meta(c: Context) = File(dir(c), "books.json")
 
@@ -58,6 +63,10 @@ object BookStore {
     } catch (_: Throwable) { "${text.length}_${text.hashCode()}" }
 
     fun add(c: Context, title: String, text: String): Book {
+        if (text.length > MAX_TEXT_CHARS)
+            throw IllegalStateException(
+                "这本书有 ${text.length / 10000} 万字，超过 ${MAX_TEXT_CHARS / 10000} 万字上限；" +
+                    "先拆成几本再导入（太长的书在手机上会内存不够）")
         val sha = fingerprint(text)
         val old = list(c).find {
             it.title == title && (it.sha == sha || (it.sha.isEmpty() && it.chars == text.length))
@@ -82,6 +91,27 @@ object BookStore {
         val all = list(c)
         all.find { it.id == id }?.let { File(it.path).delete() }
         save(c, all.filter { it.id != id })
+        purge(c, id)
+    }
+
+    /**
+     * R138 · 删书全量清理。1.1.2 只删原书，留下 work/ 分段 WAV、audio/ 成品与索引、
+     * 任务/队列项、以及新的章节表 —— 占空间、索引里挂着不存在的书、
+     * 队列要等 pumpQueue 撞上才发现书没了。现在一次清干净。
+     */
+    private fun purge(c: Context, id: String) {
+        try { ChapterPlan.delete(c, id) } catch (_: Throwable) { }
+        try {
+            AudioLibrary.list(c).filter { it.bookId == id }
+                .forEach { AudioLibrary.remove(c, it.id) }
+        } catch (_: Throwable) { }
+        try { File(c.filesDir, "work/$id").deleteRecursively() }
+        catch (t: Throwable) {
+            UiErrors.storage("删书时分段缓存没清干净，可稍后在设置页清理", t)
+        }
+        try { TaskResume.remove(c, id); TaskResume.dequeue(c, id) } catch (_: Throwable) { }
+        EventLog.log(EventLog.Kind.MODEL, "BOOK_PURGE",
+            "书已删：章节表 / 音频成品与索引 / 分段 WAV / 任务 / 队列一并清理")
     }
 }
 
@@ -216,101 +246,25 @@ object ModelStore {
 }
 
 object ChapterSplitter {
-    // 参考成熟中文小说目录规则：多形态候选 + 逐行判定 + 组计分 + 序号递增校验。
-    // 只认独占一行的短标题；正文里带句号的句子不会被当成目录。
-    // EPUB 走 Importer.CHAPTER_SEP 分支，完全不经过这里。
-    private val strongPatterns = listOf(
-        // 第 1 章 / 第一章 / 第001回 / 第 1 卷（"第"与编号、编号与章字之间允许空格或全角空格）
-        Regex("""第\s*[零〇一二三四五六七八九十百千两0-9０-９]{1,12}\s*[章节回卷篇集部话](?:[\s　:：·—\-、,，.．]?.*)?"""),
-        // Chapter 1 / Part 2 / Section 3 / Book 4
-        Regex("""(?:[Cc]hapter|[Pp]art|[Ss]ection|[Bb]ook)\s*[0-9０-９一二三四五六七八九十]{1,4}(?:[\s　:：·—\-、,，.．]?.*)?"""),
-        // 卷一 / 卷 1 / 卷12
-        Regex("""卷\s*[零〇一二三四五六七八九十百千两0-9０-９]{1,12}(?:[\s　:：·—\-、,，.．]?.*)?""")
-    )
-    private val specialPattern = Regex(
-        """(?:楔子|序章|序言|引子|尾声|后记|番外|楔|序|跋|终章|结局|前言|开篇|卷首语|完本感言)(?:[\s　:：·—\-、,，.．]?.*)?""")
-    private val numericPatterns = listOf(
-        // 1. 标题 / 1、标题 / 1：标题 / 1 - 标题
-        Regex("""[0-9０-９]{1,4}\s*[、.．,，:：）】\-—]\s*\S.{0,36}"""),
-        // 1 标题（数字后直接空格，无标点）
-        Regex("""[0-9０-９]{1,4}\s+\S.{0,36}"""),
-        // 一、标题 / 十二. 标题
-        Regex("""[零〇一二三四五六七八九十百千两]{1,6}\s*[、.．]\s*\S.{0,36}""")
-    )
+    // R138 · 批次 B：TXT 分章委托给 TocRules 规则集自动选优；
+    // EPUB 仍走 Importer.CHAPTER_SEP 结构化分隔，一个字不动。
+    // 本对象只负责「编排」：候选 → Chapter 区间 → 切 Chunk。
+    // 真正的单一真值源是 ChapterPlan（落盘、按书记住 ruleId），
+    // UI 与制作运行都应调 ChapterPlan.resolve，而不是直接调 split。
 
-    private data class Cand(val off: Int, val title: String, val strong: Boolean, val ordinal: Int?)
-
-    private fun cleanLine(raw: String): String {
-        var s = raw.trim().trim('\uFEFF').trim()
-            .trimStart('—', '-', '=', '*', '#', ' ', '　')
-            .trimEnd('—', '-', '=', '*', '#', ' ', '　')
-            .trim()
-        // 成对包裹符剥掉，标题显示更干净，规则也不必处理各种括号形态
-        s = s.replace("【", "").replace("】", "")
-            .replace("[", "").replace("]", "")
-            .replace("（", "").replace("）", "")
-            .replace("(", "").replace(")", "")
-        return s.trim()
+    fun fromMarks(text: String, marks: List<Pair<Int, String>>): List<Chapter> {
+        val safe = if (marks.isEmpty()) listOf(0 to "整本") else marks
+        return safe.mapIndexed { i, m ->
+            val e = if (i + 1 < safe.size) safe[i + 1].first else text.length
+            Chapter(i, m.second, m.first, e)
+        }
     }
 
-    private fun scanLines(text: String): List<Pair<Int, String>> {
-        val out = ArrayList<Pair<Int, String>>()
-        var i = 0
-        while (i < text.length) {
-            var j = i
-            // 兼容 \n / \r\n / 老式 \r 单独换行
-            while (j < text.length && text[j] != '\n' && text[j] != '\r') j++
-            out.add(i to text.substring(i, j))
-            if (j >= text.length) break
-            i = if (text[j] == '\r' && j + 1 < text.length && text[j + 1] == '\n') j + 2 else j + 1
-        }
+    fun cutFrom(text: String, chapters: List<Chapter>): List<Chunk> {
+        val out = mutableListOf<Chunk>()
+        var idx = 0
+        chapters.forEach { ch -> idx = cut(text, ch.start, ch.end, ch.index, out, idx) }
         return out
-    }
-
-    private fun ordinalOf(line: String): Int? {
-        val m = Regex("""[0-9０-９]{1,4}""").find(line) ?: return null
-        return m.value.map { ch -> if (ch in '０'..'９') '0' + (ch - '０') else ch }
-            .joinToString("").toIntOrNull()
-    }
-
-    private fun monotone(cs: List<Cand>): Boolean {
-        val seq = cs.mapNotNull { it.ordinal }
-        if (seq.size < 3) return true
-        var back = 0
-        for (i in 1 until seq.size) if (seq[i] < seq[i - 1]) back++
-        return back * 3 <= seq.size
-    }
-
-    private fun chapterCandidates(text: String): MutableList<Pair<Int, String>> {
-        val strong = ArrayList<Cand>()
-        val numeric = ArrayList<Cand>()
-        scanLines(text).forEach { (off, raw) ->
-            val line = cleanLine(raw)
-            if (line.isEmpty() || line.length > 40) return@forEach
-            if (line.any { it == '。' || it == '！' || it == '？' || it == ';' || it == '；' }) return@forEach
-            val title = line.take(40)
-            when {
-                strongPatterns.any { it.matches(line) } -> strong.add(Cand(off, title, true, null))
-                specialPattern.matches(line) -> strong.add(Cand(off, title, true, null))
-                numericPatterns.any { it.matches(line) } -> numeric.add(Cand(off, title, false, ordinalOf(line)))
-            }
-        }
-        // 编号类至少 3 个且序号大体递增才启用，避免正文里的 "1. 他转身走了" 被当成章节
-        val numericOn = numeric.size >= 3 && monotone(numeric) &&
-                (numeric.mapNotNull { it.ordinal }.maxOrNull() ?: 0) >= 2
-        val kept = ArrayList<Cand>()
-        kept.addAll(strong)
-        if (numericOn) kept.addAll(numeric)
-        val sorted = kept.distinctBy { it.off }.sortedBy { it.off }
-        val filtered = ArrayList<Cand>()
-        sorted.forEach { cand ->
-            val prev = filtered.lastOrNull()
-            if (prev == null || cand.off - prev.off >= 24) filtered.add(cand)
-            else if (cand.strong && !prev.strong) filtered[filtered.lastIndex] = cand
-        }
-        // 只有 1 个候选时不切章，退回整本，宁可不切也不把正文切碎
-        if (filtered.size < 2) return mutableListOf()
-        return filtered.map { it.off to it.title }.toMutableList()
     }
 
     private fun cut(text: String, s: Int, e: Int, chIndex: Int,
@@ -319,7 +273,10 @@ object ChapterSplitter {
         var buf = StringBuilder()
         var bufStart = s
         var i = s
-        while (i < e) {
+        val lo = s.coerceIn(0, text.length)
+        val hi = e.coerceIn(lo, text.length)
+        i = lo; bufStart = lo
+        while (i < hi) {
             val ch0 = text[i]
             buf.append(ch0); i++
             val len = buf.length
@@ -331,38 +288,30 @@ object ChapterSplitter {
                 buf = StringBuilder()
             }
         }
-        if (buf.isNotEmpty()) out.add(Chunk(idx++, chIndex, buf.toString(), bufStart, e))
+        if (buf.isNotEmpty()) out.add(Chunk(idx++, chIndex, buf.toString(), bufStart, hi))
         return idx
     }
 
     fun split(text: String): Pair<List<Chapter>, List<Chunk>> {
+        if (!text.contains(Importer.CHAPTER_SEP)) {
+            val chapters = fromMarks(text, TocRules.choose(text).second)
+            return chapters to cutFrom(text, chapters)
+        }
+        // ---- 以下 EPUB 分支原样保留 ----
         val chapters = mutableListOf<Chapter>()
         val chunks = mutableListOf<Chunk>()
         var idx = 0
-
-        if (text.contains(Importer.CHAPTER_SEP)) {
-            val segs = text.split(Importer.CHAPTER_SEP)
-                .map { it.trim() }.filter { it.isNotBlank() }
-            var cursor = 0
-            segs.forEachIndexed { ci, seg ->
-                val title = seg.lineSequence().firstOrNull()?.trim()?.take(40)
-                    ?.ifBlank { "第 ${ci + 1} 节" } ?: "第 ${ci + 1} 节"
-                val start = text.indexOf(seg, cursor).let { if (it < 0) cursor else it }
-                val end = start + seg.length
-                chapters.add(Chapter(ci, title, start, end))
-                idx = cut(text, start, end, ci, chunks, idx)
-                cursor = end
-            }
-            return chapters to chunks
-        }
-
-        val marks = chapterCandidates(text)
-        if (marks.isEmpty()) marks.add(0 to "整本")
-        for (i in marks.indices) {
-            val s = marks[i].first
-            val e = if (i + 1 < marks.size) marks[i + 1].first else text.length
-            chapters.add(Chapter(i, marks[i].second, s, e))
-            idx = cut(text, s, e, i, chunks, idx)
+        val segs = text.split(Importer.CHAPTER_SEP)
+            .map { it.trim() }.filter { it.isNotBlank() }
+        var cursor = 0
+        segs.forEachIndexed { ci, seg ->
+            val title = seg.lineSequence().firstOrNull()?.trim()?.take(40)
+                ?.ifBlank { "第 ${ci + 1} 节" } ?: "第 ${ci + 1} 节"
+            val start = text.indexOf(seg, cursor).let { if (it < 0) cursor else it }
+            val end = start + seg.length
+            chapters.add(Chapter(ci, title, start, end))
+            idx = cut(text, start, end, ci, chunks, idx)
+            cursor = end
         }
         return chapters to chunks
     }
@@ -524,6 +473,10 @@ object Producer {
 
     fun reset() { if (!busy) _state.value = Progress() }
     fun isBusy() = busy
+
+    // R139 · begin() 返回 false 时写在这里，autoResume 读它给 toast，不静默吞掉
+    @Volatile var lastStartError: String? = null
+        private set
     fun isStopping() = cancelRequested
 
     fun restore(c: Context) {
@@ -578,6 +531,14 @@ object Producer {
         if (busy || queuePaused || TaskResume.queuePaused(c)) return null
         while (true) {
             val t = TaskResume.queue(c).firstOrNull() ?: return null
+            // R138 · 排队项可能是旧口径任务，先按章节表判定能否安全迁移
+            if (t.splitRule < TaskResume.SPLIT_RULE) {
+                ChapterPlan.resolve(c, BookStore.list(c).find { it.id == t.bookId }
+                    ?: return null)
+                val rid = ChapterPlan.currentRuleId(c, t.bookId)
+                if (rid != TocRules.LEGACY && rid != ChapterPlan.EPUB) return "《${t.title}》分章规则变过，队列暂停，请先在目录页重新分章"
+                TaskResume.migrateSplit(c, t.bookId)
+            }
             val book = BookStore.list(c).find { it.id == t.bookId }
             if (book == null) {
                 TaskResume.dequeue(c, t.bookId)
@@ -593,6 +554,14 @@ object Producer {
             }
             TaskResume.dequeue(c, t.bookId)
             start(c, book, t.only, true, t.think, t.config)
+            if (lastStartError != null) {
+                // R139 · 前台服务没起来：把这一项放回队列并暂停，
+                // 不能因为一次系统限制就把排队任务吞掉。
+                TaskResume.enqueue(c, t)
+                queuePaused = true
+                appCtx?.let { TaskResume.setQueuePaused(it, true) }
+                return lastStartError
+            }
             return "队列接着做《${t.title}》 · 还剩 ${TaskResume.queueSize(c)} 个"
         }
     }
@@ -607,10 +576,12 @@ object Producer {
     // 软件重新打开时调用：队列优先（用户要「队列里有任务就自动开始跑」），
     // 没有排队任务才处理崩溃中断的单本续跑。
     fun autoResume(c: Context): String? {
+        lastStartError = null
         if (busy) return null
         if (TaskResume.queuePaused(c)) queuePaused = true
         else {
             val q = pumpQueue(c.applicationContext)
+            if (lastStartError != null) return lastStartError
             if (q != null) return q
         }
         val t = TaskResume.active(c) ?: return null
@@ -624,6 +595,7 @@ object Producer {
         val book = BookStore.list(c).find { it.id == t.bookId }
             ?: return "这本书已从书架删掉，没法续跑"
         start(c, book, t.only, true, t.think, t.config)
+        if (lastStartError != null) return lastStartError
         EventLog.log(EventLog.Kind.PIPELINE, "TASK_AUTO_RESUME",
             "book=${t.title} phase=${t.phase} done=${t.done}/${t.total}")
         return "已自动接着上次的《${t.title}》继续制作"
@@ -703,7 +675,25 @@ object Producer {
                 }
             }
         }
-        ProduceService.begin(c, book.title)
+        // R139 · 前台服务起不来就别开协程：没有 FGS 的进程随时被杀，
+        // 断点会留在半途，界面却一直显示「正在制作」。停在「没开始」并说清原因。
+        if (!ProduceService.begin(c, book.title)) {
+            val why = "系统没让制作服务启动，任务没有开始；回到软件前台再点一次开始"
+            lastStartError = why
+            busy = false
+            cancelRequested = false
+            _state.value = Progress(false, "没开始", 0, 0, 0, why)
+            val t = current
+            if (t != null) {
+                val stopped = t.copy(phase = "stopped", stage = "没开始")
+                current = stopped
+                appCtx?.let { TaskResume.save(it, stopped) }
+                _resume.value = stopped
+            }
+            EventLog.log(EventLog.Kind.CRASH, "PRODUCE_FGS_BLOCKED", why)
+            return
+        }
+        lastStartError = null
         scope.launch {
             try {
                 run(c, book, onlyChapters, true, thinkOverride, config)
@@ -786,7 +776,8 @@ object Producer {
 
         emit("正在分章", 0, 0, 0, "正在把这本书切成能读的小块…")
         val text = BookStore.read(c, book)
-        val (chapters, allChunks) = ChapterSplitter.split(text)
+        // R138 · 制作运行也用落盘章节表，保证与目录页、断点校验同一套章号
+        val (chapters, allChunks) = ChapterPlan.resolve(c, book, text)
         val chunks = if (only == null) allChunks else allChunks.filter { it.chapter in only }
         if (chunks.isEmpty()) {
             _state.value = Progress(false, "没开始", 0, 0, 0, "这本书没有可制作的文字")
@@ -829,7 +820,18 @@ object Producer {
                 ct.put(JSONObject().put("index", ch.index).put("title", ch.title))
             }
             AtomicJson.write(File(work, "chapters.json"), ct.toString())
-        } catch (_: Throwable) { }
+            // R140 · 批次 D：启用 segmap。之前 writeMap 全工程零调用、readMap 恒 null，
+            // 看台 / 剩余段数 / verdict 全都走「按已落盘最大序号 + total」的兜底推算。
+            // 现在把本次计划段一次性落盘，UI 拿到的是真值而不是猜的。
+            // wavName 与 Producer 合成循环里的命名严格一致（direct_%04d.wav）。
+            SegPlan.writeMap(work, annotated.mapIndexed { i, a ->
+                SegMeta(i, i, 0, null, a.text.take(200), a.speaker, a.instruct,
+                    String.format("direct_%04d.wav", i))
+            })
+            SegPlan.lastWriteError?.let { UiErrors.storage(it, null) }
+        } catch (t: Throwable) {
+            UiErrors.storage("分段计划没写进磁盘，看台会改用兜底推算", t)
+        }
         emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
 
         val knobs = Prefs.ttsKnobs(c)

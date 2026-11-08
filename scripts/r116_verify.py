@@ -13,7 +13,13 @@ R66 = (ROOT / 'scripts/r66_verify.py').read_text(encoding='utf-8')
 def check(queue=QUEUE, audio=AUDIO, r66=R66):
     e = []
 
-    m = re.search(r'if \(!t\.file\.isFile\) \{([\s\S]*?)\n        \}', queue)
+    # R140 · 工程现在有两条播放通道（主播放 / 独立试听），全文件级正则会先
+    # 撞上试听通道的同名结构。先圈定「主 open」函数体，再在里面做原来的判定。
+    om = re.search(r'private fun open\(i: Int, overrideStartMs: Long\? = null\) \{([\s\S]*?)\n    \}', queue)
+    main_open = om.group(1) if om else ""
+    if not main_open:
+        e.append('F-29 主播放 open 函数不存在')
+    m = re.search(r'if \(!t\.file\.isFile\) \{([\s\S]*?)\n        \}', main_open)
     if not m:
         e.append('F-29 缺文件分支不存在')
     else:
@@ -25,7 +31,7 @@ def check(queue=QUEUE, audio=AUDIO, r66=R66):
         fm = re.search(r'private fun finish\(\) \{([\s\S]*?)\n    \}', queue)
         if not fm or 'ended = true' not in fm.group(1) or 'abandonFocus()' not in fm.group(1):
             e.append('F-29 终态函数没收敛状态')
-        em = re.search(r'setOnErrorListener \{[\s\S]*?\n                \}', queue)
+        em = re.search(r'setOnErrorListener \{[\s\S]*?\n                \}', main_open)
         if not em or 'else finish()' not in em.group(0):
             e.append('F-29 最后一首出错没收敛状态')
         if re.search(r'if \(i \+ 1 < tracks\.size\) open\(i \+ 1\)(?!\s*;)', b):

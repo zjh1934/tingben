@@ -4,14 +4,15 @@
 守四件事：
 1. 用户主动停止的任务不被误标成「中断」而自动重跑；
 2. 失败 / 没做完的任务不反复自动重试；
-3. 切章规则升级前的旧任务不自动续跑（旧章号会错位到别的章）；
+3. 切章规则升级前的旧任务不盲目自动续跑：老书章节表锁 legacy_v2 时可安全
+   迁移续跑；用户真的换过规则的书必须手动确认（R138 批次 B）；
 4. 模型没齐 / 调音改过 / 书被删 都不自动跑，只有进程被杀或崩溃留下的
    interrupted 任务才自动接上，且必须在 Activity 可见之后启动。
 
 沙盒无 Android SDK，静态绿 ≠ 编译过；真编译由 CI 负责。
 用法：python3 scripts/r127_verify.py [--selftest]
 """
-import pathlib, sys
+import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
@@ -24,7 +25,7 @@ FILES = {
 
 POS = {
     "resume": [
-        "const val SPLIT_RULE = 2",
+        "const val SPLIT_RULE = ",
         "val splitRule: Int = 1",
         '.put("splitRule", t.splitRule)',
         'o.optInt("splitRule", 1)',
@@ -32,7 +33,7 @@ POS = {
         'if (t.phase == "stopped")',
         'if (t.stage in listOf("没完成", "出错了", "已停止"))',
         "if (t.splitRule != SPLIT_RULE)",
-        "if (BookStore.list(c).none { it.id == t.bookId })",
+        "这本书已从书架删掉，没法续跑",
         "ModelStore.synthesisBlockReason(c)?.let",
         "invalidationReason(c, t)?.let",
     ],
@@ -76,6 +77,12 @@ def check(f):
         for s in needles:
             if s in f[key]:
                 e.append("旧形态残留[%s]: %s" % (key, s[:64]))
+    # 版本下限：R138 之后章节表落盘，schema 至少 3；回退到 1/2 视为旧口径回潮
+    m = re.search(r"const val SPLIT_RULE = (\d+)", f["resume"])
+    if not m:
+        e.append("切章规则常量没了")
+    elif int(m.group(1)) < 3:
+        e.append("切章规则版本回退到 %s（旧口径无落盘章节表）" % m.group(1))
     return e
 
 
@@ -86,20 +93,24 @@ def selftest():
         "用户停止被当中断自动跑": ("resume", 'if (t.phase == "stopped")'),
         "失败态被反复自动重试": ("resume", 'if (t.stage in listOf("没完成", "出错了", "已停止"))'),
         "旧切章任务被自动续跑": ("resume", "if (t.splitRule != SPLIT_RULE)"),
-        "书删了还自动跑": ("resume", "if (BookStore.list(c).none { it.id == t.bookId })"),
+        "书删了还自动跑": ("resume", "这本书已从书架删掉，没法续跑"),
         "模型没齐也自动跑": ("resume", "ModelStore.synthesisBlockReason(c)?.let"),
         "调音改过也自动跑": ("resume", "invalidationReason(c, t)?.let"),
         "守卫函数被摘掉": ("pipe", "TaskResume.autoResumeBlockReason(c, t)"),
         "新任务不记切章规则": ("pipe", "splitRule = TaskResume.SPLIT_RULE"),
         "停止态不回写内存": ("pipe", "current = stopped"),
         "界面不触发自动续跑": ("main", "Producer.autoResume(ctx)"),
-        "切章规则版本回退": ("resume", "const val SPLIT_RULE = 2"),
+        "切章规则版本回退": ("resume", "const val SPLIT_RULE = %s" %
+            re.search(r"const val SPLIT_RULE = (\d+)", f["resume"]).group(1),
+            "const val SPLIT_RULE = 2"),
     }
     bad = 0
-    for name, (k, needle) in cuts.items():
+    for name, case in cuts.items():
+        k, needle = case[0], case[1]
+        repl = case[2] if len(case) > 2 else "/* removed */"
         x = dict(f)
         # 全局替换：同一守卫串在多处合法出现时，只删一处会漏放真实回退。
-        x[k] = f[k].replace(needle, "/* removed */")
+        x[k] = f[k].replace(needle, repl)
         if not check(x):
             bad += 1
             print("  反向注入漏放:", name)

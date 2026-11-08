@@ -105,20 +105,32 @@ internal fun ChapterHubScreen(
 ) {
     // 第三列删 / 拼 / 转格式之后自己触发一次重读，不必退回书架再进来
     var localTick by remember { mutableStateOf(0) }
-    var loadDone by remember(id, refresh) { mutableStateOf(false) }
-    var load by remember(id, refresh) { mutableStateOf<HubLoad?>(null) }
-    LaunchedEffect(id, refresh) {
+    // R138 · 重新分章后强制重读落盘章节表
+    var planTick by remember { mutableStateOf(0) }
+    var showResplit by remember { mutableStateOf(false) }
+    var resplitBusy by remember { mutableStateOf(false) }
+    var resplitPreview by remember { mutableStateOf<Pair<String, Pair<Int, List<String>>>?>(null) }
+    val resplitScope = rememberCoroutineScope()
+    var loadDone by remember(id, refresh, planTick) { mutableStateOf(false) }
+    var load by remember(id, refresh, planTick) { mutableStateOf<HubLoad?>(null) }
+    var loadError by remember(id, refresh, planTick) { mutableStateOf<String?>(null) }
+    LaunchedEffect(id, refresh, planTick) {
         val r = withContext(Dispatchers.IO) {
-            val b = id?.let { BookStore.list(c).find { it.id == id } }
-            if (b == null) null else {
-                val s = ChapterSplitter.split(BookStore.read(c, b))
-                HubLoad(b, s.first,
-                    AudioLibrary.latestByChapter(c, b.id),
-                    AudioLibrary.playableChapters(c, b.id),
-                    ReadingState.last(c, b.id))
+            try {
+                val b = id?.let { BookStore.list(c).find { it.id == id } }
+                if (b == null) null to null else {
+                    val s = ChapterPlan.resolve(c, b)
+                    HubLoad(b, s.first,
+                        AudioLibrary.latestByChapter(c, b.id),
+                        AudioLibrary.playableChapters(c, b.id),
+                        ReadingState.last(c, b.id)) to null
+                }
+            } catch (t: Throwable) {
+                null to (t.message ?: "读这本书时出错")
             }
         }
-        load = r
+        load = r.first
+        loadError = r.second
         loadDone = true
     }
     if (!loadDone) {
@@ -130,7 +142,7 @@ internal fun ChapterHubScreen(
     val snapshot = load
     if (snapshot == null) {
         Column(Modifier.padding(16.dp)) {
-            Text("这本书不在了")
+            Text(loadError ?: "这本书不在了")
             TextButton(onClick = onBack) { Text("返回书架") }
         }
         return
@@ -222,6 +234,16 @@ internal fun ChapterHubScreen(
             "书=${book.title} 章数=$n 档=直接朗读")
     }
 
+    // R138 · 预览放 IO 线程：只读文本扫一遍标题，不切块、不占常驻状态
+    LaunchedEffect(showResplit, book.id, planTick) {
+        if (!showResplit) return@LaunchedEffect
+        resplitBusy = true
+        resplitPreview = withContext(Dispatchers.IO) {
+            try { ChapterPlan.preview(c, book, null) } catch (_: Throwable) { null }
+        }
+        resplitBusy = false
+    }
+
     Box(Modifier.fillMaxSize().background(HubBg)) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().background(HubCard).padding(horizontal = 8.dp)) {
@@ -240,6 +262,20 @@ internal fun ChapterHubScreen(
                                 .background(if (on) HubPrimary else Color.Transparent))
                         }
                     }
+                }
+            }
+            // R138 · 让用户一眼看到「这本书分了几章、用的哪套规则」，不再靠猜
+            val curRule = remember(book.id, planTick) {
+                ChapterPlan.currentRuleId(c, book.id)
+            }
+            Row(Modifier.fillMaxWidth().background(HubCard)
+                .padding(horizontal = 14.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("${chapters.size} 章 · ${ChapterPlan.ruleName(curRule)}",
+                    fontSize = 11.sp, color = HubSub, maxLines = 1,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = { showResplit = true }, enabled = !st.running) {
+                    Text("重新分章 ›", fontSize = 12.sp, color = HubPrimary)
                 }
             }
             if (!st.running && lastRead != null && lastRead in chapters.indices) {
@@ -279,9 +315,29 @@ internal fun ChapterHubScreen(
                 beyondViewportPageCount = 2
             ) { col ->
                 when (col) {
-                    0 -> RawColumn(ui, selected, { i, on ->
-                        selected = if (on) selected + i else selected - i
-                    }, { i -> openReader(i) })
+                    0 -> Column(Modifier.fillMaxSize()) {
+                        // R142 · 原来只有章节名右边一枚小 Checkbox，能点的范围
+                        // 只有 24dp，也没有全选/反选。顶部常驻一排批量操作，
+                        // 勾选热区整块 52dp，不用再靠长按或瞄准小方框。
+                        Row(Modifier.fillMaxWidth().background(HubSoft)
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("已选 ${selected.size}/${ui.size} 章", fontSize = 12.sp,
+                                color = HubPrimary, modifier = Modifier.weight(1f))
+                            listOf("全选" to { selected = ui.map { it.index }.toSet() },
+                                   "反选" to { selected = ui.map { it.index }.toSet() - selected },
+                                   "清空" to { selected = emptySet<Int>() }).forEach { (label, act) ->
+                                TextButton(onClick = act,
+                                    modifier = Modifier.height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                                    Text(label, fontSize = 12.sp, color = HubPrimary)
+                                }
+                            }
+                        }
+                        RawColumn(ui, selected, { i, on ->
+                            selected = if (on) selected + i else selected - i
+                        }, { i -> openReader(i) }, Modifier.weight(1f))
+                    }
                     1 -> SynColumn(ui, { i -> playChapter(i, single = true) },
                         onResumeTask = onResumeTask, onTasks = onProgress,
                         stalled = ui.any { it.stalled })
@@ -332,15 +388,68 @@ internal fun ChapterHubScreen(
                     { next -> openReader(next) })
             }
         }
+
+        // R138 · 重新分章：先预览章数与头尾标题，确认才应用（成熟阅读器的闭环）
+        if (showResplit) {
+            val pv = resplitPreview
+            AlertDialog(
+                onDismissRequest = { showResplit = false },
+                title = { Text("重新分章", fontSize = 15.sp) },
+                text = {
+                    Column {
+                        if (resplitBusy || pv == null) {
+                            Text("正在识别这本书的章节…", fontSize = 12.sp, color = HubSub)
+                        } else {
+                            Text("自动识别：${ChapterPlan.ruleName(pv.first)} · ${pv.second.first} 章",
+                                fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(6.dp))
+                            pv.second.second.forEach {
+                                Text("· $it", fontSize = 12.sp, color = HubSub, maxLines = 1)
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text("章号会变，已做好的音频需要重新生成；原书文字不动。",
+                            fontSize = 12.sp, color = HubWarn)
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = pv != null && !st.running, onClick = {
+                        showResplit = false
+                        resplitScope.launch {
+                            val rr = withContext(Dispatchers.IO) {
+                                runCatching { ChapterPlan.refresh(c, book) }
+                            }
+                            val err = rr.exceptionOrNull()
+                            if (err != null) {
+                                Toast.makeText(c, err.message ?: "重新分章失败",
+                                    Toast.LENGTH_LONG).show()
+                            } else {
+                                val (rid, n) = rr.getOrThrow()
+                                planTick++
+                                Toast.makeText(c,
+                                    "已按${ChapterPlan.ruleName(rid)}重新分为 $n 章",
+                                    Toast.LENGTH_LONG).show()
+                                EventLog.log(EventLog.Kind.MODEL, "CHAPTER_RESPLIT",
+                                    "书=${book.title} 规则=$rid 章数=$n")
+                            }
+                        }
+                    }) { Text("应用", color = HubPrimary) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showResplit = false }) { Text("取消") }
+                }
+            )
+        }
     }
 }
 
 @Composable
 private fun RawColumn(
     ui: List<ChapterUi>, selected: Set<Int>,
-    onCheck: (Int, Boolean) -> Unit, onRead: (Int) -> Unit
+    onCheck: (Int, Boolean) -> Unit, onRead: (Int) -> Unit,
+    modifier: Modifier = Modifier.fillMaxSize()
 ) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 90.dp)) {
+    LazyColumn(modifier, contentPadding = PaddingValues(bottom = 90.dp)) {
         items(ui, key = { it.index }) { r ->
             val isChecked = r.index in selected
             Row(
@@ -358,8 +467,12 @@ private fun RawColumn(
             ) {
                 Text("${r.index + 1}. ${r.title}", fontSize = 14.sp,
                     maxLines = 1, modifier = Modifier.weight(1f))
-                Checkbox(checked = isChecked,
-                    onCheckedChange = { onCheck(r.index, it) })
+                Box(Modifier.size(52.dp)
+                        .clickable { onCheck(r.index, !isChecked) },
+                    contentAlignment = Alignment.Center) {
+                    SelectBox(checked = isChecked, tint = HubPrimary,
+                        boxColor = HubCard, modifier = Modifier.size(20.dp))
+                }
             }
             HubDivider()
         }

@@ -2,11 +2,11 @@
 
 > 只记「现在是什么」。下面做什么 → `ROADMAP.md`。本文件不写历史、不写复盘。
 
-**当前版本 `1.1.2` · 以 Release `v1.1.0-124` 安装包为基线重新推进**
+**当前版本 `1.1.3` · 以 Release `v1.1.0-124` 安装包为基线重新推进**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.2` |
+| 版本 | `1.1.3` |
 | 基线 | Release `v1.1.0-124` 的 `app-debug.apk`（18,085,718 字节，sha256 `2439290e…`） |
 | 版本真值源 | 根目录 `version.txt`；Gradle、CI、Release 标签与名称都从它读 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk` |
@@ -48,7 +48,8 @@
 
 ## 验证与边界
 
-- CI 57 步静态自检 → 原生缓存 → Gradle `assembleDebug` → APK 闸门 → Release + 固定直链
+- CI 48 项静态自检（批次 E 把 17 个重复壳脚本收敛为 1 项统一守门）
+  → 原生缓存 → Gradle `assembleDebug` → APK 闸门 → Release + 固定直链
 - **1.1.2 发版**：CI run 128 全绿；Release `v1.1.2` 已发布，`app-debug.apk` 18,208,990 字节，
   sha256 `91df1b8f…`；固定直链仓同一次构建同步，两处逐字节一致
 - 沙盒无 Android SDK，真编译与出包由 CI 完成；本地只跑纯静态自检

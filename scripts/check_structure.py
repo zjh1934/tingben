@@ -14,12 +14,20 @@ REQUIRED = ["README.md", ".gitignore", "settings.gradle.kts", "build.gradle.kts"
  "app/src/main/java/com/tingben/app/ProduceService.kt",
  "app/src/main/java/com/tingben/app/diag/EventLog.kt",
  "docs/THIRD_PARTY_NOTICES.md",
- "scripts/build_native.sh", "scripts/check_structure.py", ".github/workflows/ci.yml", "keystore.jks",
+ "scripts/build_native.sh", "scripts/check_structure.py", ".github/workflows/ci.yml",
  "contracts/model-manifest.json", "contracts/pipeline_spec.md",
  "contracts/sampling-defaults.h", "scripts/r98_verify.py",
  "app/src/main/java/com/tingben/app/core/ParamSpec.kt"]
 for f in REQUIRED:
     if not (ROOT / f).exists(): errs.append("缺少必备文件: " + f)
+
+# R137 · 签名密钥由 CI Secret 注入：CI 里解码出的 keystore.jks 是未跟踪的正常产物，
+# 判定标准是「有没有被 git 版本管理」，不是「文件在不在」。
+import subprocess as _sp
+_r = _sp.run(["git", "ls-files", "--error-unmatch", "keystore.jks"],
+             cwd=ROOT, capture_output=True)
+if _r.returncode == 0:
+    errs.append("keystore.jks 又被 git 跟踪，签名材料必须只在 Actions Secret 中")
 
 R68_BANNED_FILES = ["app/src/main/java/com/tingben/app/diag/AuditLog.kt",
  "app/src/main/java/com/tingben/app/core/JsonSalvage.kt",
@@ -355,8 +363,10 @@ R36_ALL = ["ModeTabs(", "MixerPresetStore", "MixerPreset(",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
+# R139 · 制作准备页改成 IO 异步加载后，「恢复上次任务配置」的写法换了，
+# 语义判据跟着换：既要有「读上次任务配置」，也要有「没有就用默认预设」。
 for sym in ["private fun ModeTabs(", "Screen.MIXER -> MixerScreen",
-            "t.config else Prefs.defaultPerf(c)"]:
+            "saved?.takeIf { it.bookId == id }?.config", "Prefs.defaultPerf(c)"]:
     if sym not in main_src: errs.append("缺少 R36 界面符号: " + sym)
 if not nav.mixer_entries(main_src):
     errs.append("缺少 R36 调音台入口语义")

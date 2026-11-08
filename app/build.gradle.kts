@@ -3,9 +3,18 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
-val key = rootProject.file("keystore.jks")
+// R137 · 签名材料不再进仓库：keystore 路径、store/key 密码、alias 全部由
+// CI Secret 注入环境变量。缺任一项都不建 signingConfig（本地会落到默认 debug 签名），
+// 由 CI 的「签名证书守门」比对 SHA-256 拦住，绝不把未签名或默认签名的包发出去。
+val key = rootProject.file(System.getenv("TINGBEN_KEYSTORE") ?: "keystore.jks")
+val storePass = System.getenv("TINGBEN_STORE_PASSWORD")
+val keyPass = System.getenv("TINGBEN_KEY_PASSWORD")
+val keyAlias = System.getenv("TINGBEN_KEY_ALIAS")
+val signReady = key.exists() && !storePass.isNullOrBlank() &&
+        !keyPass.isNullOrBlank() && !keyAlias.isNullOrBlank()
 val buildNumber = System.getenv("BUILD_NUMBER")?.toIntOrNull()
-val appVersion = rootProject.file("version.txt").readText().trim().ifBlank { "1.1.2" }
+val appVersion = rootProject.file("version.txt").readText().trim()
+    .ifBlank { error("version.txt 为空，不能确定版本号") }
 android {
     namespace = "com.tingben.app"
     compileSdk = 35
@@ -18,18 +27,18 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     signingConfigs {
-        if (key.exists()) create("tingben") {
+        if (signReady) create("tingben") {
             storeFile = key
-            storePassword = "motingdebug"
-            keyAlias = "moting"
-            keyPassword = "motingdebug"
+            storePassword = storePass
+            keyAlias = keyAlias
+            keyPassword = keyPass
             enableV1Signing = true; enableV2Signing = true; enableV3Signing = false
         }
     }
     buildTypes {
-        debug { if (key.exists()) signingConfig = signingConfigs.getByName("tingben") }
+        debug { if (signReady) signingConfig = signingConfigs.getByName("tingben") }
         release {
-            if (key.exists()) signingConfig = signingConfigs.getByName("tingben")
+            if (signReady) signingConfig = signingConfigs.getByName("tingben")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

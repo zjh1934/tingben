@@ -58,7 +58,8 @@ class ProduceService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
                 "mediaProcessing" else "dataSync"
 
-        fun begin(c: Context, title: String) {
+        /** 返回 false = 系统不让起前台服务；调用方必须停止任务，不能假装还在跑。 */
+        fun begin(c: Context, title: String): Boolean {
             val ctx = c.applicationContext
             lastBook = title
             lastTitle = "听本 · 本地制作中"
@@ -70,14 +71,20 @@ class ProduceService : Service() {
             EventLog.log(EventLog.Kind.PIPELINE, "FGS_BEGIN",
                 "title=$title type=${fgsTypeLabel()} reason=用户从界面主动开始长任务",
                 fields = mapOf("book" to title, "type" to fgsTypeLabel()))
-            try {
+            return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     ctx.startForegroundService(startIntent(ctx, title))
                 else ctx.startService(startIntent(ctx, title))
+                true
             } catch (t: Throwable) {
+                // R139 · 原来 catch 掉异常后注释写「任务仍在内存协程里跑」：
+                // 没有前台服务，进程随时被系统杀掉，界面却一直显示在制作。
+                // 现在明确返回 false，Producer 会把这次任务停在「没开始」并告知用户。
                 EventLog.log(EventLog.Kind.CRASH, "FGS_START_FAIL",
-                    "前台服务起不来，任务仍在内存协程里跑：" + (t.message ?: ""),
+                    "前台服务起不来，本次任务不启动（没有前台服务，进程随时被杀）：" +
+                        (t.message ?: ""),
                     fields = mapOf("error" to (t.javaClass.simpleName)))
+                false
             }
         }
 
@@ -167,7 +174,18 @@ class ProduceService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureChannel(this)
-        startForegroundCompat(lastTitle, lastText)
+        try {
+            startForegroundCompat(lastTitle, lastText)
+        } catch (t: Throwable) {
+            // 服务内部 startForeground 失败也必须停自己，否则系统会判 ANR；
+            // 同时让制作停下来，不假装还在跑。
+            EventLog.log(EventLog.Kind.CRASH, "FGS_START_FAIL",
+                "服务内 startForeground 失败，停止本次制作：" + (t.message ?: ""),
+                fields = mapOf("error" to t.javaClass.simpleName))
+            Producer.stop()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         foreground = true
         when (intent?.action) {
             ACTION_CANCEL -> {

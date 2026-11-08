@@ -26,6 +26,11 @@ jobs:
         id: ver
         run: echo "v=$(cat version.txt)" >> "$GITHUB_OUTPUT"
 
+      - name: R137 版本必须严格递增（防同名 tag 覆盖资产与直链）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check_version_bump.py
+
       - name: 结构自检
         run: python3 scripts/check_structure.py
 
@@ -35,8 +40,6 @@ jobs:
       - name: R67 P1a 死代码清理验证（零残留 / 旧数据兼容 / 守恒 / 反向注入）
         run: python3 scripts/r67_verify.py
 
-      - name: R68 P1b 单一路径重构验证（旧文件不存在 / 零残留 / 守恒 / 反向注入）
-        run: python3 scripts/r68_verify.py
 
       - name: R73 P2 软件设置验证（主题 / 字号 / 折叠 / 零残留 / 反向注入 / 守恒）
         run: python3 scripts/r73_verify.py
@@ -56,20 +59,10 @@ jobs:
       - name: R78 书架首屏重排验证（空态主卡 / 整卡可点 / 上次读到 / 守恒 / 反向注入）
         run: python3 scripts/r78_verify.py --selftest
 
-      - name: R79 P4 性能二期验证（两处门控 / 音频页 LazyColumn / 组合期 IO / 调音台锚点守恒 / 反向注入）
-        run: python3 scripts/r79_verify.py --selftest
 
-      - name: R80 我的音频页收敛验证（空态下一步 / 控制默认收起 / 零播放卡 / 守恒 / 反向注入）
-        run: python3 scripts/r80_verify.py --selftest
 
-      - name: R84 模型选择页验证（1 底座 + 3 模式 / 精确识别 / 导出日志零残留 / 守恒 / 反向注入）
-        run: python3 scripts/r84_verify.py --selftest
 
-      - name: R87 界面文案净化验证（真入口 / 旧话术零残留 / 守恒 / 反向注入）
-        run: python3 scripts/r87_verify.py --selftest
 
-      - name: R88 任务中心页收敛验证（空态下一步 / 跳转降级 / 去重 / 四项操作守恒 / 反向注入）
-        run: python3 scripts/r88_verify.py --selftest
 
       - name: R89 调音台一级入口验证（平级入口 / 抽屉 6 项 / 导航守恒 / 反向注入）
         run: python3 scripts/r89_verify.py --selftest
@@ -101,14 +94,8 @@ jobs:
       - name: R100 端到端链路自检（导入→分章→三模式→合成→登记→按章播放）
         run: python3 scripts/r100_chain_verify.py --selftest
 
-      - name: R101 任务页 / 章节页二三列同步 / 采样分模式验证
-        run: python3 scripts/r101_verify.py --selftest
 
-      - name: R103 播放身份与格子同源验证（稳定 id / 按 id 比较 / 反向注入 / 守恒）
-        run: python3 scripts/r103_verify.py --selftest
 
-      - name: R104 索引原子写验证（统一落盘 / 坏索引不清空 / 报错可见 / 反向注入 / 守恒）
-        run: python3 scripts/r104_verify.py --selftest
 
       - name: R105 试听取消与单 loader 验证（token / 门闩 / 停止入口 / 反向注入 / 守恒）
         run: python3 scripts/r105_verify.py --selftest
@@ -126,8 +113,6 @@ jobs:
       - name: R108 F-19 停止标志验证（任务级复位 / TTS 零逐段复位 / 缓存解耦 / 反向注入）
         run: python3 scripts/r108_verify.py --selftest
 
-      - name: R111 播放队列归属与时长口径验证（F-24 / F-22 / 反向注入）
-        run: python3 scripts/r111_verify.py --selftest
 
       - name: R112 章节页高频进度订阅验证（F-09 / 索引不重建 / 防抖 / 反向注入）
         run: python3 scripts/r112_verify.py --selftest
@@ -138,20 +123,8 @@ jobs:
 
       - name: R116 自找缺陷四连修（F-29 / F-30 / F-31 / F-32 / 反向注入）
         run: python3 scripts/r116_verify.py
-      - name: R117 任务/音频链路重做验证（一本一任务 / 章节层 / 章内进度 / 按书分组 / 反向注入）
-        run: python3 scripts/r117_verify.py --selftest
-      - name: R118 我的音频三层结构验证（书章块 / 生成即联动 / 拼接防爆音 / 五项操作 / 反向注入）
-        run: python3 scripts/r118_verify.py --selftest
-      - name: R119 音频小格子 / 任务三层 / 章内进度 / 停滞任务续跑验证
-        run: python3 scripts/r119_verify.py --selftest
-      - name: R120 拼成整章后删小块闭环验证（章成品进树 / 续跑不重算 / 章状态真值 / 反向注入）
-        run: python3 scripts/r120_verify.py --selftest
-      - name: R121 local interaction batch
-        run: python3 scripts/r121_verify.py --selftest
-      - name: R122 拼接落盘原子化与状态闭环验证
-        run: python3 scripts/r122_verify.py --selftest
-      - name: R123 落盘一致性与音频归位验证
-        run: python3 scripts/r123_verify.py --selftest
+      - name: 退役页统一守门（批次 E · 17 个重复壳脚本收敛为 1 项，带反向注入）
+        run: python3 scripts/retired_pages.py --selftest
       - name: R127 制作任务链自动续跑验证（停止态回写 / 切章规则守卫 / 失败态不重试 / 反向注入）
         run: python3 scripts/r127_verify.py --selftest
       - name: R128 分段看台状态重建验证（计划段唯一骨架 / 灰格不消失 / 60 段硬砍零残留 / 反向注入）
@@ -172,6 +145,18 @@ jobs:
         run: python3 scripts/r135_verify.py --selftest
       - name: R136 模型页一屏验证（无整页滚动 / 展开态 / 功能守恒 / 孤儿 import / 反向注入）
         run: python3 scripts/r136_verify.py --selftest
+      - name: R137 发布安全验证（密钥隔离 / 引擎与签名硬闸门 / 版本递增 / 反向注入）
+        run: python3 scripts/r137_verify.py --selftest
+      - name: R138 章节表与分章链路验证（真实正则跑样本 / 编码 BOM / 迁移 / 反向注入）
+        run: python3 scripts/r138_verify.py --selftest
+      - name: R139 主线程与前台服务验证（IO 异步 / 文本上限 / ON_RESUME / 反向注入）
+        run: python3 scripts/r139_verify.py --selftest
+      - name: R140 试听与数据闭环验证（独立通道 / segmap / 通知权限 / 错误可见 / 反向注入）
+        run: python3 scripts/r140_verify.py --selftest
+      - name: R141 收口验证（日志导出 / 自检去摩擦 / 退役收敛 / 清单定稿 / 反向注入）
+        run: python3 scripts/r141_verify.py --selftest
+      - name: R142 交互与分层验证（浮层返回 / 合成前调音 / 章节批量 / 开发日志 / 产物纯净 / 反向注入）
+        run: python3 scripts/r142_verify.py --selftest
 
 
 
@@ -204,6 +189,27 @@ jobs:
           ls "$ANDROID_HOME/platforms" | tail -5
           test -d "$ANDROID_HOME/platforms/android-35"
           test -x "$CM"
+
+      - name: R137 注入签名密钥（来自 Actions Secret，仓库内零明文）
+        env:
+          KS_B64: ${{ secrets.TINGBEN_KEYSTORE_B64 }}
+          KS_STORE: ${{ secrets.TINGBEN_STORE_PASSWORD }}
+          KS_KEY: ${{ secrets.TINGBEN_KEY_PASSWORD }}
+          KS_ALIAS: ${{ secrets.TINGBEN_KEY_ALIAS }}
+        run: |
+          set -e
+          if [ -z "$KS_B64" ] || [ -z "$KS_STORE" ] || [ -z "$KS_KEY" ] || [ -z "$KS_ALIAS" ]; then
+            echo "::error::签名 Secret 没配齐，停止构建（否则会产出默认 debug 签名的包，装不上）"
+            exit 1
+          fi
+          echo "$KS_B64" | base64 -d > keystore.jks
+          test -s keystore.jks
+          {
+            echo "TINGBEN_STORE_PASSWORD=$KS_STORE"
+            echo "TINGBEN_KEY_PASSWORD=$KS_KEY"
+            echo "TINGBEN_KEY_ALIAS=$KS_ALIAS"
+          } >> "$GITHUB_ENV"
+          echo "签名密钥已注入（不打印内容）"
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
@@ -261,17 +267,17 @@ jobs:
             echo '```'
           } > "build-report/native-${{ github.run_number }}.md"
 
-      # 没通过符号差集自检就清空 jniLibs，APK 明确降级，绝不发真机 dlopen 会崩的包
-      - name: 引擎守门
+      # R137 · 原来只 warning + 清空 jniLibs，照样发一个不能合成音频的「降级包」。
+      # 现在直接失败：宁可这轮没包，也不发装上去 dlopen 就崩的 APK。
+      - name: 引擎守门（缺件直接失败，不降级发包）
         run: |
           D=app/src/main/jniLibs/arm64-v8a
           if [ ! -f "$D/.verified" ] || [ ! -f "$D/libllama.so" ] || [ ! -f "$D/libqwen.so" ] || [ ! -f app/src/main/cpp/upstream_include/ggml.h ]; then
-            echo "::warning::引擎未通过编译/符号自检，APK 降级为纯 Kotlin 包"
-            rm -rf app/src/main/jniLibs
-          else
-            echo "引擎齐备，启用 native build"
-            ls -lh "$D"
+            echo "::error::原生引擎缓存/编译未通过，停止构建；本次不发降级包"
+            exit 1
           fi
+          echo "引擎齐备，启用 native build"
+          ls -lh "$D"
 
       - name: assembleDebug
         id: gradle
@@ -318,6 +324,8 @@ jobs:
           exit 1
 
       - name: APK 闸门
+        env:
+          EXPECT_CERT: ${{ secrets.TINGBEN_SIGN_SHA256 }}
         run: |
           set +e
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f -print -quit)"
@@ -326,12 +334,33 @@ jobs:
           echo "APK: $APK ($SIZE 字节)"
           if [ "$SIZE" -gt 104857600 ]; then echo "::error::APK 超过 100MB"; exit 1; fi
           if unzip -l "$APK" | grep -qi '\.gguf'; then echo "::error::APK 里混进了模型权重"; exit 1; fi
-          if [ "$(unzip -l "$APK" | grep -c 'lib/arm64-v8a/')" -eq 0 ]; then
-            echo "::warning::APK 没有原生库（纯 Kotlin 降级包）"
-          else
-            echo "原生库:"; unzip -l "$APK" | grep 'lib/arm64-v8a/' | tail -12
+          # R142 · 软件代码是用来跑的，不是给开发者看的：文档、验证脚本、
+          # 历史回执、截图、契约文本一律不许进 APK。
+          if unzip -l "$APK" | grep -Eqi '\.(md|py|log|jpeg|jpg)$|/(docs|scripts|dev|contracts|真机截图)/|_verify\.py|R1[0-9][0-9]_'; then
+            echo "::error::APK 里混进了开发者资料（文档/脚本/回执/截图）"; exit 1
           fi
+          if [ "$(unzip -l "$APK" | grep -c 'lib/arm64-v8a/')" -eq 0 ]; then
+            echo "::error::APK 没有原生库（纯 Kotlin 降级包），不能发"
+            exit 1
+          fi
+          echo "原生库:"; unzip -l "$APK" | grep 'lib/arm64-v8a/' | tail -12
           BT="$ANDROID_HOME/build-tools/35.0.0"
+          # R137 · 签名证书守门：Secret 没配齐时 Gradle 会落到默认 debug 签名，
+          # 那种包装不覆盖旧版、还会丢私有目录里的模型与音频。这里逐字节比对证书。
+          APKS="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f 2>/dev/null | sort | tail -1)"
+          if [ -z "$APKS" ]; then
+            echo "::error::找不到 apksigner，无法校验签名证书，停止发版"
+            exit 1
+          fi
+          CERT="$("$APKS" verify --print-certs "$APK" 2>/dev/null \
+            | grep -i 'SHA-256 digest' | head -1 | awk '{print $NF}' \
+            | tr -d ':' | tr 'A-Z' 'a-z')"
+          EXPECT="$(echo "$EXPECT_CERT" | tr -d ':' | tr 'A-Z' 'a-z')"
+          echo "APK 签名证书: $CERT"
+          if [ -z "$CERT" ] || [ -z "$EXPECT" ] || [ "$CERT" != "$EXPECT" ]; then
+            echo "::error::签名证书不匹配（未签名 / 默认 debug 签名 / 密钥被换），停止发版"
+            exit 1
+          fi
           [ -x "$BT/aapt" ] || BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -name '3*' | sort | tail -1)"
           echo "--- 权限 ---"
           "$BT/aapt" dump permissions "$APK" 2>/dev/null | head -20

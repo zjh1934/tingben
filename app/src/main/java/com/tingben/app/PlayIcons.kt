@@ -63,6 +63,21 @@ internal fun IconSkip(forward: Boolean, tint: Color, modifier: Modifier = Modifi
 }
 
 @Composable
+/** R142 · 代码绘制的返回箭头，给「输入朗读」「调音台弹层」这类独立浮层用。 */
+@Composable
+internal fun IconBack(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(24.dp)) {
+        val w = size.width; val h = size.height
+        val p = Path().apply {
+            moveTo(w * 0.62f, h * 0.20f)
+            lineTo(w * 0.30f, h * 0.50f)
+            lineTo(w * 0.62f, h * 0.80f)
+        }
+        drawPath(p, color = tint, style = Stroke(width = 2.4.dp.toPx(),
+            cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
 internal fun IconClose(tint: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val w = size.width

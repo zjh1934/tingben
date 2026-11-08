@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.zip.ZipInputStream
 
 object Importer {
@@ -80,24 +82,91 @@ object Importer {
             val r = try { epubToText(ByteArrayInputStream(bytes)) }
                 catch (e: IllegalStateException) { throw e }
                 catch (_: Throwable) { throw IllegalStateException("这个 epub 读不开，文件可能坏了") }
+            checkText(r.first)
             Result(name.substringBeforeLast('.', name).ifBlank { "未命名" },
                 r.first, "epub · ${r.second} 章", r.second)
         } else {
             val text = plainToText(bytes)
             if (text.isBlank()) throw IllegalStateException("这个文件里没读到文字")
-            Result(name.substringBeforeLast('.', name).ifBlank { "未命名" }, text, "文本")
+            checkText(text)
+            // R138 · TXT 也报章数：用规则集扫一遍（只找标题、不切块，很快），
+            // 让用户导入那一刻就知道「分没分明白」，而不是进目录页才发现整本 1 章。
+            val n = try { TocRules.choose(text).second.size } catch (_: Throwable) { 1 }
+            Result(name.substringBeforeLast('.', name).ifBlank { "未命名" },
+                text, "文本 · $n 章", n)
         }
     }
 
+    private fun checkText(text: String) {
+        if (text.length > BookStore.MAX_TEXT_CHARS)
+            throw IllegalStateException(
+                "这本书有 ${text.length / 10000} 万字，超过 " +
+                    "${BookStore.MAX_TEXT_CHARS / 10000} 万字上限；先拆成几本再导入")
+    }
+
+    /**
+     * R138 · 编码判定独立成段（Legado TextFile.kt / 52fisher TXT-TOC-Rules 的做法）。
+     * 1.1.2 只数 U+FFFD 再试 GB18030/GBK/Big5，实测 Windows 记事本「Unicode」另存的
+     * UTF-16LE 会被误选成 GB18030（替换符 1203→2），返回一串带 \u0000 的乱码，
+     * 正则一个都匹配不上 → 整本 1 章，而且乱码被 writeText 永久写进书架。
+     * 现在：BOM 优先于一切统计 → 严格 UTF-8（不静默替换）→ 中文密度打分选本地编码。
+     */
     private fun plainToText(bytes: ByteArray): String {
-        val utf8 = String(bytes, Charsets.UTF_8)
-        val bad = utf8.count { it == '\uFFFD' }
-        if (bad <= 8) return utf8
-        for (enc in listOf("GB18030", "GBK", "Big5")) {
+        val b0 = bytes[0].toInt() and 0xff
+        val b1 = bytes[1].toInt() and 0xff
+        val b2 = if (bytes.size > 2) bytes[2].toInt() and 0xff else -1
+        val b3 = if (bytes.size > 3) bytes[3].toInt() and 0xff else -1
+        // UTF-8 BOM：必须跳过 3 字节，否则不可见字符会挂在第一章标题前面
+        if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF)
+            return String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+        if (b0 == 0xFF && b1 == 0xFE && b2 == 0x00 && b3 == 0x00)
+            return runCatching { String(bytes, 4, bytes.size - 4, charset("UTF-32LE")) }
+                .getOrElse { plainFallback(bytes) }
+        if (b0 == 0x00 && b1 == 0x00 && b2 == 0xFE && b3 == 0xFF)
+            return runCatching { String(bytes, 4, bytes.size - 4, charset("UTF-32BE")) }
+                .getOrElse { plainFallback(bytes) }
+        if (b0 == 0xFF && b1 == 0xFE)
+            return String(bytes, 2, bytes.size - 2, charset("UTF-16LE"))
+        if (b0 == 0xFE && b1 == 0xFF)
+            return String(bytes, 2, bytes.size - 2, charset("UTF-16BE"))
+        // 无 BOM：严格 UTF-8，非法序列直接判失败，不再用替换符数量糊弄
+        strictUtf8(bytes)?.let { return it }
+        return plainFallback(bytes)
+    }
+
+    private fun strictUtf8(bytes: ByteArray): String? = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes)).toString()
+    } catch (_: Throwable) { null }
+
+    private fun plainFallback(bytes: ByteArray): String {
+        var best = String(bytes, Charsets.UTF_8)
+        var bestScore = score(best)
+        for (enc in listOf("GB18030", "GBK", "Big5", "UTF-16LE", "UTF-16BE")) {
             val t = runCatching { String(bytes, charset(enc)) }.getOrNull() ?: continue
-            if (t.count { it == '\uFFFD' } < bad / 2) return t
+            val sc = score(t)
+            if (sc > bestScore) { bestScore = sc; best = t }
         }
-        return utf8
+        return best
+    }
+
+    /** 中文密度打分：汉字/中文标点/ASCII 可打印加分，替换符与 NUL 控制字符重罚。 */
+    private fun score(s: String): Double {
+        if (s.isEmpty()) return -1.0
+        var good = 0.0
+        for (ch in s) {
+            when {
+                ch == '\uFFFD' -> good -= 5
+                ch == '\u0000' || (ch < ' ' && ch != '\n' && ch != '\r' && ch != '\t') -> good -= 5
+                ch in '\u4e00'..'\u9fff' -> good += 2
+                ch in "，。！？；：、‘’“”（）《》…—\n\r\t " -> good += 1
+                ch in ' '..'~' -> good += 1
+                else -> good -= 1
+            }
+        }
+        return good / s.length
     }
 
     private fun keepEntry(name: String): Boolean {

@@ -39,12 +39,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.tingben.app.core.*
 import com.tingben.app.diag.EventLog
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
@@ -54,6 +58,14 @@ import java.io.File
 
 // R132：任务详情页 / 我的音频页的独立入口与目的地都撤了，能力已归进目录页三列。
 private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }
+
+// R139 · 制作准备页的一次性加载结果（全部在 IO 线程算好，组合期不再碰磁盘）
+private data class ProduceLoad(
+    val book: com.tingben.app.core.Book,
+    val chapters: List<Chapter>,
+    val chunks: List<Chunk>,
+    val savedConfig: ProduceConfig?
+)
 
 private class NavHost(
     initialStack: String,
@@ -207,13 +219,47 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
+    // R142 · 「输入朗读」「全屏播放器」是覆盖式浮层，不进 Screen 枚举、不进 nav 栈。
+    // 原来系统返回键会被上面的全局 goBack() 吃掉：底层页面已经切走，浮层还盖在
+    // 屏幕上，或者干脆关不掉 —— 就是用户说的「有时不能返回 / 不知道回到哪」。
+    // 浮层自己消费返回，且注册在全局之后（后注册优先），两层不打架。
+    BackHandler(enabled = playerOpen) { playerOpen = false }
+    BackHandler(enabled = inputReadOpen) { inputReadOpen = false }
 
     KeepScreenOn()
 
+    // R139 · 自动续跑要起前台服务，Android 12+ 会拦「后台启动」。
+    // 组合完成 ≠ 窗口可见，原来 LaunchedEffect(Unit) 一进组合就跑，时序上仍在
+    // ON_START 之前。这里显式等 Activity 真正 ON_RESUME 再调 Producer.autoResume。
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var windowVisible by remember { mutableStateOf(false) }
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> windowVisible = true
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> windowVisible = false
+                else -> { }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        if (lifecycleOwner.lifecycle.currentState
+                .isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) windowVisible = true
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
     // 开软件时自动接上被中断的制作任务；只跑一次（Unit key），旋转/切主题不重跑。
     LaunchedEffect(Unit) {
+        snapshotFlow { windowVisible }.first { it }
         val hint = Producer.autoResume(ctx)
         if (hint != null) Toast.makeText(ctx, hint, Toast.LENGTH_LONG).show()
+    }
+
+    // R140 · 把原本静默的失败（音频打不开 / 索引写失败 / 通知栏没显示 …）
+    // 汇成一条事件流，在这里统一 Toast，不在几十个 catch 里各弹各的。
+    LaunchedEffect(Unit) {
+        UiErrors.events.collect { msg ->
+            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+        }
     }
 
     fun importBook(uri: Uri?, tag: String = "PICKER") {
@@ -229,8 +275,14 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_BEGIN", "$tag ${uri.toString().take(90)}")
         scope.launch(Dispatchers.IO) {
             val result = runCatching { Importer.read(ctx, uri) }
+            val r = result.getOrNull()
+            // R139 · 写整本进书架也是磁盘 IO，原来放在 Main 分支里同步跑
+            val addRes = if (r == null) null else runCatching {
+                val before = BookStore.list(ctx).size
+                BookStore.add(ctx, r.title, r.text)
+                BookStore.list(ctx).size > before
+            }
             withContext(Dispatchers.Main) {
-                val r = result.getOrNull()
                 if (r == null) {
                     val why = result.exceptionOrNull()?.message ?: "换个文件试试"
                     EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL", "$tag $why")
@@ -238,14 +290,17 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     Toast.makeText(ctx, "这本书没读进来：$why", Toast.LENGTH_LONG).show()
                 } else {
                     bookImportError = null
-                    val before = BookStore.list(ctx).size
-                    BookStore.add(ctx, r.title, r.text)
-                    val added = BookStore.list(ctx).size > before
-                    refresh++
-                    Toast.makeText(ctx,
-                        if (added) "已加入书架：${r.title}（${r.kind}）"
-                        else "这本书已经在书架上了：${r.title}",
-                        Toast.LENGTH_SHORT).show()
+                    val err = addRes?.exceptionOrNull()
+                    if (err != null) {
+                        Toast.makeText(ctx, err.message ?: "这本书加不进来",
+                            Toast.LENGTH_LONG).show()
+                    } else {
+                        refresh++
+                        Toast.makeText(ctx,
+                            if (addRes?.getOrNull() == true) "已加入书架：${r.title}（${r.kind}）"
+                            else "这本书已经在书架上了：${r.title}",
+                            Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -303,10 +358,18 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             raw.startsWith("text:") -> {
                 val text = raw.removePrefix("text:")
                 if (text.isNotBlank()) {
-                    BookStore.add(ctx, "分享的文字", text)
-                    refresh++
-                    screen = Screen.LIBRARY
-                    Toast.makeText(ctx, "文字已就绪（相同内容不会重复添加）", Toast.LENGTH_SHORT).show()
+                    val err = withContext(Dispatchers.IO) {
+                        runCatching { BookStore.add(ctx, "分享的文字", text) }
+                            .exceptionOrNull()
+                    }
+                    if (err != null) Toast.makeText(ctx, err.message ?: "文字加不进来",
+                        Toast.LENGTH_LONG).show()
+                    else {
+                        refresh++
+                        screen = Screen.LIBRARY
+                        Toast.makeText(ctx, "文字已就绪（相同内容不会重复添加）",
+                            Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
             else -> {
@@ -623,7 +686,8 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("删除这本书？") },
-            text = { Text(books.find { it.id == id }?.title ?: "") },
+            text = { Text((books.find { it.id == id }?.title ?: "") +
+                "\n\n会一起删掉这本书的章节表、已做好的音频、分段缓存和制作任务。") },
             confirmButton = {
                 TextButton(onClick = {
                     BookStore.delete(c, id); confirmDelete = null; onChanged()
@@ -712,13 +776,18 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
 @Composable
 private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit) {
     val clipboard = LocalClipboardManager.current
+    val inputScope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
     Column(Modifier.fillMaxSize().background(Bg).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", fontSize = 20.sp, color = Primary,
-                modifier = Modifier.clickable { onBack() }.padding(end = 12.dp))
+            Box(Modifier.size(44.dp).clickable { onBack() },
+                contentAlignment = Alignment.Center) {
+                IconBack(Primary)
+            }
             Text("输入朗读", fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 color = palette.text)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onBack) { Text("关闭", fontSize = 12.sp, color = Sub) }
         }
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
@@ -740,9 +809,18 @@ private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit)
                 if (text.isBlank()) {
                     Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
                 } else {
-                    BookStore.add(c, "粘贴的文字", text)
-                    onAdded()
-                    Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
+                    inputScope.launch {
+                        val err = withContext(Dispatchers.IO) {
+                            runCatching { BookStore.add(c, "粘贴的文字", text) }
+                                .exceptionOrNull()
+                        }
+                        if (err != null) Toast.makeText(c, err.message ?: "书加不进来",
+                            Toast.LENGTH_LONG).show()
+                        else {
+                            onAdded()
+                            Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }) { Text("建书", fontSize = 13.sp) }
         }
@@ -753,29 +831,70 @@ private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit)
 private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> Unit,
                           onProgress: () -> Unit, onDone: () -> Unit,
                           onStarted: (Set<Int>?) -> Unit) {
-    val book = remember(id, refresh) { id?.let { BookStore.list(c).find { b -> b.id == it } } }
     val st by Producer.state.collectAsState()
-    val split = remember(book) { book?.let { ChapterSplitter.split(BookStore.read(c, it)) } }
-    val chapters = split?.first ?: emptyList()
-    val allChunks = split?.second ?: emptyList()
-    var selected by remember(book) { mutableStateOf<Set<Int>>(emptySet()) }
+    var selected by remember(id, refresh) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
-    var cfg by remember(book, refresh) {
-        val t = TaskResume.load(c)
-        mutableStateOf(if (t != null && t.bookId == id) t.config else Prefs.defaultPerf(c))
+    var cfg by remember(id, refresh) { mutableStateOf(Prefs.defaultPerf(c)) }
+    var loadDone by remember(id, refresh) { mutableStateOf(false) }
+    var load by remember(id, refresh) { mutableStateOf<ProduceLoad?>(null) }
+    // R142 · 调音是「点合成之前」的准备工作，不该是另一张一级页。
+    var mixerOpen by remember { mutableStateOf(false) }
+    var loadError by remember(id, refresh) { mutableStateOf<String?>(null) }
+    var hasCached by remember(id, refresh) { mutableStateOf(false) }
+
+    // R139 · 组合期不再同步读整本 + 切块（原来 64MB 文本会卡主线程甚至 ANR）。
+    // 与目录页同一套口径：IO 线程读落盘章节表，加载中给进度圈，出错给中文原因。
+    LaunchedEffect(id, refresh) {
+        loadDone = false
+        val r: Pair<ProduceLoad?, String?> = withContext(Dispatchers.IO) {
+            try {
+                val b = id?.let { BookStore.list(c).find { it.id == id } }
+                if (b == null) null to null else {
+                    val (chs, chunks) = ChapterPlan.resolve(c, b)
+                    val saved = TaskResume.load(c)
+                    ProduceLoad(b, chs, chunks,
+                        saved?.takeIf { it.bookId == id }?.config) to null
+                }
+            } catch (t: Throwable) {
+                null to (t.message ?: "读这本书时出错")
+            }
+        }
+        load = r.first
+        loadError = r.second
+        r.first?.savedConfig?.let { cfg = it }
+        loadDone = true
     }
-    val estimate = remember(selected, book) {
+
+    val snapshot = load
+    val chapters = snapshot?.chapters ?: emptyList()
+    val allChunks = snapshot?.chunks ?: emptyList()
+    val estimate = remember(selected, snapshot) {
         if (selected.isEmpty() || selected.size == chapters.size) allChunks.size
         else allChunks.count { it.chapter in selected }
     }
-    val hasCached = remember(book, refresh, selected, cacheTick) {
-        book?.let { Producer.hasProgress(c, it.id,
-            if (selected.isEmpty() || selected.size == chapters.size) null else selected) } ?: false
+
+    // 断点检查也读盘，同样放 IO；selected / cacheTick 变化时自动刷新
+    LaunchedEffect(id, refresh, selected, cacheTick, loadDone, snapshot) {
+        if (!loadDone) return@LaunchedEffect
+        val b = snapshot?.book ?: return@LaunchedEffect
+        val only = if (selected.isEmpty() || selected.size == chapters.size) null else selected
+        hasCached = withContext(Dispatchers.IO) { Producer.hasProgress(c, b.id, only) }
     }
-    if (book == null) {
-        Column(Modifier.padding(16.dp)) { Text("这本书不在了"); TextButton(onClick = onBack) { Text("返回书架") } }
+
+    if (!loadDone) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
         return
     }
+    if (snapshot == null) {
+        Column(Modifier.padding(16.dp)) {
+            Text(loadError ?: "这本书不在了")
+            TextButton(onClick = onBack) { Text("返回书架") }
+        }
+        return
+    }
+    val book = snapshot.book
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         TextButton(onClick = onBack) { Text("← 书架") }
         Text(book.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -784,6 +903,18 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         Spacer(Modifier.height(5.dp))
         Text("按章切分 → 逐段送模型 → 每段落盘 → 拼成整章；正文不改，失败即停，续跑不重算",
             fontSize = 12.sp, color = Sub)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("合成前调音", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("试听声音、改预设；保存后回到这里再开始", fontSize = 12.sp, color = Sub)
+            }
+            TextButton(onClick = { mixerOpen = true }) {
+                Text("调音 ›", fontSize = 12.sp, color = Primary)
+            }
+        }
         Spacer(Modifier.height(14.dp))
 
         if (st.output != null) {
@@ -883,6 +1014,8 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
             Spacer(Modifier.height(10.dp))
             Text(st.message, fontSize = 13.sp, color = if (st.output != null) Good else Sub)
         }
+        // R142 · 合成前调音弹层：不进导航栈，关闭/返回都回到本页
+        if (mixerOpen) MixerDialog(c, onClose = { mixerOpen = false })
     }
 }
 
@@ -944,7 +1077,8 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
     val verdict = remember(st.done, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
     var showCompare by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
-    val pqSeg by PlayQueue.state.collectAsState()
+    // R140 · 看台格子跟的是独立试听通道，不再是整本书的主播放状态
+    val pqSeg by PlayQueue.previewState.collectAsState()
     var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(st.running) { if (!st.running) stopping = false }
     // R134 · 分段看台多选态：长按格子进入、方块勾选、底部条批量操作
@@ -1106,8 +1240,8 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
                                                         if (sg.index in segChecked)
                                                             segChecked - sg.index
                                                         else segChecked + sg.index
-                                                } else if (playing) PlayQueue.pause()
-                                                else if (onThis) PlayQueue.resume()
+                                                } else if (playing) PlayQueue.pausePreview()
+                                                else if (onThis) PlayQueue.resumePreview()
                                                 else sg.wav?.let { wav ->
                                                     PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")
                                                     PlayQueue.playFrom(0, id = "seg")
@@ -1382,6 +1516,32 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     val modeCount = remember(refresh) { ModelStore.installedModes(c).size }
     var themeMode by remember { mutableStateOf(Prefs.themeMode(c)) }
 
+    // R142 · 日志是给开发者排查用的：导出完整 .md，或一键复制摘要直接贴过来。
+    val exportScope = rememberCoroutineScope()
+    val diagClipboard = LocalClipboardManager.current
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        exportScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    val os = c.contentResolver.openOutputStream(uri)
+                    if (os == null) {
+                        UiErrors.storage("诊断日志没导出来：系统没给写入通道", null)
+                        false
+                    } else {
+                        os.use { it.write(EventLog.exportBundle(c).toByteArray(Charsets.UTF_8)) }
+                        true
+                    }
+                } catch (t: Throwable) {
+                    UiErrors.storage("诊断日志没导出来", t)
+                    false
+                }
+            }
+            if (ok) Toast.makeText(c, "诊断日志已保存", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (missing.isEmpty()) "模型已就绪 · $modeCount 个模式"
@@ -1416,8 +1576,36 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 
         SettingsSection("本机数据", "本机", collapsible = false) {
             ClearSegmentsRow(c)
+            // R142 · 日志定位：给开发者排查用，不是给使用者看的。
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("开发日志", fontSize = 13.sp)
+                    Text("完整记录环境、运行状态、崩溃栈与事件时间线；可能含书名和正文片段",
+                        fontSize = 12.sp, color = Sub)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    exportScope.launch {
+                        val txt = withContext(Dispatchers.IO) { EventLog.exportSummary(c) }
+                        diagClipboard.setText(AnnotatedString(txt))
+                        Toast.makeText(c, "诊断摘要已复制，直接贴给开发者",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("一键复制摘要", fontSize = 12.sp, color = Primary) }
+                TextButton(onClick = {
+                    val name = "tingben_diag_" +
+                        java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                            .format(java.util.Date()) + ".md"
+                    try { exportLauncher.launch(name) }
+                    catch (t: Throwable) {
+                        UiErrors.storage("打不开系统保存界面，没法导出日志", t)
+                    }
+                }) { Text("导出完整 .md", fontSize = 12.sp, color = Primary) }
+            }
         }
-
         SettingsSection("通知与权限", "系统", collapsible = false) {
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -1445,6 +1633,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 @Composable
 private fun ClearSegmentsRow(c: Context) {
     var confirmClear by remember { mutableStateOf(false) }
+    val clearScope = rememberCoroutineScope()
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -1463,14 +1652,22 @@ private fun ClearSegmentsRow(c: Context) {
                 fontSize = 12.sp) },
             confirmButton = {
                 TextButton(onClick = {
-                    var n = 0
-                    try {
-                        val work = File(c.filesDir, "work")
-                        work.walkTopDown().filter { it.isFile && it.name.endsWith(".wav") }
-                            .forEach { if (it.delete()) n++ }
-                    } catch (_: Throwable) { }
                     confirmClear = false
-                    Toast.makeText(c, "已清理 $n 个分段音频", Toast.LENGTH_SHORT).show()
+                    // R139 · 遍历整个 work/ 删文件原来在按钮回调（主线程）同步跑，
+                    // 分段多的时候会卡住界面。改 IO 线程，回来再弹 Toast。
+                    clearScope.launch {
+                        val n = withContext(Dispatchers.IO) {
+                            var k = 0
+                            try {
+                                val work = File(c.filesDir, "work")
+                                work.walkTopDown()
+                                    .filter { it.isFile && it.name.endsWith(".wav") }
+                                    .forEach { if (it.delete()) k++ }
+                            } catch (_: Throwable) { }
+                            k
+                        }
+                        Toast.makeText(c, "已清理 $n 个分段音频", Toast.LENGTH_SHORT).show()
+                    }
                 }) { Text("确认清理") }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
@@ -1684,9 +1881,29 @@ private fun ModelScreen(c: Context, refresh: Int,
 }
 
 
+/**
+ * R142 · 合成前的调音弹层。调音本来就是「点开始之前」的准备工作，
+ * 之前却是一张和书架平级的一级页，来回跳还不知道该回哪。
+ * 这里用全屏 Dialog 复用整套 MixerScreen（保存、试听、未保存确认都在里面），
+ * 顶栏多给一枚关闭叉，返回键也由窗口自己消费。
+ */
+@Composable
+private fun MixerDialog(c: Context, onClose: () -> Unit) {
+    Dialog(
+        onDismissRequest = { /* 交给 MixerScreen 内部统一处理，避免两层返回打架 */ },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(Modifier.fillMaxSize().padding(12.dp),
+            shape = RoundedCornerShape(16.dp), color = Bg) {
+            MixerScreen(c, onBack = onClose, onClose = onClose)
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MixerScreen(c: Context, onBack: () -> Unit) {
+private fun MixerScreen(c: Context, onBack: () -> Unit,
+                        onClose: (() -> Unit)? = null) {
     var tick by remember { mutableStateOf(0) }
     var active by remember { mutableStateOf(MixerDraft.active(c)) }
     var draft by remember { mutableStateOf(active) }
@@ -1852,13 +2069,16 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
     }
 
     BackHandler(enabled = dirty) { showLeave = true }
+    // 弹层形态下，没有改动时返回键直接关窗口；有改动时上面的 BackHandler 先弹确认。
+    // 两者互斥，不会和外层全局返回打架（后注册优先）。
+    if (onClose != null) BackHandler(enabled = !dirty) { onClose?.invoke() }
 
     Column(Modifier.fillMaxSize().background(Bg)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", fontSize = 20.sp, color = Primary,
-                modifier = Modifier.clickable { if (dirty) showLeave = true else onBack() }
-                    .padding(end = 12.dp))
+            val leave = { if (dirty) showLeave = true else (onClose ?: onBack)() }
+            Box(Modifier.size(40.dp).clickable { leave() },
+                contentAlignment = Alignment.Center) { IconBack(Primary) }
             Text("调音台", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = palette.text)
             Spacer(Modifier.weight(1f))
             if (dirty) {
@@ -1867,6 +2087,10 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
                     Text("保存", fontSize = 12.sp)
                 }
+            }
+            // 弹层才有关闭叉；独立页走顶栏返回键即可，不重复给两个出口
+            if (onClose != null) {
+                IconButton(onClick = { leave() }) { IconClose(Sub) }
             }
         }
         HorizontalDivider(color = Line)
@@ -1986,7 +2210,9 @@ private fun MixerScreen(c: Context, onBack: () -> Unit) {
             title = { Text("改动还没保存", fontSize = 14.sp) },
             text = { Text("离开会丢掉这次改动。", fontSize = 12.sp) },
             confirmButton = {
-                TextButton(onClick = { showLeave = false; discardAll(); onBack() }) {
+                TextButton(onClick = {
+                    showLeave = false; discardAll(); (onClose ?: onBack)()
+                }) {
                     Text("丢弃并离开", fontSize = 12.sp, color = Warn)
                 }
             },

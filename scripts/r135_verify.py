@@ -40,15 +40,19 @@ LIVE_ANCHORS = [
 ]
 
 CURRENT_VERIFIERS = ["r131_verify.py", "r132_verify.py", "r133_verify.py",
-                    "r134_verify.py", "r136_verify.py"]
+                    "r134_verify.py", "r136_verify.py", "r137_verify.py",
+                    "r138_verify.py", "r139_verify.py", "r140_verify.py",
+                    "r141_verify.py", "r142_verify.py"]
 
-# 卡片里的轻量自检清单：改码轮只跑这 5 项，全套留到发版轮
+# R141 · 批次 E 更新后的轻量自检清单：改码轮只跑这 5 项，全套留到发版轮。
+# 换了三项：退役页统一守门（原来 17 个壳脚本各起一次）、最近两批 R140/R139。
+# 老的 R127/R128/R129 仍挂 CI 全套，只是不再占改码轮的 3 秒预算。
 QUICK = [
     "python3 scripts/check_docs.py",
     "python3 scripts/check_structure.py",
-    "python3 scripts/r129_verify.py --selftest",
-    "python3 scripts/r128_verify.py --selftest",
-    "python3 scripts/r127_verify.py --selftest",
+    "python3 scripts/retired_pages.py --selftest",
+    "python3 scripts/r140_verify.py --selftest",
+    "python3 scripts/r139_verify.py --selftest",
 ]
 
 

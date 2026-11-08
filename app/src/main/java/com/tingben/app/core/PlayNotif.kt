@@ -65,7 +65,9 @@ object PlayNotif {
             "关闭", action(c, "com.tingben.app.PLAY_STOP", 4)).build())
         try {
             c.getSystemService(NotificationManager::class.java)?.notify(ID, b.build())
-        } catch (_: Throwable) { }
+        } catch (t: Throwable) {
+            UiErrors.notif("播放控制通知没显示出来，音频照常播放", t)
+        }
     }
 
     fun cancel(c: Context) {

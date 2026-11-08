@@ -149,7 +149,9 @@ object SegPlan {
             get() = when {
                 total == 0 -> "还没落盘，跑起来后这里会给出结论"
                 model == 0 && fill > 0 -> "文本处理没起作用：${fill} 段全是按原文直读"
-                model == 0 && unknown > 0 -> "${unknown} 段是旧缓存，没记来源，无法判定"
+                // R140 · 软件已恒「原文照读」，segmap 里 fromModel 全 null 是常态，
+                // 不是数据损坏。别再显示「旧缓存 / 无法判定」这种误导文案。
+                model == 0 && unknown > 0 -> "已按原文逐段朗读 · ${unknown} 段"
                 model > 0 -> "文本处理已生效：${model}/${total} 段用了模型分段"
                 else -> "暂无数据"
             }

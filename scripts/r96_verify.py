@@ -65,7 +65,11 @@ KEEP = {
     "ci": ['scripts/r95_verify.py', 'scripts/r94_verify.py'],
 }
 
-OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '导出日志', '标注进度']
+OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '标注进度']
+# R141 · '导出日志' 原本指的是书架页上暴露内部工程术语的旧入口，不是正式功能。
+# 批次 E 在设置页新增的「导出诊断日志」是明确排期的任务（带隐私提示、
+# 走系统文件选择器、IO 线程），不算旧说法回潮。这里只继续守书架页正文。
+OLD_WORDS_LIBRARY_ONLY = ['导出日志']
 
 def library_body(t):
     start = t.find('private fun LibraryScreen(')
@@ -88,6 +92,9 @@ def check(f):
                 e.append('[%s] 旧说法残留: %s' % (k, s))
 
     body = library_body(f['main'])
+    for s in OLD_WORDS_LIBRARY_ONLY:
+        if s in body:
+            e.append('[main] 书架页旧说法残留: %s' % s)
     if not body:
         e.append('找不到 LibraryScreen 函数体')
     else:

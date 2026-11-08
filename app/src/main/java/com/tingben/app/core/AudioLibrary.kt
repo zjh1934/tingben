@@ -125,6 +125,7 @@ object AudioLibrary {
         }
         val ok = AtomicJson.write(index(c), a.toString())
         writeError = if (ok) null else "音频记录写入失败，旧记录已保留"
+        if (!ok) UiErrors.storage(writeError!!, null)
         return ok
     }
 
@@ -154,6 +155,7 @@ object AudioLibrary {
         val all = readIndex(c)
         if (all == null) {
             writeError = "音频记录损坏，本次成品已保留但未登记"
+            UiErrors.storage(writeError!!, null)
             return item
         }
         all.removeAll { it.id == item.id }
@@ -223,12 +225,14 @@ object AudioLibrary {
         val all = readIndex(c)
         if (all == null) {
             writeError = "音频记录损坏，删除暂不可用"
+            UiErrors.storage(writeError!!, null)
             return false
         }
         val f = all.find { it.id == id }?.file ?: File(dir(c), "$id.wav")
         if (!writeIndex(c, all.filter { it.id != id })) return false
         if (f.isFile && !f.delete()) {
             writeError = "记录已移除，但文件删不掉，会在「我的音频」里重新出现"
+            UiErrors.storage(writeError!!, null)
             return false
         }
         return true

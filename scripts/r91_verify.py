@@ -2,6 +2,8 @@
 """R91 · 分段看台交互定案验证：格子即播放开关 / 独立播放键与解释文字零残留 / 守恒 / 反向注入。
 
 只守交互结构与文案口径，不守画法。
+   R140：看台改跟独立试听通道（previewState / pausePreview / resumePreview），
+   不再复用整本书的主播放状态。
 """
 import pathlib, sys
 
@@ -17,8 +19,8 @@ def check(files):
     for s in [
         # R134：格子从 clickable 换成点击试听 / 长按进多选的手势
         '.pointerInput(sg.index, segMulti, segChecked,',
-        'if (playing) PlayQueue.pause()',
-        'else if (onThis) PlayQueue.resume()',
+        'if (playing) PlayQueue.pausePreview()',
+        'else if (onThis) PlayQueue.resumePreview()',
         'PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")',
         'PlayQueue.playFrom(0, id = "seg")',
         'val playing = onThis && pqSeg.isPlaying',
@@ -44,7 +46,7 @@ def check(files):
     KEEP = [
         'Text("分段看台 · ${segs.size} 段"',
         'segs.chunked(8)',
-        'val pqSeg by PlayQueue.state.collectAsState()',
+        'val pqSeg by PlayQueue.previewState.collectAsState()',
         'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
     ]
     for s in KEEP:
@@ -88,10 +90,10 @@ def main():
                  '.pointerInput(sg.index, segMulti, segChecked,', '.pointerInput(Unit) {'))),
             ("再点变成重播而非停",
              lambda t: dict(t, main=t["main"].replace(
-                 'if (playing) PlayQueue.pause()', 'if (playing) PlayQueue.playFrom(0)'))),
+                 'if (playing) PlayQueue.pausePreview()', 'if (playing) PlayQueue.playFrom(0)'))),
             ("丢掉播放状态来源",
              lambda t: dict(t, main=t["main"].replace(
-                 'val pqSeg by PlayQueue.state.collectAsState()', ''))),
+                 'val pqSeg by PlayQueue.previewState.collectAsState()', ''))),
             ("删掉看台板块",
              lambda t: dict(t, main=t["main"].replace(
                  'Text("分段看台 · ${segs.size} 段"', 'Text("进度"'))),
