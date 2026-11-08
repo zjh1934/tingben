@@ -34,6 +34,25 @@ object BookStore {
 
     private fun dir(c: Context) = File(c.filesDir, "books").apply { mkdirs() }
     private fun meta(c: Context) = File(dir(c), "books.json")
+    // H1 · 置顶单独存一份，不动 Book 数据类与既有 save()（老版本 books.json 零迁移）。
+    // list() 只按这个集合把置顶的书排到前面，稳定排序保留其余原顺序。
+    private fun pinFile(c: Context) = File(dir(c), "pins.json")
+
+    fun pinned(c: Context): Set<String> = try {
+        val a = JSONArray(pinFile(c).readText())
+        (0 until a.length()).map { a.getString(it) }.toSet()
+    } catch (_: Throwable) { emptySet() }
+
+    fun setPinned(c: Context, id: String, on: Boolean) {
+        try {
+            val s = pinned(c).toMutableSet()
+            if (on) s.add(id) else s.remove(id)
+            val a = JSONArray()
+            s.forEach { a.put(it) }
+            pinFile(c).writeText(a.toString())
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_PIN", "$id on=$on")
+        } catch (_: Throwable) { }
+    }
 
     fun list(c: Context): List<Book> {
         val f = meta(c)
@@ -45,6 +64,10 @@ object BookStore {
                 Book(o.getString("id"), o.getString("title"), o.getString("path"),
                     o.optInt("chars", 0), o.optString("sha", ""))
             }.filter { File(it.path).exists() }
+            .let { books ->
+                val pins = pinned(c)
+                books.sortedByDescending { it.id in pins }
+            }
         } catch (_: Throwable) { emptyList() }
     }
 
@@ -91,6 +114,7 @@ object BookStore {
         val all = list(c)
         all.find { it.id == id }?.let { File(it.path).delete() }
         save(c, all.filter { it.id != id })
+        try { setPinned(c, id, false) } catch (_: Throwable) { }
         purge(c, id)
     }
 
@@ -319,7 +343,10 @@ object ChapterSplitter {
 
 object Annotator {
     fun directWithStats(text: String): Pair<List<Ann>, TextSplitter.Stats> {
-        val (segs, st) = TextSplitter.split(text)
+        // R148 · 日志里段 1~4 把下载站页眉（书名/作者、URL、E-mail、
+        // 「------章节内容开始」「请稍后重」）当正文念了出来。进切分前先整行清洗，
+        // 统计基于清洗后的文本，逐字无损仍然成立；阅读正文与章节表不受影响。
+        val (segs, st) = TextSplitter.split(SiteNoise.clean(text))
         return segs.map { Ann(it, "旁白", "平稳、清晰地叙述，句间自然停顿") } to st
     }
 
@@ -352,8 +379,24 @@ object AnnCache {
         return ann > 0 || wav > 0
     }
 
-    fun bucket(only: Set<Int>?) =
-        "v11/direct/" + (only?.sorted()?.joinToString("_") ?: "all")
+    // R148 · 这是 1.1.3 日志里两个毛病的同一个根因。选中章一多，
+    // joinToString("_") 会撑爆文件系统「单个目录名 255 字节」上限：
+    // 103 章拼出 304 字符，mkdirs() 静默失败 → work 目录根本不存在 →
+    //   · SegPlan.writeMap 写不进去（日志：制作记录写入失败：segmap.json）
+    //   · work.usableSpace 返回 0 → minOf 取到 0 → 误判「存储不够」→ 全本直接被拒
+    // 日志实证：103 章被拒（free=0），2 章正常。少章保持原命名以兼容已有目录，
+    // 长名改成定长指纹，任意章数都安全，同一组章仍映射到同一目录（断点不丢）。
+    private const val DIRECT_PREFIX = "v11/direct/"
+
+    fun bucket(only: Set<Int>?): String {
+        if (only == null) return DIRECT_PREFIX + "all"
+        val raw = only.sorted().joinToString("_")
+        if (raw.length <= 64) return DIRECT_PREFIX + raw
+        val hex = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(raw.toByteArray(Charsets.UTF_8))
+            .joinToString("") { b -> "%02x".format(b.toInt() and 0xff) }
+        return DIRECT_PREFIX + "h" + hex.take(20)
+    }
 
     fun dirFor(c: Context, bookId: String, only: Set<Int>?) =
         File(c.filesDir, "work/${bookId}/${bucket(only)}").apply { mkdirs() }
@@ -573,8 +616,25 @@ object Producer {
         return pumpQueue(c.applicationContext)
     }
 
+    // G1 · 开软件先弹窗问，不再闷头自动跑。纯查询，不启动任何东西：
+    // 只认「真的能自动续跑」的任务（崩溃中断 / 队列里待做），
+    // 用户手动停的、失败的、模型没齐的、切章口径变过的一律不弹，
+    // 沿用 autoResumeBlockReason 那套守卫，避免出现「我明明停了还问我续不续」。
+    fun hasResumable(c: Context): TaskInfo? {
+        if (busy) return null
+        if (TaskResume.queuePaused(c)) { queuePaused = true; return null }
+        val q = TaskResume.queue(c).firstOrNull()
+        if (q != null) return q
+        val t = TaskResume.active(c) ?: return null
+        if (t.phase == "done") return null
+        if (TaskResume.autoResumeBlockReason(c, t) != null) return null
+        if (BookStore.list(c).none { it.id == t.bookId }) return null
+        return t
+    }
+
     // 软件重新打开时调用：队列优先（用户要「队列里有任务就自动开始跑」），
     // 没有排队任务才处理崩溃中断的单本续跑。
+    // G1 之后只在弹窗里用户点「继续制作」时才被调，不再由 ON_RESUME 直接触发。
     fun autoResume(c: Context): String? {
         lastStartError = null
         if (busy) return null
@@ -608,6 +668,11 @@ object Producer {
         queuePaused = true
         appCtx?.let { TaskResume.setQueuePaused(it, true) }
         cancelRequested = true
+        // R148 · 1.1.3 日志：点停止后 79 秒才 FGS_FINISH，用户以为「按了没反应」。
+        // 取消只在段间检查，而一段推理要 1~3 分钟。先立刻把状态改成已停止，
+        // 当前那段跑完直接丢掉（不写盘、不计入进度），不再让用户干等。
+        _state.value = Progress(false, "已停止", _state.value.done, _state.value.total,
+            _state.value.failed, "已停止，正在收尾当前这一小段…已做好的都留着")
         try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
         appCtx?.let { c ->
             current?.let { t ->
@@ -953,24 +1018,32 @@ object Producer {
             File(work, String.format("direct_%04d.wav", i))
                 .takeIf { it.exists() && it.length() > 44 }?.length()
         }
+        // R148 · 三处修正（1.1.3 日志实证：free=0 误判，103 章全本被直接拒掉）
+        //  ① 可用空间改读 filesDir：诊断日志用它读到 273GB；work 子目录若
+        //     mkdirs 失败（见 bucket 修复），usableSpace 会返回 0
+        //  ② 单段兜底从「60 秒」改成「12 秒」，且不再「分段 + 合并」双算；
+        //     原算法 9137 段估出 61GB，实际远不需要
+        //  ③ 真不够也不一刀切拒绝：算出预算段数，做到哪算哪，停时明确说
+        //     「已做 N 段，清出空间后继续」，已生成的段全留着
         val segBytes = if (sample.isNotEmpty()) sample.average().toLong()
-                       else 24_000L * 2L * 60L
-        val mergeBytes = toSpeak.size.toLong() * segBytes
-        val needBytes = pending * segBytes * 3L / 2L + mergeBytes + 16L * 1024 * 1024
-        val freeBytes = minOf(work.usableSpace, AudioLibrary.dir(c).usableSpace)
+                       else 24_000L * 2L * 12L
+        val freeBytes = try { c.filesDir.usableSpace } catch (_: Throwable) { 0L }
+        val headroom = 16L * 1024 * 1024
+        // 查不到可用空间就放行，绝不因为「查不到」拒绝制作
+        val budgetBytes = if (freeBytes > 0L) maxOf(0L, freeBytes - headroom)
+                          else Long.MAX_VALUE
+        val estimateBytes = pending.toLong() * segBytes + headroom
+        val budgetSegs = if (budgetBytes == Long.MAX_VALUE) Int.MAX_VALUE
+                         else (budgetBytes / maxOf(1L, segBytes)).toInt()
+        if (estimateBytes > budgetBytes) {
+            EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_PARTIAL",
+                "空间可能不够，按预算先做 · free=$freeBytes need≈$estimateBytes " +
+                    "budgetSegs=$budgetSegs pending=$pending seg=$segBytes")
+        }
+        var spaceStopped = false
         try {
-            if (needBytes > freeBytes) {
-                val needMb = (needBytes + 1024 * 1024 - 1) / (1024 * 1024)
-                val freeMb = freeBytes / (1024 * 1024)
-                _state.value = Progress(false, "没完成", 0, annotated.size,
-                    gateFails + synthFails,
-                    "存储空间不够，这次大约要 " + needMb + " MB、可用 " + freeMb +
-                        " MB；清出空间后在任务里点「继续制作」，已生成的段都留着")
-                EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_SHORT",
-                    "need=$needBytes free=$freeBytes pending=$pending seg=$segBytes")
-                return
-            }
             for ((i, a) in toSpeak.withIndex()) {
+                if (wavs.size >= budgetSegs) { spaceStopped = true; break }
                 if (cancelRequested) {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
                     return
@@ -1035,6 +1108,12 @@ object Producer {
                             "seg=${i + 1} code=$lastCode kept=${wavs.size}")
                         return
                     }
+                    if (cancelRequested) {
+                        // 停止发生在这段推理途中：这段结果不要了，直接收尾
+                        try { wav.delete() } catch (_: Throwable) { }
+                        _state.value = halted(wavs.size, annotated.size, gateFails + synthFails)
+                        return
+                    }
                     wavs.add(wav)
                     SegPlan.clearRedo(work, "seg:$i")
                     segStartBytes.add(cursorBytes)
@@ -1052,11 +1131,19 @@ object Producer {
                     "已生成 ${i + 1}/${annotated.size} 段声音",
                     chapterProgress = chapterSnapshot)
             }
+            if (spaceStopped) {
+                _state.value = Progress(false, "没完成", wavs.size, annotated.size,
+                    gateFails + synthFails,
+                    "空间用完了，已做好 ${wavs.size} 段并都留着；清出空间后点「继续制作」从这接着做")
+                EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_PARTIAL_STOP",
+                    "kept=${wavs.size} total=${annotated.size} free=$freeBytes")
+                return
+            }
         } finally {
             try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
         }
         if (cancelRequested) {
-            _state.value = halted(annotated.size, annotated.size, gateFails + synthFails)
+            _state.value = halted(wavs.size, annotated.size, gateFails + synthFails)
             return
         }
 

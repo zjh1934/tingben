@@ -76,7 +76,10 @@ POS = {
         "SPLIT_MIGRATE", '"这本书已从书架删掉，没法续跑"',
     ],
     "hub": [
-        "ChapterPlan.resolve(c, b)", "ChapterPlan.currentRuleId(c, book.id)",
+        # I3 · 目录页一次读盘后复用 text，走 resolve 的带文本重载，
+        # 既统一到章节表真值源，又不重复读 64MB。
+        "ChapterPlan.resolve(c, b, text)", "BookStore.read(c, b)",
+        "ChapterPlan.currentRuleId(c, book.id)",
         "ChapterPlan.preview(c, book, null)", "ChapterPlan.refresh(c, book)",
         "showResplit", "resplitBusy", "planTick", "重新分章",
         "章号会变，已做好的音频需要重新生成",
@@ -91,7 +94,7 @@ POS = {
 # 四个调用点必须统一到 ChapterPlan.resolve；ChapterSplitter.split 只允许在
 # ChapterPlan 的 EPUB 分支里出现一次（EPUB 走结构化分隔，不经过正则）
 UNIFIED = [
-    ("hub", "ChapterPlan.resolve(c, b)"),
+    ("hub", "ChapterPlan.resolve(c, b, text)"),
     ("main", "ChapterPlan.resolve(c, b)"),
     ("pipeline", "ChapterPlan.resolve(c, book, text)"),
     ("resume", "ChapterPlan.resolve(c, book)"),
@@ -298,6 +301,8 @@ def check(f):
     for key, needle in UNIFIED:
         if needle not in f[key]:
             e.append("调用点未统一[%s]: %s" % (key, needle))
+    if "BookStore.read(c, b)" not in f["hub"]:
+        e.append("目录页没复用同一次读盘（首章前诊断会多读一遍整本）")
     # ChapterSplitter.split 只能出现在 ChapterPlan 的 EPUB 分支
     if "ChapterSplitter.split(" in f["pipeline"]:
         e.append("制作运行又退回直接 split（会与目录页章号不一致）")

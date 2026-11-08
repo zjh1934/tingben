@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import com.tingben.app.diag.EventLog
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -98,7 +99,10 @@ internal fun MultiSelectBar(
             verticalAlignment = Alignment.CenterVertically) {
             Text("已选 $count", fontSize = 12.sp, fontWeight = FontWeight.Bold,
                 color = palette.primary, modifier = Modifier.padding(start = 8.dp))
-            TextButton(onClick = onSelectAll) {
+            TextButton(onClick = {
+                onSelectAll()
+                EventLog.ui("MULTI_ALL_BAR", allLabel)
+            }) {
                 Text(allLabel, fontSize = 12.sp, color = palette.primary)
             }
             // 动作可能多，横滑兜底，不挤压计数与取消
@@ -106,7 +110,10 @@ internal fun MultiSelectBar(
                 verticalAlignment = Alignment.CenterVertically) {
                 actions()
             }
-            IconButton(onClick = onCancel) {
+            IconButton(onClick = {
+                onCancel()
+                EventLog.ui("MULTI_CANCEL_BAR", "")
+            }) {
                 IconClose(palette.sub, Modifier.size(18.dp))
             }
         }

@@ -40,7 +40,7 @@ POS = {
         '"|player:"',
         'raw == "player:" -> { playerOpen = true }',
         "var playerOpen by rememberSaveable { mutableStateOf(false) }",
-        "onExpand = { playerOpen = true }",
+        "onExpand = { playerOpen = true",
         "if (playerOpen) {",
         "PlayerSheet(ctx, miniBook ?: bookId,",
     ],
@@ -50,7 +50,7 @@ POS = {
         ".clickable { onExpand() }",
         "IconSkip(false, HubPrimary",
         "IconSkip(true, HubPrimary",
-        "IconPlayPause(st.isPlaying, Color.White",
+        "IconPlayPause(st.isPlaying, palette.onPrimary",
     ],
     "player": [
         "internal fun PlayerSheet(",
@@ -125,11 +125,13 @@ def selftest():
         "通知意图不解析": ("main", 'i.getBooleanExtra("open_player", false)'),
         "player 分支被摘": ("main", 'raw == "player:" -> { playerOpen = true }'),
         "播放器浮层被摘": ("main", "if (playerOpen) {"),
-        "常驻条不展开": ("main", "onExpand = { playerOpen = true }"),
+        "常驻条不展开": ("main", "onExpand = { playerOpen = true"),
         "常驻条不隔离试听": ("hub", "if (st.preview) return"),
         "条幅不可点": ("hub", ".clickable { onExpand() }"),
         "上一首退回字符": ("hub", "IconSkip(false, HubPrimary"),
-        "播放键退回字符": ("hub", "IconPlayPause(st.isPlaying, Color.White"),
+        # I2 · 图标前景改成随主题取色（深色下白字在浅紫主色底上只有 1.99:1）。
+        # 这里守「仍是代码绘制图标且随主题取色」，不守写死的白字。
+        "播放键退回字符": ("hub", "IconPlayPause(st.isPlaying, palette.onPrimary"),
         "播放器页不跟状态": ("player", "val st by PlayQueue.state.collectAsState()"),
         "播放器页不拦试听": ("player", "LaunchedEffect(st.preview) { if (st.preview) onClose() }"),
         "进度不能拖": ("player", "PlayQueue.seekTo("),

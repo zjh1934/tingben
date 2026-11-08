@@ -81,6 +81,31 @@ object ChapterPlan {
      * 统一入口：四个调用点（目录页 / 制作准备页 / 制作运行 / 断点校验）全走这里，
      * 保证同一本书在任何地方看到的章号完全一致。
      */
+    /**
+     * I3 · 首章标题之前的文本（站点页眉、下载网址、版权信息、目录页）。
+     *
+     * 纠正一条自己排错的任务：原计划「并进首章」，实际不能这么做 ——
+     * 用户日志明确抱怨过「开头把下载网址、邮箱、章节内容开始当正文念了」，
+     * 并进去会让 TTS 念广告；而且改首章 start 会挪动全部章区间，
+     * 已生成音频的章起点索引与断点全部对错章（破坏性）。
+     *
+     * 所以保持「不进任何章」，只把静默丢弃变成可见诊断：让读者知道
+     * 书前那段是出版/站点信息、本来就不该朗读，而不是软件漏读了。
+     */
+    data class FrontInfo(val chars: Int, val noisy: Boolean)
+
+    private val siteNoise = Regex(
+        """https?://|www\.|@[\w.-]+\.[A-Za-z]{2,}|下载|更多电子书|章节内容开始|""" +
+        """最新网址|请收藏|电子书|TXT下载|论坛|QQ群|微信公众号""",
+        RegexOption.IGNORE_CASE)
+
+    fun frontMatter(text: String, chapters: List<Chapter>): FrontInfo {
+        val end = chapters.firstOrNull()?.start ?: 0
+        if (end <= 0) return FrontInfo(0, false)
+        val head = text.substring(0, end.coerceAtMost(text.length).coerceAtMost(4096))
+        return FrontInfo(end, siteNoise.containsMatchIn(head))
+    }
+
     fun resolve(c: Context, book: Book): Pair<List<Chapter>, List<Chunk>> =
         resolve(c, book, BookStore.read(c, book))
 

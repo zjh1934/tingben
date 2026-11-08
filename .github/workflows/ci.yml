@@ -157,6 +157,22 @@ jobs:
         run: python3 scripts/r141_verify.py --selftest
       - name: R142 交互与分层验证（浮层返回 / 合成前调音 / 章节批量 / 开发日志 / 产物纯净 / 反向注入）
         run: python3 scripts/r142_verify.py --selftest
+      - name: R147 接日志准备验证（会话分段 / UI 埋点覆盖 / 摘要不截断 / 反向注入）
+        run: python3 scripts/r147_verify.py --selftest
+      - name: R148 真机日志实证修复验证（全本被拒 / 存储 / 停止 / 切段 / 站点广告 / 反向注入）
+        run: python3 scripts/r148_verify.py --selftest
+      - name: R149 任务入口层验证（任务页重做 / 删除任务 / 开软件确认弹窗 / 守卫口径 / 反向注入）
+        run: python3 scripts/r149_verify.py --selftest
+      - name: R150 一书一页连贯骨架验证（双进度 / 单停止继续 / 章节就地展开 / preview 试听 / 反向注入）
+        run: python3 scripts/r150_verify.py --selftest
+      - name: R151 收掉最后一张卡片验证（三入口落第二列 / 完整分段看台 / 删段闭环 / 反向注入）
+        run: python3 scripts/r151_verify.py --selftest
+      - name: R152 三页重设计验证（书架精简+进度+置顶 / 模型页卸载 / 设置页排版 / 反向注入）
+        run: python3 scripts/r152_verify.py --selftest
+      - name: R153 I批收口验证（调音台顺序 / 深色对比度 / 首章前文本只诊断不并入 / 反向注入）
+        run: python3 scripts/r153_verify.py --selftest
+      - name: R154 倍速验证（常驻条可达 / 档位同源 / 试听恒原速 / 反向注入）
+        run: python3 scripts/r154_verify.py --selftest
 
 
 

@@ -116,7 +116,10 @@ def logic_cases(f):
     if "python3 scripts/retired_pages.py --selftest" not in ci:
         bad.append("统一守门没挂 CI")
     steps = len(re.findall(r"run:\s*python3 scripts/", ci))
-    if not (40 <= steps <= 50):
+    # R149 后说明：下限 40 不放（防止把守门全删了）, 上限放宽到 60 ——
+    # 每多一份真机实证就多一个专职守门（R147/R148/R149），这是增量不是回潮；
+    # 旧壳脚本是否复活由上面的 retired_pages 正向/BAN 严格守着。
+    if not (40 <= steps <= 60):
         bad.append("CI 挂项 %d，不在收敛后预期区间" % steps)
     else:
         print("CI 挂项 %d（收敛前 62）" % steps)

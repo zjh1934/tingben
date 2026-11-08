@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.tingben.app.core.AudioLibrary
 import com.tingben.app.core.PlayQueue
 import com.tingben.app.core.Track
+import com.tingben.app.diag.EventLog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -129,12 +130,21 @@ internal fun PlayerSheet(
                 }
                 Spacer(Modifier.height(16.dp))
                 Text("倍速", fontSize = 12.sp, color = palette.sub)
+                // K1 · 用户实证「合成音频速度不好调、调得不准确」：
+                // 合成侧只有「慢/中/快」的文字倾向，没有精确数值，生成后也改不了；
+                // 播放倍速才是可靠控制点。把这层关系直接写在入口旁，不用猜。
+                Text("合成时的语速只是倾向、调不准；这里改播放速度，即时生效，改多少次都行",
+                    fontSize = 10.sp, color = palette.sub,
+                    modifier = Modifier.padding(top = 2.dp))
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0.75f to "0.75×", 1f to "1.0×", 1.25f to "1.25×",
-                        1.5f to "1.5×", 2f to "2.0×").forEach { (v, label) ->
+                    PlayQueue.SPEED_STEPS.forEach { v ->
+                        val label = PlayQueue.speedLabel(v)
                         val on = kotlin.math.abs(st.speed - v) < 0.01f
-                        TextButton(onClick = { PlayQueue.setSpeed(v) },
+                        TextButton(onClick = {
+                            PlayQueue.setSpeed(v)
+                            EventLog.ui("PLAY_SPEED", "x=$v")
+                        },
                             modifier = Modifier.background(
                                 if (on) palette.primary else palette.card,
                                 RoundedCornerShape(50))) {
@@ -150,18 +160,23 @@ internal fun PlayerSheet(
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly) {
-            IconButton(onClick = { PlayQueue.previous() }, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = { PlayQueue.previous(); EventLog.ui("PLAY_PREV", "") },
+                modifier = Modifier.size(48.dp)) {
                 IconSkip(false, palette.primary, Modifier.size(26.dp))
             }
-            IconButton(onClick = { PlayQueue.toggle() },
+            IconButton(onClick = { PlayQueue.toggle(); EventLog.ui("PLAY_TOGGLE", "") },
                 modifier = Modifier.size(62.dp)
                     .background(palette.primary, RoundedCornerShape(50))) {
                 IconPlayPause(st.isPlaying, palette.card, Modifier.size(28.dp))
             }
-            IconButton(onClick = { PlayQueue.next() }, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = { PlayQueue.next(); EventLog.ui("PLAY_NEXT", "") },
+                modifier = Modifier.size(48.dp)) {
                 IconSkip(true, palette.primary, Modifier.size(26.dp))
             }
-            IconButton(onClick = { showList = !showList }, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = {
+                showList = !showList
+                EventLog.ui("PLAY_QUEUE_LIST", "open=$showList")
+            }, modifier = Modifier.size(48.dp)) {
                 IconQueue(if (showList) palette.primary else palette.sub, Modifier.size(24.dp))
             }
         }

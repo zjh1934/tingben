@@ -4,7 +4,7 @@
 沙盒无 Android SDK，静态绿 ≠ 编译过；真编译由 CI 负责。
 --selftest 先跑一次正向，再做反向注入（历史脚本只跑注入，这里补严）。
 """
-import pathlib, sys
+import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FILES = {
@@ -21,7 +21,6 @@ POS = {
         'import androidx.compose.foundation.lazy.items\n',
         'var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }',
         'LaunchedEffect(refresh, books) {',
-        'lastReads = withContext(Dispatchers.IO) { ReadingState.allLast(c) }',
         'contentPadding = PaddingValues(16.dp),',
         'item(key = "head") {',
         'if (importError != null) {',
@@ -78,6 +77,21 @@ def library_body(t):
 
 def check(f):
     e = []
+    # H1 · 书架批量数据（阅读位置 + 合成进度）合并成一次 IO 读盘，
+    # 原来绑死的单条 `lastReads = withContext(...) { allLast }` 不再适用。
+    # 守行为：LaunchedEffect 里必须有 IO + 批量读，且不许回到组合期同步读。
+    lb = library_body(f["main"])
+    eff = re.search(r"LaunchedEffect\(refresh, books\) \{(.*?)\n    \}", lb, re.S)
+    if not eff:
+        e.append("书架缺后台加载 LaunchedEffect")
+    else:
+        blk = eff.group(1)
+        if "withContext(Dispatchers.IO)" not in blk:
+            e.append("书架批量数据没走 IO 线程")
+        if "ReadingState.allLast(c)" not in blk:
+            e.append("阅读位置没走批量读 allLast")
+    if "lastReads = books.associate" in lb:
+        e.append("阅读位置回到组合期同步读")
     for k, needles in POS.items():
         for s in needles:
             if s not in f[k]:
@@ -152,8 +166,11 @@ def selftest():
         ('删后台加载', 'main',
          lambda t: t.replace('LaunchedEffect(refresh, books) {', 'if (false) {')),
         ('回到组合期同步读', 'main',
-         lambda t: t.replace('lastReads = withContext(Dispatchers.IO) { ReadingState.allLast(c) }',
+         lambda t: t.replace('lastReads = reads\n        progress = prog',
                              'lastReads = books.associate { it.id to ReadingState.last(c, it.id) }')),
+        ('批量数据退回主线程', 'main',
+         lambda t: t.replace('val (reads, prog) = withContext(Dispatchers.IO) {',
+                             'val (reads, prog) = withContext(Dispatchers.Main) {')),
         ('删批量读', 'reading',
          lambda t: t.replace('fun allLast(c: Context): Map<String, Int>', 'fun nope(c: Context): Map<String, Int>')),
         ('拆成两套解析', 'reading',

@@ -10,7 +10,7 @@
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r131_verify.py [--selftest]
 """
-import pathlib, sys
+import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
@@ -32,18 +32,17 @@ POS = {
         "nav.push(Screen.CHAPTERS)",
         "onOpenTask = { id -> openBookCol(id, 1) }",
         "openBookCol(id, 1)",
-        "onAudio = { openBookCol(taskBookId, 2); refresh++ }",
         "onDone = { nav.clear(); openBookCol(bookId, 2); refresh++ }",
         "initialCol = hubCol,",
         "onResumeTask = {",
-        "if (taskChapter != null) nav.push(Screen.PROGRESS)",
+        "openBookCol(b.id, 1)",
     ],
     "hub": [
         "initialCol: Int = 0",
         "onResumeTask: () -> Unit = {}",
         "if (initialCol > 0) initialCol.coerceIn(0, 2)",
         "LaunchedEffect(initialCol)",
-        "1 -> SynColumn(ui, { i -> playChapter(i, single = true) },",
+        "1 -> SynColumn(c, ui, { i -> playChapter(i, single = true) },",
         "onResumeTask = onResumeTask, onTasks = onProgress,",
         "item(key = \"syn_task_head\")",
         "继续制作 ›",
@@ -61,6 +60,8 @@ BAN = {
         "nav.push(Screen.TASK_DETAIL)",
         "NAV_AUDIO -> Screen.AUDIO",
         "screen = Screen.AUDIO; refresh++",
+        "nav.push(Screen.PROGRESS)",
+        "screen = Screen.PROGRESS",
     ],
 }
 
@@ -79,6 +80,11 @@ def check(f):
         for s in needles:
             if s in f[key]:
                 e.append("旧入口残留[%s]: %s" % (key, s[:66]))
+    # R149 · 任务页「听成品」改成传该卡自己的 bookId（修多任务跳错书），
+    # 原来绑死全局 taskBookId 的字面量就红了。守语义：音频入口必须落第三列，
+    # 且用这次卡片的 id，不关心变量名。
+    if not re.search(r"onAudio\s*=\s*\{[^\n}]*openBookCol\([^\n)]*,\s*2\)", f["main"]):
+        e.append("音频入口没落第三列")
     return e
 
 
@@ -89,7 +95,8 @@ def selftest():
         "目标列状态被摘": ("main", "var hubCol by rememberSaveable { mutableStateOf(0) }"),
         "统一跳转被摘": ("main", "fun openBookCol(id: String?, col: Int) {"),
         "任务入口不落第二列": ("main", "onOpenTask = { id -> openBookCol(id, 1) }"),
-        "音频入口不落第三列": ("main", "onAudio = { openBookCol(taskBookId, 2); refresh++ }"),
+        "续跑不落第二列": ("main", "openBookCol(b.id, 1)"),
+        "音频入口不落第三列": ("main", "onAudio = { id -> openBookCol(id, 2)"),
         "目录页不接初始列": ("main", "initialCol = hubCol,"),
         "目录页不接初始列参数": ("hub", "initialCol: Int = 0"),
         "初始列不生效": ("hub", "if (initialCol > 0) initialCol.coerceIn(0, 2)"),

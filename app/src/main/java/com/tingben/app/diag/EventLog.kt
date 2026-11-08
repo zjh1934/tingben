@@ -27,6 +27,16 @@ object EventLog {
     @Volatile private var lastEngineAt: Long = 0L
 
     private val ring = ArrayDeque<String>()
+
+    // R147 · 用户会连着用好几次再来给日志。没有会话边界的话，一长条事件流
+    // 分不清「哪一轮」，摘要只取末尾一小段还会把前面几轮全丢掉。每次冷启动记一个 id。
+    @Volatile
+    var currentSession: String = ""
+        private set
+
+    /** UI 交互专用入口：页面/浮层/勾选/播放器这类「用户做了什么」。 */
+    fun ui(action: String, detail: String = "", fields: Map<String, String> = emptyMap()) =
+        log(Kind.UI, action, detail, fields = fields)
     private const val RING_MAX = 200
 
     fun lastEngine(): Pair<String, String> = lastEngineAction to lastEngineDetail
@@ -44,7 +54,14 @@ object EventLog {
             ring.clear(); old.forEach { ring.addLast(it) }
         } catch (_: Throwable) { }
         installCrashHandler(c)
-        log(Kind.UI, "APP_START", "version=" + c.packageManager.getPackageInfo(c.packageName, 0).versionName)
+        val ver = try {
+            c.packageManager.getPackageInfo(c.packageName, 0).versionName ?: "?"
+        } catch (_: Throwable) { "?" }
+        currentSession = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        log(Kind.UI, "APP_START", "version=$ver", fields = mapOf("session" to currentSession))
+        // 单独一行边界，导出时按它切会话，方便按「第几轮」读
+        log(Kind.UI, "SESSION_START", "启动", fields = mapOf("session" to currentSession,
+            "version" to ver))
     }
 
     private fun installCrashHandler(c: Context) {
@@ -112,6 +129,21 @@ object EventLog {
 
     fun read(): String = try { file?.readText() ?: "" } catch (_: Throwable) { "" }
     fun readDetail(): String = try { detailFile?.readText() ?: "" } catch (_: Throwable) { "" }
+    /** 把事件流按 SESSION_START 切成「第几轮」，返回最近 n 轮的文本。 */
+    private fun recentSessions(n: Int = 3): String {
+        val lines = read().lines()
+        val starts = mutableListOf<Int>()
+        lines.forEachIndexed { i, l -> if (l.contains("| UI | SESSION_START |")) starts.add(i) }
+        if (starts.isEmpty()) return lines.takeLast(300).joinToString("\n")
+        val from = starts[maxOf(0, starts.size - n)]
+        return lines.subList(from, lines.size).joinToString("\n")
+    }
+
+    /** 全量错误行：不管哪一轮，出错都要带进摘要，别被窗口截掉。 */
+    private fun allErrors(): String = readDetail().lines()
+        .filter { " | ERROR | " in it || " | CRASH | " in it || " | WARN | " in it }
+        .takeLast(200).joinToString("\n")
+
     fun ringTail(n: Int = 60): String = try {
         ring.toList().takeLast(n).joinToString("\n")
     } catch (_: Throwable) { "" }
@@ -188,6 +220,8 @@ object EventLog {
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")
         append(fence("最近一次崩溃", lastCrash()))
         append(fence("崩溃前事件（环形缓冲）", ringTail(200)))
+        append("## 会话边界\n\n本次会话 `$currentSession`；" +
+            "事件流里每条 `SESSION_START` 是一轮冷启动，按它切段即可对应「用第几轮」。\n\n")
         // 全量，不再截断到 400 / 800 行：排查要的是完整时间线
         append(fence("事件日志（全量）", read()))
         append(fence("详细日志（全量）", readDetail()))
@@ -200,7 +234,8 @@ object EventLog {
         append("## 环境\n\n").append(envBlock(c)).append("\n")
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")
         append(fence("最近崩溃（尾部）", lastCrash().lines().takeLast(40).joinToString("\n")))
-        append(fence("最近事件（末尾 120 行）", read().lines().takeLast(120).joinToString("\n")))
+        append(fence("所有报错/警告（不受会话窗口限制）", allErrors()))
+        append(fence("最近 3 轮完整事件（按 SESSION_START 分段）", recentSessions(3)))
     }
 
     @JvmStatic

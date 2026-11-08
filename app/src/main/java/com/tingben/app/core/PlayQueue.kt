@@ -39,6 +39,25 @@ object PlayQueue {
     private var tracks: List<Track> = emptyList()
     private var index = -1
     private var speed = 1f
+
+    /**
+     * K1 · 倍速档位的唯一真值源，常驻条循环切档与播放器页五档直选共用，
+     * 避免两处各写一份字面量、以后漂移。
+     */
+    val SPEED_STEPS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+    private val SPEED_LABELS = listOf("0.75×", "1.0×", "1.25×", "1.5×", "2.0×")
+
+    fun speedLabel(f: Float): String {
+        val i = SPEED_STEPS.indexOfFirst { kotlin.math.abs(it - f) < 0.01f }
+        return if (i >= 0) SPEED_LABELS[i]
+               else String.format(java.util.Locale.US, "%.2f×", f)
+    }
+
+    /** 常驻条点一下切到下一档，到头回到 0.75×。 */
+    fun nextSpeed(cur: Float): Float {
+        val i = SPEED_STEPS.indexOfFirst { kotlin.math.abs(it - cur) < 0.01f }
+        return SPEED_STEPS[(i + 1) % SPEED_STEPS.size]
+    }
     private var queueId = ""
     private var appCtx: Context? = null
     // applicationContext 里没有 Activity，光靠它弹不出权限框；
@@ -72,12 +91,12 @@ object PlayQueue {
         previewReleasePlayer()
         previewTracks = list
         previewQueueId = id
-        _previewState.value = PlaybackState(speed = speed, queueId = id, preview = true)
+        _previewState.value = PlaybackState(speed = 1f, queueId = id, preview = true)
         // 关键：这里绝不去清播放通知，否则点一下格子就把整本书的通知栏控制清掉了
     }
 
     private fun previewFinish() {
-        _previewState.value = PlaybackState(speed = speed, ended = true,
+        _previewState.value = PlaybackState(speed = 1f, ended = true,
             queueId = previewQueueId, preview = true)
     }
 
@@ -94,7 +113,7 @@ object PlayQueue {
         // 试听是「这一块听起来对不对」：只暂停主播放，不销毁队列、不动通知栏
         if (_state.value.isPlaying) pause()
         _previewState.value = PlaybackState(index = i, label = t.label, trackId = t.id,
-            isPlaying = false, speed = speed, queueId = previewQueueId, preview = true)
+            isPlaying = false, speed = 1f, queueId = previewQueueId, preview = true)
         try {
             previewPlayer = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder()
@@ -102,7 +121,8 @@ object PlayQueue {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build())
                 setOnPreparedListener {
-                    try { it.playbackParams = PlaybackParams().setSpeed(speed).setPitch(1f) }
+                    // K1 · 试听恒原速，不吃主播放的倍速
+                    try { it.playbackParams = PlaybackParams().setSpeed(1f).setPitch(1f) }
                     catch (_: Throwable) { }
                     it.start()
                     _previewState.value = _previewState.value.copy(isPlaying = true, ended = false)
@@ -159,7 +179,7 @@ object PlayQueue {
         previewTracks = emptyList()
         previewIndex = -1
         previewQueueId = ""
-        _previewState.value = PlaybackState(speed = speed)
+        _previewState.value = PlaybackState(speed = 1f)
     }
 
     fun isPreviewPlaying(): Boolean = _previewState.value.isPlaying
@@ -307,14 +327,20 @@ object PlayQueue {
         _state.value = _state.value.copy(positionMs = ms)
     }
 
+    /**
+     * K1 · 倍速只作用于「整章 / 整本收听」，不作用于小段试听。
+     *
+     * 用户实证：合成侧的语速只是文字倾向、调不准；播放倍速才是可靠控制点 ——
+     * 即时生效、无损、改多少次都行，不用重做音频。
+     * 但试听是用来判断「这一块念得对不对」的，必须保持原速：否则整章听 2.0×
+     * 之后去点格子，试听也变 2.0×，根本判断不了音色。
+     */
     fun setSpeed(f: Float) {
         speed = f.coerceIn(0.5f, 2f)
         try { player?.playbackParams = PlaybackParams().setSpeed(speed).setPitch(1f) }
         catch (_: Throwable) { }
-        try { previewPlayer?.playbackParams = PlaybackParams().setSpeed(speed).setPitch(1f) }
-        catch (_: Throwable) { }
+        // 故意不动 previewPlayer，也不改 _previewState.speed：试听永远 1.0×
         _state.value = _state.value.copy(speed = speed)
-        _previewState.value = _previewState.value.copy(speed = speed)
     }
 
     fun tick() {
