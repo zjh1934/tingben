@@ -124,8 +124,9 @@ def logic_cases(f):
     # R157 · SiteNoise 用 `private const val WS = "[\\s\\u3000\\uFEFF\\u00A0]*"`
     # 做 Kotlin 字符串模板插值（全角空格必须显式认）。脚本复刻正则时先把
     # `$WS` 展开成等价的 Python 字符类，否则所有规则都匹配不上。
+    # R168 起源码统一写 ${WS}；两种写法都展开，反向注入仍可注回裸写法。
     ws_py = r"[\s\u3000\uFEFF\u00A0]*"
-    rules = [r.replace("$WS", ws_py)
+    rules = [r.replace("${WS}", ws_py).replace("$WS", ws_py)
              for r in re.findall(r'Regex\("""(.*?)"""\)', f["noise"], re.S)]
     if len(rules) < 8:
         bad.append("SiteNoise 规则太少：%d 条" % len(rules))

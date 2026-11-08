@@ -142,9 +142,13 @@ def loop_body(p):
 
 
 def site_rules(noise_src):
-    """复刻 Kotlin 的 $WS 模板插值，得到 Python 正则列表。"""
+    """复刻 Kotlin 的 WS 模板插值，得到 Python 正则列表。
+
+    R168 起源码统一写 ${WS}（裸 $WS 后接中文会被 Kotlin 吞成标识符）；
+    两种写法都在这里展开，历史注入用例仍能把裸写法注回来。
+    """
     ws = r"[\s\u3000\uFEFF\u00A0]*"
-    return [r.replace("$WS", ws)
+    return [r.replace("${WS}", ws).replace("$WS", ws)
             for r in re.findall(r'Regex\("""(.*?)"""\)', noise_src, re.S)]
 
 

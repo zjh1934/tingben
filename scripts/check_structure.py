@@ -507,6 +507,42 @@ def r166_errs(lg, sv, pi):
     return e
 
 errs += r166_errs(_log_src, _svc_src, _pipe_src)
+
+# R168 · CI run 135 真编译抓到两处静态脚本看不见的 Kotlin 错误：
+#   ① ChapterHub 的 Canvas 图标用了 Stroke/Path/Offset/StrokeCap/StrokeJoin 却没 import；
+#   ② SiteNoise 的 """^$WS下载...""" 里 $WS 后紧跟中文，Kotlin 标识符允许 Unicode 字母，
+#      整段被解析成一个超长标识符 → Unresolved reference 'WS下载和分享更多电子书'。
+# 沙盒无 Android SDK，这两类只有真编译能发现；这里把它们变成静态硬闸门。
+_site_src = (ROOT / "app/src/main/java/com/tingben/app/core/SiteNoise.kt").read_text(encoding="utf-8", errors="replace")
+_hub_src = (ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt").read_text(encoding="utf-8", errors="replace")
+CANVAS_IMPORTS = {
+    "Stroke(": "androidx.compose.ui.graphics.drawscope.Stroke",
+    "Path()": "androidx.compose.ui.graphics.Path",
+    "Offset(": "androidx.compose.ui.geometry.Offset",
+    "StrokeCap": "androidx.compose.ui.graphics.StrokeCap",
+    "StrokeJoin": "androidx.compose.ui.graphics.StrokeJoin",
+}
+
+def kotlin_template_hazard(src):
+    """三引号字符串里，$identifier 若吞进了汉字，必然是漏写 ${...} 的编译错误。"""
+    out = []
+    for m in re.finditer(r'"""(.*?)"""', src, re.S):
+        for x in re.finditer(r'\$[A-Za-z_][A-Za-z0-9_\u4e00-\u9fff]*[\u4e00-\u9fff]\S*', m.group(1)):
+            out.append(x.group(0)[:44])
+    return out
+
+def r168_errs(hub, site):
+    e = []
+    for sym, imp in CANVAS_IMPORTS.items():
+        # 必须查「import 行」：文件里可能另有一处用完全限定名调用，
+        # 只查包名子串会误以为 import 还在（CI 注入实测踩过这个坑）。
+        if sym in hub and ("import " + imp) not in hub:
+            e.append("R168 Canvas 图标缺 import：%s ← %s" % (sym, imp.split(".")[-1]))
+    for h in kotlin_template_hazard(site):
+        e.append("R168 Kotlin 模板名吞进中文（应写 ${...}）：%s" % h)
+    return e
+
+errs += r168_errs(_hub_src, _site_src)
 if "--selftest" in sys.argv:
     probe = ui_literals('Text("标注后合成（实验性）")')
     ok = bool(r66_errs(_all_ui + probe)) and not r66_errs(_all_ui)
@@ -528,6 +564,26 @@ if "--selftest" in sys.argv:
           (sum(bool(r166_errs(a, b, c)) for _, a, b, c in r166_cases),
            len(r166_cases), "PASS" if ok166 else "FAIL"))
     if not ok166: sys.exit(1)
+    r168_cases = [
+        ("Canvas 缺 Stroke import",
+         _hub_src.replace("import androidx.compose.ui.graphics.drawscope.Stroke", ""), _site_src),
+        ("Canvas 缺 Offset import",
+         _hub_src.replace("import androidx.compose.ui.geometry.Offset", ""), _site_src),
+        ("Canvas 缺 Path import",
+         _hub_src.replace("import androidx.compose.ui.graphics.Path", ""), _site_src),
+        ("裸 $WS 接中文回潮", _hub_src,
+         _site_src.replace('Regex("""^${WS}下载和分享更多电子书',
+                           'Regex("""^$WS下载和分享更多电子书')),
+        ("任意模板吞中文", _hub_src,
+         _site_src.replace('Regex("""^${WS}爱下电子书',
+                           'Regex("""^$WS爱下电子书')),
+    ]
+    ok168 = (not r168_errs(_hub_src, _site_src)) and all(
+        r168_errs(a, b) for _, a, b in r168_cases)
+    print("R168 Kotlin 编译隐患注入: %d/%d %s" %
+          (sum(bool(r168_errs(a, b)) for _, a, b in r168_cases),
+           len(r168_cases), "PASS" if ok168 else "FAIL"))
+    if not ok168: sys.exit(1)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
