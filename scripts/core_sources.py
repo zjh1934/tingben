@@ -27,6 +27,7 @@ HEADER = "package com.tingben.app.core\n\n"
 # 顺序即合并顺序。锚点必须是源码里唯一且稳定的字面量。
 PARTS = (
     ("ChapterSplitter.kt", "object ChapterSplitter {", "object Annotator {"),
+    ("Annotator.kt", "object Annotator {", "object AnnCache {"),
 )
 
 

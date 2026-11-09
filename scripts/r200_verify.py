@@ -79,6 +79,17 @@ def check(f, parts):
                 stragglers.append(p.name)
     if stragglers:
         e.append("仍有脚本直接读单文件: " + ", ".join(stragglers))
+    # 物理存在的片段文件必须都在 PARTS 里登记，漏一个就会静默不拼
+    for q in sorted(CORE.glob("*.kt")):
+        t2 = q.read_text(encoding="utf-8", errors="replace")
+        if cs.PART in t2 and q.name not in {n for n, _, _ in cs.PARTS}:
+            e.append("片段文件没登记进 PARTS: " + q.name)
+    if len(cs.PARTS) < 2:
+        e.append("分家已不止一块，PARTS 却仍只有 1 项")
+    # 读的是传入的 core_sources 文本，反向注入删掉 PARTS 行也能当场红
+    for name, _, _ in cs.PARTS:
+        if '"' + name + '"' not in f["core_sources"]:
+            e.append("PARTS 漏登记: " + name)
     if "python3 scripts/r200_verify.py --selftest" not in f["ci"]:
         e.append("CI 漏挂 r200")
     if '"r200_verify.py"' not in f["r135"]:
@@ -87,32 +98,41 @@ def check(f, parts):
 
 
 def writeback_case():
-    """临时目录里真跑一次「注入 → 分发写回 → 还原」，确认不污染主文件。"""
+    """临时目录里对每个片段各跑一次「注入 → 分发写回 → 还原」，确认不污染主文件。"""
     errs = []
+    needles = {
+        "ChapterSplitter.kt": "val safe = if (marks.isEmpty())",
+        "Annotator.kt": "fun directWithStats(text: String)",
+    }
     with tempfile.TemporaryDirectory() as d:
         r = pathlib.Path(d)
         dst = r / cs.CORE
         dst.mkdir(parents=True, exist_ok=True)
-        for p in (ROOT / cs.CORE).glob("*.kt"):
-            shutil.copy2(p, dst / p.name)
+        for q in (ROOT / cs.CORE).glob("*.kt"):
+            shutil.copy2(q, dst / q.name)
         merged = cs.read(r)
         assert merged == cs.read(ROOT), "临时树合并视图与真源码不一致"
-        inj = merged.replace("val safe = if (marks.isEmpty())",
-                             "val safe = if (false)", 1)
-        assert inj != merged
-        cs.source(r).write_text(inj)
-        main_t = (r / cs.CORE / "Pipeline.kt").read_text(encoding="utf-8")
-        if "object ChapterSplitter {" in main_t:
-            errs.append("写回把片段正文灌进了主文件")
-        if "if (false)" not in cs.read(r):
-            errs.append("写回后合并视图没反映注入")
-        if "if (false)" not in (r / cs.CORE / "ChapterSplitter.kt").read_text(encoding="utf-8"):
-            errs.append("注入没落到片段文件")
-        cs.source(r).write_text(merged)
-        if cs.read(r) != merged:
-            errs.append("还原后合并视图不一致")
+        for name, _, _ in cs.PARTS:
+            base = cs.read(r)
+            needle = needles.get(name)
+            if not needle:
+                errs.append("新片段没配注入锚点: " + name)
+                continue
+            repl = needle.replace("(", "X(", 1)
+            inj = base.replace(needle, repl, 1)
+            assert inj != base
+            cs.source(r).write_text(inj)
+            main_t = (r / cs.CORE / "Pipeline.kt").read_text(encoding="utf-8")
+            if "object " + name[:-3] + " {" in main_t:
+                errs.append("写回把片段正文灌进了主文件: " + name)
+            if repl not in cs.read(r):
+                errs.append("写回后合并视图没反映注入: " + name)
+            if repl not in (r / cs.CORE / name).read_text(encoding="utf-8"):
+                errs.append("注入没落到片段文件: " + name)
+            cs.source(r).write_text(base)
+            if cs.read(r) != merged:
+                errs.append("还原后合并视图不一致: " + name)
     return errs
-
 
 def selftest():
     f = files()
@@ -121,10 +141,15 @@ def selftest():
     assert not writeback_case(), "写回分发自检没过"
     cuts = [
         ("占位行被摘", "main", cs.INSERT + "ChapterSplitter", ""),
+        ("第二块占位行被摘", "main", cs.INSERT + "Annotator", ""),
         ("片段哨兵被摘", "part", cs.PART, ""),
+        ("第二片段哨兵被摘", "part2", cs.PART, ""),
         ("片段符号被删", "part", "object ChapterSplitter {", "object ChapterSplitterX {"),
+        ("第二片段符号被删", "part2", "object Annotator {", "object AnnotatorX {"),
         ("package 重复", "part", "package com.tingben.app.core",
          "package com.tingben.app.core\npackage com.tingben.app.core"),
+        ("PARTS 漏登记第二块", "core_sources",
+         '    ("Annotator.kt", "object Annotator {", "object AnnCache {"),', ""),
         ("CI 漏挂", "ci", "python3 scripts/r200_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r200_verify.py"', ""),
         ("core_sources 退化成直接读单文件", "core_sources",
@@ -134,8 +159,9 @@ def selftest():
     for name, key, needle, repl in cuts:
         g = dict(f)
         gp = dict(parts)
-        if key == "part":
-            gp["ChapterSplitter.kt"] = parts["ChapterSplitter.kt"].replace(needle, repl, 1)
+        if key in ("part", "part2"):
+            nm = "ChapterSplitter.kt" if key == "part" else "Annotator.kt"
+            gp[nm] = parts[nm].replace(needle, repl, 1)
         else:
             g[key] = f[key].replace(needle, repl, 1)
         got = check(g, gp)
