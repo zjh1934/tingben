@@ -4,6 +4,7 @@
 正向：删文件 / 零残留 / 双指纹迁移 / 守恒 / 界面零改动 / CI 已挂。
 --selftest：8 类反向注入，每类都必须被拦下（防「断言永远 PASS」）。
 """
+import core_sources
 import pathlib, shutil, sys, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -11,6 +12,8 @@ CORE = "app/src/main/java/com/tingben/app/core"
 MAIN = "app/src/main/java/com/tingben/app/MainActivity.kt"
 
 def txt(root, rel):
+    if rel.endswith("Pipeline.kt"):
+        return core_sources.read(root)
     p = root / rel
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
@@ -100,14 +103,14 @@ INJECT = [
         txt(r, CORE + "/VoiceCache.kt").replace(
             "if (v != null && m != null && p != null) keyOf(v, m, p) else incoming",
             "incoming", 1), encoding="utf-8")),
-    ("删掉归档切换", lambda r: (r / CORE / "Pipeline.kt").write_text(
+    ("删掉归档切换", lambda r: core_sources.source(r).write_text(
         txt(r, CORE + "/Pipeline.kt").replace(
             "val sw = VoiceCache.switchTo(work, cacheKey)",
             "val sw = VoiceCache.Switch(0, 0, cacheKey)", 1), encoding="utf-8")),
     ("删掉 legacyVoiceStamp", lambda r: (r / CORE / "Prefs.kt").write_text(
         txt(r, CORE + "/Prefs.kt").replace(
             "    fun legacyVoiceStamp(c: Context): String", "    private fun unusedLegacy(c: Context): String", 1), encoding="utf-8")),
-    ("Pipeline 恢复 castEnabled", lambda r: (r / CORE / "Pipeline.kt").write_text(
+    ("Pipeline 恢复 castEnabled", lambda r: core_sources.source(r).write_text(
         txt(r, CORE + "/Pipeline.kt").replace(
             "        val knobs = Prefs.ttsKnobs(c)",
             "        val castOn = Prefs.castEnabled(c)\n        val knobs = Prefs.ttsKnobs(c)", 1), encoding="utf-8")),
@@ -115,7 +118,7 @@ INJECT = [
         txt(r, CORE + "/MixerDraft.kt").replace(
             "    val nonVerbal: Boolean = true,",
             "    val nonVerbal: Boolean = true,\n    val castEnabled: Boolean = true,", 1), encoding="utf-8")),
-    ("恢复 VOICE_UNMAPPED 事件", lambda r: (r / CORE / "Pipeline.kt").write_text(
+    ("恢复 VOICE_UNMAPPED 事件", lambda r: core_sources.source(r).write_text(
         txt(r, CORE + "/Pipeline.kt").replace(
             "        val wavs = mutableListOf<File>()",
             '        EventLog.log(EventLog.Kind.PIPELINE, "VOICE_UNMAPPED", "角色未映射")\n'

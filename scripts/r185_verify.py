@@ -16,13 +16,14 @@
 selftest 全程纯内存注入，一个字节都不写源文件。
 用法：python3 scripts/r185_verify.py [--selftest]
 """
+import core_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "cache": APP / "core/VoiceCache.kt",
-    "pipe": APP / "core/Pipeline.kt",
+    "pipe": core_sources.source(APP),
     "tree": APP / "core/AudioTree.kt",
     "resume": APP / "core/TaskResume.kt",
     "main": APP / "MainActivity.kt",

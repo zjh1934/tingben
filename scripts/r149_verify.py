@@ -25,6 +25,7 @@ R159 用户新实证：「关闭以后重新打开应用，它不一定弹」「
 
 用法：python3 scripts/r149_verify.py [--selftest]
 """
+import core_sources
 import pathlib
 import re
 import sys
@@ -32,7 +33,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "pipe": APP / "core" / "Pipeline.kt",
+    "pipe": core_sources.source(APP),
     "main": APP / "MainActivity.kt",
     "prefs": APP / "core" / "Prefs.kt",
     "icons": APP / "PlayIcons.kt",

@@ -9,6 +9,7 @@
 
 用法：python3 scripts/r139_verify.py [--selftest]
 """
+import core_sources
 import pathlib
 import re
 import sys
@@ -18,7 +19,7 @@ APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "main": APP / "MainActivity.kt",
     "hub": APP / "ChapterHub.kt",
-    "pipeline": APP / "core" / "Pipeline.kt",
+    "pipeline": core_sources.source(APP),
     "importer": APP / "core" / "Importer.kt",
     "plan": APP / "core" / "ChapterPlan.kt",
     "service": APP / "ProduceService.kt",

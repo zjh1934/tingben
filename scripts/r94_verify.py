@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """R94 · 续跑对拍真值 + 导入失败可恢复 / 大文件保护：正向 / 旧形态零残留 / 守恒 / 反向注入。"""
+import core_sources
 import pathlib, sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FILES = {
     "resume": ROOT / "app/src/main/java/com/tingben/app/core/TaskResume.kt",
-    "pipe": ROOT / "app/src/main/java/com/tingben/app/core/Pipeline.kt",
+    "pipe": core_sources.source(ROOT),
     "imp": ROOT / "app/src/main/java/com/tingben/app/core/Importer.kt",
     "main": ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt",
     "chrome": ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt",

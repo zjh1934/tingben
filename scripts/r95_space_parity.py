@@ -8,10 +8,11 @@ R148 重写。旧版复刻的是「need > free 就整本拒绝」，1.1.3 真机
 现在改成「按预算能做多少做多少」：算出 budgetSegs，跑到上限才停，绝不拒绝制作。
 本脚本继续守新公式，不是放水：常量漂移、边界、查不到空间放行都要对拍。
 """
+import core_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PIPE = ROOT / "app/src/main/java/com/tingben/app/core/Pipeline.kt"
+PIPE = core_sources.source(ROOT)
 
 SEG_FALLBACK = 24_000 * 2 * 12          # R148：12 秒兜底，原 60 秒虚高 5 倍
 HEADROOM = 16 * 1024 * 1024

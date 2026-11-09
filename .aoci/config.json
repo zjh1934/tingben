@@ -74,7 +74,9 @@
       "shell_semantics.py",
       "nav_semantics.py",
       "hub_semantics.py",
-      "r163_verify.py"
+      "r163_verify.py",
+      "core_sources.py",
+      "r200_verify.py"
     ]
   },
   "hook_strict": false,

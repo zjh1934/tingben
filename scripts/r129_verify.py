@@ -7,13 +7,14 @@
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r129_verify.py [--selftest]
 """
+import core_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "resume": APP / "core" / "TaskResume.kt",
-    "pipe": APP / "core" / "Pipeline.kt",
+    "pipe": core_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "main": APP / "MainActivity.kt",
     "ci": ROOT / ".github/workflows/ci.yml",

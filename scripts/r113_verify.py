@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """R113 · 清单收尾：F-20 / F-13 / F-17 / F-23 正向、守恒、反向注入。"""
+import core_sources
 import pathlib, shutil, sys, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REL = {
     'hub': 'app/src/main/java/com/tingben/app/ChapterHub.kt',
     'pipe': 'app/src/main/java/com/tingben/app/core/Pipeline.kt',
+    'part': 'app/src/main/java/com/tingben/app/core/ChapterSplitter.kt',
     'resume': 'app/src/main/java/com/tingben/app/core/TaskResume.kt',
     'bench': 'app/src/main/java/com/tingben/app/core/Workbench.kt',
     'main': 'app/src/main/java/com/tingben/app/MainActivity.kt',
@@ -17,6 +19,8 @@ REL = {
 }
 
 def txt(root, key):
+    if REL[key].endswith('Pipeline.kt'):
+        return core_sources.read(root)
     p = root / REL[key]
     return p.read_text(encoding='utf-8') if p.exists() else ''
 

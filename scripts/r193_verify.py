@@ -15,12 +15,13 @@
 selftest 纯内存注入 + 逻辑对拍，源文件零写入。
 用法：python3 scripts/r193_verify.py [--selftest]
 """
+import core_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "pipe": APP / "core/Pipeline.kt",
+    "pipe": core_sources.source(APP),
     "plan": APP / "core/ChapterPlan.kt",
     "hub": APP / "ChapterHub.kt",
     "main": APP / "MainActivity.kt",

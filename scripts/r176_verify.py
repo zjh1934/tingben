@@ -20,12 +20,13 @@
 selftest 全程纯内存注入，一个字节都不写源文件（R170 事故后的规矩）。
 用法：python3 scripts/r176_verify.py [--selftest]
 """
+import core_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "pipe": SRC / "core/Pipeline.kt",
+    "pipe": core_sources.source(SRC),
     "service": SRC / "ProduceService.kt",
     "main": SRC / "MainActivity.kt",
     "ci": ROOT / ".github/workflows/ci.yml",

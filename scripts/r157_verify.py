@@ -30,6 +30,7 @@
 
 用法：python3 scripts/r157_verify.py --selftest
 """
+import core_sources
 import pathlib
 import re
 import sys
@@ -38,7 +39,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "noise": APP / "core" / "SiteNoise.kt",
-    "pipe": APP / "core" / "Pipeline.kt",
+    "pipe": core_sources.source(APP),
     "log": APP / "diag" / "EventLog.kt",
     "export": APP / "core" / "AudioExport.kt",
     "main": APP / "MainActivity.kt",

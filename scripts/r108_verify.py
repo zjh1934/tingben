@@ -5,13 +5,14 @@
   python3 scripts/r108_verify.py            # 正向 / 零残留 / 守恒
   python3 scripts/r108_verify.py --selftest # 再加反向注入（CI 用这个）
 """
+import core_sources
 import pathlib, re, sys
 import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CPP = ROOT / 'app/src/main/cpp/tingben_native.cpp'
 M = ROOT / 'app/src/main/java/com/tingben/app/MainActivity.kt'
-PL = ROOT / 'app/src/main/java/com/tingben/app/core/Pipeline.kt'
+PL = core_sources.source(ROOT)
 CI = ROOT / '.github/workflows/ci.yml'
 
 cpp = CPP.read_text(encoding='utf-8')

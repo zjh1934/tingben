@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """R114 · 字号阶梯 / 制作准备页收敛 / 音频焦点 / 系统栏反色：正向、守恒、反向注入。"""
+import core_sources
 import pathlib, re, shutil, sys, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -20,6 +21,8 @@ SP = re.compile(r'(\d+(?:\.\d+)?)\.sp')
 
 
 def txt(root, key):
+    if REL[key].endswith('Pipeline.kt'):
+        return core_sources.read(root)
     p = root / REL[key]
     return p.read_text(encoding='utf-8') if p.exists() else ''
 

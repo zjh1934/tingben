@@ -10,6 +10,7 @@
 
 用法：python3 scripts/r140_verify.py [--selftest]
 """
+import core_sources
 import pathlib
 import re
 import sys
@@ -22,7 +23,7 @@ FILES = {
     "notif": APP / "core" / "PlayNotif.kt",
     "perm": APP / "core" / "NotifPerm.kt",
     "errors": APP / "core" / "UiErrors.kt",
-    "pipeline": APP / "core" / "Pipeline.kt",
+    "pipeline": core_sources.source(APP),
     "segplan": APP / "core" / "SegPlan.kt",
     "workbench": APP / "core" / "Workbench.kt",
     "main": APP / "MainActivity.kt",

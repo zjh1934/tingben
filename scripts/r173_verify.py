@@ -14,12 +14,13 @@ encode 与 decode 字段不成对」这类**一定编译不过**的错误可以�
 selftest 全程纯内存注入，一个字节都不写源文件（R170 事故后的规矩）。
 用法：python3 scripts/r173_verify.py [--selftest]
 """
+import core_sources
 import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "pipe": SRC / "core/Pipeline.kt",
+    "pipe": core_sources.source(SRC),
     "imp": SRC / "core/Importer.kt",
     "plan": SRC / "core/ChapterPlan.kt",
     "resume": SRC / "core/TaskResume.kt",

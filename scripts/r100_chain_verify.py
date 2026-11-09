@@ -6,6 +6,7 @@
 再跑纯 Python 对拍（参考音频转换 / 章节偏移 / 失败中止 / 三模式字段）。
 不依赖 Android SDK，静态绿只证明链路契约成立，不代替真机听感。
 """
+import core_sources
 import argparse
 import pathlib
 import sys
@@ -89,7 +90,8 @@ def verify(texts):
     return bad
 
 def load():
-    return {rel: (ROOT / rel).read_text() for rel, _, _ in RULES}
+    return {rel: (core_sources.read(ROOT) if rel.endswith("Pipeline.kt")
+                 else (ROOT / rel).read_text()) for rel, _, _ in RULES}
 
 def parity():
     """纯 Python 对拍：与 Kotlin 侧同一公式，不引入第二套算法。"""

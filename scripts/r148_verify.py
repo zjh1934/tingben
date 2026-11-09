@@ -15,6 +15,7 @@
 
 用法：python3 scripts/r148_verify.py [--selftest]
 """
+import core_sources
 import hashlib
 import pathlib
 import sys
@@ -22,7 +23,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "pipe": APP / "core" / "Pipeline.kt",
+    "pipe": core_sources.source(APP),
     "split": APP / "core" / "TextSplitter.kt",
     "noise": APP / "core" / "SiteNoise.kt",
     "hub": APP / "ChapterHub.kt",

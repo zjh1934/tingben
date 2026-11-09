@@ -17,6 +17,7 @@
 
 用法：python3 scripts/r153_verify.py --selftest
 """
+import core_sources
 import pathlib
 import re
 import sys
@@ -28,7 +29,7 @@ FILES = {
     "hub": APP / "ChapterHub.kt",
     "theme": APP / "Theme.kt",
     "plan": APP / "core" / "ChapterPlan.kt",
-    "pipe": APP / "core" / "Pipeline.kt",
+    "pipe": core_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts" / "r135_verify.py",
 }

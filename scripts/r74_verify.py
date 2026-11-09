@@ -2,12 +2,13 @@
 """R74 · P3 逐章进度 / 阅读位置 —— 静态自检 + 反向注入。
 沙盒无 Android SDK，静态绿 ≠ 编译过；真编译由 CI 负责。
 """
+import core_sources
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/src/main/java/com/tingben/app"
-PIPE = SRC / "core/Pipeline.kt"
+PIPE = core_sources.source(SRC)
 HUB = SRC / "ChapterHub.kt"
 READING = SRC / "core/ReadingState.kt"
 

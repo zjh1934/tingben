@@ -17,6 +17,7 @@
 反向注入：故意摘回调、摘 stopSelf、把默认改开、把浮窗留在屏幕上、
 删退出原因、删弹窗标签、偷偷换 REDELIVER，都必须红。
 """
+import core_sources
 import pathlib
 import re
 import sys
@@ -26,7 +27,7 @@ APP = ROOT / "app/src/main/java/com/tingben/app"
 
 FILES = {
     "service": APP / "ProduceService.kt",
-    "pipeline": APP / "core/Pipeline.kt",
+    "pipeline": core_sources.source(APP),
     "overlay": APP / "OverlayProgress.kt",
     "eventlog": APP / "diag/EventLog.kt",
     "app": APP / "TingbenApp.kt",

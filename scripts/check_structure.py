@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """听本 · CI 自检：必备文件 / 权重泄漏 / 无网络权限 / 包名 / KDoc 坑 / 审计符号。只依赖标准库。"""
+import core_sources
 from pathlib import Path
 import os, re, sys
 ROOT = Path(__file__).resolve().parent.parent
@@ -107,7 +108,7 @@ R68_GONE_B = ["ANN_CONTENT", "ANN_DISPOSITION", "Annotator.reconcile", "contentJ
 for sym in R68_GONE_B:
     if sym in all_src: errs.append("R68 回潮：旧逐条采纳符号 " + sym)
 
-pipe_src = (ROOT / "app/src/main/java/com/tingben/app/core/Pipeline.kt").read_text(encoding="utf-8", errors="replace")
+pipe_src = core_sources.source(ROOT).read_text(encoding="utf-8", errors="replace")
 if "a.text.take(70)" in pipe_src: errs.append("R68 回退：又把正文截成 70 字")
 
 cpp_src = (ROOT / "app/src/main/cpp/tingben_native.cpp").read_text(encoding="utf-8", errors="replace")
