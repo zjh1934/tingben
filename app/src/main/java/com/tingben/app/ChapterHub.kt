@@ -159,7 +159,9 @@ internal fun ChapterHubScreen(
     onStarted: (String, Set<Int>) -> Unit,
     onOpenBook: (String) -> Unit = {},
     // R178 · 通知点进来时直接展开就地任务看板，不用再切独立任务页
-    openTasksOnStart: Boolean = false
+    openTasksOnStart: Boolean = false,
+    // R180 · 模型没齐时「去导入模型 ›」的出口
+    onOpenModels: () -> Unit = {}
 ) {
     var localTick by remember { mutableStateOf(0) }
     var planTick by remember { mutableStateOf(0) }
@@ -425,6 +427,13 @@ internal fun ChapterHubScreen(
     val finishedChapters = ui.count { it.playable || it.audio != null }
     val totalBytes = ui.sumOf { it.audio?.bytes ?: 0L }
     val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }
+    // R180 · 这本书上次听到哪。只在有成品时读一次盘，不随高频进度重算。
+    // 必须放在 finishedChapters 之后，否则前向引用编译不过。
+    val resumePos = remember(refresh, finishedChapters) {
+        if (finishedChapters > 0) ListenState.get(c, "chapter:${book.id}") else null
+    }
+    // R180 · 模型没齐时别只给一句「没开始」，给一个能按的出口。
+    val needModels = remember(refresh) { ModelStore.missing(c).isNotEmpty() }
 
     Box(Modifier.fillMaxSize().background(HubBg)) {
         Column(Modifier.fillMaxSize()) {
@@ -533,19 +542,40 @@ internal fun ChapterHubScreen(
                     else "可播 $finishedChapters/${ui.size} 章",
                     fontSize = 12.sp, color = HubSub, modifier = Modifier.weight(1f))
                 if (finishedChapters > 0) {
-                    TextButton(onClick = {
+                    // R180 · 一处构造播放队列，两个入口共用，只读一次盘。
+                    fun playBook(atId: String?, fromMs: Long?) {
                         val list = AudioLibrary.playableItems(c, book.id)
-                        if (list.isNotEmpty()) {
-                            val q = "chapter:${book.id}"
-                            PlayQueue.setTracks(list.map { (idx, a) ->
-                                Track(a.file, "${book.title} · 第 ${idx + 1} 章",
-                                    AudioLibrary.chapterStartMs(c, a, idx),
-                                    id = "chapter:${a.file.absolutePath}")
-                            }, q)
-                            PlayQueue.playFrom(0, id = q)
-                            onPlayBook(book.id)
+                        if (list.isEmpty()) return
+                        val q = "chapter:${book.id}"
+                        val ts = list.map { (idx, a) ->
+                            Track(a.file, "${book.title} · 第 ${idx + 1} 章",
+                                AudioLibrary.chapterStartMs(c, a, idx),
+                                id = "chapter:${a.file.absolutePath}")
                         }
-                    }) { Text("按顺序播放", fontSize = 12.sp, color = HubPrimary) }
+                        val at = if (atId == null) 0
+                        else ts.indexOfFirst { it.id == atId }.coerceAtLeast(0)
+                        PlayQueue.setTracks(ts, q)
+                        PlayQueue.playFrom(at, fromMs, id = q)
+                        onPlayBook(book.id)
+                    }
+                    if (resumePos != null && resumePos.positionMs > 5000L) {
+                        TextButton(onClick = {
+                            playBook(resumePos.trackId, resumePos.positionMs)
+                            EventLog.ui("HUB_RESUME_LISTEN", "book=${book.id}")
+                        }) {
+                            Text("接着听 · %d:%02d ›".format(
+                                resumePos.positionMs / 60000,
+                                (resumePos.positionMs / 1000) % 60),
+                                fontSize = 12.sp, color = HubPrimary)
+                        }
+                    }
+                    TextButton(onClick = { playBook(null, null) }) {
+                        Text("按顺序播放", fontSize = 12.sp, color = HubPrimary)
+                    }
+                } else if (needModels) {
+                    TextButton(onClick = { onOpenModels() }) {
+                        Text("去导入模型 ›", fontSize = 12.sp, color = HubWarn)
+                    }
                 }
                 if (queued.isNotEmpty()) {
                     TextButton(onClick = {

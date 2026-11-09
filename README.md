@@ -2,12 +2,12 @@
 
 > 本地离线把一本小说变成能听的音频。App 不联网，模型文件由用户自己导入、不进安装包。
 
-**当前版本 `1.1.7`** · 现状 → `STATUS.md` · 后续队列 → `ROADMAP.md`（唯一真源）· 动代码前必读 → `docs/00_现行契约.md`
+**当前版本 `1.1.8`** · 现状 → `STATUS.md` · 后续队列 → `ROADMAP.md`（唯一真源）· 动代码前必读 → `docs/00_现行契约.md`
 
 ## 安装
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.7/app-debug.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.8/app-debug.apk
 ```
 
 固定直链（永远是最新版）：

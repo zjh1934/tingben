@@ -65,6 +65,17 @@ def check(queue=QUEUE, audio=AUDIO, r66=R66):
     return e
 
 
+def _drop_abandon_in_pause(t: str) -> str:
+    """只删 pause() 函数体里的 abandonFocus()，不绑它前面的行（R180）。"""
+    i = t.find('    fun pause() {')
+    if i < 0:
+        return t
+    j = t.find('\n    }', i)
+    if j < 0:
+        return t
+    return t[:i] + t[i:j].replace('        abandonFocus()\n', '') + t[j:]
+
+
 def main():
     errs = check()
     if errs:
@@ -77,9 +88,10 @@ def main():
     INJ = [
         ('缺文件分支丢 return', lambda: dict(queue=QUEUE.replace(
             '{ open(i + 1); return }', '{ open(i + 1) }'))),
-        ('暂停不归还焦点', lambda: dict(queue=QUEUE.replace(
-            '    fun pause() {\n        abandonFocus()\n',
-            '    fun pause() {\n'))),
+        # R180 · pause() 开头多了 savePos()，原来绑死「fun pause() { 紧跟
+        # abandonFocus()」的替换串不再命中，注入静默失效反而报「没拦下」。
+        # 改成只在 pause 函数体里删掉归还焦点那一行，不依赖它前面有什么。
+        ('暂停不归还焦点', lambda: dict(queue=_drop_abandon_in_pause(QUEUE))),
         ('删失败仍移除索引', lambda: dict(audio=AUDIO.replace(
             'if (f.isFile && !f.delete()) {', 'if (false) {'))),
         ('成品模式写回旧档位', lambda: dict(audio=AUDIO.replace(

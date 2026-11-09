@@ -59,6 +59,8 @@ def main():
         ("R177 发版对齐", ["python3", "scripts/r177_verify.py"]),
         ("R178 界面收口", ["python3", "scripts/r178_verify.py"]),
         ("R178 反向注入", ["python3", "scripts/r178_verify.py", "--selftest"]),
+        ("R180 核心闭环", ["python3", "scripts/r180_verify.py"]),
+        ("R180 反向注入", ["python3", "scripts/r180_verify.py", "--selftest"]),
     ]
     ok = 0
     for name, cmd in checks:

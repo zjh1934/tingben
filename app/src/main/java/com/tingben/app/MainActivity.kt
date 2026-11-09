@@ -181,6 +181,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var taskBookId by rememberSaveable { mutableStateOf<String?>(null) }
     var taskChapter by rememberSaveable { mutableStateOf<Int?>(null) }
     var refresh by rememberSaveable { mutableStateOf(0) }
+    // R180 · 新装用户打开软件第一眼就该知道「还差模型」，而不是等点合成才撞墙。
+    // 只给状态 + 一个能按的入口，不写教程（用户硬口径）；模型齐了整行自动消失。
+    val modelMissing = remember(refresh) { ModelStore.missing(ctx).size }
     var modelsFrom by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
     var inputReadOpen by rememberSaveable { mutableStateOf(false) }
     // 底部常驻条点开 / 通知点进来，展开同一个全屏播放器浮层
@@ -331,9 +334,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             val r = result.getOrNull()
             // R139 · 写整本进书架也是磁盘 IO，原来放在 Main 分支里同步跑
             val addRes = if (r == null) null else runCatching {
-                val before = BookStore.list(ctx).size
+                // R180 · BookStore.add 本来就返回 Book，以前只拿来比 size，
+                // 书悄悄进了抽屉、屏幕一动不动，用户以为没点上。
                 BookStore.add(ctx, r.title, r.text)
-                BookStore.list(ctx).size > before
             }
             withContext(Dispatchers.Main) {
                 bookImporting = false
@@ -350,9 +353,16 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                             Toast.LENGTH_LONG).show()
                     } else {
                         refresh++
+                        val added = addRes?.getOrNull()
+                        if (added != null) {
+                            bookId = added.id
+                            taskBookId = added.id
+                            nav.push(Screen.CHAPTERS)
+                            EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id}")
+                        }
                         Toast.makeText(ctx,
-                            if (addRes?.getOrNull() == true) "已加入书架：${r.title}（${r.kind}）"
-                            else "这本书已经在书架上了：${r.title}",
+                            if (added != null) "已加入书架：${r.title}（${r.kind}）"
+                            else "这本书没加进来，去书架看看",
                             Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -584,9 +594,16 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 // R162 · 主页就是输入框：粘贴文字直接建书，书列表搬到左边抽屉。
                 Screen.LIBRARY -> InputReadScreen(ctx,
                     onBack = { },
-                    onAdded = { refresh++ },
+                    onAdded = { id ->
+                        refresh++
+                        bookId = id
+                        taskBookId = id
+                        nav.push(Screen.CHAPTERS)
+                    },
                     asHome = true,
-                    importingBook = bookImporting)
+                    importingBook = bookImporting,
+                    modelMissing = modelMissing,
+                    onModels = { modelsFrom = Screen.LIBRARY; nav.push(Screen.MODELS) })
                 Screen.CHAPTERS -> {
                     ChapterHubScreen(ctx, bookId, refresh,
                         onBack = { nav.pop() },
@@ -602,7 +619,11 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                             taskBookId = id; lastSelection = sel
                             openBook(id)
                         },
-                        openTasksOnStart = hubOpenTasks)
+                        openTasksOnStart = hubOpenTasks,
+                        onOpenModels = {
+                            modelsFrom = Screen.CHAPTERS
+                            nav.push(Screen.MODELS)
+                        })
                     // 只借这一帧把「自动展开」交给目录页，之后复位，
                     // 下次正常从书列表打开书不会无故弹看板。
                     SideEffect { if (hubOpenTasks) hubOpenTasks = false }
@@ -714,7 +735,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         if (inputReadOpen) {
             InputReadScreen(ctx,
                 onBack = { inputReadOpen = false; EventLog.ui("OVERLAY_INPUT_READ", "close") },
-                onAdded = {
+                onAdded = { _ ->
                     inputReadOpen = false
                     EventLog.ui("OVERLAY_INPUT_READ", "added")
                     screen = Screen.LIBRARY
@@ -975,9 +996,11 @@ private fun autoBookTitle(text: String, fallback: String): String {
 }
 
 @Composable
-private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit,
+private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -> Unit,
                             asHome: Boolean = false,
-                            importingBook: Boolean = false) {
+                            importingBook: Boolean = false,
+                            modelMissing: Int = 0,
+                            onModels: () -> Unit = {}) {
     val clipboard = LocalClipboardManager.current
     val inputScope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
@@ -989,6 +1012,18 @@ private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit,
         if (importingBook) {
             Text("正在后台导入一本书…", fontSize = 11.sp, color = Sub,
                 modifier = Modifier.padding(bottom = 6.dp))
+        }
+        // R180 · 没有模型就合成不了。模型页藏在设置里，新装用户根本不知道。
+        // 这里只给一行状态 + 一个入口，模型齐了整行消失；不写教程、不常驻。
+        if (modelMissing > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                Text("还差 $modelMissing 份模型，还不能合成", fontSize = 12.sp,
+                    color = Warn, modifier = Modifier.weight(1f))
+                TextButton(onClick = onModels) {
+                    Text("去导入 ›", fontSize = 12.sp, color = Primary)
+                }
+            }
         }
         if (!asHome) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1029,10 +1064,8 @@ private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit,
                     inputScope.launch {
                         val res = withContext(Dispatchers.IO) {
                             runCatching {
-                                val before = BookStore.list(c).size
                                 BookStore.add(c, autoBookTitle(snapshot, "粘贴的文字"),
                                     snapshot, "input")
-                                BookStore.list(c).size > before
                             }
                         }
                         val err = res.exceptionOrNull()
@@ -1041,11 +1074,15 @@ private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit,
                                 Toast.LENGTH_LONG).show()
                         } else {
                             text = ""   // 失败时正文原样留着，不丢用户输入
-                            onAdded()
-                            Toast.makeText(c,
-                                if (res.getOrNull() == true) "书加好了"
-                                else "这段已经在书架里了",
-                                Toast.LENGTH_SHORT).show()
+                            val added = res.getOrNull()
+                            if (added != null) {
+                                // R180 · 建完就进这本书，不再让用户回抽屉里找
+                                onAdded(added.id)
+                                Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(c, "这段已经在书架里了",
+                                    Toast.LENGTH_SHORT).show()
+                            }
                         }
                         adding = false
                     }

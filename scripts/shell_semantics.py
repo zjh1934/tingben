@@ -80,7 +80,14 @@ def drawer_is_booklist(main: str, chrome: str) -> bool:
 
 
 def home_is_input(main: str) -> bool:
-    return bool(re.search(r"Screen\.LIBRARY\s*->\s*InputReadScreen\([^)]*asHome\s*=\s*true", main, re.S))
+    # R180 · 原来用 `[^)]*` 扫到 asHome=true，但 R180 的首页分支里
+    # onAdded 回调新增了 nav.push(...) 的右括号，正则被提前截断 → 集体假红。
+    # 改成「先定位首页分支，再在它后面一小段里找 asHome=true」，
+    # 参数里有多少括号都不影响，注入把 InputReadScreen 换掉仍会被拦下。
+    m = re.search(r"Screen\.LIBRARY\s*->\s*InputReadScreen\(", main)
+    if not m:
+        return False
+    return "asHome = true" in main[m.start():m.start() + 900]
 
 
 def topbar_has_settings(main: str, chrome: str) -> bool:

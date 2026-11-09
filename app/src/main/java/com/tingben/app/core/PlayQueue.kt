@@ -287,6 +287,7 @@ object PlayQueue {
     }
 
     fun pause() {
+        savePos()
         abandonFocus()
         try { player?.pause() } catch (_: Throwable) { }
         _state.value = _state.value.copy(isPlaying = false)
@@ -325,6 +326,9 @@ object PlayQueue {
     fun seekTo(ms: Long) {
         try { player?.seekTo(ms.toInt()) } catch (_: Throwable) { }
         _state.value = _state.value.copy(positionMs = ms)
+        val ctx = appCtx
+        if (ctx != null && !isPreview(queueId) && index in tracks.indices)
+            ListenState.save(ctx, queueId, tracks[index].id, ms, tracks[index].label)
     }
 
     /**
@@ -354,6 +358,7 @@ object PlayQueue {
     }
 
     private fun open(i: Int, overrideStartMs: Long? = null) {
+        savePos()   // 切到下一曲前先记下上一曲听到哪
         releasePlayer()
         index = i
         val t = tracks[i]
@@ -409,10 +414,28 @@ object PlayQueue {
     }
 
     private fun finish() {
+        appCtx?.let { ListenState.clear(it, queueId) }
         abandonFocus()
         _state.value = PlaybackState(speed = speed, ended = true, queueId = queueId,
             preview = isPreview(queueId))
         clearNotif()
+    }
+
+    /**
+     * R180 · 把「这一章听到第几秒」落盘。只在主播放队列（非试听）存，
+     * 暂停 / 拖动 / 切曲 / 释放 / 换队列都各存一次；播完整章就清掉，
+     * 免得下次「接着听」直接指到结尾。
+     */
+    private fun savePos() {
+        val ctx = appCtx ?: return
+        if (queueId.isEmpty() || isPreview(queueId)) return
+        val i = index
+        if (i < 0 || i >= tracks.size) return
+        val ms = try {
+            (player?.currentPosition ?: _state.value.positionMs.toInt())
+                .coerceAtLeast(0).toLong()
+        } catch (_: Throwable) { _state.value.positionMs }
+        ListenState.save(ctx, queueId, tracks[i].id, ms, tracks[i].label)
     }
 
     private fun releasePlayer() {
@@ -421,6 +444,7 @@ object PlayQueue {
     }
 
     fun release() {
+        savePos()   // 换队列 / 退出前，先把旧队列的位置留住
         abandonFocus()
         stopPreview()
         releasePlayer()
