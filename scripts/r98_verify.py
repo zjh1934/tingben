@@ -5,12 +5,15 @@
 这里守的是「这次重写到底改了什么」以及「没有把不该动的东西带坏」。
 用法：python3 scripts/r98_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "draft": APP / "core" / "MixerDraft.kt",
     "prefs": APP / "core" / "Prefs.kt",
     "synth": APP / "core" / "SynthInput.kt",

@@ -17,6 +17,7 @@
 反向注入：故意摘回调、摘 stopSelf、把默认改开、把浮窗留在屏幕上、
 删退出原因、删弹窗标签、偷偷换 REDELIVER，都必须红。
 """
+import ui_sources
 import core_sources
 import pathlib
 import re
@@ -33,7 +34,7 @@ FILES = {
     "app": APP / "TingbenApp.kt",
     "prefs": APP / "core/Prefs.kt",
     "manifest": ROOT / "app/src/main/AndroidManifest.xml",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts/r135_verify.py",
 }

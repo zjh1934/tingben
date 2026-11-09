@@ -14,6 +14,7 @@ ListenState 清理必须在 releaseIfBook 之后（release 内 savePos 会写回
 selftest 纯内存注入 + tempfile 逻辑对拍，源文件零写入。
 用法：python3 scripts/r192_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import pathlib, sys
 
@@ -24,7 +25,7 @@ FILES = {
     "reading": APP / "core/ReadingState.kt",
     "queue": APP / "core/PlayQueue.kt",
     "pipe": core_sources.source(APP),
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "r135": ROOT / "scripts/r135_verify.py",
     "ci": ROOT / ".github/workflows/ci.yml",
 }

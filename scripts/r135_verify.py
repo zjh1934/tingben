@@ -13,6 +13,9 @@
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r135_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, subprocess, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -20,7 +23,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import retired_pages
 
 APP = ROOT / "app/src/main/java/com/tingben/app"
-MAIN = APP / "MainActivity.kt"
+MAIN = ui_sources.source(APP)
 CI = ROOT / ".github/workflows/ci.yml"
 
 # 批次 6 删掉的 13 个不可达顶层声明
@@ -55,7 +58,7 @@ CURRENT_VERIFIERS = ["r131_verify.py", "r132_verify.py", "r133_verify.py",
            "r178_verify.py", "r180_verify.py", "r182_verify.py",
            "r183_verify.py", "r185_verify.py", "r188_verify.py",
            "r189_verify.py", "r192_verify.py", "r193_verify.py",
-           "r197_verify.py", "r200_verify.py"]
+           "r197_verify.py", "r200_verify.py", "r206_verify.py"]
 
 # R141 建立、R160 补第 6 项的轻量自检清单：改码轮只跑这 6 项，全套留到发版轮。
 # 换了三项：退役页统一守门（原来 17 个壳脚本各起一次）、最近两批 R140/R139。

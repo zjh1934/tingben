@@ -13,11 +13,14 @@
 selftest 全程纯内存注入，一个字节都不写源文件。
 用法：python3 scripts/r174_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FILES = {
-    "main": ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt",
+    "main": ui_sources.source(ROOT),
     "hub": ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
 }

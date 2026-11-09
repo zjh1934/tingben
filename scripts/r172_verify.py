@@ -10,6 +10,7 @@
 R170 事故后规矩：selftest 全程纯内存注入，一个字节都不写源文件。
 用法：python3 scripts/r172_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import pathlib, sys
 
@@ -21,7 +22,7 @@ FILES = {
     "plan": SRC / "core/ChapterPlan.kt",
     "resume": SRC / "core/TaskResume.kt",
     "hub": SRC / "ChapterHub.kt",
-    "main": SRC / "MainActivity.kt",
+    "main": ui_sources.source(SRC),
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 

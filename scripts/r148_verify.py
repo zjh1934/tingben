@@ -15,6 +15,7 @@
 
 用法：python3 scripts/r148_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import hashlib
 import pathlib
@@ -27,7 +28,7 @@ FILES = {
     "split": APP / "core" / "TextSplitter.kt",
     "noise": APP / "core" / "SiteNoise.kt",
     "hub": APP / "ChapterHub.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 

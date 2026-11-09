@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """听本 · CI 自检：必备文件 / 权重泄漏 / 无网络权限 / 包名 / KDoc 坑 / 审计符号。只依赖标准库。"""
+import ui_sources
 import core_sources
 from pathlib import Path
 import os, re, sys
@@ -90,7 +91,7 @@ for p in kt_files:
             errs.append("%s:%d KDoc 正文出现注释收尾符（会提前闭合块注释）"
                         % (p.relative_to(ROOT), no))
 
-all_src = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in kt_files)
+all_src = "\n".join(ui_sources.view_for(p, ROOT) for p in kt_files)
 R68_GONE_A = ["AUDIT_RUN_BEGIN", "AUDIT_SUMMARY", "AbGate", "KEY_THINKING", "PROMPT_VERSION",
               "parseWithMeta", "ruleChecks", "BlockAudit", "ANN_RAW", "ANN_PREVIEW",
               "ANN_EMPTY", "ANN_AUDIT", "summaryText", "previewText", "contentText"]
@@ -125,7 +126,7 @@ if "= raw.lastIndexOf(']')" in pipe_src:
 if "o.optString(\"instruct\", \"平稳叙述\")" in pipe_src:
     errs.append("R68 回退：又出现手搓解析默认指令")
 
-main_src = (ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt").read_text(encoding="utf-8", errors="replace")
+main_src = (ui_sources.source(ROOT)).read_text(encoding="utf-8", errors="replace")
 R25_ALL = ["TextSplitter", "SPLIT_STATS", "directWithStats"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)
@@ -565,7 +566,7 @@ errs += r168_errs(_hub_src, _site_src)
 #    Elvis `?: return` 与 inline lambda 内的非局部返回是合法的，不误报。
 # ② 跨 package 用 EventLog 却漏 import → Unresolved reference。
 _kt_dir = ROOT / "app/src/main/java/com/tingben/app"
-_kt_all = {str(q.relative_to(ROOT)): q.read_text(encoding="utf-8", errors="replace")
+_kt_all = {str(q.relative_to(ROOT)): ui_sources.view_for(q, ROOT)
            for q in _kt_dir.rglob("*.kt")}
 _EXPR_BODY = re.compile(
     r'fun\s+\w+\s*\([^)]*\)\s*(?::[^=\n]+)?=\s*try\s*\{')

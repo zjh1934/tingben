@@ -3,6 +3,7 @@
 
 沙盒无 Android SDK，静态绿 ≠ 编译过；真编译由 CI 负责。
 """
+import ui_sources
 import core_sources
 import pathlib, sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -10,7 +11,7 @@ FILES = {
     "reading": ROOT / "app/src/main/java/com/tingben/app/core/ReadingState.kt",
     "hub": ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt",
     "pipe": core_sources.source(ROOT),
-    "main": ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt",
+    "main": ui_sources.source(ROOT),
     "chrome": ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
     "parity": ROOT / "scripts/r95_space_parity.py",

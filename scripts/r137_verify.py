@@ -57,7 +57,7 @@ SECRET_LITERALS = ["motingdebug", "keyAlias = \"moting\"", "storePassword = \"",
 
 BUMP_ANCHORS = [
     "def parse(v)", "def online_prev()", "TINGBEN_PREV_VERSION",
-    "if new <= old", "releases/latest",
+    "TINGBEN_VERIFY_ONLY", "GITHUB_REF", "if new <= old", "releases/latest",
 ]
 
 

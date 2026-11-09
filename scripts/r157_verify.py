@@ -30,6 +30,7 @@
 
 用法：python3 scripts/r157_verify.py --selftest
 """
+import ui_sources
 import core_sources
 import pathlib
 import re
@@ -42,7 +43,7 @@ FILES = {
     "pipe": core_sources.source(APP),
     "log": APP / "diag" / "EventLog.kt",
     "export": APP / "core" / "AudioExport.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts" / "r135_verify.py",
 }

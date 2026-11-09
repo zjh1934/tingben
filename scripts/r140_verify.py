@@ -10,6 +10,7 @@
 
 用法：python3 scripts/r140_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import pathlib
 import re
@@ -26,7 +27,7 @@ FILES = {
     "pipeline": core_sources.source(APP),
     "segplan": APP / "core" / "SegPlan.kt",
     "workbench": APP / "core" / "Workbench.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 

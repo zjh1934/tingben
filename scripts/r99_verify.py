@@ -5,12 +5,15 @@
 只查字符串与结构，不假装证明真机手感。
 用法：python3 scripts/r99_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "draft": APP / "core" / "MixerDraft.kt",
     "prefs": APP / "core" / "Prefs.kt",
     "qwen": ROOT / "app/src/main/cpp/qwen.h",

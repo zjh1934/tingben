@@ -12,6 +12,9 @@
     from retired_pages import run
     if __name__ == "__main__": sys.exit(run("R79"))
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 import screen_enum as se
 
@@ -58,6 +61,8 @@ def sources():
     out = {}
     for p in APP.rglob("*.kt"):
         out[p.name] = p.read_text(encoding="utf-8", errors="replace")
+    # R206 · MainActivity 已按页分家，判据必须看合并视图而非骨架主文件
+    out["MainActivity.kt"] = ui_sources.read(ROOT)
     return out
 
 

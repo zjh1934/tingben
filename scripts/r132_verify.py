@@ -9,13 +9,16 @@ Screen 枚举删掉 AUDIO 与 TASK_DETAIL / 分发与 chromeOf 无旧页分支 /
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r132_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys
 import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "chrome": APP / "AppChrome.kt",
     "ci": ROOT / ".github/workflows/ci.yml",

@@ -9,11 +9,14 @@ R170 事故收口：原来 selftest 反复原地覆写 157KB 的 MainActivity.kt
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r136_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
-MAIN = APP / "MainActivity.kt"
+MAIN = ui_sources.source(APP)
 CI = ROOT / ".github/workflows/ci.yml"
 
 MODEL_ANCHORS = [
@@ -43,7 +46,7 @@ IMPORT_SCOPE = ["MainActivity.kt", "MultiSelect.kt", "PlayerSheet.kt",
 
 
 def read_sources():
-    return {n: (APP / n).read_text(encoding="utf-8", errors="replace")
+    return {n: ui_sources.view_for(APP / n, ROOT)
             for n in IMPORT_SCOPE}
 
 

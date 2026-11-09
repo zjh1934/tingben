@@ -10,6 +10,9 @@ F-25 的验收不是「脚本改了」，而是：
 
 用法：python3 scripts/r107_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import os, pathlib, re, shutil, subprocess, sys, tempfile
 import atexit
 
@@ -18,7 +21,7 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import nav_semantics as nav
 
-MAIN_P = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
+MAIN_P = ui_sources.source(ROOT)
 # R135：r79 / r80 验证对象（旧音频页）已物理删除并退役，
 # 不再要求它们接入导航语义判据，改由统一守门约束。
 TARGETS = ["check_structure.py", "r46_verify.py", "r89_verify.py",
@@ -76,7 +79,15 @@ def _exec_script(path, extra_args=()):
 def atomic_write(path, text):
     """R170 · 原地覆写 157KB 大文件在这台沙盒上会触发 Stale file handle，
     而且进程被砍在 try/finally 中间会留注入残体。改成「写临时 + 原子替换」，
-    每次都是新 inode；再注册 atexit 兜底，正常/异常退出都不留残。"""
+    每次都是新 inode；再注册 atexit 兜底，正常/异常退出都不留残。
+
+    R206 · path 现在是 ui_sources.UiSourcePath（MainActivity 已分家）。
+    直接 os.replace 到真实路径会把「合并视图原文」盖回主文件、丢掉占位行、
+    片段也不同步；必须走它的 write_text 按片段分发，合并视图语义才成立。
+    """
+    if not isinstance(path, pathlib.Path) and hasattr(path, "write_text"):
+        path.write_text(text)
+        return
     tmp = pathlib.Path(str(path) + ".r107tmp")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)

@@ -15,6 +15,9 @@ G2a 已把双进度 / 单停止继续 / 章节就地展开做进目录页；G2b 
 
 用法：python3 scripts/r151_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib
 import re
 import sys
@@ -22,7 +25,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts" / "r135_verify.py",

@@ -24,6 +24,9 @@
 
 用法：python3 scripts/r155_verify.py --selftest
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib
 import re
 import sys
@@ -32,7 +35,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "hub": APP / "ChapterHub.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts" / "r135_verify.py",
 }

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """R114 · 字号阶梯 / 制作准备页收敛 / 音频焦点 / 系统栏反色：正向、守恒、反向注入。"""
+import ui_sources
 import core_sources
 import pathlib, re, shutil, sys, tempfile
 
@@ -23,6 +24,8 @@ SP = re.compile(r'(\d+(?:\.\d+)?)\.sp')
 def txt(root, key):
     if REL[key].endswith('Pipeline.kt'):
         return core_sources.read(root)
+    if key == 'main':          # R206 · MainActivity 走合并视图
+        return ui_sources.read(root)
     p = root / REL[key]
     return p.read_text(encoding='utf-8') if p.exists() else ''
 
@@ -155,7 +158,7 @@ def selftest():
             if not q.exists():
                 shutil.copy2(p, q)
         for name, key, old, new in INJECT:
-            f = r / REL[key]
+            f = ui_sources.source(r) if key == 'main' else r / REL[key]
             s = f.read_text(encoding='utf-8')
             if old not in s:
                 errs.append('注入锚点不存在：' + name)

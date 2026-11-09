@@ -5,9 +5,12 @@
 真机截图 26 实证：展开一张卡，详情全塞在卡里把那张撑到两倍高，
 同一行另一列空一大块，第三张被挤下去。改成三卡固定等高 + 统一详情弹层。
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MAIN = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
+MAIN = ui_sources.source(ROOT)
 CI = ROOT / ".github/workflows/ci.yml"
 
 def body():

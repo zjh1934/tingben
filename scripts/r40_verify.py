@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from r45_common import strip_r45, canon
 """R40 · 调音台「统一提交」验证（纯标准库，不依赖 Android SDK）。
 
@@ -99,7 +102,7 @@ def git_head(path):
         return None
 
 def main():
-    m = (ROOT / MAIN).read_text(encoding="utf-8")
+    m = ui_sources.source(ROOT).read_text(encoding="utf-8")
     d = (ROOT / DRAFT).read_text(encoding="utf-8")
 
     print("=== 1) diff 对拍（6 组）===")

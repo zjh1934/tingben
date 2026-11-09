@@ -16,13 +16,16 @@ R163 把章节 / 合成 / 可播三列合并成书内一个 LazyColumn；原来 
 用法：python3 scripts/r163_verify.py [--selftest]
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import hub_semantics as hub
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 HUB = ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt"
-MAIN = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
+MAIN = ui_sources.source(ROOT)
 
 
 def texts():

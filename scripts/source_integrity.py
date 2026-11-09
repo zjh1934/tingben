@@ -9,9 +9,12 @@
 现在 selftest 已全部改成纯内存注入，但留这道网：每轮 CI 第一项就核一批
 「历史注入的替换目标」是否齐全，任何残留当场报红、给出具体文件名与锚点。
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MAIN = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
+MAIN = ui_sources.source(ROOT)
 
 ANCHORS = [
     "Prefs.setModelMode(c, mode.id)",

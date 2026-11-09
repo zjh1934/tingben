@@ -15,6 +15,7 @@
 selftest 纯内存注入 + 逻辑对拍，源文件零写入。
 用法：python3 scripts/r193_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import pathlib, sys
 
@@ -24,7 +25,7 @@ FILES = {
     "pipe": core_sources.source(APP),
     "plan": APP / "core/ChapterPlan.kt",
     "hub": APP / "ChapterHub.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "struct": ROOT / "scripts/check_structure.py",
     "r135": ROOT / "scripts/r135_verify.py",
     "ci": ROOT / ".github/workflows/ci.yml",

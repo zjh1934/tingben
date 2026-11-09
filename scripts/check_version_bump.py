@@ -11,6 +11,11 @@
 
 用法：python3 scripts/check_version_bump.py
 退出码 0 = 可以发版；1 = 拦下。
+
+R203 · 版本递增只在「main 发版流程」生效：CI 的 rc 验证分支由
+GITHUB_REF（refs/heads/rc/...）自动识别并跳过；本地验证轮用
+TINGBEN_VERIFY_ONLY=1 跳过。显式给了 TINGBEN_PREV_VERSION 时优先级更高
+（那是在离线对拍闸门本身）。main 上不设这些变量，同号仍严格拦下。
 """
 import json
 import os
@@ -81,6 +86,14 @@ def check():
 
 
 def main():
+    ref = os.environ.get("GITHUB_REF", "")
+    verify_only = os.environ.get("TINGBEN_VERIFY_ONLY") == "1"
+    # rc/... 等非 main 分支只跑真编译、不产出 Release；main 不在跳过集合里
+    is_verify = verify_only or (ref and ref != "refs/heads/main")
+    if is_verify and os.environ.get("TINGBEN_PREV_VERSION") is None:
+        print("PASS · 验证轮跳过版本递增（%s；main 发版仍严格拦同号）"
+              % (ref or "TINGBEN_VERIFY_ONLY"))
+        return 0
     e = check()
     if e:
         print("FAIL · 版本守门")

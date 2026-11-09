@@ -16,6 +16,9 @@
 
 用法：python3 scripts/r147_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib
 import sys
 
@@ -23,7 +26,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "eventlog": APP / "diag" / "EventLog.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "player": APP / "PlayerSheet.kt",
     "multi": APP / "MultiSelect.kt",

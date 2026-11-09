@@ -76,7 +76,9 @@
       "hub_semantics.py",
       "r163_verify.py",
       "core_sources.py",
-      "r200_verify.py"
+      "r200_verify.py",
+      "ui_sources.py",
+      "r206_verify.py"
     ]
   },
   "hook_strict": false,

@@ -8,6 +8,9 @@
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r133_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -15,7 +18,7 @@ SRC = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "queue": SRC / "core/PlayQueue.kt",
     "notif": SRC / "core/PlayNotif.kt",
-    "main": SRC / "MainActivity.kt",
+    "main": ui_sources.source(SRC),
     "hub": SRC / "ChapterHub.kt",
     "player": SRC / "PlayerSheet.kt",
     "icons": SRC / "PlayIcons.kt",

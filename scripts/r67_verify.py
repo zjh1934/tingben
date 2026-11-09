@@ -3,6 +3,7 @@
 零残留 / 旧数据兼容 / 守恒 / 反向注入，四组一起过才算绿。
 用法：python3 scripts/r67_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import json, re, sys
 from pathlib import Path
@@ -10,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 J = ROOT / 'app/src/main/java/com/tingben/app'
 PIPE = core_sources.source(J).read_text(encoding='utf-8')
 PREFS = (J / 'core/Prefs.kt').read_text(encoding='utf-8')
-MAIN = (J / 'MainActivity.kt').read_text(encoding='utf-8')
+MAIN = (ui_sources.source(J)).read_text(encoding='utf-8')
 HUB = (J / 'ChapterHub.kt').read_text(encoding='utf-8')
 EVENT = (J / 'diag/EventLog.kt').read_text(encoding='utf-8')
 CHROME = (J / 'AppChrome.kt').read_text(encoding='utf-8')

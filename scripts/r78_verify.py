@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """R78 · 书架首屏重排验证：正向 / 零残留 / 守恒 / 反向注入。"""
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys, re
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SRC = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
+SRC = ui_sources.source(ROOT)
 CONTRACT = ROOT / "docs/00_现行契约.md"
 CI = ROOT / ".github/workflows/ci.yml"
 

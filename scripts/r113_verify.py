@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """R113 · 清单收尾：F-20 / F-13 / F-17 / F-23 正向、守恒、反向注入。"""
+import ui_sources
 import core_sources
 import pathlib, shutil, sys, tempfile
 
@@ -21,6 +22,8 @@ REL = {
 def txt(root, key):
     if REL[key].endswith('Pipeline.kt'):
         return core_sources.read(root)
+    if key == 'main':          # R206 · MainActivity 走合并视图
+        return ui_sources.read(root)
     p = root / REL[key]
     return p.read_text(encoding='utf-8') if p.exists() else ''
 
@@ -109,10 +112,11 @@ def selftest():
                     errs.append('注入锚点不存在：' + name); continue
                 core_sources.source(r).write_text(s.replace(old, new), encoding='utf-8')
             else:
-                s = (r / REL[key]).read_text(encoding='utf-8')
+                f = ui_sources.source(r) if key == 'main' else r / REL[key]
+                s = f.read_text(encoding='utf-8')
                 if old not in s:
                     errs.append('注入锚点不存在：' + name); continue
-                (r / REL[key]).write_text(s.replace(old, new), encoding='utf-8')
+                f.write_text(s.replace(old, new), encoding='utf-8')
             if not check(r): errs.append('没拦下：' + name)
     return errs
 

@@ -7,13 +7,16 @@ R185 订正：双指纹比对后删 WAV 已换成 VoiceCache 分套归档 + 三 
 守恒项随之换成新形态，反向注入仍逐条验。
 反向注入：旧形态塞回去必须拦下。
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys
 import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 KT = ROOT / "app/src/main/java/com/tingben/app"
 NL = chr(10)
-MAIN = (KT / "MainActivity.kt").read_text(encoding="utf-8")
+MAIN = ui_sources.source(KT).read_text(encoding="utf-8")
 CHROME = (KT / "AppChrome.kt").read_text(encoding="utf-8")
 ALLKT = NL.join(p.read_text(encoding="utf-8") for p in KT.rglob("*.kt"))
 

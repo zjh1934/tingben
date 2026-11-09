@@ -393,6 +393,10 @@ jobs:
         run: python3 scripts/r200_verify.py --selftest
       - name: R200 分家读取层
         run: python3 scripts/r200_verify.py
+      - name: R206 MainActivity 分家读取层守门
+        run: python3 scripts/r206_verify.py
+      - name: R206 MainActivity 分家读取层反向注入
+        run: python3 scripts/r206_verify.py --selftest
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

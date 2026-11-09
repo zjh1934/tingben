@@ -16,6 +16,7 @@
 selftest 全程纯内存注入，一个字节都不写源文件。
 用法：python3 scripts/r185_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import pathlib, sys
 
@@ -26,7 +27,7 @@ FILES = {
     "pipe": core_sources.source(APP),
     "tree": APP / "core/AudioTree.kt",
     "resume": APP / "core/TaskResume.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 

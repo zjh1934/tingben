@@ -21,6 +21,9 @@
 
 用法：python3 scripts/r156_verify.py --selftest
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib
 import re
 import sys
@@ -29,7 +32,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "export": APP / "core" / "AudioExport.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "manifest": ROOT / "app/src/main/AndroidManifest.xml",
     "audio": APP / "core" / "AudioLibrary.kt",
     "ci": ROOT / ".github/workflows/ci.yml",

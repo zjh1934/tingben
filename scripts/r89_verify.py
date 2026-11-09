@@ -12,6 +12,9 @@ R162 用户把目标定死：主页输入框 / 抽屉放书 / 右上角 ＋ 与�
   · 调音台是合成前弹层，模型在设置页，主页是输入框
   · 反向注入覆盖「旧菜单回潮 / 主页变回书架 / 齿轮消失 / 弹层退回独立页」
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import nav_semantics as nav
@@ -20,7 +23,7 @@ import shell_semantics as shell
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CHROME = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
-MAIN = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
+MAIN = ui_sources.source(ROOT)
 CI = ROOT / ".github/workflows/ci.yml"
 
 # R195 · 动态解析

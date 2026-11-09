@@ -13,6 +13,7 @@
 
 用法：python3 scripts/r138_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import base64
 import pathlib
@@ -28,7 +29,7 @@ FILES = {
     "pipeline": core_sources.source(APP),
     "resume": APP / "core" / "TaskResume.kt",
     "hub": APP / "ChapterHub.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 

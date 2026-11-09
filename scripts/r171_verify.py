@@ -13,12 +13,15 @@
 R170 事故收口：selftest 全程纯内存注入，一个字节都不写源文件。
 用法：python3 scripts/r171_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SRC = ROOT / "app/src/main/java/com/tingben/app"
 HUB = SRC / "ChapterHub.kt"
-MAIN = SRC / "MainActivity.kt"
+MAIN = ui_sources.source(SRC)
 MULTI = SRC / "MultiSelect.kt"
 CI = ROOT / ".github/workflows/ci.yml"
 

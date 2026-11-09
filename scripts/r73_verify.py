@@ -3,6 +3,9 @@
 正向符号 / 旧假行零残留 / 守恒 / 反向注入，四组一起过才算绿。
 用法：python3 scripts/r73_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import sys
 from pathlib import Path
 
@@ -10,13 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 J = ROOT / 'app/src/main/java/com/tingben/app'
 CI = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
 THEME = (J / 'Theme.kt').read_text(encoding='utf-8')
-MAIN = (J / 'MainActivity.kt').read_text(encoding='utf-8')
+MAIN = (ui_sources.source(J)).read_text(encoding='utf-8')
 HUB = (J / 'ChapterHub.kt').read_text(encoding='utf-8')
 OPTS = (J / 'ProduceOptions.kt').read_text(encoding='utf-8')
 CHROME = (J / 'AppChrome.kt').read_text(encoding='utf-8')
 PREFS = (J / 'core/Prefs.kt').read_text(encoding='utf-8')
 NIGHT = (ROOT / 'app/src/main/res/values-night/themes.xml').read_text(encoding='utf-8')
-ALLKT = '\n'.join(p.read_text(encoding='utf-8') for p in J.rglob('*.kt'))
+ALLKT = '\n'.join(ui_sources.view_for(p, ROOT) for p in J.rglob('*.kt'))
 MANIFEST = (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 
 NEED = [

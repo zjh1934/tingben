@@ -9,12 +9,15 @@
   ④ 同一前台会话的 SKIP 只记一次
   ⑤ 模型文件名单行、导出按钮空态禁用
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys, tempfile, shutil
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 A = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "hub": A / "ChapterHub.kt", "chrome": A / "AppChrome.kt",
-    "main": A / "MainActivity.kt", "theme": A / "Theme.kt",
+    "main": ui_sources.source(A), "theme": A / "Theme.kt",
 }
 def lum(h):
     c = [int(h[i:i+2], 16)/255 for i in (1,3,5)]
@@ -68,8 +71,15 @@ def checks(src, quiet=False):
     return e
 
 def read_all(base=ROOT):
-    return {k: (base / v.relative_to(ROOT)).read_text(encoding="utf-8")
-            for k, v in FILES.items()}
+    # R208 · main 是 UiSourcePath，relative_to 只会拿回骨架主文件；
+    # ModelScreen 等已搬到片段，判据与注入锚点必须看合并视图。
+    out = {}
+    for k, v in FILES.items():
+        if k == "main":
+            out[k] = ui_sources.read(base)
+        else:
+            out[k] = (base / v.relative_to(ROOT)).read_text(encoding="utf-8")
+    return out
 
 def selftest():
     base = read_all()

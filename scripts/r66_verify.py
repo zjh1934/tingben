@@ -3,6 +3,7 @@
 正向形态 / 用户可见字符串零残留 / 守恒 / 反向注入，四组一起过才算绿。
 用法：python3 scripts/r66_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import json, re, sys
 import screen_enum as se
@@ -10,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 J = ROOT / 'app/src/main/java/com/tingben/app'
-MAIN = (J / 'MainActivity.kt').read_text(encoding='utf-8')
+MAIN = (ui_sources.source(J)).read_text(encoding='utf-8')
 HUB = (J / 'ChapterHub.kt').read_text(encoding='utf-8')
 CHROME = (J / 'AppChrome.kt').read_text(encoding='utf-8')
 PIPE = core_sources.source(J).read_text(encoding='utf-8')

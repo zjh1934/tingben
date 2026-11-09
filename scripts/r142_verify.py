@@ -14,6 +14,9 @@
 
 用法：python3 scripts/r142_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib
 import re
 import sys
@@ -21,7 +24,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "icons": APP / "PlayIcons.kt",
     "eventlog": APP / "diag" / "EventLog.kt",

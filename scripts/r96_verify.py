@@ -4,11 +4,14 @@
 沙盒无 Android SDK，静态绿 ≠ 编译过；真编译由 CI 负责。
 --selftest 先跑一次正向，再做反向注入（历史脚本只跑注入，这里补严）。
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FILES = {
-    "main": ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt",
+    "main": ui_sources.source(ROOT),
     "reading": ROOT / "app/src/main/java/com/tingben/app/core/ReadingState.kt",
     "chrome": ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt",
     "hub": ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt",

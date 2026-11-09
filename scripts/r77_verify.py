@@ -4,6 +4,7 @@
 正向：删文件 / 零残留 / 双指纹迁移 / 守恒 / 界面零改动 / CI 已挂。
 --selftest：8 类反向注入，每类都必须被拦下（防「断言永远 PASS」）。
 """
+import ui_sources
 import core_sources
 import pathlib, shutil, sys, tempfile
 
@@ -14,6 +15,8 @@ MAIN = "app/src/main/java/com/tingben/app/MainActivity.kt"
 def txt(root, rel):
     if rel.endswith("Pipeline.kt"):
         return core_sources.read(root)
+    if rel == MAIN:            # R206 · MainActivity 走合并视图
+        return ui_sources.read(root)
     p = root / rel
     return p.read_text(encoding="utf-8") if p.exists() else ""
 

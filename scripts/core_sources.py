@@ -23,12 +23,18 @@ CORE = "app/src/main/java/com/tingben/app/core"
 INSERT = "// @core-insert: "
 PART = "// @core-part: "
 HEADER = "package com.tingben.app.core\n\n"
+# 末块没有「下一个顶层结构」可当右锚，用哨兵表示切到合并视图末尾。
+END = "__CORE_END__"
 
 # 顺序即合并顺序。锚点必须是源码里唯一且稳定的字面量。
 PARTS = (
+    ("BookStore.kt", "object BookStore {", "object ModelStore {"),
+    ("ModelStore.kt", "object ModelStore {", "object ChapterSplitter {"),
     ("ChapterSplitter.kt", "object ChapterSplitter {", "object Annotator {"),
     ("Annotator.kt", "object Annotator {", "object AnnCache {"),
     ("AnnCache.kt", "object AnnCache {", "object WavMerger {"),
+    ("WavMerger.kt", "object WavMerger {", "data class Progress("),
+    ("Producer.kt", "object Producer {", END),
 )
 
 
@@ -110,7 +116,8 @@ class SourcePath:
         writes = []
         for name, start, nxt in PARTS:
             i = t.find(start)
-            j = t.find(nxt, i + len(start)) if i >= 0 else -1
+            j = (len(t) if nxt == END else
+                 (t.find(nxt, i + len(start)) if i >= 0 else -1))
             if i < 0 or j < 0:
                 # 切不动就整体不写，宁可不动也不把拼接文本覆进主文件
                 return 0

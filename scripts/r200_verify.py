@@ -37,6 +37,7 @@ def files() -> dict:
         "main": MAIN.read_text(encoding="utf-8", errors="replace"),
         "ci": (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8", errors="replace"),
         "r135": (SCRIPTS / "r135_verify.py").read_text(encoding="utf-8", errors="replace"),
+        "self": (SCRIPTS / "r200_verify.py").read_text(encoding="utf-8", errors="replace"),
     }
 
 
@@ -51,6 +52,27 @@ def check(f, parts):
     for a in ANCHORS:
         if a not in merged:
             e.append("合并视图缺符号: " + a[:44])
+    # 用正则匹配函数定义行：模式本身带转义，不会被「删掉定义」的反向注入顺手改掉
+    if not re.search(r"^def inject_in_segment\(", f.get("self", ""), re.M):
+        e.append("守门缺区间内注入函数")
+    # 拼接避免自指：判据字符串本身若原样写出，会永远命中自己
+    legacy = "base.replace(" + "needle, repl, 1)"
+    if legacy in f.get("self", ""):
+        e.append("守门退回简单 replace(1)，重名锚点会串片段")
+    if cs.PARTS[-1][2] != cs.END:
+        e.append("末块没用 END 哨兵（右锚会找不到、写回整体失败）")
+    # 读的是传入的文本变体：注入把末块行换成普通锚点也能当场红
+    rows = re.findall(r'^\s*\("([^"]+\.kt)",\s*"[^"]+",\s*([^)]+)\),',
+                      f["core_sources"], re.M)
+    if not rows or rows[-1][1].strip() != "END":
+        e.append("core_sources 文本里末块没登记 END 哨兵")
+    if "nxt == END" not in f["core_sources"]:
+        e.append("读取层没处理末块哨兵")
+    # 精确匹配函数体那一行：用例自身带同样的字面量，全文 in 判据恒真；
+    # 拼接既避开自指，也保证本文件里唯一一处完整串就是下面那行代码。
+    end_line = re.compile(r"j = \(len\(text\) if nxt == " + r"cs\.END" + r" else")
+    if not end_line.search(f.get("self", "")):
+        e.append("守门区间注入没处理末块哨兵")
     if "def read(root)" not in f["core_sources"]:
         e.append("core_sources.read 不存在")
     if "t.replace(_marker(name), _body(" not in f["core_sources"]:
@@ -121,6 +143,23 @@ def _anchor(name, body):
     return ("fun " + m.group(1) + "(", "fun " + m.group(1) + "_X(") if m else None
 
 
+def inject_in_segment(text, start, nxt, needle, repl):
+    """只在目标片段的 [start, nxt) 区间内替换。
+
+    R204b · BookStore 与 ModelStore 都有 `fun dir(`，简单 replace(1) 会打到
+    前一个片段：注入没落目标片段、假失败，还会在前一个片段里留下污染。
+    """
+    i = text.find(start)
+    j = (len(text) if nxt == cs.END else
+         (text.find(nxt, i + len(start)) if i >= 0 else -1))
+    if i < 0 or j < 0:
+        return None
+    seg = text[i:j]
+    if needle not in seg:
+        return None
+    return text[:i] + seg.replace(needle, repl, 1) + text[j:]
+
+
 def writeback_case():
     """临时目录里对每个片段各跑一次「注入 → 分发写回 → 还原」，确认不污染主文件。"""
     errs = []
@@ -140,7 +179,12 @@ def writeback_case():
                 errs.append("片段找不到函数锚点: " + name)
                 continue
             needle, repl = pair
-            inj = base.replace(needle, repl, 1)
+            # R204b · 按 PARTS 区间定位，锚点重名也不会串到别的片段
+            entry = next((x for x in cs.PARTS if x[0] == name), None)
+            inj = inject_in_segment(base, entry[1], entry[2], needle, repl) if entry else None
+            if inj is None:
+                errs.append("区间内注入失败: " + name)
+                continue
             assert inj != base
             cs.source(r).write_text(inj)
             main_t = (r / cs.CORE / "Pipeline.kt").read_text(encoding="utf-8")
@@ -177,7 +221,9 @@ def selftest():
                  "package com.tingben.app.core\npackage com.tingben.app.core"))
     # 每块：PARTS 漏登记
     for name, start, nxt in cs.PARTS:
-        line = '    ("%s", "%s", "%s"),' % (name, start, nxt)
+        # 末块右锚是裸常量 END（不带引号），按字符串拼会多出一对引号、注入打空
+        tail = "END" if nxt == cs.END else '"%s"' % nxt
+        line = '    ("%s", "%s", %s),' % (name, start, tail)
         cuts.append(("PARTS 漏登记·" + name[:-3], "core_sources", line, ""))
     # 每个有 import 的片段：删掉一条 import、或把 import 塞进正文
     for name, _, _ in cs.PARTS:
@@ -193,6 +239,13 @@ def selftest():
     cuts += [
         ("CI 漏挂", "ci", "python3 scripts/r200_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r200_verify.py"', ""),
+        ("末块哨兵被换成普通锚点", "core_sources",
+         '    ("Producer.kt", "object Producer {", END),',
+         '    ("Producer.kt", "object Producer {", "object Never {"),'),
+        ("守门区间注入不认 END", "self",
+         "nxt == cs.END", "nxt == '__NOPE__'"),
+        ("守门退回简单 replace(1)", "self",
+         "def inject_in_segment(", "def unused_segment("),
         ("core_sources 退化成直接读单文件", "core_sources",
          "t.replace(_marker(name), _body(", "pass  # "),
     ]

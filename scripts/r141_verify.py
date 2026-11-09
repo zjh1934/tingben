@@ -12,6 +12,9 @@
 
 用法：python3 scripts/r141_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib
 import re
 import subprocess
@@ -22,7 +25,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "eventlog": APP / "diag" / "EventLog.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "r40": ROOT / "scripts/r40_verify.py",
     "r46": ROOT / "scripts/r46_verify.py",
     "r135": ROOT / "scripts/r135_verify.py",

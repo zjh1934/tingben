@@ -16,6 +16,7 @@
 selftest 全程纯内存注入，一个字节都不写源文件（R170 事故后的规矩）。
 用法：python3 scripts/r175_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import pathlib, struct, sys
 
@@ -26,7 +27,7 @@ FILES = {
     "resume": SRC / "core/TaskResume.kt",
     "audio": SRC / "core/AudioLibrary.kt",
     "hub": SRC / "ChapterHub.kt",
-    "main": SRC / "MainActivity.kt",
+    "main": ui_sources.source(SRC),
     "manifest": ROOT / "app/src/main/AndroidManifest.xml",
     "rules": ROOT / "app/src/main/res/xml/data_extraction_rules.xml",
     "ci": ROOT / ".github/workflows/ci.yml",

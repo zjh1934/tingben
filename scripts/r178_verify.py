@@ -22,12 +22,15 @@
 selftest 全程纯内存注入，一个字节都不写源文件。
 用法：python3 scripts/r178_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "chrome": APP / "AppChrome.kt",
     "readme": ROOT / "README.md",

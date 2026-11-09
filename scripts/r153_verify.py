@@ -17,6 +17,7 @@
 
 用法：python3 scripts/r153_verify.py --selftest
 """
+import ui_sources
 import core_sources
 import pathlib
 import re
@@ -25,7 +26,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "theme": APP / "Theme.kt",
     "plan": APP / "core" / "ChapterPlan.kt",

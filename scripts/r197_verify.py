@@ -14,12 +14,15 @@
 
 纯内存注入，不写源码。用法：python3 scripts/r197_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "enum": ROOT / "scripts/screen_enum.py",
     "ci": ROOT / ".github/workflows/ci.yml",

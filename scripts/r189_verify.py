@@ -11,6 +11,9 @@ C r135 CURRENT_VERIFIERS 补齐到 r189，并加自动防漏（CI 里现行批�
 selftest 纯内存注入，源文件零写入。
 用法：python3 scripts/r189_verify.py [--selftest]
 """
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -19,7 +22,7 @@ APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "tree": APP / "core/AudioTree.kt",
     "hub": APP / "ChapterHub.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "r135": ROOT / "scripts/r135_verify.py",
     "ci": ROOT / ".github/workflows/ci.yml",
     "r137": ROOT / "scripts/r137_verify.py",

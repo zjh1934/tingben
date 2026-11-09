@@ -7,6 +7,7 @@
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r129_verify.py [--selftest]
 """
+import ui_sources
 import core_sources
 import pathlib, sys
 
@@ -16,7 +17,7 @@ FILES = {
     "resume": APP / "core" / "TaskResume.kt",
     "pipe": core_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
-    "main": APP / "MainActivity.kt",
+    "main": ui_sources.source(APP),
     "ci": ROOT / ".github/workflows/ci.yml",
     "r114": ROOT / "scripts/r114_verify.py",
 }
