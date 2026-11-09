@@ -12,21 +12,44 @@ object Importer {
 
     const val CHAPTER_SEP = '\uE000'
 
+    /** R172 · 任意文件 / EPUB 容器的硬上限，防止无上限读取。 */
     const val MAX_BYTES = 64 * 1024 * 1024
+    /**
+     * R172 · 纯文本闸门前置到读字节阶段。600 万汉字 UTF-8 约 18MB，
+     * 原来允许先读满 64MB（ByteArrayOutputStream 内部数组 + toByteArray 副本
+     * 约 128MB）再解码成 String、再跑多套编码，最后才在 checkText 里判字数 ——
+     * 闸门装在 OOM 之后。24MB 留出 UTF-16 / 标点余量，EPUB 容器仍走 64MB。
+     */
+    const val MAX_TXT_BYTES = 24 * 1024 * 1024
 
     private const val MAX_ENTRY_BYTES = 8 * 1024 * 1024
     private const val MAX_UNZIPPED_BYTES = 96 * 1024 * 1024
+    private const val ENC_SAMPLE = 64 * 1024
 
-    private fun readLimited(s: InputStream): ByteArray {
+    /**
+     * R173 · 闸门按内容动态选，不靠文件名猜。
+     * 纯文本 24MB 前置；一旦头两字节是 PK（zip / 改名成 .txt 的 epub），
+     * 自动放宽到 64MB 容器上限，解压总量仍由 MAX_UNZIPPED_BYTES 兜着。
+     * 上一版只看后缀与 MIME，用户把 .epub 改名成 .txt 就会在 24MB 被误拒。
+     */
+    private fun readLimited(s: InputStream, txtLimit: Long, hardLimit: Long): ByteArray {
         val out = java.io.ByteArrayOutputStream()
         val buf = ByteArray(64 * 1024)
         var total = 0L
+        var limit = txtLimit
+        var first = true
         while (true) {
             val n = s.read(buf)
             if (n < 0) break
+            if (first) {
+                first = false
+                if (n >= 2 && buf[0] == 'P'.code.toByte() && buf[1] == 'K'.code.toByte())
+                    limit = hardLimit
+            }
             total += n
-            if (total > MAX_BYTES)
-                throw IllegalStateException("这本书超过 64 MB，先拆成几本再导入")
+            if (total > limit)
+                throw IllegalStateException(
+                    "这本书超过 ${if (limit == hardLimit) "64 MB" else "24 MB"}，先拆成几本再导入")
             out.write(buf, 0, n)
         }
         return out.toByteArray()
@@ -51,20 +74,48 @@ object Importer {
         return n
     }
 
+    /**
+     * R172 · OOM 捕获从「只读字节那段」扩到整条链路：读字节 / zip 解压 /
+     * 编码探测 / 整本解码 / 章数扫描全在里面。原来 plainToText(bytes) 在
+     * try 之外，真在解码时 OOM 就是直接崩溃，拿不到「手机内存不够」的提示。
+     */
     fun read(c: Context, uri: Uri, mimeHint: String? = null): Result {
         val name = nameOf(c, uri)
         val lower = name.lowercase()
         val mime = mimeHint ?: try { c.contentResolver.getType(uri) } catch (_: Throwable) { null }
-        val bytes = try {
-            if (uri.scheme == "file") {
+        return try {
+            val bytes = if (uri.scheme == "file") {
                 val p = uri.path ?: throw IllegalStateException("文件路径为空")
                 val f = java.io.File(p)
                 if (f.length() > MAX_BYTES)
                     throw IllegalStateException("这本书超过 64 MB，先拆成几本再导入")
-                f.inputStream().use { readLimited(it) }
+                f.inputStream().use { readLimited(it, MAX_TXT_BYTES.toLong(), MAX_BYTES.toLong()) }
             } else {
-                c.contentResolver.openInputStream(uri)?.use { readLimited(it) }
-                    ?: throw IllegalStateException("打不开这个文件")
+                c.contentResolver.openInputStream(uri)?.use {
+                    readLimited(it, MAX_TXT_BYTES.toLong(), MAX_BYTES.toLong())
+                } ?: throw IllegalStateException("打不开这个文件")
+            }
+            if (bytes.size < 4) throw IllegalStateException("这个文件是空的或读不完整")
+
+            val isZip = bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
+            val isEpub = lower.endsWith(".epub") || lower.endsWith(".pub") || isZip ||
+                    (mime != null && mime.contains("epub"))
+            if (isEpub) {
+                val r = try { epubToText(ByteArrayInputStream(bytes)) }
+                    catch (_: Throwable) { throw IllegalStateException("这个 epub 读不开，文件可能坏了") }
+                // 闸门前置：先判字数，再做别的事，别对超大文本白跑一遍
+                checkText(r.first)
+                Result(name.substringBeforeLast('.', name).ifBlank { "未命名" },
+                    r.first, "epub · ${r.second} 章", r.second)
+            } else {
+                val text = plainToText(bytes)
+                if (text.isBlank()) throw IllegalStateException("这个文件里没读到文字")
+                checkText(text)
+                // R138 · TXT 也报章数：用规则集扫一遍（只找标题、不切块，很快），
+                // 让用户导入那一刻就知道「分没分明白」，而不是进目录页才发现整本 1 章。
+                val n = try { TocRules.choose(text).second.size } catch (_: Throwable) { 1 }
+                Result(name.substringBeforeLast('.', name).ifBlank { "未命名" },
+                    text, "文本 · $n 章", n)
             }
         } catch (e: OutOfMemoryError) {
             throw IllegalStateException("手机内存不够读这本书，关掉别的应用再试")
@@ -72,28 +123,6 @@ object Importer {
             throw e
         } catch (e: Throwable) {
             throw IllegalStateException("读文件时出错：${e.message ?: "文件可能坏了"}")
-        }
-        if (bytes.size < 4) throw IllegalStateException("这个文件是空的或读不完整")
-
-        val isZip = bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
-        val isEpub = lower.endsWith(".epub") || lower.endsWith(".pub") || isZip ||
-                (mime != null && mime.contains("epub"))
-        return if (isEpub) {
-            val r = try { epubToText(ByteArrayInputStream(bytes)) }
-                catch (e: IllegalStateException) { throw e }
-                catch (_: Throwable) { throw IllegalStateException("这个 epub 读不开，文件可能坏了") }
-            checkText(r.first)
-            Result(name.substringBeforeLast('.', name).ifBlank { "未命名" },
-                r.first, "epub · ${r.second} 章", r.second)
-        } else {
-            val text = plainToText(bytes)
-            if (text.isBlank()) throw IllegalStateException("这个文件里没读到文字")
-            checkText(text)
-            // R138 · TXT 也报章数：用规则集扫一遍（只找标题、不切块，很快），
-            // 让用户导入那一刻就知道「分没分明白」，而不是进目录页才发现整本 1 章。
-            val n = try { TocRules.choose(text).second.size } catch (_: Throwable) { 1 }
-            Result(name.substringBeforeLast('.', name).ifBlank { "未命名" },
-                text, "文本 · $n 章", n)
         }
     }
 
@@ -142,14 +171,20 @@ object Importer {
     } catch (_: Throwable) { null }
 
     private fun plainFallback(bytes: ByteArray): String {
-        var best = String(bytes, Charsets.UTF_8)
-        var bestScore = score(best)
+        // R172 · 编码探测只取前 64KB 采样。原来对全文跑 5 套候选编码、
+        // 每套都生成一份完整 String 再逐字打分，24MB 文本要瞬时多出 5 份
+        // 十几 MB 的字符串，是解码段 OOM 的主要放大器。选好编码后只解码一次。
+        val n = minOf(bytes.size, ENC_SAMPLE)
+        val sample = if (n == bytes.size) bytes else bytes.copyOf(n)
+        var best = "UTF-8"
+        var bestScore = score(String(sample, Charsets.UTF_8))
         for (enc in listOf("GB18030", "GBK", "Big5", "UTF-16LE", "UTF-16BE")) {
-            val t = runCatching { String(bytes, charset(enc)) }.getOrNull() ?: continue
+            val t = runCatching { String(sample, charset(enc)) }.getOrNull() ?: continue
             val sc = score(t)
-            if (sc > bestScore) { bestScore = sc; best = t }
+            if (sc > bestScore) { bestScore = sc; best = enc }
         }
-        return best
+        return runCatching { String(bytes, charset(best)) }
+            .getOrElse { String(bytes, Charsets.UTF_8) }
     }
 
     /** 中文密度打分：汉字/中文标点/ASCII 可打印加分，替换符与 NUL 控制字符重罚。 */

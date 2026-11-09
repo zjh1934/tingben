@@ -47,7 +47,7 @@ POS = {
         "MultiSelectBar(",
         "confirmChDel = selected.associateWith { filesOf(it) }",
         "\"删除选中的 ${all.size} 章音频？\"",
-        "MoreDots(HubPrimary)",
+        "BackHandler(enabled = multiMode) { exitMulti() }",
         # 陈旧状态捕获防护
         "勾选框只在多选态渲染",
     ],

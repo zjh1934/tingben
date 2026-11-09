@@ -122,10 +122,15 @@ def logic_cases(f):
     # R163 三列并一列后新增 1 份语义守门（63）：20 个历史脚本的 UI 字面量
     # 已批量换成单列等价物，语义判据由 hub_semantics.py 唯一真源接管。
     # 旧壳脚本是否复活由上面的 retired_pages 正向/BAN 严格守着。
-    if not (40 <= steps <= 63):
+    # R171 加 2 项（五题正/反注入）、R172 加 3 项（算法对拍 + 正/反注入）→ 74，
+    # R173 加 2 项（Kotlin 结构级编译守门 正/反注入）→ 76，
+    # R174 加 2 项（界面自审 正/反注入）→ 78，
+    # R176 加 2 项（四件 正/反注入）→ 80，
+    # R177 加 2 项（发版对齐 正/反注入）→ 82，留 4 项余量给后续专职守门。
+    if not (40 <= steps <= 86):
         bad.append("CI 挂项 %d，不在收敛后预期区间" % steps)
     else:
-        print("CI 挂项 %d（收敛前 62）" % steps)
+        print("CI 挂项 %d" % steps)
     # ② r40/r46 本地不再强制对拍（只有 STRICT 才读 git show）
     for name in ("r40", "r46"):
         t = f[name]

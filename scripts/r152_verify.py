@@ -58,7 +58,7 @@ POS = {
         # H2 模型页
         "var confirmUninstall by remember { mutableStateOf(false) }",
         "Text(if (open) \"收起\" else \"详情 ›\",",
-        "if (!open) {\n                            Text(mode.hint",
+        "Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1",
         'EventLog.ui("MODEL_UNINSTALL_ASK"',
         'EventLog.ui("MODEL_UNINSTALL"',
         '"卸载模型"', '"卸载已导入的模型？"',
@@ -181,8 +181,10 @@ def logic_cases(f):
         bad.append("导入模型文件主按钮不是唯一稳定入口")
     if "卸载模型" not in mb or "confirmUninstall" not in mb:
         bad.append("红色卸载模型缺二次确认")
-    # 三张模式卡默认态都要有 hint 与详情入口
-    if "if (!open) {" not in mb or "mode.hint" not in mb:
+    # 三张模式卡默认态都要有 hint 与详情入口。
+    # R170 把详情从卡内移到统一弹层后，hint 变成无条件 Text，
+    # 守「信息还在 + 入口还在」即可，不再绑死旧的 if (!open) 写法。
+    if "mode.hint" not in mb:
         bad.append("三模式默认态没有各自的信息")
     if 'else "详情 ›"' not in mb:
         bad.append("三模式卡缺可见「详情」入口")
@@ -249,7 +251,7 @@ def selftest():
         ("模型页返回键丢失", "main", 'ChromeSpec("模型", canBack = true)',
          'ChromeSpec("模型")'),
         ("稳定主按钮被摘", "main", 'Text("导入模型文件", fontSize = 13.sp)', ""),
-        ("三模式默认信息被摘", "main", 'if (!open) {\n                            Text(mode.hint', ""),
+        ("三模式默认信息被摘", "main", 'Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1', ""),
         ("三模式详情入口被摘", "main", 'Text(if (open) "收起" else "详情 ›",', ""),
         ("设置卡片被摘", "main",
          "Card(\n        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),", ""),

@@ -64,7 +64,7 @@ POS = {
         "可播 $finishedChapters/${ui.size} 章",
         '"全选章节"',
         'onLong = { enterMulti(r.index) }',
-        'onMore = { enterMulti(r.index) })',
+        'BackHandler(enabled = multiMode) { exitMulti() }',
         "Box(Modifier.size(44.dp)",
         "SelectBox(checked = isChecked",
         "onTap: () -> Unit",

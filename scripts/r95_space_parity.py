@@ -46,7 +46,8 @@ def main():
     for s in ["24_000L * 2L * 12L", "c.filesDir.usableSpace",
               "val budgetSegs =", "var spaceStopped = false",
               "STORAGE_PARTIAL", "STORAGE_PARTIAL_STOP",
-              "空间用完了，已做好", "if (wavs.size >= budgetSegs)",
+              "空间用完了，已做好", "if (newlyWritten >= budgetSegs)",
+              "var newlyWritten = 0", "newlyWritten++",
               "if (finalBytes > outFile.parentFile!!.usableSpace)"]:
         if s not in src:
             errs.append("新公式锚点缺失: " + s)

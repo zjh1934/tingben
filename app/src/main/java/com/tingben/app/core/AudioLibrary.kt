@@ -158,6 +158,24 @@ object AudioLibrary {
             UiErrors.storage(writeError!!, null)
             return item
         }
+        // R175 · P3-8：成品文件名是 UUID，index.json 一旦损坏/丢失，
+        // 光靠文件名永远认不出是哪本书、哪些章。写一份自描述伴生元数据，
+        // 兜底恢复时读它，书名与章号不会永久退化成「有声书 / 整本（旧版）」。
+        try {
+            val meta = JSONObject()
+                .put("bookId", item.bookId ?: "")
+                .put("title", item.title)
+                .put("scope", item.scope)
+                .put("mode", item.mode)
+                .put("createdAt", item.createdAt)
+                .put("bytes", item.bytes)
+            if (item.chaptersKnown) {
+                val arr = JSONArray()
+                item.chapters.sorted().forEach { arr.put(it) }
+                meta.put("chapterIndices", arr)
+            }
+            AtomicJson.write(File(dir(c), "${item.id}.meta.json"), meta.toString())
+        } catch (_: Throwable) { }
         all.removeAll { it.id == item.id }
         all.add(0, item)
         lastRegisterOk = writeIndex(c, all)
@@ -173,12 +191,28 @@ object AudioLibrary {
                 ?.filter { it.isFile && it.length() > 44 && it.name.endsWith(".wav") && it.name !in known }
                 ?.forEach { f ->
                     val stem = f.nameWithoutExtension
+                    // R175 · 先认自描述元数据；没有才退回旧的按文件名猜
+                    val meta = try {
+                        val r = AtomicJson.read(File(dir(c), "$stem.meta.json"))
+                        if (r is AtomicJson.Read.Ok) JSONObject(r.text) else null
+                    } catch (_: Throwable) { null }
                     val cm = Regex("""^chapter_([0-9a-fA-F]{8})_(\d{3})_[0-9a-fA-F]{8}$""").matchEntire(stem)
                     val ch = cm?.groupValues?.get(2)?.toIntOrNull()?.let { it - 1 }
                     val b = if (cm != null)
                         books.find { it.id.take(8).equals(cm.groupValues[1], ignoreCase = true) }
                     else books.find { it.id == stem }
-                    if (cm != null && b != null && ch != null && ch >= 0) {
+                    if (meta != null) {
+                        val idx = meta.optJSONArray("chapterIndices")
+                        val chs = if (idx == null) emptySet() else
+                            (0 until idx.length()).mapNotNull { idx.optInt(it, -1).takeIf { v -> v >= 0 } }.toSet()
+                        items.add(AudioItem(stem, f,
+                            meta.optString("bookId", "").ifBlank { null },
+                            meta.optString("title", "有声书").ifBlank { "有声书" },
+                            meta.optString("scope", "整本").ifBlank { "整本" },
+                            meta.optString("mode", "—").ifBlank { "—" },
+                            meta.optLong("createdAt", f.lastModified()),
+                            meta.optLong("bytes", f.length()), chs, chs.isNotEmpty()))
+                    } else if (cm != null && b != null && ch != null && ch >= 0) {
                         items.add(AudioItem(stem, f, b.id, b.title, scopeLabel(setOf(ch)), "—",
                             f.lastModified(), f.length(), setOf(ch), true))
                     } else {
@@ -234,6 +268,11 @@ object AudioLibrary {
             writeError = "记录已移除，但文件删不掉，会在「我的音频」里重新出现"
             UiErrors.storage(writeError!!, null)
             return false
+        }
+        // R175 · P3-8：原来只删 .wav，.chapters.json / .meta.json 留成孤儿，
+        // 越删越多；现在一并清掉。
+        listOf("${id}.chapters.json", "${id}.meta.json").forEach { n ->
+            try { File(dir(c), n).delete() } catch (_: Throwable) { }
         }
         return true
     }

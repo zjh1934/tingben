@@ -26,6 +26,10 @@ jobs:
         id: ver
         run: echo "v=$(cat version.txt)" >> "$GITHUB_OUTPUT"
 
+      - name: 源码完整性（防 selftest 注入残留）
+        run: python3 scripts/source_integrity.py
+      - name: 源码完整性反向注入
+        run: python3 scripts/source_integrity.py --selftest
       - name: R137 版本必须严格递增（防同名 tag 覆盖资产与直链）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -309,6 +313,44 @@ jobs:
           echo "引擎齐备，启用 native build"
           ls -lh "$D"
 
+      - name: R169 真机截图与日志实证（浅色章名 / 齿轮 / 导入取消 / 噪声收敛）
+        run: python3 scripts/r169_verify.py --selftest
+      - name: R169 正向守门
+        run: python3 scripts/r169_verify.py
+      - name: R170 模型页三卡等高与详情统一弹层
+        run: python3 scripts/r170_verify.py --selftest
+      - name: R170 正向守门
+        run: python3 scripts/r170_verify.py
+      - name: R171 五题反向注入
+        run: python3 scripts/r171_verify.py --selftest
+      - name: R171 正向守门
+        run: python3 scripts/r171_verify.py
+      - name: R172 流式拼接算法对拍
+        run: python3 scripts/r172_wav_parity.py
+      - name: R172 四件反向注入
+        run: python3 scripts/r172_verify.py --selftest
+      - name: R173 Kotlin 结构级编译守门反向注入
+        run: python3 scripts/r173_verify.py --selftest
+      - name: R173 Kotlin 结构级编译守门
+        run: python3 scripts/r173_verify.py
+      - name: R174 界面自审反向注入
+        run: python3 scripts/r174_verify.py --selftest
+      - name: R174 界面自审固化
+        run: python3 scripts/r174_verify.py
+      - name: R175 六条反向注入
+        run: python3 scripts/r175_verify.py --selftest
+      - name: R175 六条收口
+        run: python3 scripts/r175_verify.py
+      - name: R176 四件反向注入
+        run: python3 scripts/r176_verify.py --selftest
+      - name: R176 四件收口
+        run: python3 scripts/r176_verify.py
+      - name: R177 发版对齐反向注入
+        run: python3 scripts/r177_verify.py --selftest
+      - name: R177 发版对齐
+        run: python3 scripts/r177_verify.py
+      - name: R172 正向守门
+        run: python3 scripts/r172_verify.py
       - name: assembleDebug
         id: gradle
         continue-on-error: true
@@ -419,6 +461,9 @@ jobs:
           if-no-files-found: error
 
       - name: 发布 Release（固定最新版直链）
+        # R177 · 只允许 main 发版：验证分支用 workflow_dispatch 跑真编译时，
+        # 编译通过也不许提前覆盖 v1.1.5 的 Release 与固定直链。
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.v }}
@@ -433,6 +478,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 同步 APK 到公开直链
+        if: github.ref == 'refs/heads/main'
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: python3 scripts/publish_apk.py

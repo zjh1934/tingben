@@ -58,8 +58,9 @@ POS = {
         "private fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Unit)",
         "PermRow(\"忽略电池优化\", batOk,",
         "PermRow(\"显示在其他应用上层\", ovOk,",
-        "PermRow(\"应用详情\", true,",
-        'SettingsSection("后台运行与权限", "系统", collapsible = false)',
+        "PermEntryRow(\"应用详情\",",
+        'SettingsSection("运行与通知", "系统", collapsible = false)',
+        "R174 · 自审发现：设置页原来有两张都标「系统」的卡",
         "KeepAlive.batteryIgnoring(c)",
         "KeepAlive.overlayGranted(c)",
         "KeepAlive.requestIgnoreBattery(c)",
@@ -118,6 +119,7 @@ BAN = {
     "main": [
         "本机不做系统悬浮窗",
         "fun permRow(",              # Compose 不接受局部组合函数
+        'SettingsSection("后台运行与权限"',   # R174 合并后不许拆回两张系统卡
     ],
     "ka": [
         "com.miui.securitycenter",   # 无小米官方稳定组件，不许硬编码
@@ -238,6 +240,18 @@ def check(f):
                 e.append(name + " 分段格子没居中")
     if "private fun PermRow" not in f["main"]:
         e.append("权限行没抽成顶层组合函数（局部函数真编译会炸）")
+    m = f["main"]
+    a = m.find('SettingsSection("运行与通知", "系统", collapsible = false)')
+    b = m.find("SettingsSection(", a + 10) if a >= 0 else -1
+    grp = m[a:b] if a >= 0 and b > a else ""
+    for n2 in ("AutoResumeRow(c)", 'PermRow("忽略电池优化", batOk,',
+               'PermRow("显示在其他应用上层", ovOk,',
+               'PermEntryRow("应用详情", "系统设置")'):
+        if n2 not in grp:
+            e.append("R174 系统类没合进同一张卡: " + n2[:50])
+    if len([x for x in m.splitlines()
+            if 'SettingsSection(' in x and '"系统"' in x]) != 1:
+        e.append("R174 设置页又出现多张「系统」卡")
     e += tutorial_check(f)
     return e
 
@@ -267,8 +281,11 @@ def selftest():
         ("应用详情兜底被摘", "main", "KeepAlive.openAppDetails(c)", ""),
         ("R158b 教程口径被摘", "main", "R158b · 用户明确「教程不要塞进应用里」", ""),
         ("ON_RESUME 复检被摘", "main", "Lifecycle.Event.ON_RESUME) permTick++", ""),
-        ("后台权限卡片被摘", "main",
-         'SettingsSection("后台运行与权限", "系统", collapsible = false)', ""),
+         ("系统类又拆成两张卡", "main",
+          'SettingsSection("运行与通知", "系统", collapsible = false)',
+          'SettingsSection("运行与通知", "系统", collapsible = false) { }\n        SettingsSection("后台运行与权限", "系统", collapsible = false)'),
+         ("合并口径被摘", "main",
+          "R174 · 自审发现：设置页原来有两张都标「系统」的卡", ""),
         ("教程长说明回潮", "main", '"日志可能含书名和正文片段"',
          'Text("设置 → 应用设置 → 应用管理 → 找到听本，先补齐上面那一份")'),
         ("KeepAlive 对象被摘", "ka", "object KeepAlive", ""),

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R175 · P3-10 · 备份/迁移排除规则。
+     allowBackup="false" 已关掉整包备份；这里再明确把私有数据目录排除，
+     避免将来有人把 allowBackup 改回 true 时原书、模型、成品、日志被带走。 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="books" />
+        <exclude domain="root" path="models" />
+        <exclude domain="root" path="audio" />
+        <exclude domain="root" path="work" />
+        <exclude domain="root" path="logs" />
+        <exclude domain="file" path="books" />
+        <exclude domain="file" path="models" />
+        <exclude domain="file" path="audio" />
+        <exclude domain="file" path="work" />
+        <exclude domain="file" path="logs" />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="books" />
+        <exclude domain="root" path="models" />
+        <exclude domain="root" path="audio" />
+        <exclude domain="root" path="work" />
+        <exclude domain="root" path="logs" />
+        <exclude domain="file" path="books" />
+        <exclude domain="file" path="models" />
+        <exclude domain="file" path="audio" />
+        <exclude domain="file" path="work" />
+        <exclude domain="file" path="logs" />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

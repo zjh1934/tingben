@@ -7,7 +7,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -110,11 +109,17 @@ internal fun MultiSelectBar(
                 verticalAlignment = Alignment.CenterVertically) {
                 actions()
             }
-            IconButton(onClick = {
+            // R171 · 原来只有一个灰色 ×，用户「不知道这个勾选态怎么取消」。
+            // 换成看得见的「取消」文字，图标留作辅助，事件名不动。
+            TextButton(onClick = {
                 onCancel()
                 EventLog.ui("MULTI_CANCEL_BAR", "")
             }) {
-                IconClose(palette.sub, Modifier.size(18.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconClose(palette.sub, Modifier.size(16.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("取消", fontSize = 12.sp, color = palette.sub)
+                }
             }
         }
     }

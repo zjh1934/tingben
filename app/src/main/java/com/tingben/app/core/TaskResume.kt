@@ -20,7 +20,9 @@ data class TaskInfo(
     val output: String? = null,
     val config: ProduceConfig = ProduceConfig(),
     val modeId: String = "",
-    val splitRule: Int = 1
+    val splitRule: Int = 1,
+    /** R172 · 建任务时的章节表代数；重新分章后与新表不一致就失效。老任务默认 0。 */
+    val planEpoch: Int = 0
 )
 
 object TaskResume {
@@ -100,6 +102,7 @@ object TaskResume {
             .put("config", t.config.toJson())
             .put("modeId", t.modeId)
             .put("splitRule", t.splitRule)
+            .put("planEpoch", t.planEpoch)
             .put("only", a)
             .put("onlyNull", t.only == null)
     }
@@ -116,7 +119,8 @@ object TaskResume {
             o.optString("phase", "interrupted"), o.optString("stage", ""),
             o.optLong("updatedAt", 0L), out,
             ProduceConfig.fromJson(o.optJSONObject("config")),
-            o.optString("modeId", ""), o.optInt("splitRule", 1))
+            o.optString("modeId", ""), o.optInt("splitRule", 1),
+            o.optInt("planEpoch", 0))
     }
 
     private fun legacy(c: Context): TaskInfo? {
@@ -190,24 +194,31 @@ object TaskResume {
             .joinToString("||"))
 
     fun invalidationReason(c: Context, t: TaskInfo): String? = try {
-        val w = AnnCache.dirFor(c, t.bookId, t.only)
-        val modeFile = File(w, "mode_stamp.txt")
-        if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
-            "换过模式或音色输入，接着做会按新设置重出声"
-        } else {
-            val voiceFile = File(w, "voice_stamp.txt")
-            val oldVoice = if (voiceFile.exists()) voiceFile.readText().trim() else ""
-            val currentVoice = Prefs.voiceStamp(c)
-            if (voiceFile.exists() && oldVoice != currentVoice &&
-                oldVoice != Prefs.legacyVoiceStamp(c)) {
-                "改过调音台设置，接着做会按新设置重出声"
+        // R172 · 章节表代数不一致 = 用户重新分过章：旧 only / total / 分段全按旧
+        // 章号，直接续跑会合成错章。这里一拦，autoResumeBlockReason、任务页提示、
+        // realProgress（归零）三处同时生效，不会再显示对不上的进度数字。
+        if (t.planEpoch != ChapterPlan.epoch(c, t.bookId))
+            "重新分章后章号变了，旧任务与已生成的分段不能再接着用，请重新选章制作"
+        else {
+            val w = AnnCache.dirFor(c, t.bookId, t.only)
+            val modeFile = File(w, "mode_stamp.txt")
+            if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
+                "换过模式或音色输入，接着做会按新设置重出声"
             } else {
-                if (voiceFile.exists() && oldVoice != currentVoice) {
-                    try { voiceFile.writeText(currentVoice) } catch (_: Throwable) { }
-                    EventLog.log(EventLog.Kind.PIPELINE, "VOICE_STAMP_MIGRATE",
-                        "旧指纹写回新口径，已生成段保持不变")
+                val voiceFile = File(w, "voice_stamp.txt")
+                val oldVoice = if (voiceFile.exists()) voiceFile.readText().trim() else ""
+                val currentVoice = Prefs.voiceStamp(c)
+                if (voiceFile.exists() && oldVoice != currentVoice &&
+                    oldVoice != Prefs.legacyVoiceStamp(c)) {
+                    "改过调音台设置，接着做会按新设置重出声"
+                } else {
+                    if (voiceFile.exists() && oldVoice != currentVoice) {
+                        try { voiceFile.writeText(currentVoice) } catch (_: Throwable) { }
+                        EventLog.log(EventLog.Kind.PIPELINE, "VOICE_STAMP_MIGRATE",
+                            "旧指纹写回新口径，已生成段保持不变")
+                    }
+                    null
                 }
-                null
             }
         }
     } catch (_: Throwable) { null }
@@ -218,6 +229,12 @@ object TaskResume {
     // 只拦「用户主动停 / 失败中断 / 切章规则变了 / 书没了 / 模型没齐 / 调音改过」。
     // 进程被杀或崩溃留下的 interrupted 任务不拦，正是要自动接上的那种。
     fun autoResumeBlockReason(c: Context, t: TaskInfo): String? {
+        if (t.phase == "reconfirm")
+            return "重新分章后章号变了，请在目录页重新选章制作"
+        // R175 · P2-5：配置/系统原因「没开始」，不是手动停、也不是意外中断。
+        // 明确拦住自动续跑，避免开软件反复弹窗、反复重试。
+        if (t.phase == "blocked")
+            return "上次制作没能开始（${t.stage}），没自动续跑；在任务页点「继续制作」重试"
         if (t.phase == "stopped")
             return "上次是你手动停的，没自动续跑；在任务页点「继续制作」"
         if (t.phase != "interrupted")

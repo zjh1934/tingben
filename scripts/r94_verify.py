@@ -29,8 +29,11 @@ def check(f):
     if 'val modeStamp = sha(listOf(' in p: e.append("run 仍在自己算指纹（两处会漂移）")
     if '换过模式或音色输入' not in r: e.append("作废原因文案缺")
     for s in ['const val MAX_BYTES = 64 * 1024 * 1024',
-              'private fun readLimited(s: InputStream): ByteArray',
-              'if (total > MAX_BYTES)', 'f.length() > MAX_BYTES',
+              'const val MAX_TXT_BYTES = 24 * 1024 * 1024',
+              'MAX_TXT_BYTES.toLong()',
+              'private fun readLimited(s: InputStream, txtLimit: Long, hardLimit: Long): ByteArray',
+              'if (total > limit)', 'f.length() > MAX_BYTES',
+              "buf[0] == 'P'.code.toByte() && buf[1] == 'K'.code.toByte()",
               'catch (e: OutOfMemoryError)',
               '手机内存不够读这本书，关掉别的应用再试',
               '读文件时出错：', '这个 epub 读不开，文件可能坏了']:
@@ -38,7 +41,7 @@ def check(f):
     for s in ['java.io.File(p).readBytes()', 'f.readBytes()',
               'openInputStream(uri)?.use { it.readBytes() }']:
         if s in i: e.append("整文件无上限读取仍在: " + s)
-    for s in ['var bookImportError by remember { mutableStateOf<String?>(null) }',
+    for s in ['var bookImportError by rememberSaveable { mutableStateOf<String?>(null) }',
               'bookImportError = why', 'bookImportError = null',
               'importError = bookImportError',
               'onDismissImportError = { bookImportError = null }',
@@ -74,9 +77,10 @@ if __name__ == "__main__":
             ("删 legacy 双指纹兼容", "resume", lambda t: t.replace('oldVoice != Prefs.legacyVoiceStamp(c)', 'false')),
             ("restore 塌回单文案", "pipe", lambda t: t.replace('val why = TaskResume.invalidationReason(c, fixed)', 'val why: String? = null')),
             ("run 自己算指纹", "pipe", lambda t: t.replace('val modeStamp = TaskResume.expectedModeStamp(c)', 'val modeStamp = sha(listOf("x").joinToString("||"))')),
-            ("去掉 64MB 上限", "imp", lambda t: t.replace('if (total > MAX_BYTES)', 'if (false)')),
+            ("去掉字节闸门", "imp", lambda t: t.replace('if (total > limit)', 'if (false)')),
+            ("闸门退回 64MB", "imp", lambda t: t.replace('MAX_TXT_BYTES.toLong()', 'MAX_BYTES.toLong()')),
             ("去掉 OOM 兜底", "imp", lambda t: t.replace('catch (e: OutOfMemoryError)', 'catch (e: RuntimeException)')),
-            ("恢复无上限读取", "imp", lambda t: t.replace('f.inputStream().use { readLimited(it) }', 'f.readBytes()')),
+            ("恢复无上限读取", "imp", lambda t: t.replace('f.inputStream().use { readLimited(it, MAX_TXT_BYTES.toLong(), MAX_BYTES.toLong()) }', 'f.readBytes()')),
             ("失败只弹 Toast", "main", lambda t: t.replace('bookImportError = why', '// x')),
             ("删失败卡", "main", lambda t: t.replace('上次没导进来', '提示')),
             ("CI 摘 r94_verify", "ci", lambda t: t.replace('scripts/r94_verify.py', 'x.py')),

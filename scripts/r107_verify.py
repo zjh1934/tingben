@@ -11,6 +11,7 @@ F-25 的验收不是「脚本改了」，而是：
 用法：python3 scripts/r107_verify.py [--selftest]
 """
 import os, pathlib, re, shutil, subprocess, sys, tempfile
+import atexit
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -72,17 +73,33 @@ def _exec_script(path, extra_args=()):
     finally:
         sys.argv = old
 
+def atomic_write(path, text):
+    """R170 · 原地覆写 157KB 大文件在这台沙盒上会触发 Stale file handle，
+    而且进程被砍在 try/finally 中间会留注入残体。改成「写临时 + 原子替换」，
+    每次都是新 inode；再注册 atexit 兜底，正常/异常退出都不留残。"""
+    tmp = pathlib.Path(str(path) + ".r107tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+_ORIGINAL_MAIN = None
+def _restore():
+    if _ORIGINAL_MAIN is not None:
+        atomic_write(MAIN_P, _ORIGINAL_MAIN)
+
 def mirror_check():
     """把 MainActivity 临时换成 R109 计划形态，就地复跑相关脚本后立刻还原。
 
     不复制整仓：沙盒里每文件 IO 延迟很高，复制 1MB 也要 40s。
     单进程内 try/finally 还原，工作区不会留下改动。
     """
+    global _ORIGINAL_MAIN
     original = MAIN_P.read_text(encoding="utf-8")
+    _ORIGINAL_MAIN = original
+    atexit.register(_restore)
     old_ci = os.environ.get("CI")
     os.environ["CI"] = "true"
     try:
-        MAIN_P.write_text(nav.simulate_r109(original), encoding="utf-8")
+        atomic_write(MAIN_P, nav.simulate_r109(original))
         focus = [c for c in ci_commands() if any(t in c for t in TARGETS)]
         focus.append("python3 scripts/r107_verify.py")
         fails = []
@@ -100,7 +117,8 @@ def mirror_check():
                     fails.append((c, out2.strip().splitlines()[-2:]))
         return len(focus), fails
     finally:
-        MAIN_P.write_text(original, encoding="utf-8")
+        atomic_write(MAIN_P, original)
+        _ORIGINAL_MAIN = None
         if old_ci is None:
             os.environ.pop("CI", None)
         else:

@@ -49,8 +49,8 @@ POS = {
         "Producer.autoResume(ctx)",
         # R157 · BookStore.add 新增第 4 个 origin 参数（输入框建的书要单独归类导出），
         # 这里改成前缀判据，不再绑死参数个数；守恒的是「粘贴/分享会建书」这件事。
-        "runCatching { BookStore.add(c, \"粘贴的文字\", text",
-        "runCatching { BookStore.add(ctx, \"分享的文字\", text",
+        "autoBookTitle(snapshot, \"粘贴的文字\")",
+        "autoBookTitle(text, \"分享的文字\")",
     ],
     "hub": [
         "var loadError by remember(id, refresh, planTick)",
@@ -58,6 +58,10 @@ POS = {
         "runCatching { ChapterPlan.refresh(c, book) }",
     ],
     "pipeline": [
+        # R175 · 这两条也进 POS：selftest 的注入由 check() 判定，
+        # 只放在 logic_cases 里抓不到「blocked 阶段被摘」。
+        "abortBeforeStart(why)",
+        'phase = "blocked"',
         "const val MAX_TEXT_CHARS = 6_000_000",
         "if (text.length > MAX_TEXT_CHARS)",
         "@Volatile var lastStartError: String? = null",
@@ -139,8 +143,11 @@ def logic_cases(f):
         bad.append("begin() 缺少「成功 true / 失败 false」两条返回路径")
     if "if (!ProduceService.begin(c, book.title))" not in f["pipeline"]:
         bad.append("Producer 没有消费 begin() 的失败返回值")
-    if "_state.value = Progress(false, \"没开始\"" not in f["pipeline"]:
-        bad.append("FGS 失败后没有把状态停在「没开始」")
+    # R175 · FGS 失败不再只设 _state，而是经 abortBeforeStart 落 blocked 阶段，
+    # 避免 finally 误标「意外中断」反复自动重试。
+    if "abortBeforeStart(why)" not in f["pipeline"] or \
+            'phase = "blocked"' not in f["pipeline"]:
+        bad.append("FGS 失败后没有把任务停在 blocked / 没开始")
     if "scope.launch {" not in f["pipeline"]:
         bad.append("制作协程入口丢了")
     print("逻辑用例 %s" % ("通过" if not bad else "有失败"))
@@ -182,6 +189,7 @@ def selftest():
          "fun begin(c: Context, title: String): Boolean",
          "fun begin(c: Context, title: String)"),
         ("FGS 失败不再停任务", "pipeline", "if (!ProduceService.begin(c, book.title)) {", ""),
+        ("blocked 阶段被摘", "pipeline", 'phase = "blocked"', 'phase = "stopped"'),
         ("失败原因透出被摘", "pipeline", "PRODUCE_FGS_BLOCKED", ""),
         ("服务内 startForeground 保护被摘", "service",
          "startForeground 失败，停止本次制作", ""),

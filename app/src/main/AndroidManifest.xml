@@ -13,11 +13,16 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- R175 · P3-10：纯离线 App，私有书全文 / 数 GB 模型 / 成品音频 / 断点 /
+         含正文片段的诊断日志都不该被系统备份或设备迁移带走。allowBackup=false
+         是主闸门；dataExtractionRules 是 targetSdk 31+ 的纵深防御。 -->
     <application
         android:name=".TingbenApp"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/data_extraction_rules"
         android:largeHeap="true"
         android:label="@string/app_name"
         android:supportsRtl="true"

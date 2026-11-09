@@ -30,6 +30,8 @@ POS = {
         'item(key = "count") {',
         'Text("共 ${books.size} 本"',
         'items(books, key = { it.id }) { b ->',
+        'item(key = "empty") {',
+        'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
         'val lastRead = lastReads[b.id]',
         '上次读到 第 ${lastRead + 1} 章',
     ],
@@ -51,7 +53,7 @@ KEEP = {
     "main": [
         'BookStore.list(c)', 'ModelStore.installedModes(c)', 'ModelStore.missing(c)',
         'RefreshStrip(', 'AlertDialog(', 'onOpen(b.id)', 'refresh++',
-        'BookStore.add(c, "粘贴的文字", text', 'BookStore.delete(c, id)',
+        'BookStore.add(c, autoBookTitle(snapshot,', # R176 自动标题；守恒的是「粘贴会建书」
         'Text("共 ${books.size} 本"', 'private fun InputReadScreen(', '再选一次文件 ›',
     ],
     "reading": [
@@ -127,10 +129,12 @@ def check(f):
         if body.find('LaunchedEffect(refresh, books)') > body.find('LazyColumn('):
             e.append('后台加载塞回列表 DSL 内')
         if not (body.find('item(key = "head")') < body.find('item(key = "count")')
-                < body.find('items(books, key = { it.id })')):
-            e.append('item 顺序错乱')
-        if body.count('item(key = ') != 3:
-            e.append('固定 item 数不是 3')
+                < body.find('items(books, key = { it.id })')
+                < body.find('item(key = "empty")')):
+            e.append('item 顺序错乱（含 R174 空态入口）')
+        # R174 · 书架为空时多一个 empty item（原来只有 head / import-error / count）
+        if body.count('item(key = ') != 4:
+            e.append('固定 item 数不是 4')
     return e
 
 def load():

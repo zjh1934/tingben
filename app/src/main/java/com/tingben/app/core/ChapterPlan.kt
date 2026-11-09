@@ -1,6 +1,7 @@
 package com.tingben.app.core
 
 import android.content.Context
+import com.tingben.app.diag.EventLog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -20,7 +21,9 @@ data class ChapterPlanData(
     val schema: Int,
     val ruleId: String,
     val sha: String,
-    val chapters: List<Chapter>
+    val chapters: List<Chapter>,
+    /** R172 · 章节表代数：只有用户显式「重新分章」才 +1，任务据此判失效。 */
+    val epoch: Int = 0
 )
 
 object ChapterPlan {
@@ -47,7 +50,7 @@ object ChapterPlan {
         }
         if (list.isEmpty()) null else
             ChapterPlanData(o.optInt("schema", 0), o.optString("ruleId", ""),
-                o.optString("sha", ""), list)
+                o.optString("sha", ""), list, o.optInt("epoch", 0))
     } catch (_: Throwable) { null }
 
     private fun save(c: Context, bookId: String, plan: ChapterPlanData) {
@@ -59,7 +62,8 @@ object ChapterPlan {
             }
             val ok = AtomicJson.write(file(c, bookId), JSONObject()
                 .put("schema", plan.schema).put("ruleId", plan.ruleId)
-                .put("sha", plan.sha).put("chapters", a).toString())
+                .put("sha", plan.sha).put("chapters", a)
+                .put("epoch", plan.epoch).toString())
             if (!ok) UiErrors.storage("章节表没写进磁盘，下次进目录页会重新识别", null)
         } catch (t: Throwable) {
             UiErrors.storage("章节表写入失败，下次进目录页会重新识别", t)
@@ -121,7 +125,10 @@ object ChapterPlan {
             return cached.chapters to ChapterSplitter.cutFrom(text, cached.chapters)
         }
         val (ruleId, chapters) = build(text, if (hasLegacyData(c, book.id)) TocRules.LEGACY else null)
-        save(c, book.id, ChapterPlanData(TocRules.SCHEMA, ruleId, sha, chapters))
+        // R173 · 表被删 / 损坏后重建时保留代数，不能悄悄退回 0：
+        // 否则「重新分章过」的书会与旧任务 planEpoch 又对上，失效判定失效。
+        val keptEpoch = load(c, book.id)?.epoch ?: 0
+        save(c, book.id, ChapterPlanData(TocRules.SCHEMA, ruleId, sha, chapters, keptEpoch))
         return chapters to ChapterSplitter.cutFrom(text, chapters)
     }
 
@@ -136,12 +143,51 @@ object ChapterPlan {
         return ruleId to chapters
     }
 
+    /** 章节表代数；老书 / 无表一律 0，与老任务默认 0 一致，升级不误伤。 */
+    fun epoch(c: Context, bookId: String): Int = load(c, bookId)?.epoch ?: 0
+
+    /**
+     * R172 · P1「重新分章后旧任务对错章」根治。
+     *
+     * 原来 refresh() 只覆盖章节表：任务 total / only 仍是旧章号，splitRule 新旧
+     * 同为 3 不触发版本检查，invalidationReason 也没有章节表指纹 → 判定可续跑，
+     * 旧章号去过滤新章节表，合成错章、进度分母与章起点索引全部错位。
+     * 现在换表同时：任务标成「需重新确认」、队列项移除、work 下旧分段与
+     * chapter_done / seg_chapters / chapters 索引一并作废（否则 direct_0000.wav
+     * 会按段号复用成完全不同的内容）。成品整章音频不删，仍可听。
+     */
+    private fun invalidateForResplit(c: Context, bookId: String) {
+        try {
+            val t = TaskResume.byBook(c, bookId)
+            if (t != null) {
+                // 保留旧 planEpoch：invalidationReason 拿它和新表 epoch 一比就拦住
+                TaskResume.save(c, t.copy(phase = "reconfirm", stage = "重新分章",
+                    done = 0, total = 0, output = null))
+            }
+            TaskResume.dequeue(c, bookId)
+        } catch (t: Throwable) {
+            EventLog.log(EventLog.Kind.MODEL, "RESPLIT_TASK_FAIL",
+                "任务作废失败 book=$bookId ${t.message ?: ""}")
+        }
+        try {
+            val work = File(c.filesDir, "work/$bookId")
+            if (work.exists()) work.deleteRecursively()
+        } catch (t: Throwable) {
+            EventLog.log(EventLog.Kind.MODEL, "RESPLIT_WORK_FAIL",
+                "分段缓存没清干净 book=$bookId ${t.message ?: ""}")
+        }
+        EventLog.log(EventLog.Kind.MODEL, "RESPLIT_INVALIDATE",
+            "书=$bookId 旧任务标待确认 / 队列移除 / 分段与章号索引作废")
+    }
+
     /** 重新分章：用户显式操作。返回新章数；章号会变，调用方必须提示音频需重做。 */
     fun refresh(c: Context, book: Book, ruleId: String? = null): Pair<String, Int> {
         val text = BookStore.read(c, book)
         val sha = if (book.sha.isNotBlank()) book.sha else fingerprint(text)
+        val nextEpoch = load(c, book.id)?.epoch?.plus(1) ?: 1
         val (rid, chapters) = build(text, ruleId ?: TocRules.choose(text).first)
-        save(c, book.id, ChapterPlanData(TocRules.SCHEMA, rid, sha, chapters))
+        save(c, book.id, ChapterPlanData(TocRules.SCHEMA, rid, sha, chapters, nextEpoch))
+        invalidateForResplit(c, book.id)
         return rid to chapters.size
     }
 

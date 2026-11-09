@@ -27,6 +27,15 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CFG = ROOT / ".aoci" / "config.json"
 BASELINE = ROOT / ".aoci" / "baseline.json"
+
+def atomic_write(path, text):
+    """R170 · 沙盒/网络 FS 偶发 Stale file handle：写新 inode 再原子替换目录项，
+    避免对旧句柄直接 write 把基线写半截（基线缺项会让下轮全部假红）。"""
+    import os as _os
+    p = pathlib.Path(str(path) + ".tmpwrite")
+    with open(p, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    _os.replace(p, path)
 ASSETS = {
     "root": ROOT / "aoci.txt",
     "meta": ROOT / "aoci.meta.txt",
@@ -314,7 +323,7 @@ def refresh():
         if len(hits) == 1:
             tag = tag[:3] + scale_of(line_count(hits[0]))
         out.append("%s[%s]: %s" % (name, tag, body))
-    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    atomic_write(p, "\n".join(out) + "\n")
 
     # 2 · 索引定稿后再算哈希，基线才不会自相矛盾
     files = {}
@@ -323,9 +332,9 @@ def refresh():
         files[rel] = {"role": "index", "sha256": h, "size": size_of(rel),
                       "normalized_sha256": h}
     BASELINE.parent.mkdir(parents=True, exist_ok=True)
-    BASELINE.write_text(json.dumps(
+    atomic_write(BASELINE, json.dumps(
         {"version": 1, "created_at": old_created, "updated_at": now, "files": files},
-        ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     print("刷新完成：%d 个受管对象，%s" % (len(want), BASELINE.relative_to(ROOT)))
 
 

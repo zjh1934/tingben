@@ -78,21 +78,33 @@ private fun GearIcon(tint: Color) {
         val cy = size.height / 2f
         val r = size.minDimension / 2f
         val center = Offset(cx, cy)
-        for (i in 0 until 8) {
-            val a = (i * kotlin.math.PI.toFloat() / 4f)
-            val c = kotlin.math.cos(a)
-            val s = kotlin.math.sin(a)
-            drawLine(
-                color = tint,
-                start = Offset(cx + c * r * 0.66f, cy + s * r * 0.66f),
-                end = Offset(cx + c * r * 0.96f, cy + s * r * 0.96f),
-                strokeWidth = 2.dp.toPx(),
-                cap = StrokeCap.Round
-            )
+        // R169 · 真齿轮轮廓：8 枚方齿与轮体连成一条起伏闭合路径。
+        // 第一版只是把射线加粗，画出来仍像太阳/亮度；用户要的是齿轮（点它进设置）。
+        val teeth = 8
+        // Double 运算完再转 Float：Kotlin 不允许 Float × Double / Float ÷ Int
+        // 的隐式提升，写成 2f * PI 真编译会直接报错（静态脚本看不见）。
+        val step = (2.0 * kotlin.math.PI / teeth).toFloat()
+        val root = r * 0.68f
+        val tip = r * 0.96f
+        val gear = Path()
+        var first = true
+        for (i in 0 until teeth) {
+            val a = i * step
+            for ((ang, rad) in listOf(
+                a + step * 0.00f to root,
+                a + step * 0.18f to tip,
+                a + step * 0.32f to tip,
+                a + step * 0.50f to root
+            )) {
+                val x = cx + kotlin.math.cos(ang) * rad
+                val y = cy + kotlin.math.sin(ang) * rad
+                if (first) { gear.moveTo(x, y); first = false } else gear.lineTo(x, y)
+            }
         }
-        drawCircle(tint, radius = r * 0.56f, center = center,
-            style = Stroke(width = 2.dp.toPx()))
-        drawCircle(tint, radius = r * 0.20f, center = center,
+        gear.close()
+        drawPath(gear, color = tint,
+            style = Stroke(width = 2.dp.toPx(), join = StrokeJoin.Round))
+        drawCircle(tint, radius = r * 0.26f, center = center,
             style = Stroke(width = 2.dp.toPx()))
     }
 }

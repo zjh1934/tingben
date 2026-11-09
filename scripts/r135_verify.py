@@ -63,9 +63,11 @@ QUICK = [
 ]
 
 
-def reachability():
-    """从 App() 出发做传递闭包，返回 (所有顶层 private 名, 不可达名列表)。"""
-    lines = MAIN.read_text(encoding="utf-8").splitlines()
+def reachability(main_text=None):
+    """从 App() 出发做传递闭包，返回 (所有顶层 private 名, 不可达名列表)。
+    R170 · 接受内存文本，selftest 不再需要写源文件。"""
+    lines = (main_text if main_text is not None
+             else MAIN.read_text(encoding="utf-8")).splitlines()
     defs = []
     for i, l in enumerate(lines):
         m = re.match(r'private (?:@Composable\s+)?(?:fun|data class|class|enum class|object|val) ([A-Za-z_]\w*)', l)
@@ -89,13 +91,14 @@ def reachability():
     return [n for _, n in defs], [n for _, n in defs if n not in live]
 
 
-def check():
+def check(main=None, ci=None, allkt=None):
     errs = []
-    allkt = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in APP.rglob("*.kt"))
-    main = MAIN.read_text(encoding="utf-8", errors="replace")
-    ci = CI.read_text(encoding="utf-8", errors="replace")
+    allkt = allkt if allkt is not None else "\n".join(
+        p.read_text(encoding="utf-8", errors="replace") for p in APP.rglob("*.kt"))
+    main = main if main is not None else MAIN.read_text(encoding="utf-8", errors="replace")
+    ci = ci if ci is not None else CI.read_text(encoding="utf-8", errors="replace")
 
-    _, unreachable = reachability()
+    _, unreachable = reachability(main)
     if unreachable:
         errs.append("又长出不可达死代码: " + ", ".join(unreachable))
     for n in DEAD_NAMES:
@@ -117,34 +120,33 @@ def check():
 
 
 def selftest():
-    assert not check(), "基线自己就红了，先修基线"
-    lines = MAIN.read_text(encoding="utf-8").splitlines()
-    ci = CI.read_text(encoding="utf-8", errors="replace")
+    # R170 · 事故收口：原来三个注入都原地覆写 157KB 的 MainActivity.kt，
+    # 靠 finally 还原；一次沙盒 502 砍在循环中途就会把注入留在源码里。
+    # 现在全部在内存里造变体传给 check，源文件零写入。
+    base_main = MAIN.read_text(encoding="utf-8", errors="replace")
+    base_ci = CI.read_text(encoding="utf-8", errors="replace")
+    base_allkt = "\n".join(
+        p.read_text(encoding="utf-8", errors="replace") for p in APP.rglob("*.kt"))
+    assert not check(main=base_main, ci=base_ci, allkt=base_allkt), \
+        "基线自己就红了，先修基线"
 
     cases = [
-        ("死代码又长回来", lambda: MAIN.write_text(
-            "\n".join(lines + ["", "private fun AudioScreen(c: Context) {}", ""]), encoding="utf-8")),
-        ("现行能力被摘", lambda: MAIN.write_text(
-            "\n".join(lines).replace("fun openBook(id: String?)",
-                                     "fun openBookColX(id: String?, col: Int)"), encoding="utf-8")),
-        ("现行验证漏挂", lambda: CI.write_text(
-            ci.replace("python3 scripts/r134_verify.py --selftest", ""), encoding="utf-8")),
+        ("死代码又长回来", (
+            lambda m, c, a: (m, c, a + "\nprivate fun AudioScreen(c: Context) {}"))),
+        ("现行能力被摘", (
+            lambda m, c, a: (m.replace("fun openBook(id: String?)",
+                                       "fun openBookColX(id: String?, col: Int)"), c, a))),
+        ("现行验证漏挂", (
+            lambda m, c, a: (m, c.replace("python3 scripts/r134_verify.py --selftest", ""), a))),
     ]
-    original = (MAIN.read_text(encoding="utf-8"), CI.read_text(encoding="utf-8"))
     bad = 0
-    try:
-        for name, mutate in cases:
-            MAIN.write_text(original[0], encoding="utf-8")
-            CI.write_text(original[1], encoding="utf-8")
-            mutate()
-            if not check():
-                bad += 1
-                print("  反向注入漏放:", name)
-    finally:
-        # 无论中途是否异常，都必须逐字节还原，否则跟 HEAD 对拍的守恒脚本会假红
-        MAIN.write_text(original[0], encoding="utf-8")
-        CI.write_text(original[1], encoding="utf-8")
-    print("反向注入 %d/%d 全拦下" % (len(cases) - bad, len(cases)))
+    for name, mutate in cases:
+        m, c, a = mutate(base_main, base_ci, base_allkt)
+        assert (m, c, a) != (base_main, base_ci, base_allkt), "注入没生效: " + name
+        if not check(main=m, ci=c, allkt=a):
+            bad += 1
+            print("  反向注入漏放:", name)
+    print("反向注入 %d/%d 全拦下（纯内存，源文件零写入）" % (len(cases) - bad, len(cases)))
 
     # 轻量清单实跑：清单本身不能腐烂
     quick_bad = 0

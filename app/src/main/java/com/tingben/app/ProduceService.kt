@@ -288,6 +288,8 @@ private fun ensureChannel(c: Context) {
                     NotificationManager.IMPORTANCE_LOW).apply {
                     description = "离线把小说变成音频的逐块进度与停止入口"
                     setShowBadge(false)
+                    // R176 · 锁屏不公开任何制作内容
+                    setLockscreenVisibility(Notification.VISIBILITY_PRIVATE)
                 })
         }
     }
@@ -309,7 +311,16 @@ private fun buildNotification(
         .setOngoing(!final)
         .setOnlyAlertOnce(true)
         .setCategory(Notification.CATEGORY_PROGRESS)
-        .setVisibility(Notification.VISIBILITY_PUBLIC)
+        // R176 · 原来 VISIBILITY_PUBLIC + 《书名》+ 进度文案，锁屏上谁都看得见
+        // 你在做什么书；与「纯离线、allowBackup=false」的隐私口径冲突。
+        // 改为 PRIVATE，并给一个不含书名/正文的公共版供锁屏显示。
+        .setVisibility(Notification.VISIBILITY_PRIVATE)
+        .setPublicVersion(
+            Notification.Builder(c, "tingben_produce")
+                .setContentTitle("听本")
+                .setContentText("正在本地制作音频")
+                .setSmallIcon(com.tingben.app.R.mipmap.ic_launcher)
+                .build())
         .setContentIntent(open)
     if (total > 0) b.setProgress(total, done.coerceIn(0, total), false)
     if (!final) {

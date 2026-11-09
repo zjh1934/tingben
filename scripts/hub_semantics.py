@@ -9,7 +9,7 @@
 
 这里把判据收敛成「一本书一个主页，能力还在不在」：
   · 单列：三列/分页/列跳转零回潮
-  · 章行：点进阅读、长按进多选、勾选框只在多选态、听/展开/更多三枚图标
+  · 章行：点进阅读、长按进多选、勾选框只在多选态、听/展开两枚图标（R171 撤三点）
   · 章级：拼整章 / 另存 WAV / 转 M4A / 删音频（删列不丢能力）
   · 小片：固定 10 列（整块居中 / 行内左对齐）、惰性行、点播再点停、长按多选、批量试听与删除
   · 顶部：双进度、停止/继续、可播汇总、顺序播放、队列就地管理
@@ -30,13 +30,18 @@ HUB_POS = [
     "private fun ChevronIcon(",
     "private fun SegGridHead(",
     "private fun ChapterSegGrid(",
-    # 章行：默认点进阅读、长按进多选、三枚图标
+    # 章行：默认点进阅读、长按进多选；R171 起常态只有听 / 展开两枚图标
     "onTap = { openReader(r.index) }",
     "onLong = { enterMulti(r.index) }",
-    "onMore = { enterMulti(r.index) })",
     "IconButton(onClick = onListen",
     "IconButton(onClick = onExpand",
-    "IconButton(onClick = onMore",
+    # R171 · 三点「更多」撤掉，选中一律长按；勾选态必须能退出
+    "BackHandler(enabled = multiMode) { exitMulti() }",
+    "BackHandler(enabled = segMulti) { exitSegMulti() }",
+    "if (multiMode) {",
+    # R171 · 任务看板就地看，不切独立任务页
+    'EventLog.ui("HUB_TASKS"',
+    "TaskBoardDialog(",
     "Box(Modifier.size(44.dp).clickable { onToggle(r.index) }",
     # 勾选框只在多选态：ChapterRow 里 if (multi) 分支
     "SelectBox(checked = checked, tint = HubPrimary",
@@ -81,8 +86,9 @@ HUB_POS = [
     "TaskResume.queue(c)",
     "TaskResume.dequeue(c, t.bookId)",
     "Producer.resumeQueue(c)",
-    # R167 · 深色下章节名也是文字，不能留在灰字（深底常规文字统一纯白）
-    "color = if (appThemeDark) palette.text",
+    # R169 · 章名深浅两色统一 palette.text：浅色下 HubGrey 只有 1.74:1，
+    # 真机截图里 103 章整列看不见；「有没有做好」交给右侧耳机图标颜色。
+    "color = palette.text,",
     # 其它守恒
     "ChapterPlan.preview(c, book, null)",
     "Workbench.segments(c, t) to Workbench.segChapters(c, t)",
@@ -130,7 +136,7 @@ def _between(src: str, start: str, end: str) -> str:
 
 
 def chapter_row_ok(hub: str) -> bool:
-    """勾选框必须只在多选态出现，常态给三枚图标而不给勾选框。"""
+    """勾选框只在多选态出现；常态给听 / 展开两枚图标（R171 起无三点菜单）。"""
     body = _between(hub, "private fun ChapterRow(", "/** 代码绘制的耳机")
     if not body:
         return False
@@ -140,7 +146,7 @@ def chapter_row_ok(hub: str) -> bool:
         return False
     multi, normal = body[i:j], body[j:]
     return ("SelectBox(" in multi and "SelectBox(" not in normal
-            and normal.count("IconButton(") >= 3)
+            and normal.count("IconButton(") >= 2)
 
 
 def grid_fixed_columns(hub: str) -> bool:
@@ -222,14 +228,12 @@ def injections():
         ("深色序号取色丢失", "hub",
          lambda t: t.replace("color = segNumberColor(playing, playable, multi, isChecked))",
                              "color = HubSub)")),
-        ("深色章节名退回灰字", "hub",
-         lambda t: t.replace("color = if (appThemeDark) palette.text",
-                             "color = if (appThemeDark) HubGrey")),
-        ("深色常规文字又分灰度", "hub",
-         lambda t: t.replace("color = if (appThemeDark) palette.text\n"
-                             "                        else if (r.audio != null || (p ?: 0f) > 0f) Color.Unspecified\n"
-                             "                        else HubGrey,",
+        ("章名退回浅灰看不清", "hub",
+         lambda t: t.replace("color = palette.text,",
                              "color = if (r.audio != null || (p ?: 0f) > 0f) Color.Unspecified else HubGrey,")),
+        ("章名又按主题分灰度", "hub",
+         lambda t: t.replace("color = palette.text,",
+                             "color = if (appThemeDark) palette.text else HubGrey,")),
         ("删段确认丢失", "hub",
          lambda t: t.replace("confirmSegDel?.let", "if (false) null?.let")),
         ("整本进度条丢失", "hub",

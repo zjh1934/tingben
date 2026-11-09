@@ -37,6 +37,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -192,6 +193,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val importBytes by importBytesFlow.collectAsState()
     var importError by rememberSaveable { mutableStateOf<String?>(null) }
     var bookImportError by rememberSaveable { mutableStateOf<String?>(null) }
+    // R176 · 大文件导入在 IO 线程跑几十秒，原来可以连点 ＋ 起多个解码协程，
+    // 内存峰值翻倍甚至 OOM。这里做并发闸门，并让首页显示「正在导入」。
+    var bookImporting by rememberSaveable { mutableStateOf(false) }
     // R159 · 续跑确认。用户实证「关闭以后重新打开应用，它不一定弹」：
     // 原来 LaunchedEffect(Unit) 只在首次组合跑一次，加上 resumeSkipped 用
     // rememberSaveable 跨实例残留 —— 按返回退出再从桌面进（进程没被杀）就不弹，
@@ -200,6 +204,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     // resumeDecided 只表示「这次前台会话里点过弹窗」，不跨实例记忆。
     var resumeAsk by remember { mutableStateOf<Producer.PendingTask?>(null) }
     var resumeDecided by remember { mutableStateOf(false) }
+    // R169 · 每次回前台都会重判，原来每判一次就写一条 SKIP reason=decided，
+    // 第四份日志里同一会话刷了 6 条。弹窗本身没问题（只 SHOW 了一次），
+    // 收敛成「同一前台会话只记一次」，信息不丢、不再制造噪声。
+    var resumeSkipLogged by remember { mutableStateOf(false) }
 
     var navStack by rememberSaveable { mutableStateOf("") }
     val nav = remember { NavHost(navStack, { screen }, { screen = it }, { navStack = it }) }
@@ -272,7 +280,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             return@LaunchedEffect
         }
         if (resumeDecided) {
-            EventLog.ui("RESUME_ASK_SKIP", "reason=decided")
+            if (!resumeSkipLogged) {
+                resumeSkipLogged = true
+                EventLog.ui("RESUME_ASK_SKIP", "reason=decided")
+            }
             return@LaunchedEffect
         }
         EventLog.ui("RESUME_CHECK",
@@ -299,8 +310,11 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
 
     fun importBook(uri: Uri?, tag: String = "PICKER") {
         if (uri == null) {
-            EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_NONE", "$tag 没拿到文件")
-            Toast.makeText(ctx, "没拿到文件，换个方式再试", Toast.LENGTH_SHORT).show()
+            // R169 · OpenDocument 返回 null 就是用户在文件选择器按了返回。第四份日志里
+            // 两条「没拿到文件」记录都弹了错误提示，把正常取消当成
+            // 软件坏了。取消只留一条 TRACE 给排查用，不弹错误、不占报错清单。
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_CANCEL", "$tag 用户取消选择",
+                level = EventLog.Level.TRACE)
             return
         }
         try {
@@ -308,6 +322,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_BEGIN", "$tag ${uri.toString().take(90)}")
+        bookImporting = true
         scope.launch(Dispatchers.IO) {
             val result = runCatching { Importer.read(ctx, uri) }
             val r = result.getOrNull()
@@ -318,6 +333,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 BookStore.list(ctx).size > before
             }
             withContext(Dispatchers.Main) {
+                bookImporting = false
                 if (r == null) {
                     val why = result.exceptionOrNull()?.message ?: "换个文件试试"
                     EventLog.log(EventLog.Kind.CRASH, "BOOK_IMPORT_FAIL", "$tag $why")
@@ -354,6 +370,10 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     }
 
     fun openBookPicker() {
+        if (bookImporting) {
+            Toast.makeText(ctx, "上一本还在导入，稍等一下", Toast.LENGTH_SHORT).show()
+            return
+        }
         EventLog.log(EventLog.Kind.MODEL, "BOOK_PICKER_LAUNCH", "点击导入一本书")
         try {
             pickBook.launch(arrayOf("*/*"))
@@ -394,7 +414,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 val text = raw.removePrefix("text:")
                 if (text.isNotBlank()) {
                     val err = withContext(Dispatchers.IO) {
-                        runCatching { BookStore.add(ctx, "分享的文字", text, "input") }
+                        runCatching {
+                            BookStore.add(ctx, autoBookTitle(text, "分享的文字"), text, "input")
+                        }
                             .exceptionOrNull()
                     }
                     if (err != null) Toast.makeText(ctx, err.message ?: "文字加不进来",
@@ -545,7 +567,8 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.LIBRARY -> InputReadScreen(ctx,
                     onBack = { },
                     onAdded = { refresh++ },
-                    asHome = true)
+                    asHome = true,
+                    importingBook = bookImporting)
                 Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
                     onResumeTask = {
@@ -901,17 +924,48 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     }
                 }
             }
+        } else {
+            // R174 · 自审发现：书架为空时 LazyColumn 一片白，新用户只能靠抽屉
+            // 右上角那枚小「＋ 导入」。给一个能按的入口，不写教程、不加说明文字。
+            item(key = "empty") {
+                Column(Modifier.fillMaxWidth().padding(top = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    TextButton(onClick = onImportBook) {
+                        Text("导入第一本 ›", fontSize = 14.sp, color = Primary)
+                    }
+                }
+            }
         }
     }
 }
 
+/**
+ * R176 · 粘贴 / 分享进来的文字原来一律叫「粘贴的文字」，书架里几本同名书
+ * 根本分不清。取首行前 18 字当书名；空文本退回旧名。不写说明、不加 label。
+ */
+private fun autoBookTitle(text: String, fallback: String): String {
+    val line = text.lineSequence().map { it.trim() }
+        .firstOrNull { it.isNotEmpty() } ?: return fallback
+    val clean = line.replace(Regex("[\r\n\t]"), " ").trim()
+    return if (clean.length <= 18) clean else clean.take(18) + "…"
+}
+
 @Composable
 private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit,
-                            asHome: Boolean = false) {
+                            asHome: Boolean = false,
+                            importingBook: Boolean = false) {
     val clipboard = LocalClipboardManager.current
     val inputScope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
+    // R176 · 建书是异步落盘，连点会重复触发；成功后清空输入框，
+    // 免得用户看着还在的全文以为没点上又按一次。
+    var adding by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Bg).padding(16.dp)) {
+        // 这是「正在发生的事」，不是常驻说明文字：只在导入中显示
+        if (importingBook) {
+            Text("正在后台导入一本书…", fontSize = 11.sp, color = Sub,
+                modifier = Modifier.padding(bottom = 6.dp))
+        }
         if (!asHome) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(44.dp).clickable { onBack() },
@@ -924,16 +978,12 @@ private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit,
                 TextButton(onClick = onBack) { Text("关闭", fontSize = 12.sp, color = Sub) }
             }
             Spacer(Modifier.height(12.dp))
-        } else {
-            Text("粘贴或输入要念的正文", fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold, color = palette.text)
-            Spacer(Modifier.height(4.dp))
-            Text("建好的书在左上角 ☰ 里", fontSize = 11.sp, color = Sub)
-            Spacer(Modifier.height(12.dp))
         }
+        // R171 · 用户实证「文本框上面有废话文字说明」。标题、说明书、输入框 label
+        // 三处讲同一件事，全撤：空框里一句 placeholder，输入后自动消失。
         OutlinedTextField(
             value = text, onValueChange = { text = it },
-            label = { Text("要念的正文", fontSize = 12.sp) },
+            placeholder = { Text("粘贴或输入要念的正文", fontSize = 12.sp) },
             modifier = Modifier.fillMaxWidth().weight(1f),
             textStyle = TextStyle(fontSize = 14.sp)
         )
@@ -946,24 +996,37 @@ private fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: () -> Unit,
             }) { Text("粘贴", fontSize = 12.sp) }
             TextButton(onClick = { text = "" }) { Text("清除", fontSize = 12.sp) }
             Spacer(Modifier.weight(1f))
-            Button(onClick = {
+            Button(enabled = !adding, onClick = {
                 if (text.isBlank()) {
                     Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
-                } else {
+                } else if (!adding) {
+                    adding = true
+                    val snapshot = text
                     inputScope.launch {
-                        val err = withContext(Dispatchers.IO) {
-                            runCatching { BookStore.add(c, "粘贴的文字", text, "input") }
-                                .exceptionOrNull()
+                        val res = withContext(Dispatchers.IO) {
+                            runCatching {
+                                val before = BookStore.list(c).size
+                                BookStore.add(c, autoBookTitle(snapshot, "粘贴的文字"),
+                                    snapshot, "input")
+                                BookStore.list(c).size > before
+                            }
                         }
-                        if (err != null) Toast.makeText(c, err.message ?: "书加不进来",
-                            Toast.LENGTH_LONG).show()
-                        else {
+                        val err = res.exceptionOrNull()
+                        if (err != null) {
+                            Toast.makeText(c, err.message ?: "书加不进来",
+                                Toast.LENGTH_LONG).show()
+                        } else {
+                            text = ""   // 失败时正文原样留着，不丢用户输入
                             onAdded()
-                            Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(c,
+                                if (res.getOrNull() == true) "书加好了"
+                                else "这段已经在书架里了",
+                                Toast.LENGTH_SHORT).show()
                         }
+                        adding = false
                     }
                 }
-            }) { Text("建书", fontSize = 13.sp) }
+            }) { Text(if (adding) "正在加…" else "建书", fontSize = 13.sp) }
         }
     }
 }
@@ -1550,6 +1613,8 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
                 val badge = when {
                     runningThis -> "进行中"
                     t.phase == "done" -> "已完成"
+                    t.phase == "reconfirm" -> "需重新确认"
+                    t.phase == "blocked" -> "没开始"
                     t.phase == "stopped" -> "已停止"
                     else -> "已中断"
                 }
@@ -1601,14 +1666,16 @@ private fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> U
                     Row(Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically) {
                         if (!runningThis && t.phase != "done") {
+                            // R172 · 重新分章后旧 only 是旧章号，不能拿它直接开跑
                             Button(onClick = {
                                 EventLog.ui("TASK_RESUME", "book=${t.title}")
                                 onResume(t)
-                            }, enabled = !otherBusy,
+                            }, enabled = !otherBusy && t.phase != "reconfirm",
                                 modifier = Modifier.height(34.dp),
                                 shape = RoundedCornerShape(50),
                                 contentPadding = PaddingValues(horizontal = 14.dp)) {
-                                Text("继续制作", fontSize = 12.sp)
+                                Text(if (t.phase == "reconfirm") "需重新选章"
+                                     else "继续制作", fontSize = 12.sp)
                             }
                         } else if (runningThis) {
                             TextButton(onClick = { onProgress(t.bookId) }) {
@@ -1704,6 +1771,26 @@ private fun AutoResumeRow(c: Context) {
     }
 }
 
+/** R171 · 「应用详情」是入口不是权限，原来复用 PermRow 会显示「已开启 · 查看」。 */
+@Composable
+private fun PermEntryRow(title: String, hint: String, go: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(2.dp))
+            Text(hint, fontSize = 11.sp, color = Sub)
+        }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = go,
+            modifier = Modifier.height(34.dp),
+            shape = RoundedCornerShape(50),
+            contentPadding = PaddingValues(horizontal = 14.dp)) {
+            Text("打开 ›", fontSize = 12.sp)
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
 @Composable
 private fun SettingsSection(
     title: String, badge: String, open: Boolean = true, onToggle: (Boolean) -> Unit = {},
@@ -1780,6 +1867,8 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     val missing = remember(refresh) { ModelStore.missing(c) }
     val modeCount = remember(refresh) { ModelStore.installedModes(c).size }
     var themeMode by remember { mutableStateOf(Prefs.themeMode(c)) }
+    // R171 · 开发者工具默认收起，普通用户打开设置不再先看到两枚排查按钮。
+    var devOpen by remember { mutableStateOf(false) }
 
     // R156 · 成品导出：让用户用系统文件管理器自己选一个文件夹（一般是 Download），
     // 记住后把每章成品 WAV 平铺写进去。不开放内部 work/audio 路径配置，
@@ -1893,10 +1982,72 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     }
                 }
             }
+            Spacer(Modifier.height(10.dp))
+            OverlayProgressRow(c)
         }
 
         SettingsSection("本机数据", "本机", collapsible = false) {
+            // R171 · 开发日志不是「本机数据」，移到默认收起的「开发者工具」。
             ClearSegmentsRow(c)
+        }
+        // R171 · 合并「启动行为」与「通知与权限」：原来一个开关独占一张卡，
+        // 另一张卡只有一行，都是把设置页拉得又长又碎的根因。
+        SettingsSection("运行与通知", "系统", collapsible = false) {
+            AutoResumeRow(c)
+            Spacer(Modifier.height(8.dp))
+            // R165 · 原来写死「去开启」，权限已经给了还是这句。按真实状态复检，
+            // 回前台（permTick）就刷新；已给换绿底，和下面两行权限同一口径。
+            val notifOk = remember(permTick) { NotifPerm.granted(c) }
+            val goodFg = if (appThemeDark) Color(0xFF0E1117) else Color(0xFFFFFFFF)
+            Row(Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("通知权限", fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                        try {
+                            val i = android.content.Intent(
+                                android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, c.packageName)
+                            c.startActivity(i)
+                        } catch (_: Throwable) {
+                            Toast.makeText(c, "这台机器没有通知设置入口", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.height(34.dp),
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (notifOk) Good else Primary,
+                        contentColor = if (notifOk) goodFg else palette.onPrimary),
+                    contentPadding = PaddingValues(horizontal = 14.dp)) {
+                    Text(if (notifOk) "已开启 · 查看" else "去开启", fontSize = 12.sp)
+                }
+            }
+            // R174 · 自审发现：设置页原来有两张都标「系统」的卡（运行与通知 /
+            // 后台运行与权限），同类拆两处正是「设置页不合理」的残留。
+            // 现在系统类归到这一张，少一段空白、少一个重复分组。
+            // R158b · 用户明确「教程不要塞进应用里」：长说明、图文步骤、
+            // 箭头流程全部撤掉，只留按钮 + 状态。说明放沙盒方案文档，不进 APK。
+            Spacer(Modifier.height(10.dp))
+            PermRow("忽略电池优化", batOk, "后台限制") {
+                if (!KeepAlive.requestIgnoreBattery(c))
+                    Toast.makeText(c, "打不开设置页，请手动到应用详情里找",
+                        Toast.LENGTH_SHORT).show()
+            }
+            PermRow("显示在其他应用上层", ovOk, "可选") {
+                if (!KeepAlive.requestOverlay(c))
+                    Toast.makeText(c, "打不开设置页，请手动到应用详情里找",
+                        Toast.LENGTH_SHORT).show()
+            }
+            PermEntryRow("应用详情", "系统设置") {
+                if (!KeepAlive.openAppDetails(c))
+                    Toast.makeText(c, "这台机器打不开应用详情", Toast.LENGTH_SHORT).show()
+            }
+        }
+        SettingsSection("开发者工具", "排查", open = devOpen,
+                        onToggle = { devOpen = it }) {
             // R142 · 日志定位：给开发者排查用，不是给使用者看的。
             Text("开发日志", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(3.dp))
@@ -1941,64 +2092,6 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 }
             }
         }
-        // R159 · 用户「设置里再整一个开关：只要软件启动就自动续跑」。
-        // 和续跑弹窗是同一件事的两面：开关开 = 不弹直接跑，关 = 每次回前台问一句。
-        // 如实边界：管的是「回到应用时自动接着跑」，不是让系统把被杀的 App 拉起来。
-        SettingsSection("启动行为", "系统", collapsible = false) {
-            AutoResumeRow(c)
-        }
-        SettingsSection("通知与权限", "系统", collapsible = false) {
-            // R165 · 原来写死「去开启」，权限已经给了还是这句。按真实状态复检，
-            // 回前台（permTick）就刷新；已给换绿底，和下面两行权限同一口径。
-            val notifOk = remember(permTick) { NotifPerm.granted(c) }
-            val goodFg = if (appThemeDark) Color(0xFF0E1117) else Color(0xFFFFFFFF)
-            Row(Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("通知权限", fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold)
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = {
-                        try {
-                            val i = android.content.Intent(
-                                android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, c.packageName)
-                            c.startActivity(i)
-                        } catch (_: Throwable) {
-                            Toast.makeText(c, "这台机器没有通知设置入口", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.height(34.dp),
-                    shape = RoundedCornerShape(50),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (notifOk) Good else Primary,
-                        contentColor = if (notifOk) goodFg else palette.onPrimary),
-                    contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Text(if (notifOk) "已开启 · 查看" else "去开启", fontSize = 12.sp)
-                }
-            }
-        }
-        SettingsSection("后台运行与权限", "系统", collapsible = false) {
-            // R158b · 用户明确「教程不要塞进应用里」：长说明、图文步骤、
-            // 箭头流程全部撤掉，只留按钮 + 状态。说明放沙盒方案文档，不进 APK。
-            // Compose 不允许局部组合函数，抽成文件顶层的 PermRow。
-            PermRow("忽略电池优化", batOk, "后台限制") {
-                if (!KeepAlive.requestIgnoreBattery(c))
-                    Toast.makeText(c, "打不开设置页，请手动到应用详情里找",
-                        Toast.LENGTH_SHORT).show()
-            }
-            PermRow("显示在其他应用上层", ovOk, "可选") {
-                if (!KeepAlive.requestOverlay(c))
-                    Toast.makeText(c, "打不开设置页，请手动到应用详情里找",
-                        Toast.LENGTH_SHORT).show()
-            }
-            PermRow("应用详情", true, "系统设置") {
-                if (!KeepAlive.openAppDetails(c))
-                    Toast.makeText(c, "这台机器打不开应用详情", Toast.LENGTH_SHORT).show()
-            }
-            OverlayProgressRow(c)
-        }
         SettingsSection("成品文件", "本机", collapsible = false) {
             // R156 · 用户目标方案：「音频管理没必要了，设置里加个入口指向音频目录，
             // 点一下用系统文件管理器进去」。查证：成品在 filesDir/audio（App 私有），
@@ -2031,7 +2124,7 @@ private fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = {
+                Button(enabled = expCount > 0, onClick = {
                         val tree = AudioExport.treeUri(c)
                         if (tree == null) {
                             Toast.makeText(c, "先点「选择」挑一个文件夹",
@@ -2176,7 +2269,7 @@ private fun ModelScreen(c: Context, refresh: Int,
 
         Spacer(Modifier.height(6.dp))
 
-        // 共用底座：一行摘要 + 点「详情」展开完整信息
+        // 共用底座：一行摘要 + 点「详情」打开统一详情弹层
         CardBox(Modifier.padding(bottom = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -2191,30 +2284,15 @@ private fun ModelScreen(c: Context, refresh: Int,
                         fontSize = 12.sp, color = Primary)
                 }
             }
-            if (expanded == "base") {
-                Text(ModelStore.TOKENIZER, fontSize = 11.sp, color = Sub,
-                    fontFamily = FontFamily.Monospace)
-                Text("12Hz 码 ↔ 24kHz 波形，导入一次就够。", fontSize = 11.sp, color = Sub)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { copyUrl(cnUrl(ModelStore.TOKENIZER)) }) {
-                        Text("复制国内地址 ›", fontSize = 12.sp, color = Primary)
-                    }
-                    TextButton(onClick = { copyUrl(hfUrl(ModelStore.TOKENIZER)) }) {
-                        Text("备用 ›", fontSize = 12.sp, color = Sub)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (baseFile != null) {
-                        TextButton(onClick = { ModelStore.delete(c, baseFile); onChanged() }) {
-                            Text("删除重试", fontSize = 12.sp, color = Sub)
-                        }
-                    }
-                }
-            }
         }
 
         Text("模式主文件 · 装一份就能用", fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
 
+        // R170 · 真机截图 26：展开一张卡，详情全塞在卡里，那张卡被撑到两倍高，
+        // 同一行另一列空出一大块，第三张还被挤到下一行 —— 看着像没排完。
+        // 现在三卡固定等高，详情一律移到下方统一弹层，一次只开一项；
+        // 页面本身永远一屏（R136），弹层由系统处理返回键与点空白关闭。
         val modes = ModelStore.Mode.values()
         modes.toList().chunked(2).forEach { rowModes ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2222,14 +2300,12 @@ private fun ModelScreen(c: Context, refresh: Int,
                     val f = modeFiles[mode]
                     val isCurrent = mode == current
                     val open = expanded == mode.id
-                    CardBox(Modifier.weight(1f).padding(bottom = 6.dp)
+                    CardBox(Modifier.weight(1f).height(96.dp).padding(bottom = 6.dp)
                         .clickable { toggle(mode.id) }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(mode.label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f),
-                                color = if (isCurrent) Primary else Color.Unspecified)
-                            // H2 · 底座有「详情」，三张模式卡原来没有可见入口，
-                            // 用户以为「三个模式好像就没有」。默认态就给同一枚提示。
+                                color = if (isCurrent || open) Primary else Color.Unspecified)
                             Text(if (open) "收起" else "详情 ›",
                                 fontSize = 10.sp, color = Primary)
                             Spacer(Modifier.width(4.dp))
@@ -2241,20 +2317,67 @@ private fun ModelScreen(c: Context, refresh: Int,
                                     if (isCurrent) " · 当前" else "")
                             else "待导入", fontSize = 11.sp,
                             color = if (f != null) Good else Warn)
-                        if (!open) {
-                            Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1)
-                        }
-                        if (open) {
-                            Text(mode.id, fontSize = 11.sp, color = Sub)
-                            Text(mode.file, fontSize = 11.sp, color = Sub,
+                        Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (rowModes.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+
+        // R170 · 统一详情弹层：完整文件名（可点复制）、两个下载地址、
+        // 启用 / 删除重试 / 导入这份，全都在这里。卡里只留摘要，所以永远等高。
+        expanded?.let { key ->
+            val isBase = key == "base"
+            val mode = ModelStore.Mode.values().find { it.id == key }
+            val f = mode?.let { modeFiles[it] }
+            val isCurrent = mode == current
+            AlertDialog(
+                onDismissRequest = { toggle(key) },
+                title = {
+                    Text(if (isBase) "共用底座" else (mode?.label ?: "模型详情"),
+                        fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Column {
+                        if (expanded == "base") {
+                            Text(ModelStore.TOKENIZER, fontSize = 11.sp, color = Sub,
                                 fontFamily = FontFamily.Monospace)
+                            Text("12Hz 码 ↔ 24kHz 波形，导入一次就够。",
+                                fontSize = 11.sp, color = Sub)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = {
+                                    copyUrl(cnUrl(ModelStore.TOKENIZER))
+                                }) { Text("复制国内地址 ›", fontSize = 12.sp, color = Primary) }
+                                TextButton(onClick = {
+                                    copyUrl(hfUrl(ModelStore.TOKENIZER))
+                                }) { Text("备用 ›", fontSize = 12.sp, color = Sub) }
+                            }
+                            if (baseFile != null) {
+                                TextButton(onClick = {
+                                    ModelStore.delete(c, baseFile); onChanged(); toggle(key)
+                                }) { Text("删除重试", fontSize = 12.sp, color = Sub) }
+                            }
+                        } else if (mode != null) {
+                            Text(mode.id, fontSize = 11.sp, color = Sub)
+                            // R169 · 两列卡太窄会把 40 字符文件名竖着拆成 5 行；
+                            // R170 移到全宽弹层，单行省略 + 点一下复制完整名。
+                            Text(mode.file, fontSize = 11.sp, color = Sub, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.clickable {
+                                    clipboard.setText(AnnotatedString(mode.file))
+                                    Toast.makeText(c, "文件名已复制",
+                                        Toast.LENGTH_SHORT).show()
+                                })
                             Text(mode.hint, fontSize = 11.sp, color = Sub)
                             if (f != null) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     if (!isCurrent) {
                                         TextButton(onClick = {
                                             if (!st.running) {
-                                                Prefs.setModelMode(c, mode.id); onChanged()
+                                                Prefs.setModelMode(c, mode.id)
+                                                onChanged(); toggle(key)
                                             }
                                         }, enabled = !st.running) {
                                             Text("启用 ›", fontSize = 11.sp, color = Primary)
@@ -2262,19 +2385,19 @@ private fun ModelScreen(c: Context, refresh: Int,
                                     } else Text("当前模式", fontSize = 11.sp, color = Sub)
                                     Spacer(Modifier.weight(1f))
                                     TextButton(onClick = {
-                                        ModelStore.delete(c, f); onChanged()
+                                        ModelStore.delete(c, f); onChanged(); toggle(key)
                                     }) { Text("删除重试", fontSize = 11.sp, color = Sub) }
                                 }
                                 if (!isCurrent && st.running)
                                     Text("正在制作，跑完前不能切", fontSize = 11.sp, color = Warn)
                             } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    TextButton(onClick = onPick, enabled = importing == null) {
-                                        Text("导入这份 ›", fontSize = 11.sp, color = Primary)
-                                    }
-                                    TextButton(onClick = { copyUrl(cnUrl(mode.file)) }) {
-                                        Text("国内地址", fontSize = 11.sp, color = Primary)
-                                    }
+                                TextButton(onClick = onPick, enabled = importing == null) {
+                                    Text("导入这份 ›", fontSize = 11.sp, color = Primary)
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { copyUrl(cnUrl(mode.file)) }) {
+                                    Text("国内地址 ›", fontSize = 11.sp, color = Primary)
                                 }
                                 TextButton(onClick = { copyUrl(hfUrl(mode.file)) }) {
                                     Text("备用地址 ›", fontSize = 11.sp, color = Sub)
@@ -2282,9 +2405,11 @@ private fun ModelScreen(c: Context, refresh: Int,
                             }
                         }
                     }
+                },
+                confirmButton = {
+                    TextButton(onClick = { toggle(key) }) { Text("关闭", fontSize = 13.sp) }
                 }
-                if (rowModes.size == 1) Spacer(Modifier.weight(1f))
-            }
+            )
         }
 
         Spacer(Modifier.height(2.dp))

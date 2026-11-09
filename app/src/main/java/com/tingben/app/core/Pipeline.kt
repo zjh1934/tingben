@@ -31,21 +31,38 @@ data class Chunk(val index: Int, val chapter: Int, val text: String, val start: 
 data class Ann(val text: String, val speaker: String, val instruct: String)
 
 object BookStore {
-    // R139 · 文本字符数上限。Importer 的 64MB 是「字节」上限，中文 UTF-8 一个字 3 字节，
-    // 64MB ≈ 2100 万字，JVM 里 String 是 UTF-16（约 42MB），再叠加切块列表与
-    // 正则候选，很容易 OOM。这里按「字符」再设一道更早、更贴合内存的闸门。
+    // R139 · 文本字符数上限。Importer 的字节闸门在 R172 压到与它同量级
+    // （TXT 24MB / EPUB 64MB），中文 UTF-8 一个字 3 字节，解码前就先挡住。
     const val MAX_TEXT_CHARS = 6_000_000
 
     private fun dir(c: Context) = File(c.filesDir, "books").apply { mkdirs() }
     private fun meta(c: Context) = File(dir(c), "books.json")
     // H1 · 置顶单独存一份，不动 Book 数据类与既有 save()（老版本 books.json 零迁移）。
-    // list() 只按这个集合把置顶的书排到前面，稳定排序保留其余原顺序。
     private fun pinFile(c: Context) = File(dir(c), "pins.json")
 
-    fun pinned(c: Context): Set<String> = try {
-        val a = JSONArray(pinFile(c).readText())
-        (0 until a.length()).map { a.getString(it) }.toSet()
-    } catch (_: Throwable) { emptySet() }
+    /**
+     * R172 · P1「一次导入静默抹掉整个书架」根治。
+     *
+     * 原来 books.json 裸写 + 解析失败 return emptyList()：写入中途被杀留下半截
+     * JSON，list() 就当书架是空的且不上报，随后 add() 里 list().toMutableList()
+     * 已经是空的，save() 覆写成只含新书的一行 —— 旧书正文还在磁盘里却成了孤儿。
+     * 现在读写全走 AtomicJson（.part/.bak 恢复），损坏时明确拒绝写入，
+     * 绝不把「读不到」当成「没有书」。pins.json 同样裸写，一并收掉。
+     */
+    @Volatile private var recoveryNotified = false
+    private fun indexCorrupt(c: Context): Boolean =
+        AtomicJson.read(meta(c)) is AtomicJson.Read.Corrupt
+
+    fun pinned(c: Context): Set<String> {
+        val body = when (val r = AtomicJson.read(pinFile(c))) {
+            is AtomicJson.Read.Ok -> r.text
+            else -> return emptySet()
+        }
+        return try {
+            val a = JSONArray(body)
+            (0 until a.length()).map { a.getString(it) }.toSet()
+        } catch (_: Throwable) { emptySet() }
+    }
 
     fun setPinned(c: Context, id: String, on: Boolean) {
         try {
@@ -53,16 +70,34 @@ object BookStore {
             if (on) s.add(id) else s.remove(id)
             val a = JSONArray()
             s.forEach { a.put(it) }
-            pinFile(c).writeText(a.toString())
+            if (!AtomicJson.write(pinFile(c), a.toString()))
+                UiErrors.storage("置顶记录没写进磁盘", null)
             EventLog.log(EventLog.Kind.MODEL, "BOOK_PIN", "$id on=$on")
         } catch (_: Throwable) { }
     }
 
     fun list(c: Context): List<Book> {
-        val f = meta(c)
-        if (!f.exists()) return emptyList()
+        val r = AtomicJson.read(meta(c))
+        val body = when (r) {
+            is AtomicJson.Read.Missing -> return emptyList()
+            is AtomicJson.Read.Corrupt -> {
+                // 读不到就是读不到，绝不当成空书架；调用方 save() 会拒绝覆写。
+                EventLog.log(EventLog.Kind.MODEL, "BOOK_INDEX_CORRUPT",
+                    "书架索引损坏且无可用备份，已阻止写入以免抹掉旧书")
+                return emptyList()
+            }
+            is AtomicJson.Read.Ok -> {
+                if (r.from.isNotEmpty() && !recoveryNotified) {
+                    recoveryNotified = true
+                    EventLog.log(EventLog.Kind.MODEL, "BOOK_INDEX_RECOVERED",
+                        "已从 ${r.from} 恢复书架索引")
+                    UiErrors.storage("书架索引已从上一次备份恢复", null)
+                }
+                r.text
+            }
+        }
         return try {
-            val a = JSONArray(f.readText())
+            val a = JSONArray(body)
             (0 until a.length()).map { i ->
                 val o = a.getJSONObject(i)
                 Book(o.getString("id"), o.getString("title"), o.getString("path"),
@@ -73,17 +108,30 @@ object BookStore {
                 val pins = pinned(c)
                 books.sortedByDescending { it.id in pins }
             }
-        } catch (_: Throwable) { emptyList() }
+        } catch (_: Throwable) {
+            // 结构合法但字段缺失也算损坏：同样不许被一次导入覆写
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_INDEX_BAD_FIELDS",
+                "书架索引字段读不出来，已阻止写入")
+            emptyList()
+        }
     }
 
-    private fun save(c: Context, books: List<Book>) {
+    /** 返回是否真的写成功；索引损坏时一律拒写，返回 false。 */
+    private fun save(c: Context, books: List<Book>): Boolean {
+        if (indexCorrupt(c)) {
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_WRITE_BLOCKED",
+                "索引损坏，拒绝覆写 books.json，避免抹掉旧书")
+            return false
+        }
         val a = JSONArray()
         books.forEach { b ->
             a.put(JSONObject().put("id", b.id).put("title", b.title)
                 .put("path", b.path).put("chars", b.chars).put("sha", b.sha)
                 .put("origin", b.origin))
         }
-        meta(c).writeText(a.toString())
+        val ok = AtomicJson.write(meta(c), a.toString())
+        if (!ok) UiErrors.storage("书架索引没写进磁盘", null)
+        return ok
     }
 
     private fun fingerprint(text: String): String = try {
@@ -96,6 +144,9 @@ object BookStore {
             throw IllegalStateException(
                 "这本书有 ${text.length / 10000} 万字，超过 ${MAX_TEXT_CHARS / 10000} 万字上限；" +
                     "先拆成几本再导入（太长的书在手机上会内存不够）")
+        // 先挡在写正文之前：索引坏了就别导入，否则一次 save() 会把旧书抹掉
+        if (indexCorrupt(c))
+            throw IllegalStateException("书架索引损坏，已阻止导入以免抹掉旧书")
         val sha = fingerprint(text)
         val old = list(c).find {
             it.title == title && (it.sha == sha || (it.sha.isEmpty() && it.chars == text.length))
@@ -109,7 +160,11 @@ object BookStore {
         f.writeText(text)
         val b = Book(id, title, f.absolutePath, text.length, sha, origin)
         val all = list(c).toMutableList().also { it.add(0, b) }
-        save(c, all)
+        if (!save(c, all)) {
+            // 索引没写成功就把刚写的正文撤掉，不留孤儿文件
+            f.delete()
+            throw IllegalStateException("书架索引没写进磁盘，已取消导入，旧书没动")
+        }
         EventLog.log(EventLog.Kind.MODEL, "BOOK_ADD", title)
         return b
     }
@@ -119,7 +174,10 @@ object BookStore {
     fun delete(c: Context, id: String) {
         val all = list(c)
         all.find { it.id == id }?.let { File(it.path).delete() }
-        save(c, all.filter { it.id != id })
+        if (!save(c, all.filter { it.id != id })) {
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_DELETE_INDEX_FAILED",
+                "删书时索引没写成；原书正文文件已删，旧索引先留着不动")
+        }
         try { setPinned(c, id, false) } catch (_: Throwable) { }
         purge(c, id)
     }
@@ -168,6 +226,28 @@ object ModelStore {
         dir(c).listFiles()?.filter { it.isFile && it.name.endsWith(".gguf") }?.sortedBy { it.name } ?: emptyList()
     } catch (_: Throwable) { emptyList() }
 
+    /**
+     * R175 · P3-9「模型导入零完整性校验」根治。
+     * 原来 import() 只判「文件非空」，pick/pickFor 又靠文件名子串认主文件：
+     * 下载残件、误选的小文件、改名后的错模型都能通过 ready() 一路传进 native，
+     * 轻则加载失败重则进程崩溃，UI 却显示「已导入 ✓」。
+     * 现在文件头必须是 GGUF 魔数且不小于 64KB；精确名与模糊匹配一律只认
+     * 通过校验的文件。校验发生在 rename 之前，残件进不了 models/。
+     */
+    private const val GGUF_MAGIC = "GGUF"
+    private const val MIN_GGUF_BYTES = 64L * 1024L
+
+    private fun looksLikeGguf(f: File): Boolean = try {
+        if (!f.isFile || f.length() < MIN_GGUF_BYTES) false
+        else java.io.RandomAccessFile(f, "r").use { raf ->
+            val h = ByteArray(4)
+            raf.readFully(h)
+            String(h, Charsets.US_ASCII) == GGUF_MAGIC
+        }
+    } catch (_: Throwable) { false }
+
+    private fun validFiles(c: Context): List<File> = files(c).filter { looksLikeGguf(it) }
+
     fun import(c: Context, name: String, source: java.io.InputStream,
                onProgress: (Long) -> Unit = {}): File {
         val safe = name.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -193,6 +273,10 @@ object ModelStore {
                 onProgress(total)
             }
             if (tmp.length() == 0L) throw IllegalStateException("选到的文件是空的")
+            // R175 · 残件在 rename 成正式文件之前就被挡下，旧文件与 .bak 一个字不动
+            if (!looksLikeGguf(tmp))
+                throw IllegalStateException(
+                    "这个文件不像完整的 GGUF 模型（文件头不对或下载不完整），重新下载后再导入")
             val bak = File(dir(c), "$safe.bak")
             if (bak.exists()) bak.delete()
             if (out.exists() && !out.renameTo(bak))
@@ -222,17 +306,22 @@ object ModelStore {
                 EventLog.log(EventLog.Kind.MODEL, "PART_DISCARD", "${it.name} ${it.length()}")
                 it.delete()
             }
+            // R175 · 疑似残件不自动删（不替用户做破坏性决定），但明确记账
+            files(c).filter { !looksLikeGguf(it) }.forEach {
+                EventLog.log(EventLog.Kind.MODEL, "MODEL_SUSPECT",
+                    "${it.name} ${it.length()} 字节 · 头不对或过小，已排除在可用模型之外")
+            }
         } catch (_: Throwable) { }
     }
 
     private fun pick(c: Context, exact: String, vararg hints: String): File? {
-        val all = files(c)
+        val all = validFiles(c)
         all.find { it.name.equals(exact, true) }?.let { return it }
         return all.firstOrNull { f -> hints.any { f.name.contains(it, true) } }
     }
 
     private fun pickFor(c: Context, m: Mode): File? {
-        val all = files(c)
+        val all = validFiles(c)
         all.find { it.name.equals(m.file, true) }?.let { return it }
         return all.firstOrNull { it.name.contains("-" + m.key + "-", true) }
     }
@@ -409,26 +498,54 @@ object AnnCache {
 }
 
 object WavMerger {
-    private fun pcmOf(f: File): ByteArray? {
-        return try {
-            val b = f.readBytes()
-            if (b.size < 44) null else {
-                var i = 12
-                var found: ByteArray? = null
-                while (i + 8 <= b.size) {
-                    val id = String(b, i, 4, Charsets.US_ASCII)
-                    val sz = (b[i + 4].toInt() and 0xff) or ((b[i + 5].toInt() and 0xff) shl 8) or
-                            ((b[i + 6].toInt() and 0xff) shl 16) or ((b[i + 7].toInt() and 0xff) shl 24)
+    /**
+     * R172 · P0「长书必崩」根治。
+     *
+     * 原来把整本书所有分段 PCM 一次性 readBytes() 进堆（6 小时 ≈ 1.04 GB，
+     * declick 又逐段 copyOf 一份，峰值超 2 GB），走到「正在整理音频」必 OOM，
+     * 前面几千段全白做。现在只读每个 WAV 的 chunk 头定位 data 段，按固定缓冲
+     * 逐段流式写出；declick 只处理当前段的首尾帧，内存与整本长度无关。
+     * 顺带修掉旧 pcmOf 用有符号 Int 拼 chunk 长度时高位为 1 会变负、
+     * i 不前进甚至倒退的死循环（畸形 / 超大 WAV）。
+     */
+    private const val IO_BUF = 64 * 1024
+
+    /** 返回 data chunk 的 (起始偏移, 字节数)；只扫 chunk 头，绝不把 PCM 读进内存。 */
+    private fun dataSpan(f: File): Pair<Long, Long>? = try {
+        java.io.RandomAccessFile(f, "r").use { raf ->
+            val h = ByteArray(12)
+            raf.readFully(h)
+            if (String(h, 0, 4, Charsets.US_ASCII) != "RIFF" ||
+                String(h, 8, 4, Charsets.US_ASCII) != "WAVE") null
+            else {
+                val fileLen = raf.length()
+                var pos = 12L
+                var found: Pair<Long, Long>? = null
+                while (found == null && pos + 8 <= fileLen) {
+                    raf.seek(pos)
+                    val ch = ByteArray(8)
+                    raf.readFully(ch)
+                    val id = String(ch, 0, 4, Charsets.US_ASCII)
+                    // 无符号 32 位：用 Long 拼，高位为 1 也不会变成负数
+                    val sz = (ch[4].toLong() and 0xffL) or
+                            ((ch[5].toLong() and 0xffL) shl 8) or
+                            ((ch[6].toLong() and 0xffL) shl 16) or
+                            ((ch[7].toLong() and 0xffL) shl 24)
+                    val payload = pos + 8
+                    if (payload + sz > fileLen) break
                     if (id == "data") {
-                        found = b.copyOfRange(i + 8, minOf(i + 8 + sz, b.size))
-                        break
+                        found = payload to minOf(sz, fileLen - payload)
+                    } else {
+                        val pad = if (sz % 2L == 1L) 1L else 0L
+                        val next = payload + sz + pad
+                        if (next <= pos) break      // 畸形头：不许原地打转
+                        pos = next
                     }
-                    i += 8 + sz + (if (sz % 2 == 1) 1 else 0)
                 }
                 found
             }
-        } catch (_: Throwable) { null }
-    }
+        }
+    } catch (_: Throwable) { null }
 
     private fun header(dataLen: Int): ByteArray {
         val rate = 24000; val ch = 1; val bits = 16
@@ -447,51 +564,116 @@ object WavMerger {
         return h
     }
 
-    private fun declick(pcm: ByteArray, ms: Int): ByteArray {
-        if (ms <= 0 || pcm.size < 4) return pcm
+    /** 就地改一帧的增益，不再 copyOf 整段。 */
+    private fun rampFrame(out: ByteArray, frame: Int, gain: Float) {
+        val p = frame * 2
+        if (p < 0 || p + 1 >= out.size) return
+        val s = ((out[p].toInt() and 0xff) or
+            ((out[p + 1].toInt() and 0xff) shl 8)).toShort().toInt()
+        val v = (s * gain).toInt().coerceIn(-32768, 32767)
+        out[p] = (v and 0xff).toByte()
+        out[p + 1] = ((v shr 8) and 0xff).toByte()
+    }
+
+    private fun declickInPlace(pcm: ByteArray, ms: Int) {
+        if (ms <= 0 || pcm.size < 4) return
         val frames = (24000 * ms / 1000).coerceIn(1, pcm.size / 2)
-        val out = pcm.copyOf()
-        fun ramp(at: Int, gain: Float) {
-            val p = at * 2
-            if (p < 0 || p + 1 >= out.size) return
-            val s = ((out[p].toInt() and 0xff) or
-                ((out[p + 1].toInt() and 0xff) shl 8)).toShort().toInt()
-            val v = (s * gain).toInt().coerceIn(-32768, 32767)
-            out[p] = (v and 0xff).toByte()
-            out[p + 1] = ((v shr 8) and 0xff).toByte()
-        }
         for (j in 0 until frames) {
             val g = j.toFloat() / frames
-            ramp(j, g)
-            ramp(pcm.size / 2 - 1 - j, g)
+            rampFrame(pcm, j, g)
+            rampFrame(pcm, pcm.size / 2 - 1 - j, g)
         }
-        return out
+    }
+
+    private fun copyRaw(raf: java.io.RandomAccessFile, offset: Long, len: Long,
+                        os: java.io.OutputStream) {
+        raf.seek(offset)
+        val buf = ByteArray(IO_BUF)
+        var left = len
+        while (left > 0) {
+            val n = raf.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+            if (n <= 0) break
+            os.write(buf, 0, n)
+            left -= n
+        }
+    }
+
+    /** 只把首尾各 frames 帧读进内存做 ramp，中间按缓冲直拷；峰值恒定几十 KB。 */
+    private fun writePcm(raf: java.io.RandomAccessFile, offset: Long, len: Long,
+                         os: java.io.OutputStream, declickMs: Int) {
+        if (len <= 0) return
+        val frames = if (declickMs <= 0) 0 else
+            (24000 * declickMs / 1000).coerceIn(1, (len / 2).toInt().coerceAtLeast(1))
+        if (frames == 0) { copyRaw(raf, offset, len, os); return }
+        val edge = frames * 2
+        if (len <= edge * 2L) {
+            // 极短段：整段读进内存（单段最多几十秒，与整本长度无关）
+            val one = ByteArray(len.toInt())
+            raf.seek(offset); raf.readFully(one)
+            declickInPlace(one, declickMs)
+            os.write(one)
+            return
+        }
+        val head = ByteArray(edge)
+        raf.seek(offset); raf.readFully(head)
+        for (j in 0 until frames) rampFrame(head, j, j.toFloat() / frames)
+        os.write(head)
+        copyRaw(raf, offset + edge, len - edge * 2L, os)
+        val tail = ByteArray(edge)
+        raf.seek(offset + len - edge); raf.readFully(tail)
+        for (k in 0 until frames)
+            rampFrame(tail, k, (frames - 1 - k).toFloat() / frames)
+        os.write(tail)
     }
 
     fun merge(parts: List<File>, out: File, gapMs: Int = 0, declickMs: Int = 30): Boolean {
         val part = File(out.parentFile, out.name + ".part")
         return try {
-            val chunks = parts.mapNotNull { p -> pcmOf(p)?.let { declick(it, declickMs) } }
-            if (chunks.isEmpty() || chunks.size != parts.size) { part.delete(); false } else {
-                val gapBytes = (gapMs.coerceIn(0, 5000) * 48 / 2) * 2
-                val silence = if (gapBytes > 0) ByteArray(gapBytes) else ByteArray(0)
-                val total = chunks.sumOf { it.size } + silence.size * (chunks.size - 1).coerceAtLeast(0)
-                java.io.FileOutputStream(part, false).use { os ->
-                    os.write(header(total))
-                    chunks.forEachIndexed { i, pcm ->
-                        if (i > 0 && silence.isNotEmpty()) os.write(silence)
-                        os.write(pcm)
-                    }
-                    os.flush()
-                    os.fd.sync()
-                }
-                if (part.length() != 44L + total) { part.delete(); return false }
-                if (out.exists() && !out.delete()) { part.delete(); return false }
-                if (!part.renameTo(out)) { part.delete(); return false }
-                EventLog.log(EventLog.Kind.PIPELINE, "MERGE_DONE",
-                    "${parts.size} 块 / $total 字节 · 段间静音 ${gapMs}ms")
-                true
+            if (parts.isEmpty()) { part.delete(); return false }
+            // ① 只扫头算总长；任何一段坏了就整体失败（等价于旧 chunks.size != parts.size）
+            val spans = ArrayList<Pair<Long, Long>>(parts.size)
+            for (p in parts) {
+                val sp = dataSpan(p)
+                if (sp == null || sp.second <= 0) { part.delete(); return false }
+                spans.add(sp)
             }
+            val gapBytes = ((gapMs.coerceIn(0, 5000) * 48) / 2) * 2
+            var total = 0L
+            spans.forEach { total += it.second }
+            if (spans.size > 1) total += gapBytes.toLong() * (spans.size - 1)
+            // WAV 的 RIFF / data 长度是 32 位有符号 Int，越界就明确拒绝，不写出坏头
+            if (total <= 0L || total > Int.MAX_VALUE - 36L) {
+                part.delete()
+                EventLog.log(EventLog.Kind.PIPELINE, "MERGE_TOO_LARGE",
+                    "成品 $total 字节超过单个 WAV 上限，先分章导出")
+                return false
+            }
+            // ② 逐段流式写出，全书 PCM 从不同时驻留
+            java.io.FileOutputStream(part, false).use { os ->
+                os.write(header(total.toInt()))
+                val zero = ByteArray(minOf(IO_BUF, gapBytes.coerceAtLeast(1)))
+                spans.forEachIndexed { i, (offset, len) ->
+                    if (i > 0 && gapBytes > 0) {
+                        var left = gapBytes
+                        while (left > 0) {
+                            val n = minOf(zero.size, left)
+                            os.write(zero, 0, n)
+                            left -= n
+                        }
+                    }
+                    java.io.RandomAccessFile(parts[i], "r").use { raf ->
+                        writePcm(raf, offset, len, os, declickMs)
+                    }
+                }
+                os.flush()
+                os.fd.sync()
+            }
+            if (part.length() != 44L + total) { part.delete(); return false }
+            if (out.exists() && !out.delete()) { part.delete(); return false }
+            if (!part.renameTo(out)) { part.delete(); return false }
+            EventLog.log(EventLog.Kind.PIPELINE, "MERGE_DONE",
+                "${parts.size} 块 / $total 字节 · 段间静音 ${gapMs}ms")
+            true
         } catch (_: Throwable) { part.delete(); false }
     }
 }
@@ -538,7 +720,11 @@ object Producer {
         val why = TaskResume.invalidationReason(c, fixed)
         _resume.value = fixed.copy(done = real)
         _state.value = Progress(false, "上次中断", real, fixed.total, 0,
-            if (why != null)
+            if (t.phase == "blocked")
+                "《${fixed.title}》上次没能开始制作；请在任务页点「继续制作」重试。"
+            else if (t.phase == "reconfirm")
+                "《${fixed.title}》重新分过章，旧任务不能接着用；请重新选章制作。"
+            else if (why != null)
                 "上次做到《${fixed.title}》。$why，分段文字还留着，点「继续制作」接着做。"
             else
                 "上次做到《${fixed.title}》，已做好的块都留着。点「继续制作」从这接着跑，不用重算。")
@@ -559,10 +745,14 @@ object Producer {
         val t = TaskInfo(book.id, book.title, only, true, think ?: false,
             0, 0, "queued", "排队中", System.currentTimeMillis(),
             config = config, modeId = ModelStore.currentMode(c).id,
-            splitRule = TaskResume.SPLIT_RULE)
+            splitRule = TaskResume.SPLIT_RULE,
+            planEpoch = ChapterPlan.epoch(c, book.id))
         val paused = TaskResume.queuePaused(c)
         if (!busy && TaskResume.queue(c).isEmpty() && !paused) {
             start(c, book, only, true, think, config)
+            // R175 · P2-6：队列泵与自动续跑都查了，只有这条直接启动路径漏了。
+            // FGS 起不来时 start() 已把任务存成 blocked，这里绝不能再报「开始制作」。
+            lastStartError?.let { return it }
             return "开始制作《${book.title}》"
         }
         TaskResume.enqueue(c, t)
@@ -656,6 +846,7 @@ object Producer {
         val why = TaskResume.autoResumeBlockReason(c, t)
         val label = when {
             t.stage == "已达时长上限" -> "已达时长上限"
+            t.phase == "blocked" -> "没开始成功"
             t.phase == "stopped" -> "已停止"
             t.phase == "interrupted" && why == null -> "意外中断"
             why != null -> "待确认"
@@ -779,7 +970,8 @@ object Producer {
         current = TaskInfo(book.id, book.title, onlyChapters, true, thinkOn,
             0, 0, "running", "正在准备", System.currentTimeMillis(),
             config = config, modeId = ModelStore.currentMode(c).id,
-            splitRule = TaskResume.SPLIT_RULE)
+            splitRule = TaskResume.SPLIT_RULE,
+            planEpoch = ChapterPlan.epoch(c, book.id))
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
         _state.value = Progress(true, "正在准备", 0, 0, 0, "正在启动…")
@@ -809,14 +1001,8 @@ object Producer {
             lastStartError = why
             busy = false
             cancelRequested = false
-            _state.value = Progress(false, "没开始", 0, 0, 0, why)
-            val t = current
-            if (t != null) {
-                val stopped = t.copy(phase = "stopped", stage = "没开始")
-                current = stopped
-                appCtx?.let { TaskResume.save(it, stopped) }
-                _resume.value = stopped
-            }
+            // R175 · 系统限制不是「用户手动停」，也不该被 finally 误标中断
+            abortBeforeStart(why)
             EventLog.log(EventLog.Kind.CRASH, "PRODUCE_FGS_BLOCKED", why)
             return
         }
@@ -853,6 +1039,28 @@ object Producer {
         }
     }
 
+    /**
+     * R175 · P2-5「没开始的配置失败被记成意外中断」根治。
+     *
+     * 原来 run() 里 native 不可用 / 模型没齐 / 没有可制作文字 / 模型加载失败
+     * 都只设 _state 后 return，current.phase 仍是 "running"；finally 于是
+     * finally 把它标成「意外中断」。而 autoResumeBlockReason 的 stage 黑名单只有
+     * 没完成/出错了/已停止，不含「中断」；模型齐全时 synthesisBlockReason 与
+     * invalidationReason 都返回 null → pending() 给 AUTO → 开软件自动续跑、
+     * 再次早退、再次记中断，循环往复，弹窗还写着「意外中断」。
+     * 现在显式落 blocked 阶段并说清原因，finally 不再碰它。
+     */
+    private fun abortBeforeStart(msg: String, stage: String = "没开始") {
+        _state.value = Progress(false, stage, 0, 0, 0, msg)
+        val t = current ?: return
+        val blocked = t.copy(phase = "blocked", stage = stage,
+            done = 0, total = 0, updatedAt = System.currentTimeMillis())
+        current = blocked
+        appCtx?.let { TaskResume.save(it, blocked) }
+        _resume.value = blocked
+        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_BLOCKED", "$stage：$msg")
+    }
+
     private fun markInterrupted(stage: String) {
         val c = appCtx ?: return
         val t = current ?: return
@@ -864,30 +1072,64 @@ object Producer {
         _resume.value = fixed.copy(done = TaskResume.realProgress(c, fixed))
     }
 
+    /**
+     * R176 · 长书落盘 / 通知节流。
+     *
+     * 原来每段 emit 都全量重写 tasks.json 与任务清单：AtomicJson.write 内部还要
+     * 读旧文件、写 .bak、写 .part、rename，一段就是十来次文件操作；9000 段的
+     * 6 小时书累计几万次 IO，外加 9000 次 nm.notify。长书后段明显变慢、耗电。
+     *
+     * 现在 1.5 秒落一次盘、1.5 秒刷一次通知；阶段切换与收尾强制落一次。
+     * 断点不丢：已落盘 WAV 才是进度真值（TaskResume.realProgress 按磁盘重算），
+     * tasks.json 的 done 只影响文案，进程被硬杀时最多滞后 1.5 秒。
+     * 内存态 _state / current 仍每段更新，界面与进度条完全不受节流影响。
+     */
+    private const val PERSIST_INTERVAL_MS = 1500L
+    private var lastPersistMs = 0L
+    private var lastNotifyMs = 0L
+
+    private fun persistTick(force: Boolean) {
+        val c = appCtx ?: return
+        val t = current ?: return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastPersistMs < PERSIST_INTERVAL_MS) return
+        TaskResume.save(c, t)
+        lastPersistMs = now
+    }
+
     private fun emit(stage: String, done: Int, total: Int, failed: Int, msg: String,
                      out: String? = null, chapterProgress: Map<Int, Float> = emptyMap()) {
         _state.value = Progress(true, stage, done, total, failed, msg, out, chapterProgress)
         val c = appCtx
         val t = current
+        // t 是 copy 之前的旧对象，拿它比 stage 能准确识别「刚换了阶段」
+        val stageChanged = t?.stage != stage
         if (c != null && t != null && t.phase == "running") {
             val up = t.copy(total = total, done = done, stage = stage,
                 updatedAt = System.currentTimeMillis())
             current = up
-            TaskResume.save(c, up)
+            persistTick(force = stageChanged)
         }
-        appCtx?.let { ctx ->
-            ProduceService.update(ctx.applicationContext, stage, done, total, msg)
+        val now = System.currentTimeMillis()
+        if (stageChanged || now - lastNotifyMs >= PERSIST_INTERVAL_MS) {
+            appCtx?.let { ctx ->
+                ProduceService.update(ctx.applicationContext, stage, done, total, msg)
+            }
+            lastNotifyMs = now
         }
     }
 
     private fun run(c: Context, book: Book, only: Set<Int>?, direct: Boolean,
                     thinkOverride: Boolean? = null, config: ProduceConfig = ProduceConfig()) {
+        // R176 · 每个任务重新计时，别让上一任务的节流窗口吃掉本次首帧
+        lastPersistMs = 0L
+        lastNotifyMs = 0L
         if (!NativeEngine.isAvailable()) {
-            _state.value = Progress(false, "没开始", 0, 0, 0, NativeEngine.shortReason())
+            abortBeforeStart(NativeEngine.shortReason())
             return
         }
         ModelStore.synthesisBlockReason(c)?.let { reason ->
-            _state.value = Progress(false, "没开始", 0, 0, 0, reason)
+            abortBeforeStart(reason)
             return
         }
         val tk = ModelStore.modeFile(c, ModelStore.currentMode(c))
@@ -896,8 +1138,7 @@ object Producer {
         if (tk == null) miss.add("模式主文件")
         if (tok == null) miss.add("共用底座（12Hz）")
         if (miss.isNotEmpty()) {
-            _state.value = Progress(false, "没开始", 0, 0, 0,
-                "还差：" + miss.joinToString("、") + "。去模型页导入。")
+            abortBeforeStart("还差：" + miss.joinToString("、") + "。去模型页导入。")
             return
         }
 
@@ -907,7 +1148,7 @@ object Producer {
         val (chapters, allChunks) = ChapterPlan.resolve(c, book, text)
         val chunks = if (only == null) allChunks else allChunks.filter { it.chapter in only }
         if (chunks.isEmpty()) {
-            _state.value = Progress(false, "没开始", 0, 0, 0, "这本书没有可制作的文字")
+            abortBeforeStart("这本书没有可制作的文字")
             return
         }
         val thinkOn = thinkOverride ?: false
@@ -1023,18 +1264,18 @@ object Producer {
         val ttsHandle = try {
             NativeEngine.ttsLoadGated(tk!!.absolutePath, tok!!.absolutePath, null)
         } catch (t: Throwable) {
-            _state.value = Progress(false, "没开始", 0, 0, 0, "音频模型加载失败：" + (t.message ?: ""))
+            abortBeforeStart("音频模型加载失败：" + (t.message ?: ""))
             return
         }
         if (ttsHandle == 0L) {
-            _state.value = Progress(false, "没开始", 0, 0, 0, "音频模型打不开，请确认两个文件都导入了")
+            abortBeforeStart("音频模型打不开，请确认两个文件都导入了")
             return
         }
         try {
             SynthInput.prepare(c, ttsHandle)
         } catch (t: Throwable) {
             try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
-            _state.value = Progress(false, "没开始", 0, 0, 0, t.message ?: "模式输入没准备好")
+            abortBeforeStart(t.message ?: "模式输入没准备好")
             return
         }
 
@@ -1105,9 +1346,13 @@ object Producer {
                     "budgetSegs=$budgetSegs pending=$pending seg=$segBytes")
         }
         var spaceStopped = false
+        // R175 · P2-7：budgetSegs 是「这次还能新合成多少段」。原来拿 wavs.size
+        // （含跳过复用的旧段）去比，纯续跑一个字节没写也会被判定空间用完、
+        // 提前 break 卡在合并之前。只数真正落盘的新段。
+        var newlyWritten = 0
         try {
             for ((i, a) in toSpeak.withIndex()) {
-                if (wavs.size >= budgetSegs) { spaceStopped = true; break }
+                if (newlyWritten >= budgetSegs) { spaceStopped = true; break }
                 if (cancelRequested) {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
                     return
@@ -1199,6 +1444,7 @@ object Producer {
                         return
                     }
                     wavs.add(wav)
+                    newlyWritten++
                     SegPlan.clearRedo(work, "seg:$i")
                     segStartBytes.add(cursorBytes)
                     cursorBytes += (wav.length() - 44) + gapBytes
@@ -1220,7 +1466,7 @@ object Producer {
                     gateFails + synthFails,
                     "空间用完了，已做好 ${wavs.size} 段并都留着；清出空间后点「继续制作」从这接着做")
                 EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_PARTIAL_STOP",
-                    "kept=${wavs.size} total=${annotated.size} free=$freeBytes")
+                    "kept=${wavs.size} newly=$newlyWritten total=${annotated.size} free=$freeBytes")
                 return
             }
         } finally {
