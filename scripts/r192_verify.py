@@ -77,8 +77,12 @@ def checks(f):
     for s in BAN:
         if s in f["main"]:
             e.append("旧文案回潮: " + s[:56])
-    # 顺序硬约束：停播放/制作 → 清状态 → 删章节表与文件
+    # 顺序硬约束：停播放/制作 → 清状态 → 删章节表与文件。
+    # R193 · 只看 purge 函数体。BookStore.delete 里现在也有一次 stopIfBook
+    # （收尾窗口的提前拒绝），全文 find 会命中它，把顺序误判成反了。
     p = f["pipe"]
+    start = p.find("private fun purge(c: Context, id: String) {")
+    body = p[start:] if start >= 0 else p
     order = [
         "try { PlayQueue.releaseIfBook(id) }",
         "try { Producer.stopIfBook(id) }",
@@ -86,12 +90,12 @@ def checks(f):
         "try { ReadingState.remove(c, id) }",
         "try { ChapterPlan.delete(c, id) }",
     ]
-    pos = [p.find(x) for x in order]
+    pos = [body.find(x) for x in order]
     if -1 in pos or pos != sorted(pos):
         e.append("purge 清理顺序错了（先停机 → 再清状态 → 再删文件）")
     # ListenState 清理必须在 release 之后，否则会被 savePos() 写回
-    if not (p.find("try { PlayQueue.releaseIfBook(id) }") <
-            p.find("try { ListenState.removeForBook(c, id) }")):
+    if not (body.find("try { PlayQueue.releaseIfBook(id) }") <
+            body.find("try { ListenState.removeForBook(c, id) }")):
         e.append("ListenState 清理放到了 release 之前，会被 savePos 写回")
     # 自动防漏要求 CI 里的现行批次守门都登记
     live = set(__import__("re").findall(
@@ -141,7 +145,8 @@ def selftest():
              "        try { PlayQueue.releaseIfBook(id) } catch (_: Throwable) { }\n"
              "        try { Producer.stopIfBook(id) } catch (_: Throwable) { }\n", "")),
         ("弹窗退回旧文案", "main",
-         lambda t: t.replace('                "以及收听与阅读位置。若正在播放或制作这本书，会一并停止。") },',
+         lambda t: t.replace('                "以及收听与阅读位置。若正在播放或制作这本书，会一并停止；" +\n'
+                             '                "还在收尾上一段时会先停，稍等再删一次。") },',
                              '                "和制作任务。") },')),
         ("忘登记 CURRENT_VERIFIERS", "r135",
          lambda t: t.replace(', "r192_verify.py"', "", 1)),

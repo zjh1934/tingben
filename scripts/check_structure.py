@@ -314,7 +314,13 @@ if "语言模型" in chrome_src or "文本处理" in chrome_src:
     errs.append("U1 回退：抽屉仍含已删模块")
 if "if (acc > 55f)" not in chrome_src or "onRefresh()" not in chrome_src:
     errs.append("U1 回退：下拉刷新机制或阈值被改动")
-if "BookStore.delete(c, id); confirmDelete = null; onChanged()" not in main_src:
+# R193 · 原来锚定整句，删书改成吃返回值后必然假红。按符号/语义判：
+# 调用 delete、关掉弹窗、真删了才刷新列表，三件事都在即可。
+if "BookStore.delete(c, id)" not in main_src:
+    errs.append("U1 回退：删书没调 BookStore.delete")
+if "confirmDelete = null" not in main_src:
+    errs.append("U1 回退：删书弹窗没关")
+if "if (deleted) onChanged()" not in main_src:
     errs.append("U1 回退：删书后没调 onChanged()，列表不会刷新")
 for p in kt_files:
     masked = mask_strings(p.read_text(encoding="utf-8", errors="replace"))
@@ -334,7 +340,8 @@ def ui_literals(src):
 
 R33_MUST = ["statusBarsPadding()", "MiniPlayBar(ctx, miniBook", "confirmDelete",
             "AlertDialog(", 'EventLog.ui("DRAWER_NAV", "open")',
-            "BookStore.delete(c, id); confirmDelete = null; onChanged()",
+            "BookStore.delete(c, id)", "confirmDelete = null",
+            "if (deleted) onChanged()",
             "private fun ProgressScreen("]
 for sym in R33_MUST:
     if sym not in main_src: errs.append("R33 缺新壳层符号: " + sym)

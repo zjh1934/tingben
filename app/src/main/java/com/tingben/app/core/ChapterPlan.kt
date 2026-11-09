@@ -182,6 +182,12 @@ object ChapterPlan {
 
     /** 重新分章：用户显式操作。返回新章数；章号会变，调用方必须提示音频需重做。 */
     fun refresh(c: Context, book: Book, ruleId: String? = null): Pair<String, Int> {
+        // R193 · IO 线程真正执行时的最后一道。UI 的 Compose 快照可能过期：
+        // 点停止后 running 立刻 false、busy 还在收尾，此时按钮已亮，
+        // 若在这里不拦就会删掉后台正在写的 work 目录。放在读 64MB 之前，
+        // 抛中文异常由 ChapterHub 的 runCatching 直接 Toast，不做任何作废。
+        if (Producer.isBusyForBook(book.id))
+            throw IllegalStateException("这本书还在收尾上一段，等它停稳再重新分章")
         val text = BookStore.read(c, book)
         val sha = if (book.sha.isNotBlank()) book.sha else fingerprint(text)
         val nextEpoch = load(c, book.id)?.epoch?.plus(1) ?: 1

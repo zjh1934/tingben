@@ -116,13 +116,9 @@ def selftest():
         ("清单删掉 r188 登记", "r135",
          lambda t: t.replace(', "r188_verify.py"', '', 1)),
         ("清单删掉整批补齐", "r135",
-         lambda t: t.replace('           # R189 · 补齐停在 r163 的登记（这 15 个都早已挂 CI，只是清单没跟上）\n'
-                             '           "r169_verify.py", "r170_verify.py", "r171_verify.py",\n'
-                             '           "r172_verify.py", "r173_verify.py", "r174_verify.py",\n'
-                             '           "r175_verify.py", "r176_verify.py", "r177_verify.py",\n'
-                             '           "r178_verify.py", "r180_verify.py", "r182_verify.py",\n'
-                             '           "r183_verify.py", "r185_verify.py", "r188_verify.py",\n'
-                             '           "r189_verify.py", "r192_verify.py"]', '           "aoci_check.py"]')),
+         lambda t: __import__("re").sub(
+             r'           # R189 · 补齐.*?\n(?:           "r\d+_verify\.py"[^\n]*\n)+',
+             '           "aoci_check.py"]\n', t, flags=__import__("re").S)),
         ("防漏检查被摘", "r135",
          lambda t: t.replace('    missing = sorted(live - set(CURRENT_VERIFIERS) - {"r135_verify.py"})\n'
                              '    if missing:\n'

@@ -73,6 +73,8 @@ def main():
         ("R189 反向注入", ["python3", "scripts/r189_verify.py", "--selftest"]),
         ("R192 删书清理", ["python3", "scripts/r192_verify.py"]),
         ("R192 反向注入", ["python3", "scripts/r192_verify.py", "--selftest"]),
+        ("R193 收尾窗口守卫", ["python3", "scripts/r193_verify.py"]),
+        ("R193 反向注入", ["python3", "scripts/r193_verify.py", "--selftest"]),
     ]
     ok = 0
     for name, cmd in checks:

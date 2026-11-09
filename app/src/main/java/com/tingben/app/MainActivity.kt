@@ -848,10 +848,17 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             title = { Text("删除这本书？") },
             text = { Text((books.find { it.id == id }?.title ?: "") +
                 "\n\n会一起删掉这本书的章节表、已做好的音频、分段缓存、制作任务，" +
-                "以及收听与阅读位置。若正在播放或制作这本书，会一并停止。") },
+                "以及收听与阅读位置。若正在播放或制作这本书，会一并停止；" +
+                "还在收尾上一段时会先停，稍等再删一次。") },
             confirmButton = {
                 TextButton(onClick = {
-                    BookStore.delete(c, id); confirmDelete = null; onChanged()
+                    // R193 · 返回 false = 后台还在收尾，已替用户点停止，
+                    // 这次什么都不删，给明确反馈，别让书「点了还在」显得没反应。
+                    val deleted = BookStore.delete(c, id)
+                    confirmDelete = null
+                    if (deleted) onChanged()
+                    else Toast.makeText(c, "这本书还在收尾上一段，已点停止；稍等再删一次",
+                        Toast.LENGTH_LONG).show()
                 }) { Text("删除", color = Warn) }
             },
             dismissButton = {

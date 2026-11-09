@@ -171,7 +171,18 @@ object BookStore {
 
     fun read(c: Context, b: Book): String = File(b.path).readText()
 
-    fun delete(c: Context, id: String) {
+    /**
+     * R193 · 返回 false = 这本书还在收尾，已替用户点了停止但**什么都没删**，
+     * 调用方要给「稍等再删」的反馈；true 才是真删干净了。
+     * 绝不能在后台还握着 work/<id> 时 deleteRecursively。
+     */
+    fun delete(c: Context, id: String): Boolean {
+        if (Producer.isBusyForBook(id)) {
+            try { Producer.stopIfBook(id) } catch (_: Throwable) { }
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_DELETE_DEFERRED",
+                "书=$id 还在收尾上一段，已点停止、暂不删除，等停稳再删")
+            return false
+        }
         val all = list(c)
         all.find { it.id == id }?.let { File(it.path).delete() }
         if (!save(c, all.filter { it.id != id })) {
@@ -180,6 +191,7 @@ object BookStore {
         }
         try { setPinned(c, id, false) } catch (_: Throwable) { }
         purge(c, id)
+        return true
     }
 
     /**
@@ -717,6 +729,16 @@ object Producer {
 
     fun reset() { if (!busy) _state.value = Progress() }
     fun isBusy() = busy
+
+    /**
+     * R193 · 点「停止」后 running 立刻变 false，但 busy 要等当前那段推理
+     * 收尾完才在 finally 里清（native 一段 1~3 分钟）。这段时间后台还握着
+     * work/<id>，删书 / 重新分章不能只看 state.running，否则会删掉正在写的
+     * 目录、重建幽灵分段。stop() 把 current 换成 stopped 副本但 bookId 不变，
+     * 所以这个判据能完整覆盖收尾窗口。
+     */
+    fun isBusyForBook(bookId: String): Boolean =
+        busy && current?.bookId == bookId
 
     // R139 · begin() 返回 false 时写在这里，autoResume 读它给 toast，不静默吞掉
     @Volatile var lastStartError: String? = null

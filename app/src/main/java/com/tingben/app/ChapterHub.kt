@@ -891,10 +891,16 @@ internal fun ChapterHubScreen(
                         // R172 · 说清真实后果：旧任务标待确认、分段作废、成品仍可听。
                         Text("章号会变，旧任务需重新确认；分段音频作废，成品仍可听；原书文字不动。",
                             fontSize = 12.sp, color = HubWarn)
+                        // R193 · 别的书在制作不挡这本书；但本书正在制作或
+                        // 刚点停止还在收尾时，必须等停稳，否则会删掉正在写的分段。
+                        Text("这本书正在制作或收尾时先等它停稳；别的书在制作不影响。",
+                            fontSize = 12.sp, color = HubSub)
                     }
                 },
                 confirmButton = {
-                    TextButton(enabled = pv != null && !st.running, onClick = {
+                    TextButton(enabled = pv != null &&
+                        !(st.running && task?.bookId == book.id) &&
+                        !Producer.isBusyForBook(book.id), onClick = {
                         showResplit = false
                         resplitScope.launch {
                             val rr = withContext(Dispatchers.IO) {
