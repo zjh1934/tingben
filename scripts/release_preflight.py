@@ -3,7 +3,8 @@
 """发版体检单（只读，不推送、不升版本、不打包）。
 
 在能走 git 传输的环境里，发版对齐轮先跑这一份，它只回答一个问题：
-「离把 1.1.6 推出去还差什么」。所有检查都在本地，不联网。
+「离把当前版本推出去还差什么」。所有检查都在本地，不联网。
+R179 起版本判据动态取 version.txt，不再绑死某个字面量。
 
 用法：python3 scripts/release_preflight.py
 """
@@ -55,6 +56,9 @@ def main():
         ("R175 反向注入", ["python3", "scripts/r175_verify.py", "--selftest"]),
         ("R176 四件收口", ["python3", "scripts/r176_verify.py"]),
         ("R176 反向注入", ["python3", "scripts/r176_verify.py", "--selftest"]),
+        ("R177 发版对齐", ["python3", "scripts/r177_verify.py"]),
+        ("R178 界面收口", ["python3", "scripts/r178_verify.py"]),
+        ("R178 反向注入", ["python3", "scripts/r178_verify.py", "--selftest"]),
     ]
     ok = 0
     for name, cmd in checks:
@@ -65,13 +69,12 @@ def main():
     lines.append("关键守门        : %d/%d 绿" % (ok, len(checks)))
 
     gate = []
-    if ver == "1.1.5":
-        gate.append("version.txt 仍是 1.1.5（发版对齐轮升一次到 1.1.6）")
-    if not remote:
-        gate.append("没有 git remote（对齐轮里配 https://github.com/zjh1934/tingben.git）")
+    if not ver:
+        gate.append("version.txt 为空")
     if "kotlinc" not in have:
-        gate.append("R169~R172 从未真编译过；推上去后必须盯 CI 的 Kotlin/Compose 编译结果")
-    gate.append("github.com 的 git 传输在本沙盒被 403（api.github.com 可用但不绕道硬推）")
+        gate.append("本环境无 Android SDK，真编译归 CI；发版前必须盯 rc 分支的 Kotlin/Compose 结果")
+    gate.append("github.com 的 git 传输在本沙盒被 403；走仓库外 rc_push.py 的 API 增量通道")
+    gate.append("流程：rc 分支 workflow_dispatch 真编译 → 绿了再 promote main 发版")
     gate.append("本地没有 APK，publish_apk 要等 CI 出包后才跑")
 
     print("=" * 62)
@@ -81,7 +84,10 @@ def main():
     print("\n离发版还差：")
     for i, g in enumerate(gate, 1):
         print("  %d. %s" % (i, g))
-    print("\n结论：本地改动已收口，只差「能走 git 传输的环境 + CI 真编译」这一关。")
+    if ok != len(checks) or dirty:
+        print("\n结论：本地还有未收口项，先别发版（见上面红项与工作区状态）。")
+    else:
+        print("\n结论：本地已收口。走 rc_push.py --push → 盯 rc 分支 CI 真编译 → 绿了 --promote 发版。")
     return 0 if ok == len(checks) and not dirty else 1
 
 

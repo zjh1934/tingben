@@ -3,11 +3,11 @@
 """R177 · 发版对齐守门：验证分支不许误发版、版本必须递增。
 
 沙盒的 git 传输被 403，但 GitHub API 通道可用且有 push 权限。发版路径改为：
-  本地快照 → API 建 rc/1.1.6 分支 → workflow_dispatch 跑全套 + 真编译
+  本地快照 → API 建 rc/<版本> 分支 → workflow_dispatch 跑全套 + 真编译
   → 绿了再把 main 快进到同一提交 → push main 自动发 Release。
 因此：
   · Release 与固定直链两步必须限定 main，否则验证分支编译通过就提前覆盖
-    线上 v1.1.5 的 Release 与直链；
+    线上旧版 Release 与直链；
   · version.txt 必须严格大于线上最新 tag。
 
 selftest 全程纯内存注入，一个字节都不写源文件。
@@ -68,8 +68,10 @@ def checks(f, online=True, tag=None):
         e.append("version.txt 不是合法三段版本号")
     if tag is None and online:
         tag = remote_tag()
-    if tag and not (vt(ver) > vt(tag)):
-        e.append("版本没有比线上 %s 递增：%s" % (tag, ver))
+    # 发版后本地与线上同版是正常的（main 上留的就是刚发的版本）。
+    # 「严格递增」由 CI 的 check_version_bump 在 push 时把关；这里只拦回退。
+    if tag and not (vt(ver) >= vt(tag)):
+        e.append("版本比线上 %s 还旧：%s" % (tag, ver))
     # ③ 体检单在
     if not (ROOT / "scripts/release_preflight.py").is_file():
         e.append("发版体检单缺失")
@@ -78,12 +80,13 @@ def checks(f, online=True, tag=None):
 
 def selftest():
     base = {k: p.read_text(encoding="utf-8") for k, p in FILES.items()}
-    # 离线 selftest 也要判「版本递增」：给一个固定的线上基线 tag
+    # 离线 selftest 用「线上 == 本地当前版本」做基线：模拟刚发完版的正常态，
+    # 这样「退回旧版本」会被拦下，又不会写死一个会过期的 tag。
     def ck(v):
-        return checks(v, online=False, tag="v1.1.5")
+        return checks(v, online=False, tag=base["ver"].strip())
     assert not ck(base), "基线自己就红了，先修基线"
     cases = [
-        ("版本退回 1.1.5", "ver", lambda t: "1.1.5\n"),
+        ("版本退回旧版", "ver", lambda t: "1.1.5\n"),
         ("版本清空", "ver", lambda t: "\n"),
         ("Release 保护被摘", "ci",
          lambda t: t.replace(GUARD + "\n        uses: softprops/action-gh-release@v2",
@@ -116,5 +119,5 @@ if __name__ == "__main__":
         for x in e:
             print("  ✗", x)
         sys.exit(1)
-    print("R177 发版对齐：版本 %s > 线上 %s / 发版两步限定 main：PASS"
+    print("R177 发版对齐：版本 %s ≥ 线上 %s / 发版两步限定 main：PASS"
           % (f["ver"].strip(), remote_tag() or "（查不到）"))

@@ -157,7 +157,9 @@ internal fun ChapterHubScreen(
     onPlayBook: (String) -> Unit,
     onMixer: () -> Unit,
     onStarted: (String, Set<Int>) -> Unit,
-    onOpenBook: (String) -> Unit = {}
+    onOpenBook: (String) -> Unit = {},
+    // R178 · 通知点进来时直接展开就地任务看板，不用再切独立任务页
+    openTasksOnStart: Boolean = false
 ) {
     var localTick by remember { mutableStateOf(0) }
     var planTick by remember { mutableStateOf(0) }
@@ -241,7 +243,10 @@ internal fun ChapterHubScreen(
     var segMulti by remember(book.id) { mutableStateOf(false) }
     var segChecked by remember(book.id) { mutableStateOf(setOf<Int>()) }
     var showQueue by remember { mutableStateOf(false) }
-    var showTasks by remember { mutableStateOf(false) }
+    var showTasks by remember { mutableStateOf(openTasksOnStart) }
+    // R178 · 真机日志里 17:59:40 STOP → 17:59:41 RESUME 只隔 0.3 秒，
+    // 停止/继续连点会把刚停下的任务又拉起来。800ms 内只认第一次。
+    var lastHubTapMs by remember { mutableStateOf(0L) }
 
     // 一次读盘、书内共用同一份真值：按章展开的小段与整本分段计划同源。
     var hubSegs by remember(book.id) { mutableStateOf(emptyList<SegRow>()) }
@@ -471,8 +476,12 @@ internal fun ChapterHubScreen(
                             modifier = Modifier.weight(1f))
                         if (bookRunning) {
                             Button(onClick = {
-                                EventLog.ui("HUB_STOP", "book=${book.id}")
-                                Producer.stop()
+                                val now = System.currentTimeMillis()
+                                if (now - lastHubTapMs >= 800L) {
+                                    lastHubTapMs = now
+                                    EventLog.ui("HUB_STOP", "book=${book.id}")
+                                    Producer.stop()
+                                }
                             }, modifier = Modifier.height(32.dp),
                                 shape = RoundedCornerShape(50),
                                 contentPadding = PaddingValues(horizontal = 14.dp),
@@ -481,8 +490,12 @@ internal fun ChapterHubScreen(
                             }
                         } else if (stalledTask) {
                             Button(onClick = {
-                                EventLog.ui("HUB_RESUME", "book=${book.id}")
-                                onResumeTask()
+                                val now = System.currentTimeMillis()
+                                if (now - lastHubTapMs >= 800L) {
+                                    lastHubTapMs = now
+                                    EventLog.ui("HUB_RESUME", "book=${book.id}")
+                                    onResumeTask()
+                                }
                             }, modifier = Modifier.height(32.dp),
                                 shape = RoundedCornerShape(50),
                                 contentPadding = PaddingValues(horizontal = 14.dp)) {

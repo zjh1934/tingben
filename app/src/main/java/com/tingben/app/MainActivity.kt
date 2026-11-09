@@ -196,6 +196,9 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     // R176 · 大文件导入在 IO 线程跑几十秒，原来可以连点 ＋ 起多个解码协程，
     // 内存峰值翻倍甚至 OOM。这里做并发闸门，并让首页显示「正在导入」。
     var bookImporting by rememberSaveable { mutableStateOf(false) }
+    // R178 · 通知点「任务」不再跳独立任务页：落到那本书的目录页并自动展开
+    // 就地任务看板（R171 已把看板做进目录页）。能力搬干净后再物理删页。
+    var hubOpenTasks by rememberSaveable { mutableStateOf(false) }
     // R159 · 续跑确认。用户实证「关闭以后重新打开应用，它不一定弹」：
     // 原来 LaunchedEffect(Unit) 只在首次组合跑一次，加上 resumeSkipped 用
     // rememberSaveable 跨实例残留 —— 按返回退出再从桌面进（进程没被杀）就不弹，
@@ -401,7 +404,22 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         val raw = full.substringAfter('|', full)
         when {
             raw == "tasks:" -> {
-                screen = Screen.TASKS
+                // R178 · 进 IO 找「有未完成任务的书」，落目录页 + 自动展开就地看板；
+                // 一本都没任务时给一句中文反馈，不再把用户丢到独立任务页。
+                val b = withContext(Dispatchers.IO) {
+                    val t = TaskResume.active(ctx) ?: TaskResume.queue(ctx).firstOrNull()
+                    t?.bookId?.let { bid -> BookStore.list(ctx).find { it.id == bid } }
+                }
+                if (b != null) {
+                    bookId = b.id
+                    taskBookId = b.id
+                    nav.clear()
+                    screen = Screen.CHAPTERS
+                    hubOpenTasks = true
+                    EventLog.ui("NOTIF_TASKS_OPEN", "book=${b.id}")
+                } else {
+                    Toast.makeText(ctx, "暂时没有没做完的任务", Toast.LENGTH_SHORT).show()
+                }
                 refresh++
             }
             raw == "player:" -> { playerOpen = true }
@@ -569,20 +587,26 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onAdded = { refresh++ },
                     asHome = true,
                     importingBook = bookImporting)
-                Screen.CHAPTERS -> ChapterHubScreen(ctx, bookId, refresh,
-                    onBack = { nav.pop() },
-                    onResumeTask = {
-                        // R137：bookId 是可空 String?，byBook 要非空 String；
-                        // 沙盒无 SDK 时静态脚本抓不到，CI 真编译 run 127 报出，
-                        // 这里显式判空，不改成 !!（没开书时本就不该恢复任务）。
-                        bookId?.let { id -> TaskResume.byBook(ctx, id)?.let { resumeTask(it) } }
-                    },
-                    onPlayBook = { miniBook = it },
-                    onMixer = { chapterMixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open:hub") },
-                    onStarted = { id, sel ->
-                        taskBookId = id; lastSelection = sel
-                        openBook(id)
-                    })
+                Screen.CHAPTERS -> {
+                    ChapterHubScreen(ctx, bookId, refresh,
+                        onBack = { nav.pop() },
+                        onResumeTask = {
+                            // R137：bookId 是可空 String?，byBook 要非空 String；
+                            // 沙盒无 SDK 时静态脚本抓不到，CI 真编译 run 127 报出，
+                            // 这里显式判空，不改成 !!（没开书时本就不该恢复任务）。
+                            bookId?.let { id -> TaskResume.byBook(ctx, id)?.let { resumeTask(it) } }
+                        },
+                        onPlayBook = { miniBook = it },
+                        onMixer = { chapterMixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open:hub") },
+                        onStarted = { id, sel ->
+                            taskBookId = id; lastSelection = sel
+                            openBook(id)
+                        },
+                        openTasksOnStart = hubOpenTasks)
+                    // 只借这一帧把「自动展开」交给目录页，之后复位，
+                    // 下次正常从书列表打开书不会无故弹看板。
+                    SideEffect { if (hubOpenTasks) hubOpenTasks = false }
+                }
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
                     onProgress = { openBook(bookId) },
@@ -818,16 +842,16 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
     ) {
-        if (!compact) {
-            item(key = "head") {
-                RefreshStrip(
-                    onRefresh = onChanged,
-                    primary = Primary,
-                    primarySoft = PrimarySoft,
-                    sub = Sub
-                )
-                Spacer(Modifier.height(6.dp))
-            }
+        // R178 · 书列表搬进抽屉（compact=true）后，原来这个 item 被 if (!compact)
+        // 挡掉，刷新入口整个消失。现在抽屉里也常显，配合 RefreshStrip 的下拉 + 点按。
+        item(key = "head") {
+            RefreshStrip(
+                onRefresh = onChanged,
+                primary = Primary,
+                primarySoft = PrimarySoft,
+                sub = Sub
+            )
+            Spacer(Modifier.height(6.dp))
         }
         if (!compact && importError != null) {
             item(key = "import-error") {

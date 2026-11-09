@@ -349,6 +349,10 @@ jobs:
         run: python3 scripts/r177_verify.py --selftest
       - name: R177 发版对齐
         run: python3 scripts/r177_verify.py
+      - name: R178 界面收口反向注入
+        run: python3 scripts/r178_verify.py --selftest
+      - name: R178 界面收口
+        run: python3 scripts/r178_verify.py
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug
