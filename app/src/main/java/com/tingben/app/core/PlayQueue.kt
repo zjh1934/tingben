@@ -192,11 +192,37 @@ object PlayQueue {
     }
     private fun clearNotif() { appCtx?.let { PlayNotif.cancel(it) } }
 
+    // R182 · 短暂失焦（来电、导航播报）结束后要自动续播。原来三种 loss 一律
+    // pause()，而 pause() 会 abandonFocus() —— 请求都放弃了，系统的 GAIN 再也不会
+    // 回调回来，用户挂了电话还得自己手动点播放。听书被 duck 压低也听不清，
+    // 统一按「短暂暂停 + 保留焦点」处理，GAIN 时接着念。
+    @Volatile private var pausedByTransient = false
+
+    private fun pauseKeepFocus() {
+        savePos()
+        try { player?.pause() } catch (_: Throwable) { }
+        _state.value = _state.value.copy(isPlaying = false)
+        notifyNow()
+    }
+
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
-            AudioManager.AUDIOFOCUS_LOSS,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> pause()
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                val was = _state.value.isPlaying
+                pauseKeepFocus()          // 故意不 abandonFocus，才能收到 GAIN
+                pausedByTransient = was
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                pausedByTransient = false
+                pause()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                if (pausedByTransient) {
+                    pausedByTransient = false
+                    resume()
+                }
+            }
         }
     }
 
@@ -254,6 +280,7 @@ object PlayQueue {
 
     fun setTracks(list: List<Track>, id: String = "") {
         if (isPreview(id)) { previewSetTracks(list, id); return }
+        lastPosPersistMs = 0L
         if (list == tracks && id == queueId) return
         release()
         tracks = list
@@ -347,8 +374,19 @@ object PlayQueue {
         _state.value = _state.value.copy(speed = speed)
     }
 
+    // R182 · 位置只在暂停/拖动/切曲/释放时写盘；听几小时的书被系统回收、
+    // 直接划掉进程、来电没来得及点暂停，位置就全丢了。tick 由播放条与播放器页
+    // 每 300~500ms 调一次，这里按 20 秒节流补写一次，磁盘开销可忽略。
+    @Volatile private var lastPosPersistMs = 0L
+    private val POS_PERSIST_INTERVAL = 20_000L
+
     fun tick() {
         val p = player ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastPosPersistMs >= POS_PERSIST_INTERVAL) {
+            lastPosPersistMs = now
+            if (_state.value.isPlaying) savePos()
+        }
         try {
             _state.value = _state.value.copy(
                 positionMs = p.currentPosition.coerceAtLeast(0).toLong(),
@@ -444,6 +482,7 @@ object PlayQueue {
     }
 
     fun release() {
+        pausedByTransient = false
         savePos()   // 换队列 / 退出前，先把旧队列的位置留住
         abandonFocus()
         stopPreview()

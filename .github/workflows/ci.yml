@@ -357,6 +357,14 @@ jobs:
         run: python3 scripts/r180_verify.py --selftest
       - name: R180 核心闭环
         run: python3 scripts/r180_verify.py
+      - name: R182 收听连续性反向注入
+        run: python3 scripts/r182_verify.py --selftest
+      - name: R182 收听连续性
+        run: python3 scripts/r182_verify.py
+      - name: R183 真机实证反向注入
+        run: python3 scripts/r183_verify.py --selftest
+      - name: R183 真机实证
+        run: python3 scripts/r183_verify.py
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

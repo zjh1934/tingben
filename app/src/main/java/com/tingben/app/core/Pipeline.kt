@@ -1097,6 +1097,41 @@ object Producer {
         lastPersistMs = now
     }
 
+    /** R183 · 把毫秒说成人能估量的「X 小时 Y 分 / X 分」，不给假精确。 */
+    private fun formatEta(ms: Long): String {
+        val min = (ms / 60000L).coerceAtLeast(1L)
+        return if (min >= 60L) "${min / 60L} 小时 ${min % 60L} 分" else "$min 分"
+    }
+
+    /**
+     * R183 · 制作前就能说清「这次设置和已做好的段不一样，会重做」。
+     * 判据与 run() 里两处作废逻辑同源：mode_stamp / produce_stamp 任一变了，
+     * 或从未写过 stamp 但已有 wav（老数据）。只数有效 wav，不读正文。
+     */
+    fun staleSegCount(c: Context, bookId: String, only: Set<Int>?,
+                      config: ProduceConfig = ProduceConfig()): Int = try {
+        val work = AnnCache.dirFor(c, bookId, only)
+        val wavs = work.listFiles()?.filter {
+            it.isFile && it.name.endsWith(".wav") && it.length() > 44
+        } ?: emptyList()
+        if (wavs.isEmpty()) 0
+        else {
+            val modeFile = File(work, "mode_stamp.txt")
+            val presetFile = File(work, "produce_stamp.txt")
+            val modeChanged = modeFile.exists() &&
+                modeFile.readText().trim() != TaskResume.expectedModeStamp(c)
+            val presetChanged = (presetFile.exists() &&
+                presetFile.readText().trim() != config.audioStamp()) ||
+                !presetFile.exists()
+            val stampFile = File(work, "voice_stamp.txt")
+            val voiceChanged = stampFile.exists() &&
+                stampFile.readText().trim().let {
+                    it != Prefs.voiceStamp(c) && it != Prefs.legacyVoiceStamp(c)
+                }
+            if (modeChanged || presetChanged || voiceChanged) wavs.size else 0
+        }
+    } catch (_: Throwable) { 0 }
+
     private fun emit(stage: String, done: Int, total: Int, failed: Int, msg: String,
                      out: String? = null, chapterProgress: Map<Int, Float> = emptyMap()) {
         _state.value = Progress(true, stage, done, total, failed, msg, out, chapterProgress)
@@ -1209,8 +1244,9 @@ object Producer {
             val changed = stampFile.exists() && old != voiceStamp && old != legacyStamp
             if (changed) {
                 val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
+                val killedPaths = killed.map { it.absolutePath }
                 killed.forEach { it.delete() }
-                AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })
+                AudioTree.forget(c, killedPaths)
                 EventLog.log(EventLog.Kind.PIPELINE, "VOICE_INVALIDATE",
                     "声音配置变了，作废 ${killed.size} 段旧音频，分段保留")
             }
@@ -1232,8 +1268,9 @@ object Producer {
             val oldMode = if (modeStampFile.exists()) modeStampFile.readText().trim() else ""
             if (modeStampFile.exists() && oldMode != modeStamp) {
                 val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
+                val killedPaths = killed.map { it.absolutePath }
                 killed.forEach { it.delete() }
-                AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })
+                AudioTree.forget(c, killedPaths)
                 EventLog.log(EventLog.Kind.PIPELINE, "MODE_INVALIDATE",
                     "模式输入变了（$oldMode → $modeStamp），作废 ${killed.size} 段旧音频，分段保留")
             }
@@ -1251,8 +1288,9 @@ object Producer {
                 val killed = work.listFiles()?.filter { f ->
                     f.isFile && f.name.endsWith(".wav")
                 } ?: emptyList()
+                val killedPaths = killed.map { it.absolutePath }
                 killed.forEach { it.delete() }
-                AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })
+                AudioTree.forget(c, killedPaths)
                 EventLog.log(EventLog.Kind.PIPELINE, "PRESET_INVALIDATE",
                     "本次预设变了（$presetStamp），作废 ${killed.size} 段旧音频，分段保留")
             }
@@ -1350,6 +1388,11 @@ object Producer {
         // （含跳过复用的旧段）去比，纯续跑一个字节没写也会被判定空间用完、
         // 提前 break 卡在合并之前。只数真正落盘的新段。
         var newlyWritten = 0
+        // R183 · 真机日志实证：每段 50~220 秒，用户等 4 分 23 秒只出 1 段就点了
+        // 停止。进度里给「按当前速度还需约多久」，让人知道不是卡死，也好决定
+        // 要不要整本做。只统计真正合成的新段，跳过的旧段不算进均值。
+        var segCostSum = 0L
+        var segCostCount = 0
         try {
             for ((i, a) in toSpeak.withIndex()) {
                 if (newlyWritten >= budgetSegs) { spaceStopped = true; break }
@@ -1407,6 +1450,7 @@ object Producer {
                     }
                     SegPlan.clearRedo(work, "seg:$i")
                 } else {
+                    val segT0 = System.currentTimeMillis()
                     var ok = false
                     var lastCode = -1
                     for (attempt in 0..1) {
@@ -1431,7 +1475,8 @@ object Producer {
                         synthFails++
                         _state.value = Progress(false, "没完成", i, annotated.size,
                             gateFails + synthFails,
-                            "第 ${i + 1} 段没生成声音（引擎返回 $lastCode）；前面 ${wavs.size} 段都留着，" +
+                            "第 ${i + 1} 段没生成声音（${SynthErrors.reason(lastCode, false)}）；" +
+                                "前面 ${wavs.size} 段都留着，" +
                                 "点「继续制作」从这一段接着做，不会重算切分")
                         EventLog.log(EventLog.Kind.PIPELINE, "TTS_SEG_ABORT",
                             "seg=${i + 1} code=$lastCode kept=${wavs.size}")
@@ -1445,6 +1490,8 @@ object Producer {
                     }
                     wavs.add(wav)
                     newlyWritten++
+                    segCostSum += (System.currentTimeMillis() - segT0).coerceAtLeast(0L)
+                    segCostCount++
                     SegPlan.clearRedo(work, "seg:$i")
                     segStartBytes.add(cursorBytes)
                     cursorBytes += (wav.length() - 44) + gapBytes
@@ -1457,8 +1504,12 @@ object Producer {
                             .coerceIn(0f, 1f)
                     }
                 } else _state.value.chapterProgress
+                val left = annotated.size - (i + 1)
+                val avg = if (segCostCount > 0) segCostSum / segCostCount else 0L
+                val eta = if (avg > 0L && left > 0) avg * left else 0L
                 emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
-                    "已生成 ${i + 1}/${annotated.size} 段声音",
+                    "已生成 ${i + 1}/${annotated.size} 段声音" +
+                        if (eta > 0L) " · 按当前速度还需约 ${formatEta(eta)}" else "",
                     chapterProgress = chapterSnapshot)
             }
             if (spaceStopped) {

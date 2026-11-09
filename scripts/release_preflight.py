@@ -61,6 +61,10 @@ def main():
         ("R178 反向注入", ["python3", "scripts/r178_verify.py", "--selftest"]),
         ("R180 核心闭环", ["python3", "scripts/r180_verify.py"]),
         ("R180 反向注入", ["python3", "scripts/r180_verify.py", "--selftest"]),
+        ("R182 收听连续性", ["python3", "scripts/r182_verify.py"]),
+        ("R182 反向注入", ["python3", "scripts/r182_verify.py", "--selftest"]),
+        ("R183 真机实证", ["python3", "scripts/r183_verify.py"]),
+        ("R183 反向注入", ["python3", "scripts/r183_verify.py", "--selftest"]),
     ]
     ok = 0
     for name, cmd in checks:

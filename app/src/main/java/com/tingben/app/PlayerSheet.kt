@@ -86,7 +86,12 @@ internal fun PlayerSheet(
                     items(list) { (idx, a) ->
                         Row(Modifier.fillMaxWidth().height(48.dp)
                             .clickable {
-                                val q = "chapter:" + bookId.orEmpty()
+                                // R182 · bookId 偶尔为空时原来会生成 "chapter:"
+                                // 这个废队列 id，断点续听存进去永远读不回来。
+                                // 优先沿用当前队列，没队列才按 bookId 拼。
+                                val q = if (st.queueId.startsWith("chapter:") &&
+                                    st.queueId.length > 8) st.queueId
+                                else "chapter:" + bookId.orEmpty()
                                 PlayQueue.setTracks(list.map { (j, x) ->
                                     Track(x.file, "${x.title} · 第 ${j + 1} 章",
                                         AudioLibrary.chapterStartMs(c, x, j),
