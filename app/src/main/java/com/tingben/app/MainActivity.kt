@@ -1106,9 +1106,11 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
     var mixerOpen by remember { mutableStateOf(false) }
     var loadError by remember(id, refresh) { mutableStateOf<String?>(null) }
     var hasCached by remember(id, refresh) { mutableStateOf(false) }
-    // R183 · 真机日志实证：改过音色后旧段被静默删掉，进度从 9/88 掉回 1/88。
-    // 制作前先把「会重做 N 段」说清楚，不让人做完几小时才发现白做了。
-    var staleSegs by remember(id, refresh) { mutableStateOf(0) }
+    // R185 · 用户常调音色，旧实现一保存调优就把成果全删。现在分套留着，
+    // 制作页说清「这套做了几段 / 还留着几套 / 切回原设置就能接着用」。
+    var cacheInfo by remember(id, refresh) {
+        mutableStateOf(VoiceCache.Summary(0, 0, 0, 0L))
+    }
 
     // R139 · 组合期不再同步读整本 + 切块（原来 64MB 文本会卡主线程甚至 ANR）。
     // 与目录页同一套口径：IO 线程读落盘章节表，加载中给进度圈，出错给中文原因。
@@ -1146,12 +1148,12 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         if (!loadDone) return@LaunchedEffect
         val b = snapshot?.book ?: return@LaunchedEffect
         val only = if (selected.isEmpty() || selected.size == chapters.size) null else selected
-        val (cached, stale) = withContext(Dispatchers.IO) {
+        val (cached, info) = withContext(Dispatchers.IO) {
             Producer.hasProgress(c, b.id, only) to
-                Producer.staleSegCount(c, b.id, only, cfg)
+                Producer.voiceCacheSummary(c, b.id, only, cfg)
         }
         hasCached = cached
-        staleSegs = stale
+        cacheInfo = info
     }
 
     if (!loadDone) {
@@ -1212,10 +1214,15 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
                 fontSize = 12.sp, color = Sub)
             // R183 · 真机实测每段 50~220 秒。只给一句量级，不写教程、不常驻解释。
             Text("每段约 1–3 分钟，块越多等得越久", fontSize = 11.sp, color = Sub)
-            if (staleSegs > 0) {
+            if (cacheInfo.current > 0) {
                 Spacer(Modifier.height(4.dp))
-                Text("设置变了，已做好的 $staleSegs 段会重做", fontSize = 12.sp,
-                    color = Warn)
+                Text("这套音色已做好 ${cacheInfo.current} 段，接着做不用重来",
+                    fontSize = 12.sp, color = Good)
+            }
+            if (cacheInfo.others > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text("另有 ${cacheInfo.others} 套音色留着（最多 ${cacheInfo.bestOther} 段），" +
+                    "切回原来的设置就能接着用", fontSize = 12.sp, color = Sub)
             }
             val visibleChapters = if (chapters.size > 20 && !showAllChapters)
                 chapters.take(20) else chapters
@@ -2256,8 +2263,8 @@ private fun ClearSegmentsRow(c: Context) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("清理分段音频？", fontSize = 14.sp) },
-            text = { Text("只删制作过程里生成的分段 WAV，书架原书、成品和模型文件都不动。",
-                fontSize = 12.sp) },
+            text = { Text("只删制作过程里生成的分段 WAV（会连留着的其他音色缓存一起清掉），" +
+                    "书架原书、成品和模型文件都不动。", fontSize = 12.sp) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false

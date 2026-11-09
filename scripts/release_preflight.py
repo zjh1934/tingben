@@ -65,6 +65,8 @@ def main():
         ("R182 反向注入", ["python3", "scripts/r182_verify.py", "--selftest"]),
         ("R183 真机实证", ["python3", "scripts/r183_verify.py"]),
         ("R183 反向注入", ["python3", "scripts/r183_verify.py", "--selftest"]),
+        ("R185 音色缓存", ["python3", "scripts/r185_verify.py"]),
+        ("R185 反向注入", ["python3", "scripts/r185_verify.py", "--selftest"]),
     ]
     ok = 0
     for name, cmd in checks:

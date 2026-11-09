@@ -192,6 +192,9 @@ object AudioTree {
                     }
                 }
                 bd.walkTopDown().filter { it.isFile }.forEach { f ->
+                    // R185 · 归档套是「留着以后切回来用」的旧音色，不能当成
+                    // 当前有效段列进看台，否则同一段会出现好几份、还可能被合并。
+                    if (f.parentFile?.name?.startsWith("_voice_") == true) return@forEach
                     val m = segRe.matchEntire(f.name) ?: return@forEach
                     if (f.length() <= 44) return@forEach
                     val dir = f.parentFile ?: return@forEach

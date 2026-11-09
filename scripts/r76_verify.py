@@ -3,6 +3,8 @@
 正向：Screen 10 值 / 抽屉 7 项 / 角色页与角色 UI 零残留 / 主链守恒。
 R77 订正：角色表已从底层物理删除（不再作为守恒项），
 旧 WAV 兼容改由「双指纹迁移」承担；相应的零残留断言同步换成新形态。
+R185 订正：双指纹比对后删 WAV 已换成 VoiceCache 分套归档 + 三 stamp 反推旧套，
+守恒项随之换成新形态，反向注入仍逐条验。
 反向注入：旧形态塞回去必须拦下。
 """
 import pathlib, re, sys
@@ -27,7 +29,10 @@ BAN_ALLKT = ["VoiceCast.", "CastPresets.", "Prefs.castEnabled", "setCastEnabled"
              "VOICE_UNMAPPED", "KEY_CAST_ENABLED"]
 
 KEEP = ["Prefs.legacyVoiceStamp(c)",
-        "old != voiceStamp && old != legacyStamp",
+        # R185 · 旧 WAV 兼容不再靠「比对后删」，靠「反推旧套后归档」。
+        "private fun readKey(work: File, incoming: String): String",
+        "if (v != null && m != null && p != null) keyOf(v, m, p) else incoming",
+        "VoiceCache.switchTo(work, cacheKey)",
         "VoiceProfile.buildWithReport(globalVoice,",
         'private fun ChapterRow(',
         'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
@@ -77,8 +82,9 @@ def selftest():
         ("评审腔话术回潮", lambda: check(main=MAIN + NL +
             'Text("改动立即保存 · 对所有新任务生效 · 正在跑的任务不受影响")' + NL)),
         ("角色表回潮", lambda: check(allkt=ALLKT + NL + "VoiceCast.hash(c)" + NL)),
-        ("删掉双指纹迁移", lambda: check(allkt=ALLKT.replace(
-            "old != voiceStamp && old != legacyStamp", "@@BROKEN@@"))),
+        ("删掉缓存升级迁移", lambda: check(allkt=ALLKT.replace(
+            "if (v != null && m != null && p != null) keyOf(v, m, p) else incoming",
+            "@@BROKEN@@"))),
         ("删掉直接朗读入口", lambda: check(allkt=ALLKT.replace(
             "run(c, book, onlyChapters, true, thinkOverride, config)", "@@BROKEN@@"))),
         ("抽屉变成 8 项", lambda: check(chrome=CHROME + NL + "internal const val NAV_EXTRA = 7" + NL)),

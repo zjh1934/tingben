@@ -543,6 +543,53 @@ def r168_errs(hub, site):
     return e
 
 errs += r168_errs(_hub_src, _site_src)
+
+# R187 · 真编译 run 146 抓到的两类 Kotlin 语义错误，做成全工程静态闸门。
+# ① `fun f(): T = try { ... }` 的 try 块顶层写裸 `if (...) return` / 裸 `return`
+#    → Returns are prohibited for functions with an expression body；
+#    Elvis `?: return` 与 inline lambda 内的非局部返回是合法的，不误报。
+# ② 跨 package 用 EventLog 却漏 import → Unresolved reference。
+_kt_dir = ROOT / "app/src/main/java/com/tingben/app"
+_kt_all = {str(q.relative_to(ROOT)): q.read_text(encoding="utf-8", errors="replace")
+           for q in _kt_dir.rglob("*.kt")}
+_EXPR_BODY = re.compile(
+    r'fun\s+\w+\s*\([^)]*\)\s*(?::[^=\n]+)?=\s*try\s*\{')
+
+
+def r187_errs(sources):
+    e = []
+    for path, src in sources.items():
+        for m in _EXPR_BODY.finditer(src):
+            # 从 try 的 '{' 起按大括号深度走，只看顶层（depth==1）的裸 return
+            i = src.index('{', m.start())
+            depth = 1
+            j = i + 1
+            while j < len(src) and depth > 0:
+                ch = src[j]
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                elif depth == 1 and ch == '\n':
+                    # 取下一整行，去掉行尾注释后看是不是裸 return 语句
+                    k = src.find('\n', j + 1)
+                    if k < 0:
+                        k = len(src)
+                    code = src[j + 1:k].split('//')[0].strip()
+                    if re.match(r'(?:if\s*\(.*\)\s*)?return\b', code) and '?:' not in code:
+                        e.append("R187 %s 表达式体 try 顶层写了裸 return（真编译必炸）: %s"
+                                 % (path.split('/')[-1], code[:64]))
+                        break
+                j += 1
+        if "EventLog." in src and "import com.tingben.app.diag.EventLog" not in src:
+            e.append("R187 %s 用了 EventLog 却没 import（Unresolved reference）"
+                     % path.split('/')[-1])
+    return e
+
+
+errs += r187_errs(_kt_all)
 if "--selftest" in sys.argv:
     probe = ui_literals('Text("标注后合成（实验性）")')
     ok = bool(r66_errs(_all_ui + probe)) and not r66_errs(_all_ui)
@@ -584,6 +631,27 @@ if "--selftest" in sys.argv:
           (sum(bool(r168_errs(a, b)) for _, a, b in r168_cases),
            len(r168_cases), "PASS" if ok168 else "FAIL"))
     if not ok168: sys.exit(1)
+    _vc = next(v for k, v in _kt_all.items() if k.endswith("VoiceCache.kt"))
+    r187_cases = [
+        ("readKey 顶层裸 return", _vc.replace(
+            "        val f = keyFile(work)\n        when {",
+            "        val f = keyFile(work)\n        if (f.exists()) return f.readText().trim()\n        when {")),
+        ("moveWav 顶层裸 return", _vc.replace("        if (to.exists() && !to.delete()) false",
+                                             "        if (to.exists() && !to.delete()) return false")),
+        ("漏 EventLog import", _vc.replace("import com.tingben.app.diag.EventLog\n", "")),
+    ]
+    base187 = r187_errs(_kt_all)
+    def _inject187(x):
+        return r187_errs({k: (x if k.endswith("VoiceCache.kt") else v)
+                          for k, v in _kt_all.items()})
+    got187 = [_inject187(x) for _, x in r187_cases]
+    ok187 = (not base187) and all(got187)
+    print("R187 Kotlin 编译隐患注入: %d/%d %s" %
+          (sum(bool(g) for g in got187), len(r187_cases),
+           "PASS" if ok187 else "FAIL"))
+    if not ok187:
+        for x in base187: print("  基线红:", x)
+        sys.exit(1)
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)

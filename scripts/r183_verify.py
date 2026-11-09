@@ -9,9 +9,8 @@
    也是「引擎返回 -2」→ 共用 SynthErrors 中文原因 + 下一步。
  B 每段实测 50~220 秒，用户等 4 分 23 秒只出 1 段就点了停止，界面只有
    「已生成 1/88」→ 进度带「按当前速度还需约 X 小时 Y 分」。
- C 改音色/预设静默删掉所有旧 wav（MODE_INVALIDATE 作废 9 段，real 从
-   9/88 反复掉回 1/88）→ 制作准备页提前一行说明会重做 N 段。
- D 两处 AudioTree.forget 依赖「删完 isFile 变 false」→ 先收路径再删。
+ C/D 原为「重做预告 / 三处作废先收路径再删」，R185 之后改为音色分套缓存
+   （切换只搬不删、切回零重算），本守门的对应判据同步换成新语义，未放宽。
 
 selftest 全程纯内存注入，一个字节都不写源文件。
 用法：python3 scripts/r183_verify.py [--selftest]
@@ -38,24 +37,25 @@ ERR = [
 ]
 MAIN = [
     'SynthErrors.explain(code, f.exists() && f.length() > 44)',
-    'var staleSegs by remember(id, refresh) { mutableStateOf(0) }',
-    'Producer.staleSegCount(c, b.id, only, cfg)',
-    'staleSegs = stale',
+    'mutableStateOf(VoiceCache.Summary(0, 0, 0, 0L))',
+    'Producer.voiceCacheSummary(c, b.id, only, cfg)',
+    'cacheInfo = info',
     'Text("每段约 1–3 分钟，块越多等得越久"',
-    'if (staleSegs > 0) {',
-    'Text("设置变了，已做好的 $staleSegs 段会重做"',
+    'if (cacheInfo.others > 0) {',
+    '切回原来的设置就能接着用',
 ]
 PIPE = [
     'private fun formatEta(ms: Long): String',
     '(ms / 60000L).coerceAtLeast(1L)',
-    'fun staleSegCount(c: Context, bookId: String, only: Set<Int>?,',
-    'TaskResume.expectedModeStamp(c)',
-    'config.audioStamp()',
-    '                !presetFile.exists()',
-    'val killedPaths = killed.map { it.absolutePath }',
-    'AudioTree.forget(c, killedPaths)',
-    'val voiceChanged = stampFile.exists() &&',
-    'if (modeChanged || presetChanged || voiceChanged) wavs.size else 0',
+    # R185 取代：制作前不再预告「会重做」，改说「这套/其他套各做了几段」；
+    # 三处删除式作废也换成一次归档切换，一个字节都不删。
+    'fun voiceCacheSummary(',
+    'VoiceCache.keyOf(Prefs.voiceStamp(c),',
+    'VoiceCache.summary(work, key)',
+    'val cacheKey = VoiceCache.keyOf(voiceStamp, modeStamp, presetStamp)',
+    'val sw = VoiceCache.switchTo(work, cacheKey)',
+    '"VOICE_CACHE_SWITCH",',
+    '        try { File(work, "voice_stamp.txt").writeText(voiceStamp) }',
     'var segCostSum = 0L',
     'val segT0 = System.currentTimeMillis()',
     'segCostSum += (System.currentTimeMillis() - segT0).coerceAtLeast(0L)',
@@ -66,6 +66,9 @@ BAN = [
     '没生成声音，code=$code',
     '引擎返回 $lastCode',
     'AudioTree.forget(c, killed.filter { !it.isFile }',
+    'killed.forEach { it.delete() }',
+    'AudioTree.forget(c, killedPaths)',
+    '设置变了，已做好的 $staleSegs 段会重做',
 ]
 
 
@@ -82,8 +85,8 @@ def checks(f):
         for key in ("main", "pipe"):
             if s in f[key]:
                 e.append("旧形态回潮[%s]: %s" % (key, s[:56]))
-    if f["pipe"].count("AudioTree.forget(c, killedPaths)") < 3:
-        e.append("三处作废没都改成先收路径再删")
+    if '"VOICE_CACHE_SWITCH",' not in f["pipe"]:
+        e.append("R185 换套不再留归档日志（成果可能被静默删掉）")
     if "python3 scripts/r183_verify.py --selftest" not in f["ci"]:
         e.append("CI 未挂 r183_verify --selftest")
     return e
@@ -113,23 +116,29 @@ def selftest():
         ("formatEta 删掉", "pipe",
          lambda t: t.replace('    private fun formatEta(ms: Long): String {',
                              '    private fun unusedEta(ms: Long): String {')),
-        ("staleSegCount 恒返回 0", "pipe",
-         lambda t: t.replace('            if (modeChanged || presetChanged || voiceChanged) wavs.size else 0',
-                             '            0')),
-        ("staleSegCount 不比音色指纹", "pipe",
-         lambda t: t.replace('if (modeChanged || presetChanged || voiceChanged) wavs.size else 0',
-                             'if (modeChanged || presetChanged) wavs.size else 0')),
-        ("staleSegCount 不比预设", "pipe",
-         lambda t: t.replace('                !presetFile.exists()', '                false')),
-        ("制作页不显示重做提示", "main",
-         lambda t: t.replace('            if (staleSegs > 0) {', '            if (false) {')),
-        ("制作页不算 stale", "main",
-         lambda t: t.replace('        staleSegs = stale', '        Unit')),
+        ("缓存摘要恒返回空", "pipe",
+         lambda t: t.replace('        VoiceCache.summary(work, key)',
+                             '        VoiceCache.Summary(0, 0, 0, 0L)')),
+        ("换套调用被摘", "pipe",
+         lambda t: t.replace('val sw = VoiceCache.switchTo(work, cacheKey)',
+                             'val sw = VoiceCache.Switch(0, 0, cacheKey)')),
+        ("归档日志被摘", "pipe",
+         lambda t: t.replace('"VOICE_CACHE_SWITCH",', '            "X",')),
+        ("作废又删 wav", "pipe",
+         lambda t: t.replace('        val sw = VoiceCache.switchTo(work, cacheKey)',
+                             '        val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()\n'
+                             '        killed.forEach { it.delete() }\n'
+                             '        val sw = VoiceCache.switchTo(work, cacheKey)')),
+        ("制作页不显示其他套提示", "main",
+         lambda t: t.replace('            if (cacheInfo.others > 0) {', '            if (false) {')),
+        ("制作页不算缓存摘要", "main",
+         lambda t: t.replace('        cacheInfo = info', '        Unit')),
         ("量级文案被删", "main",
          lambda t: t.replace('            Text("每段约 1–3 分钟，块越多等得越久", fontSize = 11.sp, color = Sub)\n', '')),
-        ("forget 退回 filter !isFile", "pipe",
-         lambda t: t.replace('                AudioTree.forget(c, killedPaths)',
-                             '                AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })')),
+        ("forget 旧形态回潮", "pipe",
+         lambda t: t.replace('        val sw = VoiceCache.switchTo(work, cacheKey)',
+                             '        AudioTree.forget(c, killedPaths)\n'
+                             '        val sw = VoiceCache.switchTo(work, cacheKey)')),
         ("CI 漏挂", "ci",
          lambda t: t.replace("python3 scripts/r183_verify.py --selftest", "")),
     ]

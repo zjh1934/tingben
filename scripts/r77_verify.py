@@ -42,6 +42,7 @@ def check(root) -> list:
 
     prefs = txt(root, CORE + "/Prefs.kt")
     pipe = txt(root, CORE + "/Pipeline.kt")
+    cache = txt(root, CORE + "/VoiceCache.kt")
     draft = txt(root, CORE + "/MixerDraft.kt")
 
     ck("fun voiceStamp(c: Context): String" in prefs, "③ voiceStamp 不存在")
@@ -53,9 +54,16 @@ def check(root) -> list:
     ck('getBoolean("castEnabled", true)' in prefs, "③ 缺旧设置键兼容读")
     ck("import java.io.File" in prefs, "③ 缺 File import")
 
-    ck("old != voiceStamp && old != legacyStamp" in pipe, "④ 双指纹比对被改回单比对")
-    ck("VOICE_STAMP_MIGRATE" in pipe, "④ 缺迁移事件")
-    ck("Prefs.legacyVoiceStamp(c)" in pipe, "④ Pipeline 没取旧指纹")
+    # R185 · 旧 WAV 兼容从「Pipeline 双指纹比对」搬到 VoiceCache 升级迁移：
+    # 无 key 文件时用三个 stamp 反推旧套，既不误删进度也不混音色。
+    ck("private fun readKey(work: File, incoming: String): String" in cache,
+       "④ 缺 VoiceCache 升级迁移")
+    ck('"voice_stamp.txt"' in cache and '"mode_stamp.txt"' in cache
+       and '"produce_stamp.txt"' in cache, "④ 升级迁移没反推三个 stamp")
+    ck("if (v != null && m != null && p != null) keyOf(v, m, p) else incoming" in cache,
+       "④ 三 stamp 反推被改回单比对")
+    ck('"VOICE_CACHE_SWITCH"' in pipe, "④ 缺换套归档事件")
+    ck("VoiceCache.switchTo(work, cacheKey)" in pipe, "④ 合成前没做换套")
     ck("val castOn" not in pipe and "VoiceCast.resolve" not in pipe,
        "④ 合成循环仍在查角色表")
     ck("VoiceProfile.buildWithReport(globalVoice," in pipe,
@@ -88,9 +96,14 @@ INJECT = [
         txt(r, CORE + "/Prefs.kt").replace(
             "        voiceDescription(c),\n        ttsKnobs(c).hash()\n    ).joinToString(\"||\"))",
             "        voiceDescription(c),\n        VoiceCast.hash(c),\n        ttsKnobs(c).hash()\n    ).joinToString(\"||\"))", 1), encoding="utf-8")),
-    ("双比对改回单比对", lambda r: (r / CORE / "Pipeline.kt").write_text(
+    ("三 stamp 反推被改回单比对", lambda r: (r / CORE / "VoiceCache.kt").write_text(
+        txt(r, CORE + "/VoiceCache.kt").replace(
+            "if (v != null && m != null && p != null) keyOf(v, m, p) else incoming",
+            "incoming", 1), encoding="utf-8")),
+    ("删掉归档切换", lambda r: (r / CORE / "Pipeline.kt").write_text(
         txt(r, CORE + "/Pipeline.kt").replace(
-            "old != voiceStamp && old != legacyStamp", "old != voiceStamp", 1), encoding="utf-8")),
+            "val sw = VoiceCache.switchTo(work, cacheKey)",
+            "val sw = VoiceCache.Switch(0, 0, cacheKey)", 1), encoding="utf-8")),
     ("删掉 legacyVoiceStamp", lambda r: (r / CORE / "Prefs.kt").write_text(
         txt(r, CORE + "/Prefs.kt").replace(
             "    fun legacyVoiceStamp(c: Context): String", "    private fun unusedLegacy(c: Context): String", 1), encoding="utf-8")),

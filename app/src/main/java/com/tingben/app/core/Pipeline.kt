@@ -460,7 +460,13 @@ object AnnCache {
     }
 
     fun clear(work: File) {
-        try { work.listFiles()?.forEach { it.delete() } } catch (_: Throwable) { }
+        // R185 · 归档套是子目录，原来的 it.delete() 对非空目录会静默失败，
+        // 删书时留一堆旧音色缓存。保留 work 目录本身，只清里面的内容。
+        try {
+            work.listFiles()?.forEach { f ->
+                if (f.isDirectory) f.deleteRecursively() else f.delete()
+            }
+        } catch (_: Throwable) { }
     }
 
     fun hasProgress(c: Context, bookId: String, only: Set<Int>?): Boolean {
@@ -1108,29 +1114,13 @@ object Producer {
      * 判据与 run() 里两处作废逻辑同源：mode_stamp / produce_stamp 任一变了，
      * 或从未写过 stamp 但已有 wav（老数据）。只数有效 wav，不读正文。
      */
-    fun staleSegCount(c: Context, bookId: String, only: Set<Int>?,
-                      config: ProduceConfig = ProduceConfig()): Int = try {
+    fun voiceCacheSummary(c: Context, bookId: String, only: Set<Int>?,
+                          config: ProduceConfig = ProduceConfig()): VoiceCache.Summary = try {
         val work = AnnCache.dirFor(c, bookId, only)
-        val wavs = work.listFiles()?.filter {
-            it.isFile && it.name.endsWith(".wav") && it.length() > 44
-        } ?: emptyList()
-        if (wavs.isEmpty()) 0
-        else {
-            val modeFile = File(work, "mode_stamp.txt")
-            val presetFile = File(work, "produce_stamp.txt")
-            val modeChanged = modeFile.exists() &&
-                modeFile.readText().trim() != TaskResume.expectedModeStamp(c)
-            val presetChanged = (presetFile.exists() &&
-                presetFile.readText().trim() != config.audioStamp()) ||
-                !presetFile.exists()
-            val stampFile = File(work, "voice_stamp.txt")
-            val voiceChanged = stampFile.exists() &&
-                stampFile.readText().trim().let {
-                    it != Prefs.voiceStamp(c) && it != Prefs.legacyVoiceStamp(c)
-                }
-            if (modeChanged || presetChanged || voiceChanged) wavs.size else 0
-        }
-    } catch (_: Throwable) { 0 }
+        val key = VoiceCache.keyOf(Prefs.voiceStamp(c),
+            TaskResume.expectedModeStamp(c), config.audioStamp())
+        VoiceCache.summary(work, key)
+    } catch (_: Throwable) { VoiceCache.Summary(0, 0, 0, 0L) }
 
     private fun emit(stage: String, done: Int, total: Int, failed: Int, msg: String,
                      out: String? = null, chapterProgress: Map<Int, Float> = emptyMap()) {
@@ -1237,65 +1227,30 @@ object Producer {
         val knobs = Prefs.ttsKnobs(c)
         val globalVoice = Prefs.voiceDescription(c)
         val voiceStamp = Prefs.voiceStamp(c)
-        val legacyStamp = Prefs.legacyVoiceStamp(c)
-        val stampFile = File(work, "voice_stamp.txt")
-        try {
-            val old = if (stampFile.exists()) stampFile.readText().trim() else ""
-            val changed = stampFile.exists() && old != voiceStamp && old != legacyStamp
-            if (changed) {
-                val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
-                val killedPaths = killed.map { it.absolutePath }
-                killed.forEach { it.delete() }
-                AudioTree.forget(c, killedPaths)
-                EventLog.log(EventLog.Kind.PIPELINE, "VOICE_INVALIDATE",
-                    "声音配置变了，作废 ${killed.size} 段旧音频，分段保留")
-            }
-            if (stampFile.exists() && old != voiceStamp && !changed) {
-                EventLog.log(EventLog.Kind.PIPELINE, "VOICE_STAMP_MIGRATE",
-                    "旧指纹迁移到新版，已合成音频保持不变")
-            }
-            stampFile.writeText(voiceStamp)
-        } catch (_: Throwable) { }
+        val modeStamp = TaskResume.expectedModeStamp(c)
+        val presetStamp = config.audioStamp()
+
+        // R185 · 原来这里有三段「stamp 一变就把 work 根下所有 wav 删光」的逻辑。
+        // 用户经常调音色，一次保存调优就把几小时的成果全抹了（真机日志
+        // MODE_INVALIDATE 作废 9 段、real 从 9/88 掉回 1/88）。现在改成按
+        // 音色指纹分套归档：旧套搬到 _voice_{key}/ 留着，目标套搬回根目录。
+        // 三个 stamp 文件照旧写，TaskResume 的失效判据继续有效，但不再删文件。
+        val cacheKey = VoiceCache.keyOf(voiceStamp, modeStamp, presetStamp)
+        val sw = VoiceCache.switchTo(work, cacheKey)
+        if (sw.archived > 0 || sw.restored > 0) {
+            EventLog.log(EventLog.Kind.PIPELINE, "VOICE_CACHE_SWITCH",
+                "音色套=$cacheKey · 归档 ${sw.archived} 段 · 取回 ${sw.restored} 段" +
+                    " · 旧成果没删，切回原设置就能接着用")
+        }
+        try { File(work, "voice_stamp.txt").writeText(voiceStamp) } catch (_: Throwable) { }
+        try { File(work, "mode_stamp.txt").writeText(modeStamp) } catch (_: Throwable) { }
+        try { File(work, "produce_stamp.txt").writeText(presetStamp) } catch (_: Throwable) { }
+
         // R166 · 括号里那句关于目标语言取值的说明是写给我看的开发依据，
         // 混进运行时日志只会让每行拖一句解释；依据留在 ParamSpec / 官方文档。
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_MODE",
             "${SynthInput.label(c)} · 指纹=$voiceStamp · seed=${knobs.seed}" +
                 " · temp=${knobs.temperature} · lang=chinese")
-
-        val modeStamp = TaskResume.expectedModeStamp(c)
-        val modeStampFile = File(work, "mode_stamp.txt")
-        try {
-            val oldMode = if (modeStampFile.exists()) modeStampFile.readText().trim() else ""
-            if (modeStampFile.exists() && oldMode != modeStamp) {
-                val killed = work.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") } ?: emptyList()
-                val killedPaths = killed.map { it.absolutePath }
-                killed.forEach { it.delete() }
-                AudioTree.forget(c, killedPaths)
-                EventLog.log(EventLog.Kind.PIPELINE, "MODE_INVALIDATE",
-                    "模式输入变了（$oldMode → $modeStamp），作废 ${killed.size} 段旧音频，分段保留")
-            }
-            modeStampFile.writeText(modeStamp)
-        } catch (_: Throwable) { }
-
-        val presetFile = File(work, "produce_stamp.txt")
-        val presetStamp = config.audioStamp()
-        try {
-            val oldWavs = work.listFiles()?.count { f ->
-                f.isFile && f.name.endsWith(".wav") && f.length() > 44
-            } ?: 0
-            val changed = presetFile.exists() && presetFile.readText().trim() != presetStamp
-            if (changed || (!presetFile.exists() && oldWavs > 0)) {
-                val killed = work.listFiles()?.filter { f ->
-                    f.isFile && f.name.endsWith(".wav")
-                } ?: emptyList()
-                val killedPaths = killed.map { it.absolutePath }
-                killed.forEach { it.delete() }
-                AudioTree.forget(c, killedPaths)
-                EventLog.log(EventLog.Kind.PIPELINE, "PRESET_INVALIDATE",
-                    "本次预设变了（$presetStamp），作废 ${killed.size} 段旧音频，分段保留")
-            }
-            presetFile.writeText(presetStamp)
-        } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.PIPELINE, "PRESET_APPLIED",
             config.summary() + " · 指纹=" + presetStamp)
 

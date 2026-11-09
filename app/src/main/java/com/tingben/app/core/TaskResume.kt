@@ -203,14 +203,14 @@ object TaskResume {
             val w = AnnCache.dirFor(c, t.bookId, t.only)
             val modeFile = File(w, "mode_stamp.txt")
             if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
-                "换过模式或音色输入，接着做会按新设置重出声"
+                "换过模式或音色输入，会切到这套音色的缓存；原来那套的进度留着，切回原设置就能接着用"
             } else {
                 val voiceFile = File(w, "voice_stamp.txt")
                 val oldVoice = if (voiceFile.exists()) voiceFile.readText().trim() else ""
                 val currentVoice = Prefs.voiceStamp(c)
                 if (voiceFile.exists() && oldVoice != currentVoice &&
                     oldVoice != Prefs.legacyVoiceStamp(c)) {
-                    "改过调音台设置，接着做会按新设置重出声"
+                    "改过调音台设置，会切到这套音色的缓存；原来那套的进度留着，切回原设置就能接着用"
                 } else {
                     if (voiceFile.exists() && oldVoice != currentVoice) {
                         try { voiceFile.writeText(currentVoice) } catch (_: Throwable) { }
