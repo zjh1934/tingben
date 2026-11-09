@@ -52,6 +52,30 @@ object ListenState {
         } catch (_: Throwable) { }
     }
 
+    /**
+     * R192 · 删书时清掉这本书的断点。key 是队列 id（整章/整本恒为
+     * `chapter:<bookId>`），value 的 label 里带书名章名明文，留着既是垃圾
+     * 也是隐私残留。只精确匹配这本书，绝不动别书的断点。
+     * 必须在 PlayQueue.releaseIfBook() 之后调 —— release 内部 savePos()
+     * 会把当前位置写回来，先清会被写回覆盖。
+     */
+    fun removeForBook(c: Context, bookId: String) {
+        if (bookId.isEmpty()) return
+        try {
+            val f = file(c)
+            val o = when (val r = AtomicJson.read(f)) {
+                is AtomicJson.Read.Corrupt -> return
+                is AtomicJson.Read.Missing -> return
+                is AtomicJson.Read.Ok -> try { JSONObject(r.text) } catch (_: Throwable) { return }
+            }
+            val hit = mutableListOf<String>()
+            for (k in o.keys()) if (k == "chapter:$bookId" || k == bookId) hit.add(k)
+            if (hit.isEmpty()) return
+            hit.forEach { o.remove(it) }
+            AtomicJson.write(f, o.toString())
+        } catch (_: Throwable) { }
+    }
+
     fun clear(c: Context, queueId: String) {
         if (queueId.isEmpty()) return
         try {

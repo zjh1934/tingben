@@ -54,7 +54,7 @@ CURRENT_VERIFIERS = ["r131_verify.py", "r132_verify.py", "r133_verify.py",
            "r175_verify.py", "r176_verify.py", "r177_verify.py",
            "r178_verify.py", "r180_verify.py", "r182_verify.py",
            "r183_verify.py", "r185_verify.py", "r188_verify.py",
-           "r189_verify.py"]
+           "r189_verify.py", "r192_verify.py"]
 
 # R141 建立、R160 补第 6 项的轻量自检清单：改码轮只跑这 6 项，全套留到发版轮。
 # 换了三项：退役页统一守门（原来 17 个壳脚本各起一次）、最近两批 R140/R139。

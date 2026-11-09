@@ -40,7 +40,7 @@ MAIN = [
 R135 = [
     '"r169_verify.py", "r170_verify.py", "r171_verify.py"',
     '"r185_verify.py", "r188_verify.py",',
-    '"r189_verify.py"]',
+    '"r189_verify.py"',
     '现行守门漏登记 CURRENT_VERIFIERS',
     '新增守门忘登记',
 ]
@@ -122,7 +122,7 @@ def selftest():
                              '           "r175_verify.py", "r176_verify.py", "r177_verify.py",\n'
                              '           "r178_verify.py", "r180_verify.py", "r182_verify.py",\n'
                              '           "r183_verify.py", "r185_verify.py", "r188_verify.py",\n'
-                             '           "r189_verify.py"]', '           "aoci_check.py"]')),
+                             '           "r189_verify.py", "r192_verify.py"]', '           "aoci_check.py"]')),
         ("防漏检查被摘", "r135",
          lambda t: t.replace('    missing = sorted(live - set(CURRENT_VERIFIERS) - {"r135_verify.py"})\n'
                              '    if missing:\n'

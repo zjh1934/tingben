@@ -188,6 +188,12 @@ object BookStore {
      * 队列要等 pumpQueue 撞上才发现书没了。现在一次清干净。
      */
     private fun purge(c: Context, id: String) {
+        // R192 · 顺序要紧：先停正在播 / 正在做的这本书，再删文件。
+        // release() 内部 savePos() 会写回断点，所以 ListenState 清理必须放它后面。
+        try { PlayQueue.releaseIfBook(id) } catch (_: Throwable) { }
+        try { Producer.stopIfBook(id) } catch (_: Throwable) { }
+        try { ListenState.removeForBook(c, id) } catch (_: Throwable) { }
+        try { ReadingState.remove(c, id) } catch (_: Throwable) { }
         try { ChapterPlan.delete(c, id) } catch (_: Throwable) { }
         try {
             AudioLibrary.list(c).filter { it.bookId == id }
@@ -199,7 +205,8 @@ object BookStore {
         }
         try { TaskResume.remove(c, id); TaskResume.dequeue(c, id) } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.MODEL, "BOOK_PURGE",
-            "书已删：章节表 / 音频成品与索引 / 分段 WAV / 任务 / 队列一并清理")
+            "书已删：章节表 / 音频成品与索引 / 分段 WAV / 任务 / 队列 / " +
+                "收听与阅读位置一并清理；正在播放或制作这本书的先停")
     }
 }
 
@@ -893,6 +900,18 @@ object Producer {
         EventLog.log(EventLog.Kind.PIPELINE, "TASK_AUTO_RESUME",
             "book=${t.title} phase=${t.phase} done=${t.done}/${t.total}")
         return "已自动接着上次的《${t.title}》继续制作"
+    }
+
+    /**
+     * R192 · 删书时若正在制作这本书，立刻停。否则后台协程会往刚
+     * deleteRecursively 掉的 work/<id> 重新写盘，重建幽灵目录继续推理。
+     * 复用 stop()（它会同步 current / 落 stopped / nativeCancel），
+     * 因此会连带把队列置为暂停 —— 如实写进回执，不静默吞掉。
+     */
+    fun stopIfBook(bookId: String): Boolean {
+        if (!busy || current?.bookId != bookId) return false
+        stop()
+        return true
     }
 
     fun stop() {

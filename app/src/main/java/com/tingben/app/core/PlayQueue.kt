@@ -481,6 +481,14 @@ object PlayQueue {
         player = null
     }
 
+    /** R192 · 删书时若正在播这本书，先停，别让播放器指向已被删掉的音频。 */
+    fun isPlayingBook(bookId: String): Boolean =
+        bookId.isNotEmpty() && queueId == "chapter:$bookId"
+
+    fun releaseIfBook(bookId: String) {
+        if (isPlayingBook(bookId)) release()
+    }
+
     fun release() {
         pausedByTransient = false
         savePos()   // 换队列 / 退出前，先把旧队列的位置留住

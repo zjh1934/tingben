@@ -847,7 +847,8 @@ private fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             onDismissRequest = { confirmDelete = null },
             title = { Text("删除这本书？") },
             text = { Text((books.find { it.id == id }?.title ?: "") +
-                "\n\n会一起删掉这本书的章节表、已做好的音频、分段缓存和制作任务。") },
+                "\n\n会一起删掉这本书的章节表、已做好的音频、分段缓存、制作任务，" +
+                "以及收听与阅读位置。若正在播放或制作这本书，会一并停止。") },
             confirmButton = {
                 TextButton(onClick = {
                     BookStore.delete(c, id); confirmDelete = null; onChanged()

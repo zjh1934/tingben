@@ -377,6 +377,10 @@ jobs:
         run: python3 scripts/r189_verify.py --selftest
       - name: R189 归档套隔离
         run: python3 scripts/r189_verify.py
+      - name: R192 删书清理反向注入
+        run: python3 scripts/r192_verify.py --selftest
+      - name: R192 删书清理
+        run: python3 scripts/r192_verify.py
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

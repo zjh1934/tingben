@@ -45,6 +45,20 @@ object ReadingState {
         emptyMap()
     }
 
+    /** R192 · 删书时清掉阅读位置，别让 allLast() 里挂着幽灵书。 */
+    fun remove(c: Context, bookId: String) {
+        if (bookId.isEmpty()) return
+        try {
+            val f = file(c)
+            val o = when (val r = AtomicJson.read(f)) {
+                is AtomicJson.Read.Corrupt -> return
+                is AtomicJson.Read.Missing -> return
+                is AtomicJson.Read.Ok -> try { JSONObject(r.text) } catch (_: Throwable) { return }
+            }
+            if (o.remove(bookId) != null) AtomicJson.write(f, o.toString())
+        } catch (_: Throwable) { }
+    }
+
     fun save(c: Context, bookId: String, chapter: Int, para: Int? = null, offset: Int? = null) {
         try {
             val f = file(c)
