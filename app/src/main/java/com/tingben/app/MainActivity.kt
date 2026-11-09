@@ -598,6 +598,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         },
                         onPlayBook = { miniBook = it },
                         onMixer = { chapterMixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open:hub") },
+                        onProduceSetup = { id -> bookId = id; nav.push(Screen.PRODUCE) },
                         onStarted = { id, sel ->
                             lastSelection = sel
                             openBook(id)

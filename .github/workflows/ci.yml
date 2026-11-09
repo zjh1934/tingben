@@ -385,6 +385,10 @@ jobs:
         run: python3 scripts/r193_verify.py --selftest
       - name: R193 收尾窗口守卫
         run: python3 scripts/r193_verify.py
+      - name: R197 制作设置可达反向注入
+        run: python3 scripts/r197_verify.py --selftest
+      - name: R197 制作设置可达
+        run: python3 scripts/r197_verify.py
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

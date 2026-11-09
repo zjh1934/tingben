@@ -19,10 +19,10 @@ import re
 # 已物理删除的死值（R195 清掉 PROGRESS）。出现即红。
 RETIRED = {"PROGRESS"}
 
-# R196 · 仍声明但无跳转入口的孤儿值。PRODUCE 的 ProduceScreen 里还有
-# 没搬进目录页的细粒度制作配置（朗读档位/语速/情绪/缓存摘要/从头重做），
-# 不属「没用的」，重构轮不许直接删；MIXER 已于 R196 清掉。
-ALLOWED_ORPHAN = {"PRODUCE"}
+# R197 · PRODUCE 的入口已接回目录页「制作设置 ›」，孤儿清零。
+# 若以后又有值落进 orphan_values()，说明某处能力又变成够不着的死分支，
+# r197_verify.py 会当场报红。
+ALLOWED_ORPHAN = set()
 
 
 def declared(src: str) -> set:

@@ -156,6 +156,9 @@ internal fun ChapterHubScreen(
     onResumeTask: () -> Unit = {},
     onPlayBook: (String) -> Unit,
     onMixer: () -> Unit,
+    // R197 · 制作设置页的唯一入口。之前导航壳重排只留了「一键按默认配置
+    // 合成」，把档位/语速/情绪/缓存摘要/从头重做那套能力变成了够不着的孤儿。
+    onProduceSetup: (String) -> Unit = {},
     onStarted: (String, Set<Int>) -> Unit,
     onOpenBook: (String) -> Unit = {},
     // R178 · 通知点进来时直接展开就地任务看板，不用再切独立任务页
@@ -690,6 +693,9 @@ internal fun ChapterHubScreen(
                 if (selected.isNotEmpty()) {
                     TextButton(onClick = onMixer) {
                         Text("调音 ›", fontSize = 12.sp, color = HubPrimary)
+                    }
+                    TextButton(onClick = { onProduceSetup(book.id) }) {
+                        Text("制作设置 ›", fontSize = 12.sp, color = HubPrimary)
                     }
                     TextButton(onClick = { startAction(HubAction.SYNTH) }) {
                         Text("合成音频", fontSize = 12.sp, color = HubPrimary)
