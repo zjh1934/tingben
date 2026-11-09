@@ -165,7 +165,12 @@ object AudioTree {
         val root = File(c.filesDir, "work/$bookId")
         if (!root.isDirectory) return
         try {
-            root.walkTopDown().filter { it.isFile && it.name == "chapter_done.json" }.forEach { f ->
+            // R189 · 归档套里的 chapter_done.json 属于另一套音色，删当前套某章
+            // 音频时绝不能顺手改它，否则切回旧音色会重复合成、重复拼整章。
+            root.walkTopDown()
+                .filter { it.isFile && it.name == "chapter_done.json" &&
+                        it.parentFile?.name?.startsWith("_voice_") != true }
+                .forEach { f ->
                 if (AtomicJson.read(f) is AtomicJson.Read.Corrupt) return@forEach
                 val cur = readDone(f.parentFile ?: return@forEach).toMutableMap()
                 if (cur.remove(chapter) != null) writeDone(f.parentFile ?: return@forEach, cur)

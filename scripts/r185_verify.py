@@ -77,7 +77,7 @@ BAN = [
     'EventLog.log(EventLog.Kind.PIPELINE, "MODE_INVALIDATE"',
     'EventLog.log(EventLog.Kind.PIPELINE, "PRESET_INVALIDATE"',
     'killed.forEach { it.delete() }',
-    'AudioTree.forget(c, killedPaths)',
+    'filter { !it.isFile }',
     'fun staleSegCount',
     '设置变了，已做好的 $staleSegs 段会重做',
     '会按新设置重出声',

@@ -47,7 +47,14 @@ CURRENT_VERIFIERS = ["r131_verify.py", "r132_verify.py", "r133_verify.py",
            "r152_verify.py", "r153_verify.py",
            "r154_verify.py", "r155_verify.py",
            "r156_verify.py", "r157_verify.py", "r158_verify.py",
-           "aoci_check.py", "r161_verify.py", "r163_verify.py"]
+           "aoci_check.py", "r161_verify.py", "r163_verify.py",
+           # R189 · 补齐停在 r163 的登记（这 15 个都早已挂 CI，只是清单没跟上）
+           "r169_verify.py", "r170_verify.py", "r171_verify.py",
+           "r172_verify.py", "r173_verify.py", "r174_verify.py",
+           "r175_verify.py", "r176_verify.py", "r177_verify.py",
+           "r178_verify.py", "r180_verify.py", "r182_verify.py",
+           "r183_verify.py", "r185_verify.py", "r188_verify.py",
+           "r189_verify.py"]
 
 # R141 建立、R160 补第 6 项的轻量自检清单：改码轮只跑这 6 项，全套留到发版轮。
 # 换了三项：退役页统一守门（原来 17 个壳脚本各起一次）、最近两批 R140/R139。
@@ -110,6 +117,12 @@ def check(main=None, ci=None, allkt=None):
     for v in CURRENT_VERIFIERS:
         if v not in ci:
             errs.append("现行验证没挂 CI: " + v)
+    # R189 · 反向防漏：CI 里挂了、编号属于现行批次（>=161）却没登记进清单。
+    # 以前新增守门忘登记只是「悄悄不进轻量清单」，现在当场红。
+    live = set(re.findall(r'scripts/(r(?:1[6-9]\d|[2-9]\d\d)_verify\.py)', ci))
+    missing = sorted(live - set(CURRENT_VERIFIERS) - {"r135_verify.py"})
+    if missing:
+        errs.append("现行守门漏登记 CURRENT_VERIFIERS: " + ", ".join(missing))
     if not (ROOT / "scripts/retired_pages.py").exists():
         errs.append("退役守门模块缺失: scripts/retired_pages.py")
     if "retired_pages.py" not in (ROOT / "scripts/check_docs.py").read_text(encoding="utf-8"):
@@ -138,6 +151,8 @@ def selftest():
                                        "fun openBookColX(id: String?, col: Int)"), c, a))),
         ("现行验证漏挂", (
             lambda m, c, a: (m, c.replace("python3 scripts/r134_verify.py --selftest", ""), a))),
+        ("新增守门忘登记", (
+            lambda m, c, a: (m, c + "\n      - run: python3 scripts/r199_verify.py\n", a))),
     ]
     bad = 0
     for name, mutate in cases:

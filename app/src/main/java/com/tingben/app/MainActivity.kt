@@ -1604,8 +1604,9 @@ private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
                 "已拼好的整章音频不受影响。", fontSize = 13.sp) },
             confirmButton = {
                 TextButton(onClick = {
+                    val killedPaths = files.map { it.absolutePath }
                     val failed = AudioOps.deleteAll(files)
-                    AudioTree.forget(c, files.filter { !it.isFile }.map { it.absolutePath })
+                    AudioTree.forget(c, killedPaths)
                     if (bookId != null && chapter != null)
                         AudioTree.clearDone(c, bookId, chapter)
                     PlayQueue.release()

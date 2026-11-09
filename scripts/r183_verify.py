@@ -67,7 +67,7 @@ BAN = [
     '引擎返回 $lastCode',
     'AudioTree.forget(c, killed.filter { !it.isFile }',
     'killed.forEach { it.delete() }',
-    'AudioTree.forget(c, killedPaths)',
+    'filter { !it.isFile }',
     '设置变了，已做好的 $staleSegs 段会重做',
 ]
 
@@ -137,7 +137,7 @@ def selftest():
          lambda t: t.replace('            Text("每段约 1–3 分钟，块越多等得越久", fontSize = 11.sp, color = Sub)\n', '')),
         ("forget 旧形态回潮", "pipe",
          lambda t: t.replace('        val sw = VoiceCache.switchTo(work, cacheKey)',
-                             '        AudioTree.forget(c, killedPaths)\n'
+                             '        AudioTree.forget(c, killed.filter { !it.isFile }.map { it.absolutePath })\n'
                              '        val sw = VoiceCache.switchTo(work, cacheKey)')),
         ("CI 漏挂", "ci",
          lambda t: t.replace("python3 scripts/r183_verify.py --selftest", "")),

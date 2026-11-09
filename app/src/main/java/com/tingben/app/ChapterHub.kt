@@ -805,9 +805,9 @@ internal fun ChapterHubScreen(
                     TextButton(onClick = {
                         EventLog.ui("SEG_DELETE", "n=${files.size}")
                         resplitScope.launch(Dispatchers.IO) {
+                            val killedPaths = files.map { it.absolutePath }
                             val failed = AudioOps.deleteAll(files)
-                            AudioTree.forget(c,
-                                files.filter { !it.isFile }.map { it.absolutePath })
+                            AudioTree.forget(c, killedPaths)
                             withContext(Dispatchers.Main) {
                                 PlayQueue.release()
                                 confirmSegDel = null
@@ -842,9 +842,10 @@ internal fun ChapterHubScreen(
                         var failed = 0
                         all.forEach { (i, files) ->
                             val (segs, merged) = files
+                            val killedPaths = segs.map { it.absolutePath }
                             failed += AudioOps.deleteAll(segs)
                             merged?.let { if (!AudioOps.deleteMerged(c, it)) failed++ }
-                            AudioTree.forget(c, segs.filter { !it.isFile }.map { it.absolutePath })
+                            AudioTree.forget(c, killedPaths)
                             AudioTree.clearDone(c, book.id, i)
                         }
                         PlayQueue.release()

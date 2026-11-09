@@ -65,12 +65,15 @@ def tracked():
     return subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True).splitlines()
 
 
-def check():
+def check(sources=None):
+    # R191 · 允许 selftest 传内存变体，不再原地覆写源码。
+    # 502 砍在 finally 之前会留下 signReady=true 这类危险残留。
     e = []
-    ci = CI.read_text(encoding="utf-8")
-    g = GRADLE.read_text(encoding="utf-8")
-    ig = IGNORE.read_text(encoding="utf-8")
-    b = BUMP.read_text(encoding="utf-8") if BUMP.exists() else ""
+    src = sources or {}
+    ci = src.get("ci", CI.read_text(encoding="utf-8"))
+    g = src.get("gradle", GRADLE.read_text(encoding="utf-8"))
+    ig = src.get("ignore", IGNORE.read_text(encoding="utf-8"))
+    b = src.get("bump", BUMP.read_text(encoding="utf-8") if BUMP.exists() else "")
 
     for a in CI_ANCHORS:
         if a not in ci:
@@ -124,36 +127,40 @@ def bump_cases():
 
 
 def selftest():
-    assert not check(), "基线自己就红了，先修基线"
-    orig = {p: p.read_text(encoding="utf-8") for p in (CI, GRADLE, IGNORE, BUMP)}
+    base = {
+        "ci": CI.read_text(encoding="utf-8"),
+        "gradle": GRADLE.read_text(encoding="utf-8"),
+        "ignore": IGNORE.read_text(encoding="utf-8"),
+        "bump": BUMP.read_text(encoding="utf-8") if BUMP.exists() else "",
+    }
+    assert not check(base), "基线自己就红了，先修基线"
     cases = [
-        ("版本守门被摘", CI, lambda s: s.replace("python3 scripts/check_version_bump.py", "")),
-        ("注入 Secret 被摘", CI, lambda s: s.replace("TINGBEN_KEYSTORE_B64", "")),
-        ("引擎守门回退成 warning", CI,
+        ("版本守门被摘", "ci",
+         lambda s: s.replace("python3 scripts/check_version_bump.py", "")),
+        ("注入 Secret 被摘", "ci", lambda s: s.replace("TINGBEN_KEYSTORE_B64", "")),
+        ("引擎守门回退成 warning", "ci",
          lambda s: s.replace("::error::原生引擎缓存/编译未通过", "::warning::引擎缺件")),
-        ("APK 缺 so 回退成 warning", CI,
+        ("APK 缺 so 回退成 warning", "ci",
          lambda s: s.replace("::error::APK 没有原生库", "::warning::APK 没有原生库")),
-        ("签名证书守门被摘", CI,
+        ("签名证书守门被摘", "ci",
          lambda s: s.replace("签名证书不匹配", "证书校验略过")),
-        ("Gradle 明文密码回来", GRADLE,
+        ("Gradle 明文密码回来", "gradle",
          lambda s: s.replace("val signReady", 'val signReady = true // storePassword = "motingdebug"')),
-        (".gitignore 去掉 jks", IGNORE, lambda s: s.replace("*.jks", "")),
-        ("CI 漏挂 r137", CI,
+        (".gitignore 去掉 jks", "ignore", lambda s: s.replace("*.jks", "")),
+        ("CI 漏挂 r137", "ci",
          lambda s: s.replace("python3 scripts/r137_verify.py --selftest", "")),
-        ("相等版本被放行", BUMP, lambda s: s.replace("if new <= old", "if new < old")),
+        ("相等版本被放行", "bump", lambda s: s.replace("if new <= old", "if new < old")),
     ]
     bad = 0
-    try:
-        for name, path, mutate in cases:
-            path.write_text(mutate(orig[path]), encoding="utf-8")
-            if not check():
-                bad += 1
-                print("  反向注入漏放:", name)
-    finally:
-        for p, s in orig.items():
-            p.write_text(s, encoding="utf-8")
+    for name, key, mutate in cases:
+        v = dict(base)
+        v[key] = mutate(base[key])
+        assert v[key] != base[key], "注入没生效: " + name
+        if not check(v):
+            bad += 1
+            print("  反向注入漏放:", name)
     total = len(cases)
-    print("反向注入 %d/%d 全拦下" % (total - bad, total))
+    print("反向注入 %d/%d 全拦下（纯内存，源文件零写入）" % (total - bad, total))
     bad += bump_cases()
     return bad
 

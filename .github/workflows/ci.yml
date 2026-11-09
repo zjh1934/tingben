@@ -373,6 +373,10 @@ jobs:
         run: python3 scripts/r188_verify.py --selftest
       - name: R188 侧车随套
         run: python3 scripts/r188_verify.py
+      - name: R189 归档套隔离反向注入
+        run: python3 scripts/r189_verify.py --selftest
+      - name: R189 归档套隔离
+        run: python3 scripts/r189_verify.py
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug
