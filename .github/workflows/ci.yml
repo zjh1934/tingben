@@ -369,6 +369,10 @@ jobs:
         run: python3 scripts/r185_verify.py --selftest
       - name: R185 音色缓存
         run: python3 scripts/r185_verify.py
+      - name: R188 侧车随套反向注入
+        run: python3 scripts/r188_verify.py --selftest
+      - name: R188 侧车随套
+        run: python3 scripts/r188_verify.py
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug
@@ -405,10 +409,14 @@ jobs:
           python3 - <<'PY'
           import base64, json, os, urllib.request
           tok, repo, n = os.environ['GH_PAT'], os.environ['GITHUB_REPOSITORY'], os.environ['RUN_NO']
+          # R188 · 写触发这次 run 的分支。原来硬编码 main，rc/1.1.10 上编译
+          # 失败却把日志推到主分支（run 146 → 2a8eeecc92），污染了 main 历史。
+          # GITHUB_REF_NAME 是 Actions 默认变量：rc/x.y.z 或 main。
+          branch = os.environ.get('GITHUB_REF_NAME') or 'main'
           path = 'logs/build-%s.md' % n
           body = json.dumps({'message': 'ci: 失败日志 run ' + n + ' [skip ci]',
                              'content': base64.b64encode(open(path, 'rb').read()).decode(),
-                             'branch': 'main'}).encode()
+                             'branch': branch}).encode()
           req = urllib.request.Request('https://api.github.com/repos/' + repo + '/contents/' + path,
               data=body, method='PUT', headers={'Authorization': 'token ' + tok,
               'Accept': 'application/vnd.github+json', 'User-Agent': 'tingben-ci'})

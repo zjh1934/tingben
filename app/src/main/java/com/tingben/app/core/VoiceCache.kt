@@ -21,6 +21,23 @@ object VoiceCache {
     private const val KEY_FILE = "voice_cache_key.txt"
     private const val MAX_KEEP = 12
 
+    /**
+     * R188 · 这两个不是切分产物，是「音频状态」，必须和 wav 同一套：
+     *   chapter_done.json —— 整章另存后的成品索引（AudioTree.readDone），
+     *     续跑时靠它跳过整章。留在根目录会让新音色复用旧音色成品 → 混音。
+     *   redo.json —— 看台手动标记「这几段/块要重做」，同样是段级状态。
+     * segmap.json / chapters.json / seg_chapters.json / flag_* / ann_* 是
+     * 切分与章号索引，换音色不用重切，继续留根目录共享。
+     */
+    private val SIDECARS = listOf("chapter_done.json", "redo.json")
+
+    private fun sideFiles(dir: File): List<File> =
+        SIDECARS.map { File(dir, it) }.filter { it.isFile }
+
+    /** 根目录只要还有任何音频状态，就算「有老数据」，不能凭空认领成空套。 */
+    private fun hasAudioState(dir: File): Boolean =
+        rootWavs(dir).isNotEmpty() || sideFiles(dir).isNotEmpty()
+
     data class Summary(
         val current: Int,
         val others: Int,
@@ -51,7 +68,7 @@ object VoiceCache {
         val f = keyFile(work)
         when {
             f.exists() -> f.readText().trim()
-            rootWavs(work).isEmpty() -> incoming
+            !hasAudioState(work) -> incoming
             else -> {
                 val v = File(work, "voice_stamp.txt").takeIf { it.exists() }?.readText()?.trim()
                 val m = File(work, "mode_stamp.txt").takeIf { it.exists() }?.readText()?.trim()
@@ -82,6 +99,17 @@ object VoiceCache {
         }
     } catch (_: Throwable) { false }
 
+    /** 侧车是小 JSON，不能套用 wav 的 >44 字节判据。 */
+    private fun moveSide(from: File, to: File): Boolean = try {
+        if (to.exists() && !to.delete()) false
+        else if (from.renameTo(to)) true
+        else {
+            from.copyTo(to, overwrite = true)
+            from.delete()
+            to.exists()
+        }
+    } catch (_: Throwable) { false }
+
     /** 换套：旧的归档、目标套搬回来。同一套则什么都不做。 */
     fun switchTo(work: File, key: String): Switch {
         val cur = readKey(work, key)
@@ -95,9 +123,13 @@ object VoiceCache {
         var archived = 0
         val bucket = File(work, PREFIX + cur.ifBlank { "empty" })
         val src = rootWavs(work)
-        if (src.isNotEmpty()) {
+        val sides = sideFiles(work)
+        // R188 · 即使 wav 全被「另存整章」删光了，只要还有 chapter_done.json
+        // 也必须归档，否则换音色后旧成品会被拼进新书。
+        if (src.isNotEmpty() || sides.isNotEmpty()) {
             try { bucket.mkdirs() } catch (_: Throwable) { }
             src.forEach { f -> if (moveWav(f, File(bucket, f.name))) archived++ }
+            sides.forEach { f -> moveSide(f, File(bucket, f.name)) }
         }
 
         var restored = 0
@@ -106,6 +138,7 @@ object VoiceCache {
             rootWavs(target).forEach { f ->
                 if (moveWav(f, File(work, f.name))) restored++
             }
+            sideFiles(target).forEach { f -> moveSide(f, File(work, f.name)) }
         }
         try { keyFile(work).writeText(key) } catch (_: Throwable) { }
         purge(work)
@@ -119,9 +152,13 @@ object VoiceCache {
         } ?: emptyList()
         val counts = dirs.map { rootWavs(it).size }
         val bytes = dirs.sumOf { d -> rootWavs(d).sumOf { it.length() } }
+        // 只另存过整章、没有散段的套也算「留着」，别让它从提示里消失。
+        val alive = dirs.count { d ->
+            rootWavs(d).isNotEmpty() || sideFiles(d).isNotEmpty()
+        }
         Summary(
             current = rootWavs(work).size,
-            others = counts.count { it > 0 },
+            others = alive,
             bestOther = counts.maxOrNull() ?: 0,
             totalBytes = bytes
         )

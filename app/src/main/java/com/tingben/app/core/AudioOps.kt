@@ -62,8 +62,10 @@ object AudioOps {
             return Result(true, dst, kept = parts.size,
                 reason = "整章已拼好，但章状态没记上，原来的小块先留着")
         }
+        // R188 · 原来依赖「删完 isFile 刚好变 false」才成立，语义脆弱。
+        val killedPaths = parts.map { it.absolutePath }
         val kept = deleteAll(parts)
-        AudioTree.forget(c, parts.filter { !it.isFile }.map { it.absolutePath })
+        AudioTree.forget(c, killedPaths)
         return Result(true, dst, kept = kept)
     }
 
