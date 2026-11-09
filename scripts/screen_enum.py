@@ -19,9 +19,10 @@ import re
 # 已物理删除的死值（R195 清掉 PROGRESS）。出现即红。
 RETIRED = {"PROGRESS"}
 
-# 仍声明但当前不可达、排在下一块清理。列出来是为了「如实记着」，
-# 不是放行 —— 它们依旧要出现在分发/chrome 里保持三者一致。
-ALLOWED_ORPHAN = {"MIXER"}
+# R196 · 仍声明但无跳转入口的孤儿值。PRODUCE 的 ProduceScreen 里还有
+# 没搬进目录页的细粒度制作配置（朗读档位/语速/情绪/缓存摘要/从头重做），
+# 不属「没用的」，重构轮不许直接删；MIXER 已于 R196 清掉。
+ALLOWED_ORPHAN = {"PRODUCE"}
 
 
 def declared(src: str) -> set:

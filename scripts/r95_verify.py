@@ -65,7 +65,7 @@ BAN = {
 
 KEEP = {
     "chrome": ['internal fun AppDrawerSheet(', 'private fun GearIcon('],
-    "main": ['SETTINGS, MODELS, MIXER, CHAPTERS }', 'commitAll()', 'ttsSynthesize('],
+    "main": ['SETTINGS, MODELS, CHAPTERS }', 'commitAll()', 'ttsSynthesize('],
     "pipe": ['AudioLibrary.register(c, book.id, book.title', 'TaskResume.save(c, done)',
              'ProduceService.update'],
 }

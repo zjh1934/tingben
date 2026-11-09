@@ -60,12 +60,12 @@ def main():
         injections = list(shell.injections())
         injections += [
             ("Screen 枚举被改", "main",
-             lambda t: t.replace('SETTINGS, MODELS, MIXER, CHAPTERS',
-                                 'SETTINGS, MODELS, CHAPTERS')),
+             lambda t: t.replace('SETTINGS, MODELS, CHAPTERS',
+                                 'SETTINGS, MODELS, LLM, CHAPTERS')),
             ("CI 漏挂验证", "ci",
              lambda t: t.replace('r89_verify.py', 'r89_missing.py')),
             ("分发丢一支", "main",
-             lambda t: t.replace('Screen.MIXER -> MixerScreen(ctx, onBack = { nav.pop() })', '')),
+             lambda t: t.replace('Screen.MODELS -> ModelScreen(ctx, refresh,', '')),
         ]
         bad = 0
         for name, key, mutate in injections:

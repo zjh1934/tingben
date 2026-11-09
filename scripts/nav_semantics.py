@@ -14,7 +14,7 @@ import re
 
 NAV_FIELDS = {
     "screen", "bookId", "miniBook", "lastSelection", "refresh",
-    "modelsFrom", "importing", "drawerReturn",
+    "modelsFrom", "importing",
 }
 
 def nav_fields(src: str) -> dict:
@@ -107,7 +107,8 @@ def back_uses_source(src: str, name: str) -> bool:
     return bool(re.search(r"drawerReturn|modelsFrom|\bpop\s*\(|\bback\s*\(|nav\.", b))
 
 def mixer_back_ok(src: str) -> bool:
-    return back_uses_source(src, "MIXER")
+    """R196 · 调音台已从独立页收成浮层：守「关闭时把开关归位」。"""
+    return bool(re.search(r"chapterMixerOpen\s*=\s*false", src))
 
 def models_back_ok(src: str) -> bool:
     return back_uses_source(src, "MODELS")
@@ -160,7 +161,7 @@ def semantics(src: str) -> list:
     if not back_order_ok(src):
         e.append("抽屉回退没排在全局回退之后")
     if not mixer_back_ok(src):
-        e.append("调音台返回没按来源（可能写死了 SETTINGS）")
+        e.append("调音台浮层关闭没归位")
     if not models_back_ok(src):
         e.append("模型页返回没按来源")
     if not mixer_entries(src):

@@ -74,7 +74,7 @@ def selftest():
     caught = 0
     INJ = [
         ("CAST 枚举回潮", lambda: check(main=MAIN.replace(
-            "MODELS, MIXER, CHAPTERS }", "MODELS, CAST, MIXER, CHAPTERS }"))),
+            "MODELS, CHAPTERS }", "MODELS, CAST, CHAPTERS }"))),
         ("抽屉旧项回潮", lambda: check(chrome=CHROME.replace(
             'internal const val NAV_INPUT = 6',
             'internal const val NAV_INPUT = 6' + NL

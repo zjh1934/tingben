@@ -219,7 +219,7 @@ mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "ParamLine(", "调音台", "private fun SettingsSection(",
            "12 维", "试听 · 已保存", "试听 · 当前",
-           "MixerScreen", "Screen.MIXER", "全部恢复默认"]
+           "MixerScreen", "MixerDialog(", "全部恢复默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
 for sym in ["GENDER", "PITCH", "TIMBRE", "BREATH", "PERSONA",
@@ -229,8 +229,8 @@ for pid in ["P01", "P02", "P03", "P06", "P10", "P11", "P21"]:
     if pid not in mixer_src: errs.append("Mixer.kt 缺少现成音色网格条目: " + pid)
 for sid in ["upstream", "stable", "drama", "deterministic"]:
     if sid not in mixer_src: errs.append("Mixer.kt 缺少采样预设: " + sid)
-if "Screen.MIXER -> MixerScreen" not in main_src:
-    errs.append("R31 回退：调音台页没接进导航")
+if "MixerDialog(" not in main_src:
+    errs.append("R31 回退：调音台浮层没接进目录页")
 if not nav.mixer_entries(main_src):
     errs.append("R31 回退：设置页没有记录来源的调音台入口")
 if "private val knobs" in mixer_src or "var knobs" in mixer_src:
@@ -377,7 +377,7 @@ for sym in R36_ALL:
     if sym not in all_src: errs.append("缺少 R36 控制台符号: " + sym)
 # R139 · 制作准备页改成 IO 异步加载后，「恢复上次任务配置」的写法换了，
 # 语义判据跟着换：既要有「读上次任务配置」，也要有「没有就用默认预设」。
-for sym in ["private fun ModeTabs(", "Screen.MIXER -> MixerScreen",
+for sym in ["private fun ModeTabs(", "MixerDialog(", 
             "saved?.takeIf { it.bookId == id }?.config", "Prefs.defaultPerf(c)"]:
     if sym not in main_src: errs.append("缺少 R36 界面符号: " + sym)
 if not nav.mixer_entries(main_src):
@@ -386,8 +386,8 @@ for banned in ["声音采样（进阶）", "putKnobs(", "descDraft"]:
     if banned in main_src: errs.append("R36 回退：设置页又出现第二套采样 " + banned)
 if "var knobs" in mixer_src:
     errs.append("R36 回退：Mixer.kt 出现第二份 TtsKnobs 真值源")
-if main_src.count("Screen.MIXER -> MixerScreen") != 1:
-    errs.append("R36 回退：调音台导航分支异常")
+if "MixerDialog(" not in main_src:
+    errs.append("R36 回退：调音台浮层缺失")
 bld = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8", errors="replace")
 for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
     if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
@@ -397,7 +397,7 @@ for sym in ["DismissibleNavigationDrawer(", "drawerState = drawerState",
             "AppDrawerSheet(", "rememberDrawerState(DrawerValue.Closed)",
             "BackHandler(enabled = drawerState.isOpen)",
             "scope.launch { drawerState.close() }",
-            ".navigationBarsPadding()", "drawerReturn"]:
+            ".navigationBarsPadding()"]:
     if sym not in main_src: errs.append("R46/R51 缺 V1 抽屉符号: " + sym)
 if "ModalNavigationDrawer(" in main_src:
     errs.append("R51 回退：又用回覆盖式 ModalNavigationDrawer(")
@@ -408,7 +408,7 @@ for sym in ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS",
     if sym in main_src or sym in chrome_src:
         errs.append("R46 回退：旧壳残留 " + sym)
 if not nav.mixer_back_ok(main_src):
-    errs.append("R46 回退：调音台返回没按来源")
+    errs.append("R46 回退：调音台浮层关闭没归位")
 if not nav.models_back_ok(main_src):
     errs.append("R46 回退：模型页返回没按来源")
 

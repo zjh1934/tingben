@@ -53,7 +53,7 @@ def check(f):
     if 'def continue_run(' not in f["parity"]: e.append("对拍脚本缺 run 侧模拟")
     for s in ['internal fun AppDrawerSheet(', 'private fun GearIcon(']:
         if s not in ch: e.append("新壳层守恒失效: " + s)
-    if 'SETTINGS, MODELS, MIXER, CHAPTERS }' not in m: e.append("Screen 10 值失效")
+    if 'SETTINGS, MODELS, CHAPTERS }' not in m: e.append("Screen 枚举失效")
     for s in ['commitAll()', 'ttsSynthesize(', 'verticalScroll(scroll)']:
         if s not in m + p: e.append("主链守恒失效: " + s)
     return e

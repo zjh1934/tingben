@@ -115,7 +115,7 @@ def main():
 
     INJ = [
         ('枚举退回 11 值', lambda: check(main=MAIN.replace(
-            'MIXER, CHAPTERS }', 'MIXER, LLM, CHAPTERS }'))),
+            'MODELS, CHAPTERS }', 'MODELS, LLM, CHAPTERS }'))),
         ('抽屉旧项回潮', lambda: check(chrome=CHROME.replace(
             'internal const val NAV_INPUT = 6',
             'internal const val NAV_INPUT = 6\nprivate val DRAWER_TOP = listOf('
@@ -152,7 +152,7 @@ def main():
 
 if __name__ == '__main__':
     if '--selftest' in sys.argv:
-        e = check(main=MAIN.replace('MIXER, CHAPTERS }', 'MIXER, LLM, CHAPTERS }'))
+        e = check(main=MAIN.replace('MODELS, CHAPTERS }', 'MODELS, LLM, CHAPTERS }'))
         print('自检注入是否报错:', bool(e), e[:2])
         sys.exit(0 if e else 1)
     sys.exit(main())

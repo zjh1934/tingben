@@ -102,8 +102,8 @@ def check(main, chrome, tag):
 
 errs = check(MAIN, CHROME, "基线")
 
-_mixer_back_lit = "Screen.MIXER -> MixerScreen(ctx, onBack = { %s })" % nav._on_back(nav._branch(MAIN, "MIXER"))
-_mixer_line = re.search(r"^\s*Screen\.MIXER -> MixerScreen.*$", MAIN, re.M).group(0) + "\n"
+_mixer_back_lit = "chapterMixerOpen = false"   # R196 · 浮层关闭归位
+_mixer_line = re.search(r"^\s*Screen\.MODELS -> ModelScreen.*$", MAIN, re.M).group(0) + "\n"
 _global_frag = nav.global_back(MAIN)[2]
 INJECT = [
     ("删抽屉返回键", MAIN, "    BackHandler(enabled = drawerState.isOpen) {\n        scope.launch { drawerState.close() }\n    }\n", ""),
@@ -111,8 +111,7 @@ INJECT = [
     ("恢复底栏", MAIN, "gesturesEnabled = true", "AppBottomBar(active = 0, onTab = {}, surface = Card, primary = Primary, primarySoft = PrimarySoft, sub = Sub)\n        gesturesEnabled = true"),
     ("☰ 回退成浮层菜单", CHROME, "IconButton(onClick = onMenu)", "DropdownMenu(expanded = false, onDismissRequest = {}) {}; IconButton(onClick = onMenu)"),
     ("去掉底部安全区", MAIN, ".statusBarsPadding().navigationBarsPadding()", ".statusBarsPadding()"),
-    ("调音台返回写死设置页", MAIN, _mixer_back_lit,
-     "Screen.MIXER -> MixerScreen(ctx, onBack = { screen = Screen.SETTINGS })"),
+    ("调音台浮层关闭没归位", MAIN, _mixer_back_lit, ""),
     ("旧功能菜单回潮", CHROME, "internal const val NAV_INPUT = 6",
      "internal const val NAV_INPUT = 6\nprivate val DRAWER_TOP = listOf(\n    NAV_MIXER to \"调音台\",\n)"),
     ("删一个分发分支", MAIN, _mixer_line, ""),

@@ -284,7 +284,7 @@ def selftest():
         ("索引记账被摘", "hub", "AudioTree.forget(c,", ""),
         ("preview 通道被摘", "hub", "PlayQueue.pausePreview()", ""),
         ("独立页回潮", "main", "private enum class Screen {",
-         "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }"),
+         "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, CHAPTERS }"),
         ("CI 漏挂 r151", "ci", "python3 scripts/r151_verify.py --selftest", ""),
         ("现行清单漏 r151", "r135", '"r151_verify.py"', ""),
     ]

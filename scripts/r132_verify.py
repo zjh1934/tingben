@@ -111,7 +111,7 @@ def selftest():
         "导出被摘": ("hub", "另存 WAV"),
         "转格式被摘": ("hub", "转 M4A"),
         "索引清理被摘": ("hub", "AudioTree.clearDone(c, book.id, i)"),
-        "退役值被塞回": ("main", "private enum class Screen { LIBRARY, PRODUCE, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }"),
+        "退役值被塞回": ("main", "private enum class Screen { LIBRARY, PRODUCE, TASKS, SETTINGS, MODELS, CHAPTERS }"),
         "结构脚本集合不跟": ("structure", 'WANT_SCREENS = se.declared(main_src)'),
     }
     bad = 0

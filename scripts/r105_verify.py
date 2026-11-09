@@ -75,7 +75,6 @@ errs += check(main, '守恒/界面', [
     '试听 · 当前', '试听 · 已保存',
     'commitAll(',
     'PlayQueue.setTracks(',
-    'Screen.MIXER -> MixerScreen',
 ])
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import nav_semantics as _nav

@@ -196,7 +196,7 @@ def injections():
                              'listOf(src.speaker)')),
         ("抽屉丢了书列表", "main",
          lambda t: t.replace('                    compact = true,', '                    compact = false,')),
-        ("调音台退回独立页", "main",
+        ("调音台入口被摘", "main",
          lambda t: re.sub(r"onMixer\s*=\s*\{[^}]*\}",
-                          "onMixer = { nav.push(Screen.MIXER) }", t)),
+                          "onMixer = { nav.push(Screen.SETTINGS) }", t)),
     ]

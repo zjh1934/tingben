@@ -34,7 +34,7 @@ BANNED = [
     "onModels = { modelsFrom = Screen.AUDIO; screen = Screen.MODELS }",
     "onLibrary = { screen = Screen.LIBRARY }",
     "var drawerReturn by remember { mutableStateOf(Screen.LIBRARY) }",
-    "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }",
+    "private enum class Screen { LIBRARY, PRODUCE, TASKS, SETTINGS, MODELS, CHAPTERS }",
 ]
 
 def banned_hits(files=None):
@@ -137,14 +137,15 @@ def injections():
         return s if j < 0 else s[:j] + repl + s[j + len(lit):]
 
     def break_mixer(s):
-        return in_branch(s, "MIXER", "onBack = { screen = Screen.SETTINGS }")
+        # R196 · 调音台收成浮层后，破坏「关闭归位」就是破坏其返回语义
+        return s.replace("chapterMixerOpen = false", "", 1)
 
     def break_models(s):
         return in_branch(s, "MODELS", "onBack = { screen = Screen.LIBRARY }")
     out = [
         ("全局回退失效", lambda s: s.replace(g, "(enabled = false)", 1)),
         ("抽屉回退失效", lambda s: s.replace(d, "(enabled = false)", 1)),
-        ("调音台返回写死 SETTINGS", break_mixer),
+        ("调音台浮层关闭没归位", break_mixer),
         ("模型页返回写死 LIBRARY", break_models),
         ("丢导航字段 modelsFrom",
          lambda s: re.sub(r"\s*var modelsFrom by remember(?:Saveable)? \{[^\n]*\n", "\n", s, count=1)),

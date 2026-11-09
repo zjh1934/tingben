@@ -55,7 +55,7 @@ import kotlinx.coroutines.Job
 import java.io.File
 
 // R132：任务详情页 / 我的音频页的独立入口与目的地都撤了，能力已归进目录页三列。
-private enum class Screen { LIBRARY, PRODUCE, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }
+private enum class Screen { LIBRARY, PRODUCE, TASKS, SETTINGS, MODELS, CHAPTERS }
 
 // R139 · 制作准备页的一次性加载结果（全部在 IO 线程算好，组合期不再碰磁盘）
 private data class ProduceLoad(
@@ -213,7 +213,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var navStack by rememberSaveable { mutableStateOf("") }
     val nav = remember { NavHost(navStack, { screen }, { screen = it }, { navStack = it }) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    var drawerReturn by rememberSaveable { mutableStateOf(Screen.LIBRARY) }
 
     // R163 · 目录页只有一列了：任务 / 音频 / 制作完成等入口全部落到同一页，
     // 不再带「目标列」。必须放在 nav 声明之后（局部函数不能引用未声明变量）。
@@ -228,7 +227,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         EventLog.ui("BACK", "from=$screen", mapOf("hadStack" to nav.canPop().toString()))
         if (nav.canPop()) nav.pop()
         else {
-            screen = backTargetOf(screen, modelsFrom, drawerReturn)
+            screen = backTargetOf(screen, modelsFrom)
             nav.clear()
         }
     }
@@ -627,7 +626,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onModels = { modelsFrom = Screen.SETTINGS; nav.push(Screen.MODELS) },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
                     onMixer = { chapterMixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open:settings") })
-                Screen.MIXER -> MixerScreen(ctx, onBack = { nav.pop() })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },
@@ -746,12 +744,11 @@ private val ROOT_SCREENS = setOf(Screen.LIBRARY)
 
 private fun canGoBack(s: Screen): Boolean = s !in ROOT_SCREENS
 
-private fun backTargetOf(s: Screen, modelsFrom: Screen, drawerReturn: Screen): Screen =
+private fun backTargetOf(s: Screen, modelsFrom: Screen): Screen =
     when (s) {
         // 任务页不再有常驻入口（从通知/书里进），回退统一到主页
         Screen.TASKS -> Screen.LIBRARY
         Screen.MODELS -> modelsFrom
-        Screen.MIXER -> drawerReturn
         else -> Screen.LIBRARY
     }
 
@@ -765,7 +762,6 @@ private fun chromeOf(s: Screen): ChromeSpec = when (s) {
     Screen.TASKS    -> ChromeSpec("任务", TAB_TASKS, canBack = true)
     Screen.SETTINGS -> ChromeSpec("设置", canBack = true)
     Screen.MODELS   -> ChromeSpec("模型", canBack = true)
-    Screen.MIXER    -> ChromeSpec("调音台", canBack = true)
 }
 
 @Composable
