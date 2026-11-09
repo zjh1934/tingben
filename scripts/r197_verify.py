@@ -80,6 +80,12 @@ def check(f):
                 e.append("能力链缺失[%s]: %s" % (key, s[:62]))
     if "Screen.PRODUCE" not in f["main"]:
         e.append("PRODUCE 目的地整个没了")
+    # R198 · 常态顶栏 + 勾选态底部条，两枚入口缺一不可
+    n_entry = f["hub"].count('"制作设置 ›"')
+    if n_entry != 2:
+        e.append("制作设置入口应为 2 枚（常态+勾选态），实为 %d" % n_entry)
+    if f["hub"].count("onProduceSetup(book.id)") != 2:
+        e.append("两枚入口没都把 book.id 传出去")
     o = orphans(f["main"])
     if o:
         e += o
@@ -90,8 +96,21 @@ def selftest():
     f = load()
     assert not check(f), "基线自己就红了，先修基线"
     cuts = [
-        ("制作设置按钮被摘", "hub", '"制作设置 ›"', ""),
-        ("入口回调没接 book.id", "hub", "onProduceSetup(book.id)", "onProduceSetup(\"\")"),
+        ("常态入口整块被摘", "hub",
+         '                TextButton(onClick = { onProduceSetup(book.id) }) {\n'
+         '                    Text("制作设置 ›", fontSize = 12.sp, color = HubPrimary)\n'
+         '                }\n'
+         '                TextButton(onClick = {\n'
+         '                    EventLog.ui("RESPLIT_OPEN"',
+         '                TextButton(onClick = {\n'
+         '                    EventLog.ui("RESPLIT_OPEN"'),
+        ("勾选态入口被摘", "hub",
+         '                    TextButton(onClick = { onProduceSetup(book.id) }) {\n'
+         '                        Text("制作设置 ›", fontSize = 12.sp, color = HubPrimary)\n'
+         '                    }',
+         ''),
+        ("只剩一枚入口", "hub", '"制作设置 ›"', '"制作设置"'),
+        ("两枚都没传 book.id", "hub", 'onProduceSetup(book.id)', 'onProduceSetup("")'),
         ("回调签名退化成无参", "hub", 'onProduceSetup: (String) -> Unit = {},',
          'onProduceSetup: () -> Unit = {},'),
         ("跳转被摘", "main", "nav.push(Screen.PRODUCE)", ""),
@@ -107,7 +126,7 @@ def selftest():
     bad = 0
     for name, key, needle, repl in cuts:
         x = dict(f)
-        x[key] = f[key].replace(needle, repl, 1)
+        x[key] = f[key].replace(needle, repl)
         got = check(x)
         if got:
             print("  反向注入 %-22s 拦下 %d 条" % (name, len(got)))

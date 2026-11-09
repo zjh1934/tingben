@@ -446,6 +446,11 @@ internal fun ChapterHubScreen(
                 Text("${chapters.size} 章 · ${ChapterPlan.ruleName(curRule)}",
                     fontSize = 11.sp, color = HubSub, maxLines = 1,
                     modifier = Modifier.weight(1f))
+                // R198 · 常态入口：调档位 / 语速 / 情绪 / 看音色缓存 /
+                // 从头重做，都不该逼用户先长按进勾选态。
+                TextButton(onClick = { onProduceSetup(book.id) }) {
+                    Text("制作设置 ›", fontSize = 12.sp, color = HubPrimary)
+                }
                 TextButton(onClick = {
                     EventLog.ui("RESPLIT_OPEN", "", mapOf("book" to book.id))
                     showResplit = true

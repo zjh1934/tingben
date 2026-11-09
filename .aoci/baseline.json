@@ -26,28 +26,28 @@
       "size": 5985
     },
     "README.md": {
-      "normalized_sha256": "c91166b1eda863026b0d23f487eae147f3a551eafec81c5cf2524cf423f288e8",
+      "normalized_sha256": "398e89f865c9763670c67cd3189b01ead6f64d3cd945f2e57eb408f2dda8c357",
       "role": "index",
-      "sha256": "c91166b1eda863026b0d23f487eae147f3a551eafec81c5cf2524cf423f288e8",
+      "sha256": "398e89f865c9763670c67cd3189b01ead6f64d3cd945f2e57eb408f2dda8c357",
       "size": 10856
     },
     "ROADMAP.md": {
-      "normalized_sha256": "e4b13c16477268e353d2d6268948664d40355c53d2d110a7e52d8245b50f8c20",
+      "normalized_sha256": "733303b9bd04200451d5be96f68cfc0134f95f90b61bfafa918f3bdeac07ae64",
       "role": "index",
-      "sha256": "e4b13c16477268e353d2d6268948664d40355c53d2d110a7e52d8245b50f8c20",
+      "sha256": "733303b9bd04200451d5be96f68cfc0134f95f90b61bfafa918f3bdeac07ae64",
       "size": 3576
     },
     "STATUS.md": {
-      "normalized_sha256": "73008d3d2504cc24c5011dd9558e3340edd02bab6ce0c7a6e2093021f14fb8af",
+      "normalized_sha256": "83dfabfa1bc54b39e5a82a63922157392d67a8016a8abe6b20c32a17ef2a91a8",
       "role": "index",
-      "sha256": "73008d3d2504cc24c5011dd9558e3340edd02bab6ce0c7a6e2093021f14fb8af",
+      "sha256": "83dfabfa1bc54b39e5a82a63922157392d67a8016a8abe6b20c32a17ef2a91a8",
       "size": 4774
     },
     "aoci.code.txt": {
-      "normalized_sha256": "9f6c11cd06cc064e3ee876fa5fcc10647d50ed3263899dd42c21d04708e86335",
+      "normalized_sha256": "8e33c44eedcf4ddfbc716a9a9912e9360dd6fa8b60364e778a89bea74ec94d33",
       "role": "index",
-      "sha256": "9f6c11cd06cc064e3ee876fa5fcc10647d50ed3263899dd42c21d04708e86335",
-      "size": 41560
+      "sha256": "8e33c44eedcf4ddfbc716a9a9912e9360dd6fa8b60364e778a89bea74ec94d33",
+      "size": 41635
     },
     "aoci.meta.txt": {
       "normalized_sha256": "9916d5f322737740a933a3a24f14ca61511c3b646a4257d73673a1b8f7cdfa8a",
@@ -104,10 +104,10 @@
       "size": 8998
     },
     "app/src/main/java/com/tingben/app/ChapterHub.kt": {
-      "normalized_sha256": "d5b2f76356da4c7fcdc739183b035deb75f6d76762718b0036171e4bfe5182cb",
+      "normalized_sha256": "074b995b9e14100d938dc0bb6d159add9704919956e5127953ba0df85ea3be59",
       "role": "index",
-      "sha256": "d5b2f76356da4c7fcdc739183b035deb75f6d76762718b0036171e4bfe5182cb",
-      "size": 73628
+      "sha256": "074b995b9e14100d938dc0bb6d159add9704919956e5127953ba0df85ea3be59",
+      "size": 73964
     },
     "app/src/main/java/com/tingben/app/MainActivity.kt": {
       "normalized_sha256": "583073d6ed3dd338fa6b9fbe3cbf49114d8639f3a93ebc97c9d300aa1e11ffa1",
@@ -512,12 +512,12 @@
       "size": 426
     },
     "version.txt": {
-      "normalized_sha256": "fff006a1cfc9eed3640097ef1238887ac3e262b8e0c5cd829ea7856518768b83",
+      "normalized_sha256": "32820b5fe235bf45d17986fb1b9b336365bef8b90c678f57d795b48082b2144e",
       "role": "index",
-      "sha256": "fff006a1cfc9eed3640097ef1238887ac3e262b8e0c5cd829ea7856518768b83",
+      "sha256": "32820b5fe235bf45d17986fb1b9b336365bef8b90c678f57d795b48082b2144e",
       "size": 7
     }
   },
-  "updated_at": "2026-11-09T15:22:01Z",
+  "updated_at": "2026-11-09T15:47:09Z",
   "version": 1
 }
