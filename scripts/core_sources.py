@@ -29,6 +29,7 @@ PARTS = (
     ("ChapterSplitter.kt", "object ChapterSplitter {", "object Annotator {"),
     ("Annotator.kt", "object Annotator {", "object AnnCache {"),
     ("AnnCache.kt", "object AnnCache {", "object WavMerger {"),
+    ("WavMerger.kt", "object WavMerger {", "data class Progress("),
 )
 
 

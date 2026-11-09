@@ -8,7 +8,7 @@
 #Canonical-Tag-Authoring: compact A+B+C+[D]+E; dotted形态仅用于读取兼容
 #Code canonical identity example: code:app/src/main/java/com/tingben/app/core/Pipeline.kt
 #Code Entry example: MainActivity.kt[AG9L]: F:应用唯一入口，装配导航壳与各浮层 | R:code:app/src/main/java/com/tingben/app/ChapterHub.kt | A:- | S:局部组合函数必须写在所引用变量声明之后
-#Project-Invariants: version.txt 是版本唯一真值源；教程与长解释不进 UI；真机证据不足不写「好用」；删除独立页前先把能力搬干净；项目文件只有地图与仓库外任务看板.md，每轮对话都维护两者、每次回复都贴看板全文
+#Project-Invariants: version.txt 是版本唯一真值源；教程与长解释不进 UI；真机证据不足不写「好用」；删除独立页前先把能力搬干净；项目文件只有地图与仓库外任务看板.md，每轮对话都维护两者、每次回复都贴看板全文；验证与发版解耦，纯结构轮只 rc 真编译、不升版本不发包，攒批或有用户可感知改动才发版
 #Noise-Boundary: dev/ reference/ samples/ contracts/ 真机截图/ 顶层 R*_落地报告.md 与 scripts/ 下退役验证脚本属历史归档，不在受管范围、不作为认知证据
 #[Tag dictionary: code]
 #A Layer: C-共享基础 E-入口边界 A-应用编排 D-领域逻辑 K-算法计算 M-中间件 P-持久化 I-集成适配 R-运行基础 L-库与SDK F-声明配置 O-运维交付 T-测试验证 S-文档规范 X-开发工具 Z-其他
