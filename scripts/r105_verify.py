@@ -6,6 +6,7 @@
   python3 scripts/r105_verify.py --selftest # 再加反向注入（CI 用这个）
 """
 import pathlib, re, sys
+import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 M = ROOT / 'app/src/main/java/com/tingben/app/MainActivity.kt'
@@ -88,9 +89,11 @@ errs += check(trial, '守恒/三模式', [
 ])
 errs += check(ci, 'CI', ['python3 scripts/r105_verify.py --selftest'])
 
-m = re.search(r'private enum class Screen \{([^}]*)\}', main)
-if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 8:
-    errs.append('Screen 枚举不是 8 值')
+# R195 · 枚举个数从声明解析，不再写死 8
+d = se.declared(main)
+if len(d) < 6:
+    errs.append('Screen 枚举解析失败')
+errs += se.consistency(main)
 
 def violates(a, b, c):
     bad = []

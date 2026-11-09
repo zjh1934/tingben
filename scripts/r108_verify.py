@@ -6,6 +6,7 @@
   python3 scripts/r108_verify.py --selftest # 再加反向注入（CI 用这个）
 """
 import pathlib, re, sys
+import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CPP = ROOT / 'app/src/main/cpp/tingben_native.cpp'
@@ -93,9 +94,11 @@ errs += check(pipe, '守恒/制作', [
 ])
 errs += check(ci, 'CI', ['python3 scripts/r108_verify.py --selftest', '交叉编译两个推理引擎'])
 
-m = re.search(r'private enum class Screen \{([^}]*)\}', main)
-if not m or len([x for x in m.group(1).split(',') if x.strip()]) != 8:
-    errs.append('Screen 枚举不是 8 值')
+# R195 · 枚举个数从声明解析，不再写死 8
+d = se.declared(main)
+if len(d) < 6:
+    errs.append('Screen 枚举解析失败')
+errs += se.consistency(main)
 
 if '--selftest' in sys.argv:
     cases = [

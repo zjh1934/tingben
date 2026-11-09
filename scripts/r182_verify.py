@@ -23,7 +23,7 @@ FILES = {
     "player": APP / "PlayerSheet.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
 }
-TOOL = pathlib.Path("/data/workspace/rc_push.py")   # 仓库外，可选
+TOOL = pathlib.Path("/data/user_persistent_data/听本/rc_push.py")   # 仓库外，可选
 
 QUEUE = [
     '@Volatile private var pausedByTransient = false',

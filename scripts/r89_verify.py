@@ -15,6 +15,7 @@ R162 用户把目标定死：主页输入框 / 抽屉放书 / 右上角 ＋ 与�
 import pathlib, re, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import nav_semantics as nav
+import screen_enum as se
 import shell_semantics as shell
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -22,8 +23,8 @@ CHROME = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
 MAIN = ROOT / "app/src/main/java/com/tingben/app/MainActivity.kt"
 CI = ROOT / ".github/workflows/ci.yml"
 
-EXPECTED = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",
-            "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+# R195 · 动态解析
+EXPECTED = None  # 在 check() 里按传入源码算
 
 
 def check(files):
@@ -35,9 +36,12 @@ def check(files):
     for msg in nav.semantics(main):
         errs.append("导航语义: " + msg)
 
-    if nav.screen_enum(main) != EXPECTED:
-        errs.append("Screen 枚举集合与 8 值不符")
-    for s in ('fun commitAll()', 'if (!st.running) return@LaunchedEffect'):
+    expected = se.declared(main)
+    if not expected or nav.screen_enum(main) != expected:
+        errs.append("Screen 枚举集合解析失败")
+    errs += se.consistency(main)
+    # R195 · 第二个锚点原来在被删的 ProgressScreen 里，换成活着的枚举声明
+    for s in ('fun commitAll()', 'private enum class Screen {'):
         if s not in main + ch:
             errs.append("守恒丢失: " + s[:52])
     if 'r89_verify.py' not in ci:

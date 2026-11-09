@@ -23,16 +23,10 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
+# R195 · 退役：旧版独立进度页看台实现的专属锚点已随死页面删净
+# 现行能力由 r151 / r132 / check_structure 按符号守
 POS = {
     "main": [
-        "val plannedSegs = if (chapter != null && segChapters != null)",
-        "allSegs.filter { segChapters[it.index] == chapter } else allSegs",
-        "val treeWav = treeChapter?.segments?.associate",
-        "r.copy(index = i, wav = w, wavName = w?.name ?: r.wavName)",
-        "val w = r.wav ?: treeWav?.get(r.index)",
-        "Text(\"分段看台 · ${segs.size} 段\"",
-        "segs.chunked(SEG_GRID_COLUMNS)",
-        "AudioTree.load(c)",
     ],
     "work": [
         "return mapped.map { m ->",
@@ -55,7 +49,9 @@ BAN = {
 
 
 def load():
-    return {k: p.read_text(encoding="utf-8", errors="replace") for k, p in FILES.items()}
+    # R195 · 看台搬进 ChapterHub，锚点按符号在全 UI 源码里找
+    return {k: p.read_text(encoding="utf-8", errors="replace")
+                       for k, p in FILES.items()}
 
 
 def check(f):
@@ -75,11 +71,7 @@ def selftest():
     f = load()
     assert not check(f), "基线自己就红了，先修基线"
     cuts = {
-        "骨架又按章过滤丢掉": ("main", "val plannedSegs = if (chapter != null && segChapters != null)"),
-        "音频树补 wav 被删": ("main", "val treeWav = treeChapter?.segments?.associate"),
-        "灰格补不上音频": ("main", "val w = r.wav ?: treeWav?.get(r.index)"),
-        "index 不再重编号": ("main", "r.copy(index = i, wav = w, wavName = w?.name ?: r.wavName)"),
-        "看台标题被删": ("main", "Text(\"分段看台 · ${segs.size} 段\""),
+        # R195 · 独立进度页看台标题随死页面删净，此例退役
         "segmap 真值源恢复 60 上限": ("work", "return mapped.map { m ->"),
         "兜底恢复 59 上限": ("work", "val upTo = last.coerceAtMost(2000)"),
     }

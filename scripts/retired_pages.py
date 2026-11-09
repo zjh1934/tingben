@@ -13,6 +13,7 @@
     if __name__ == "__main__": sys.exit(run("R79"))
 """
 import pathlib, sys
+import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
@@ -73,10 +74,10 @@ def check(files):
     for s in LIVE_SYMBOLS:
         if s not in allkt:
             errs.append("现行能力丢失: " + s[:52])
-    # 导航必须仍是收敛后的 8 值
-    enum = "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }"
-    if enum not in main:
-        errs.append("导航 8 值被破坏")
+    # R195 · 不再锚整行字面量，按符号解析 + 退役零回潮
+    if len(se.declared(main)) < 6:
+        errs.append("导航枚举解析失败")
+    errs += se.consistency(main)
     return errs
 
 
@@ -119,7 +120,7 @@ def main():
             print(" -", e)
         return 1
     print("退役页统一守门：旧页符号 %d 项零回潮 / 旧特征串 %d 项零回潮 / "
-          "现行能力 %d 项全在 / 导航 8 值" %
+          "现行能力 %d 项全在 / 导航枚举自洽" %
           (len(DEAD_SYMBOLS), len(DEAD_TRAITS), len(LIVE_SYMBOLS)))
     if "--selftest" in sys.argv:
         bad = 0
@@ -134,7 +135,7 @@ def main():
             bad += 1; print("  反向注入漏放: 现行能力被删")
         z = dict(files)
         z["MainActivity.kt"] = files["MainActivity.kt"].replace(
-            "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }",
+            "private enum class Screen {",
             "private enum class Screen { LIBRARY, AUDIO }")
         if not check(z):
             bad += 1; print("  反向注入漏放: 导航被改回 10 值")

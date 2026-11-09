@@ -16,6 +16,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
+
 FILES = {
     "queue": APP / "core" / "PlayQueue.kt",
     "notif": APP / "core" / "PlayNotif.kt",
@@ -28,6 +29,8 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
+# R195 · 退役：旧版独立进度页看台实现的专属锚点已随死页面删净
+# 现行能力由 r151 / r132 / check_structure 按符号守
 POS = {
     "queue": [
         "private var previewPlayer: MediaPlayer? = null",
@@ -71,9 +74,7 @@ POS = {
     "workbench": ["val mapped = SegPlan.readMap(work)", "if (mapped != null)",
                  "(0..upTo)", "兜底"],
     "main": [
-        "val pqSeg by PlayQueue.previewState.collectAsState()",
-        "if (playing) PlayQueue.pausePreview()",
-        "else if (onThis) PlayQueue.resumePreview()",
+        # R195 · previewState 现由 ChapterHub 持有，此处不再绑死文件
         "UiErrors.events.collect { msg ->",
         "Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()",
     ],
@@ -92,7 +93,7 @@ BAN = {
 
 def load():
     return {k: p.read_text(encoding="utf-8", errors="replace")
-            for k, p in FILES.items()}
+                       for k, p in FILES.items()}
 
 
 def logic_cases(f):
@@ -151,11 +152,8 @@ def selftest():
         ("playFrom 分流被摘", "queue",
          "if (id != previewQueueId) return", ""),
         ("试听状态源被摘", "queue", "val previewState: StateFlow<PlaybackState>", ""),
-        ("看台跟回主状态", "main",
-         "val pqSeg by PlayQueue.previewState.collectAsState()",
-         "val pqSeg by PlayQueue.state.collectAsState()"),
-        ("试听暂停回到主通道", "main", "if (playing) PlayQueue.pausePreview()",
-         "if (playing) PlayQueue.pause()"),
+        # R195 · 该形态随独立进度页删净，此例退役
+        # R195 · 该形态随独立进度页删净，此例退役
         ("segmap 写入被摘", "pipeline",
          "SegPlan.writeMap(work, annotated.mapIndexed { i, a ->", ""),
         ("兜底推算被删", "workbench", "(0..upTo)", ""),

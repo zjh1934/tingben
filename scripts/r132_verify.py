@@ -10,6 +10,7 @@ Screen 枚举删掉 AUDIO 与 TASK_DETAIL / 分发与 chromeOf 无旧页分支 /
 用法：python3 scripts/r132_verify.py [--selftest]
 """
 import pathlib, re, sys
+import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
@@ -23,7 +24,7 @@ FILES = {
 
 POS = {
     "main": [
-        "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }",
+        "private enum class Screen {",
         "R132：任务详情页 / 我的音频页的独立入口与目的地都撤了",
     ],
     "hub": [
@@ -53,8 +54,8 @@ POS = {
         "AudioTree.clearDone(c, book.id, i)",
         "localTick++",
     ],
-    "structure": ['WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",',
-                  '"SETTINGS", "MODELS", "MIXER", "CHAPTERS"}'],
+    "structure": ['WANT_SCREENS = se.declared(main_src)',
+                  'se.consistency(main_src)'],
     "ci": ["python3 scripts/r132_verify.py --selftest"],
 }
 
@@ -87,11 +88,10 @@ def check(f):
         for s in needles:
             if s in f[key]:
                 e.append("旧形态残留[%s]: %s" % (key, s[:66]))
-    # 枚举必须恰好 8 值
-    m = re.search(r"private enum class Screen \{([^}]*)\}", f["main"])
-    n = len([x for x in m.group(1).split(",") if x.strip()]) if m else -1
-    if n != 8:
-        e.append("Screen 枚举不是 8 值，实得 %d" % n)
+    # R195 · 个数随声明走，实质判据交给三处一致 + 退役零回潮
+    if len(se.declared(f["main"])) < 6:
+        e.append("Screen 枚举解析失败")
+    e += se.consistency(f["main"])
     return e
 
 
@@ -111,8 +111,8 @@ def selftest():
         "导出被摘": ("hub", "另存 WAV"),
         "转格式被摘": ("hub", "转 M4A"),
         "索引清理被摘": ("hub", "AudioTree.clearDone(c, book.id, i)"),
-        "8 值枚举被改回": ("main", "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }"),
-        "结构脚本集合不跟": ("structure", '"SETTINGS", "MODELS", "MIXER", "CHAPTERS"}'),
+        "退役值被塞回": ("main", "private enum class Screen { LIBRARY, PRODUCE, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }"),
+        "结构脚本集合不跟": ("structure", 'WANT_SCREENS = se.declared(main_src)'),
     }
     bad = 0
     for name, (k, needle) in cuts.items():

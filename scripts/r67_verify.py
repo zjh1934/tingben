@@ -26,7 +26,6 @@ GONE = ['AuditLog.beginRun', 'RawDump.begin', 'AUDIT_RUN_BEGIN', 'AbGate',
 COMPAT = ['AnnCache.dirFor', 'TaskResume.load', 'chapterIndices',
           'Producer.start', 'index.json', 'PlayQueue']
 KEEP = ['private fun ChapterRow(',
-        'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
         'run(c, book, onlyChapters, true, thinkOverride, config)',
         'commitAll()', 'DismissibleNavigationDrawer', 'qt_tts_params',
         'navigationBarsPadding']
@@ -76,9 +75,7 @@ def main():
         ('AnnotatedPane 回潮', lambda: check(allkt=ALL + '\nprivate fun AnnotatedPane() {}\n')),
         # R163 · 旧三列标题已不存在，改成注入一个 GONE 里的旧形态
         ('旧形态回潮', lambda: check(allkt=ALL + '\nobject AbGate {}\n')),
-        ('四步退回五步', lambda: check(allkt=ALL.replace(
-            'listOf("拆章", "生成声音", "整理音频", "完成")',
-            'listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")'))),
+        # R195 · 四步进度条随独立进度页删净，此例退役
         ('恒直接朗读被改', lambda: check(pipe=PIPE.replace(
             'run(c, book, onlyChapters, true, thinkOverride, config)',
             'run(c, book, onlyChapters, directRead, thinkOverride, config)'),

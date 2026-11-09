@@ -203,11 +203,16 @@ if "if (i < kept) \"MODEL\"" in pipe_src:
     errs.append("R27 回退：逐条来源又按「前 kept 条」猜")
 if '"已标注 ${i + 1}/${chunks.size} 块"' in pipe_src:
     errs.append("R27 回退：进度又按跑完块数写「已标注」")
-if "val base = if (playable) Good else Line" not in main_src:
-    errs.append("R91/R103 回退：看台不是绿/灰两态，或可播判定不再同源")
+# R195 · `val base = if (playable) Good else Line` 只存在于已删的独立进度页，
+# 现在绿/灰两态由 ChapterHub 的 segCellColor 承担；这条死代码专属守恒项退役。
+if "private fun segCellColor(playable: Boolean, playing: Boolean," not in \
+        (ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt").read_text(encoding="utf-8"):
+    errs.append("R91/R103 回退：目录页绿/灰两态判定丢失")
 if "pqSeg.label == label" in main_src:
     errs.append("R103 回退：格子又拿显示文字当播放身份")
-if "val playable = sg.hasAudio && segId.isNotEmpty()" not in main_src:
+# R195 · 该判据随看台搬进 ChapterHub，按符号在全 UI 源码里找，不绑死文件
+_ui_src = main_src + (ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt").read_text(encoding="utf-8")
+if "val playable = sg.hasAudio && segId.isNotEmpty()" not in _ui_src:
     errs.append("R103 回退：格子缺少稳定 segmentId")
 
 mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
@@ -272,8 +277,10 @@ for sym in ["⟳ 刷新", "TabButton(", '把小说变成能听的音频", fontSi
     if sym in main_src: errs.append("U1 回退：旧 UI 残留 " + sym)
 for msg in nav.semantics(main_src):
     errs.append("U1 回退：导航语义丢失 — " + msg)
-WANT_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",
-                "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+# R195 · 不再写死 8 值：从 enum 声明解析，三处一致 + 退役零回潮由模块统一守
+import screen_enum as se
+WANT_SCREENS = se.declared(main_src)
+errs += ["U1 回退：Screen 导航 — " + x for x in se.consistency(main_src)]
 enum_m = re.search(r"private enum class Screen \{([^}]*)\}", main_src)
 if enum_m:
     got = set(re.findall(r"\b[A-Z_]+\b", enum_m.group(1)))
@@ -342,7 +349,7 @@ R33_MUST = ["statusBarsPadding()", "MiniPlayBar(ctx, miniBook", "confirmDelete",
             "AlertDialog(", 'EventLog.ui("DRAWER_NAV", "open")',
             "BookStore.delete(c, id)", "confirmDelete = null",
             "if (deleted) onChanged()",
-            "private fun ProgressScreen("]
+            "private enum class Screen"]
 for sym in R33_MUST:
     if sym not in main_src: errs.append("R33 缺新壳层符号: " + sym)
 for sym in ["ModalDrawerSheet(", "private fun GearIcon(", "width(if (pulled)"]:

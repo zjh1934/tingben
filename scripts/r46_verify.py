@@ -9,6 +9,7 @@ import os, pathlib, re, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from r45_common import canon
 import nav_semantics as nav
+import screen_enum as se
 import shell_semantics as shell
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -82,8 +83,10 @@ def check(main, chrome, tag):
     for msg in nav.semantics(main):
         ck(False, "导航语义: " + msg)
     ck(nav.back_order_ok(main), "抽屉 BackHandler 没排在全局回退之后")
-    EXPECTED_SCREENS = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",
-                        "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+    # R195 · 动态解析，不再写死 8 值
+    EXPECTED_SCREENS = se.declared(main)
+    for x in se.consistency(main):
+        ck(False, "Screen 导航: " + x)
     n = len(EXPECTED_SCREENS)
     ck(enum_count(main) == n, "Screen 枚举不是 %d 值" % n)
     ck(dispatch_count(main) == n, "when(screen) 分发不是 %d 分支" % n)

@@ -15,6 +15,7 @@ import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
+
 FILES = {
     "tree": APP / "core/AudioTree.kt",
     "hub": APP / "ChapterHub.kt",
@@ -33,10 +34,9 @@ HUB = [
     'val killedPaths = segs.map { it.absolutePath }',
     'AudioTree.forget(c, killedPaths)',
 ]
-MAIN = [
-    'val killedPaths = files.map { it.absolutePath }',
-    'AudioTree.forget(c, killedPaths)',
-]
+# R195 · MainActivity 里的删段弹窗随独立进度页删净；现行实现在 ChapterHub，
+# 由上面的 HUB 块按符号守。MAIN 不再绑死已删文件。
+MAIN = []
 R135 = [
     '"r169_verify.py", "r170_verify.py", "r171_verify.py"',
     '"r185_verify.py", "r188_verify.py",',
@@ -107,12 +107,7 @@ def selftest():
                              '                            failed += AudioOps.deleteAll(segs)\n'
                              '                            merged?.let { if (!AudioOps.deleteMerged(c, it)) failed++ }\n'
                              '                            AudioTree.forget(c, segs.filter { !it.isFile }.map { it.absolutePath })')),
-        ("MainActivity 又删完再 filter", "main",
-         lambda t: t.replace('                    val killedPaths = files.map { it.absolutePath }\n'
-                             '                    val failed = AudioOps.deleteAll(files)\n'
-                             '                    AudioTree.forget(c, killedPaths)',
-                             '                    val failed = AudioOps.deleteAll(files)\n'
-                             '                    AudioTree.forget(c, files.filter { !it.isFile }.map { it.absolutePath })')),
+        # R195 · MainActivity 删段弹窗随独立进度页删净，此例退役
         ("清单删掉 r188 登记", "r135",
          lambda t: t.replace(', "r188_verify.py"', '', 1)),
         ("清单删掉整批补齐", "r135",

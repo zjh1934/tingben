@@ -6,8 +6,9 @@
 
 G2a 已把双进度 / 单停止继续 / 章节就地展开做进目录页；G2b 收尾：
   · 三个「看进度」入口（续跑 / 制作页 / 任务页）一律 openBook(id)，
-    独立 Screen.PROGRESS 变成完全不可达的能力库（枚举与函数体暂留，
-    物理清行留到收口轮，避免连锁 17 个守 8 值枚举的脚本）
+    独立 Screen.PROGRESS 变成完全不可达的能力库。
+    R195 收口轮已把枚举值 / 分发 / 函数体 / 只写不读的状态变量物理删净，
+    并把写死 8 值的守门改成按符号解析；本脚本改为「退役零回潮」守门。
   · 第二列升级成完整「分段看台」：模型心跳 + 全量灰/绿格子 +
     长按多选（全选 / 试听选中 / 删除选中）+ 删段二次确认与 IO 落盘
   · 一次读盘、两列共用真值：第一列按章派生、第二列用全量，口径不打架
@@ -34,7 +35,7 @@ POS = {
         "onProgress = { id -> openBook(id) }",
         "onProgress: (String) -> Unit,",
         "onClick = { onProgress(t.bookId) }",
-        "// G2b 起 Screen.PROGRESS 不可达",
+        "private enum class Screen {",
     ],
     "hub": [
         "var hubSegs by remember(book.id)",
@@ -80,6 +81,9 @@ POS = {
 
 BAN = {
     "main": [
+        "Screen.PROGRESS",  # R195 · 退役值任何形态都不许回来
+        "PROGRESS, TASKS",  # 枚举整行里夹带退役值
+        "ProgressScreen(",
         "nav.push(Screen.PROGRESS)",
         "screen = Screen.PROGRESS",
         "onProgress = { taskBookId = bookId; taskChapter = null; nav.push(Screen.PROGRESS) }",
@@ -145,8 +149,8 @@ def logic_cases(f):
               "onProgress = { id -> openBook(id) }"):
         if s not in f["main"]:
             bad.append("入口没收敛: " + s)
-    if "nav.push(Screen.PROGRESS)" in f["main"]:
-        bad.append("还有地方跳独立进度页")
+    if "Screen.PROGRESS" in f["main"] or "ProgressScreen(" in f["main"]:
+        bad.append("退役的独立进度页又回来了")
 
     # ② 两列段视图口径
     all_segs = list(range(6))
@@ -279,8 +283,8 @@ def selftest():
         ("删段 API 被摘", "hub", "AudioOps.deleteAll(files)", ""),
         ("索引记账被摘", "hub", "AudioTree.forget(c,", ""),
         ("preview 通道被摘", "hub", "PlayQueue.pausePreview()", ""),
-        ("独立页回潮", "main", "// G2b 起 Screen.PROGRESS 不可达",
-         "nav.push(Screen.PROGRESS)"),
+        ("独立页回潮", "main", "private enum class Screen {",
+         "private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }"),
         ("CI 漏挂 r151", "ci", "python3 scripts/r151_verify.py --selftest", ""),
         ("现行清单漏 r151", "r135", '"r151_verify.py"', ""),
     ]

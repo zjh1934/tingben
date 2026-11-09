@@ -4,6 +4,7 @@
 用法：python3 scripts/r66_verify.py [--selftest]
 """
 import json, re, sys
+import screen_enum as se
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,9 +48,9 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
 
     m = re.search(r'private enum class Screen \{([^}]*)\}', main)
     got = set(re.findall(r'[A-Z_]+', m.group(1))) if m else set()
-    want = {'LIBRARY', 'PRODUCE', 'PROGRESS', 'TASKS', 'SETTINGS',
-            'MODELS', 'MIXER', 'CHAPTERS'}
-    if got != want: e.append('Screen 枚举不是 10 值或仍含旧页: ' + str(got ^ want))
+    want = se.declared(main)  # R195 动态解析
+    if not want or got != want: e.append('Screen 枚举解析失败或仍含旧页: ' + str(got ^ want))
+    e += se.consistency(main)
     if re.search(r'enum class ProduceMode\s*\{[^}]*,', main): e.append('制作档位又出现多档枚举')
     if 'ProduceMode.ANNOTATE' in main or 'HubAction.ANNOTATE' in main:
         e.append('旧标注档回潮')
@@ -60,8 +61,8 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
     for s in ['Text("合成音频"', 'Text("调音 ›"', 'onMixer: () -> Unit']:
         if s not in hub: e.append('目录页缺: ' + s)
-    if 'val steps = listOf("拆章", "生成声音", "整理音频", "完成")' not in main:
-        e.append('进度页不是四步')
+    # R195 · 四步进度条只在已删的独立进度页里；G2b 后进度做进目录页
+    # （st.done/total + 心跳），这条死代码专属守恒项退役。
     if '送进声音模型的正文' in main: e.append('看台仍留展开正文旧口径（R91 已改格子即播停）')
     if 'Text("‹ 返回")' in main: pass
     if 'NAV_LLM' in chrome or '语言模型' in chrome or '文本处理' in chrome:
@@ -121,9 +122,10 @@ def main():
             '\n    NAV_LLM to "语言模型",\n)'))),
         # R163 · 旧三列标题已删，改成注入分页形态看是否被单列判据拦下
         ('三列分页回潮', lambda: check(hub=HUB + '\nval pageCount = { 3 }\n')),
-        ('五步回潮', lambda: check(main=MAIN.replace(
-            'listOf("拆章", "生成声音", "整理音频", "完成")',
-            'listOf("拆章", "理解文字", "生成声音", "整理音频", "完成")'))),
+        # R195 · 四步进度条随独立进度页删掉，这条用例换成「退役值回潮」
+        ('退役进度页回潮', lambda: check(main=MAIN.replace(
+            'private enum class Screen {',
+            'private enum class Screen { PROGRESS,'))),
         ('界面旧说法回潮', lambda: check(
             main=MAIN.replace('Text("原文整段送声音模型",', 'Text("语言模型设置 ›",'),
             allkt=ALL_KT.replace('Text("原文整段送声音模型",', 'Text("语言模型设置 ›",'))),

@@ -13,7 +13,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,7 +34,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -58,7 +55,7 @@ import kotlinx.coroutines.Job
 import java.io.File
 
 // R132：任务详情页 / 我的音频页的独立入口与目的地都撤了，能力已归进目录页三列。
-private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }
+private enum class Screen { LIBRARY, PRODUCE, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }
 
 // R139 · 制作准备页的一次性加载结果（全部在 IO 线程算好，组合期不再碰磁盘）
 private data class ProduceLoad(
@@ -178,8 +175,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var bookId by rememberSaveable { mutableStateOf<String?>(null) }
     var miniBook by rememberSaveable { mutableStateOf<String?>(null) }
     var lastSelection by rememberSaveable { mutableStateOf<Set<Int>?>(null) }
-    var taskBookId by rememberSaveable { mutableStateOf<String?>(null) }
-    var taskChapter by rememberSaveable { mutableStateOf<Int?>(null) }
     var refresh by rememberSaveable { mutableStateOf(0) }
     // R180 · 新装用户打开软件第一眼就该知道「还差模型」，而不是等点合成才撞墙。
     // 只给状态 + 一个能按的入口，不写教程（用户硬口径）；模型齐了整行自动消失。
@@ -225,7 +220,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     fun openBook(id: String?) {
         EventLog.ui("OPEN_BOOK", "", mapOf("book" to (id ?: "-")))
         if (id != null) bookId = id
-        taskBookId = id ?: taskBookId
         nav.push(Screen.CHAPTERS)
     }
 
@@ -356,7 +350,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         val added = addRes?.getOrNull()
                         if (added != null) {
                             bookId = added.id
-                            taskBookId = added.id
                             nav.push(Screen.CHAPTERS)
                             EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id}")
                         }
@@ -422,7 +415,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 }
                 if (b != null) {
                     bookId = b.id
-                    taskBookId = b.id
                     nav.clear()
                     screen = Screen.CHAPTERS
                     hubOpenTasks = true
@@ -523,8 +515,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val resumeTask: (TaskInfo) -> Unit = { t ->
         val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
         if (b != null) {
-            bookId = b.id; taskBookId = b.id
-            taskChapter = TaskResume.currentChapter(ctx, t)
+            bookId = b.id
             lastSelection = t.only
             Producer.start(ctx, b, t.only, true, t.think, t.config)
             // R163 · 续跑一律回这本书的目录页（现在只有一列）。
@@ -533,13 +524,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
         }
     }
-    val chrome = chromeOf(screen).let { base ->
-        when {
-            // G2b 起 Screen.PROGRESS 不可达，保留分支只为能力库不改枚举集合
-            screen == Screen.PROGRESS && taskChapter != null -> base.copy(title = "本章进度")
-            else -> base
-        }
-    }
+    val chrome = chromeOf(screen)
     DismissibleNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -597,7 +582,6 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onAdded = { id ->
                         refresh++
                         bookId = id
-                        taskBookId = id
                         nav.push(Screen.CHAPTERS)
                     },
                     asHome = true,
@@ -616,7 +600,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         onPlayBook = { miniBook = it },
                         onMixer = { chapterMixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open:hub") },
                         onStarted = { id, sel ->
-                            taskBookId = id; lastSelection = sel
+                            lastSelection = sel
                             openBook(id)
                         },
                         openTasksOnStart = hubOpenTasks,
@@ -632,21 +616,7 @@ private fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onBack = { nav.pop() },
                     onProgress = { openBook(bookId) },
                     onDone = { nav.clear(); openBook(bookId); refresh++ },
-                    onStarted = { taskBookId = bookId; lastSelection = it })
-                Screen.PROGRESS -> ProgressScreen(ctx, taskBookId, taskChapter,
-                    onBack = { nav.pop() },
-                    onResume = {
-                        val t = Producer.resume.value
-                        val b = if (t != null) BookStore.list(ctx).find { x -> x.id == t.bookId }
-                                else bookId?.let { BookStore.list(ctx).find { x -> x.id == it } }
-                        if (b != null) {
-                            val sel = t?.only ?: lastSelection
-                            bookId = b.id; lastSelection = sel
-                            Producer.start(ctx, b, sel, true,
-                                if (t != null) t.think else null,
-                                t?.config ?: ProduceConfig())
-                        }
-                    })
+                    onStarted = { lastSelection = it })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
                     onOpenTask = { id -> openBook(id) },
                     onProgress = { id -> openBook(id) },
@@ -779,7 +749,7 @@ private fun canGoBack(s: Screen): Boolean = s !in ROOT_SCREENS
 private fun backTargetOf(s: Screen, modelsFrom: Screen, drawerReturn: Screen): Screen =
     when (s) {
         // 任务页不再有常驻入口（从通知/书里进），回退统一到主页
-        Screen.PROGRESS, Screen.TASKS -> Screen.LIBRARY
+        Screen.TASKS -> Screen.LIBRARY
         Screen.MODELS -> modelsFrom
         Screen.MIXER -> drawerReturn
         else -> Screen.LIBRARY
@@ -792,7 +762,6 @@ private fun chromeOf(s: Screen): ChromeSpec = when (s) {
         showImport = true, showSettings = true)
     Screen.PRODUCE  -> ChromeSpec("制作", TAB_LIBRARY, canBack = true)
     Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, canBack = true)
-    Screen.PROGRESS -> ChromeSpec("进度", TAB_TASKS, canBack = true)
     Screen.TASKS    -> ChromeSpec("任务", TAB_TASKS, canBack = true)
     Screen.SETTINGS -> ChromeSpec("设置", canBack = true)
     Screen.MODELS   -> ChromeSpec("模型", canBack = true)
@@ -1309,324 +1278,6 @@ private fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> U
         if (mixerOpen) MixerDialog(c, onClose = {
             mixerOpen = false; EventLog.ui("OVERLAY_MIXER", "close")
         })
-    }
-}
-
-@Composable
-private fun ProgressScreen(c: Context, bookId: String?, chapter: Int?,
-                            onBack: () -> Unit, onResume: () -> Unit) {
-    val st by Producer.state.collectAsState()
-    val pct = if (st.total > 0) st.done.toFloat() / st.total else 0f
-    var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(st.running) {
-        if (!st.running) return@LaunchedEffect
-        while (true) { delay(1000); tick++ }
-    }
-
-    val heartbeat = remember(tick) {
-        val (act, _) = EventLog.lastEngine()
-        val age = (EventLog.lastEngineAgeMs() / 1000).coerceAtLeast(0)
-        val what = when {
-            act.contains("PREFILL") -> "正在把这一段读进模型，手机上这一步可能要一两分钟"
-            act.contains("DECODE") -> "正在逐字生成这一块的朗读分段"
-            act.contains("TOKENIZE") || act.contains("ENTER") -> "正在准备文字"
-            act.contains("TTS") -> "正在把文字读成声音"
-            else -> "正在准备"
-        }
-        val extra = if (st.running && age > 100) " · 已 ${age} 秒没新动作，可能算得很慢" else ""
-        "$what$extra"
-    }
-
-    var redoNonce by remember { mutableStateOf(0) }
-    val seenTask = remember(st.done, redoNonce, bookId) {
-        bookId?.let { TaskResume.byBook(c, it) } ?: TaskResume.load(c)
-    }
-    val allSegs = remember(st.done, seenTask, redoNonce) { Workbench.segments(c, seenTask) }
-    val segChapters = remember(seenTask) { Workbench.segChapters(c, seenTask) }
-    var treeChapter by remember { mutableStateOf<ChapterAudio?>(null) }
-    LaunchedEffect(bookId, chapter, st.done, redoNonce) {
-        treeChapter = if (bookId == null || chapter == null) null else
-            withContext(Dispatchers.IO) {
-                AudioTree.load(c).firstOrNull { it.bookId == bookId }
-                    ?.chapters?.firstOrNull { it.chapter == chapter }
-            }
-    }
-    val mergedOnly = chapter != null && treeChapter?.segments.isNullOrEmpty() &&
-        treeChapter?.merged?.isFile == true
-    // 看台骨架只认「计划段」：已出声的绿、没出声的灰，段数恒定。
-    // 音频树里只有落盘的小块，拿它当列表来源会让未合成的灰格整片消失，
-    // 再随合成一块块冒出来（页面切出去再回来尤其明显，R128）。
-    // 这里改成：树只负责告诉骨架「这一段已经有音频了」，不决定列表长度。
-    val plannedSegs = if (chapter != null && segChapters != null)
-        allSegs.filter { segChapters[it.index] == chapter } else allSegs
-    // 只认还在盘上的小块：批量删段后索引若还留着 File，格子不该继续显示绿
-    val treeWav = treeChapter?.segments?.associate { (it.seq - 1) to it.file }
-        ?.filterValues { it.isFile && it.length() > 44 }
-    val segs = plannedSegs.mapIndexed { i, r ->
-        val w = r.wav ?: treeWav?.get(r.index)
-        r.copy(index = i, wav = w, wavName = w?.name ?: r.wavName)
-    }
-    val rest = remember(st.done, seenTask, redoNonce) { Workbench.remainingCount(c, seenTask) }
-    val verdict = remember(st.done, seenTask, redoNonce) { Workbench.verdict(c, seenTask) }
-    var showCompare by remember { mutableStateOf(false) }
-    var showMore by remember { mutableStateOf(false) }
-    // R140 · 看台格子跟的是独立试听通道，不再是整本书的主播放状态
-    val pqSeg by PlayQueue.previewState.collectAsState()
-    var stopping by remember { mutableStateOf(false) }
-    LaunchedEffect(st.running) { if (!st.running) stopping = false }
-    // R134 · 分段看台多选态：长按格子进入、方块勾选、底部条批量操作
-    var segMulti by remember { mutableStateOf(false) }
-    var segChecked by remember { mutableStateOf(setOf<Int>()) }
-    var confirmSegDel by remember { mutableStateOf<List<File>?>(null) }
-    fun exitSegMulti() {
-        segMulti = false
-        segChecked = emptySet()
-    }
-
-    Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-
-        if (chapter != null) {
-            Text(treeChapter?.title ?: "第 ${chapter + 1} 章",
-                fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Primary)
-            Spacer(Modifier.height(3.dp))
-            Text(if (mergedOnly) "第 ${chapter + 1} 章 · 已拼成整章音频"
-                else "第 ${chapter + 1} 章 · 本章 ${segs.count { it.hasAudio }}/${segs.size} 段",
-                fontSize = 12.sp, color = Sub)
-            if (mergedOnly) {
-                Spacer(Modifier.height(4.dp))
-                Text("这一章已拼成整章音频，小块已清理", fontSize = 12.sp, color = Good)
-            } else if (segChapters == null && treeChapter == null) {
-                Spacer(Modifier.height(4.dp))
-                Text("旧记录没记章，这里显示整次分段", fontSize = 12.sp, color = Warn)
-            }
-            Spacer(Modifier.height(10.dp))
-        }
-
-        CardBox {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val canStop = st.running
-                val canResume = !st.running && st.stage == "已停止"
-                if (canStop || canResume) {
-                    Box(
-                        Modifier.size(42.dp, 34.dp)
-                            .background(if (canStop) PrimarySoft else Primary,
-                                RoundedCornerShape(8.dp))
-                            .clickable(enabled = !stopping) {
-                                if (canStop) { stopping = true; Producer.stop() } else onResume()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(if (canStop) "⏸" else "▶", fontSize = 15.sp,
-                            color = if (canStop) Primary else Card)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                }
-                Column(Modifier.weight(1f)) {
-                    LinearProgressIndicator(
-                        progress = { if (mergedOnly) 1f
-                            else if (chapter != null && segs.isNotEmpty())
-                            segs.count { it.hasAudio }.toFloat() / segs.size else pct },
-                        modifier = Modifier.fillMaxWidth().height(6.dp))
-                    Spacer(Modifier.height(5.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(st.stage, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            maxLines = 1, modifier = Modifier.weight(1f))
-                        Text(if (mergedOnly) "100%" else
-                            if (chapter != null && segs.isNotEmpty())
-                            "${(segs.count { it.hasAudio } * 100 / segs.size)}%" else
-                            if (st.total > 0) "${(pct * 100).toInt()}%" else "—",
-                            fontSize = 12.sp, color = Primary)
-                    }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (mergedOnly) "这一章已拼成整章音频" +
-                        if (st.total > 0) " · 整本 ${st.done}/${st.total} 块" else ""
-                else if (chapter != null) "本章 ${segs.count { it.hasAudio }}/${segs.size} 段" +
-                        if (st.total > 0) " · 整本 ${st.done}/${st.total} 块" else ""
-                else if (st.total > 0) "已完成 ${st.done}/${st.total} 块" +
-                        if (st.failed > 0) " · ${st.failed} 块改走直读" else ""
-                else st.message.ifBlank { "还没开始" },
-                fontSize = 12.sp, color = Sub)
-            if (st.running) {
-                Spacer(Modifier.height(6.dp))
-                Text(heartbeat, fontSize = 12.sp, color = Primary)
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        val steps = listOf("拆章", "生成声音", "整理音频", "完成")
-        val curStep = when {
-            st.output != null -> 4
-            st.stage.contains("分章") -> 0
-            st.stage.contains("生成声音") -> 1
-            st.stage.contains("整理") -> 2
-            st.stage == "完成" -> 3
-            else -> -1
-        }
-        if (chapter == null) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                steps.forEachIndexed { i, stepName ->
-                    val doneStep = curStep > i
-                    val nowStep = curStep == i
-                    Column(Modifier.weight(1f)) {
-                        Text(stepName, fontSize = 12.sp, maxLines = 1,
-                            textAlign = TextAlign.Center,
-                            fontWeight = if (nowStep || doneStep) FontWeight.Bold else FontWeight.Normal,
-                            color = if (nowStep || doneStep) Primary else Sub,
-                            modifier = Modifier.fillMaxWidth())
-                        Spacer(Modifier.height(3.dp))
-                        Box(Modifier.fillMaxWidth().height(3.dp).background(
-                            if (doneStep) Primary else Color.Transparent, RoundedCornerShape(50)))
-                    }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-        }
-        CardBox {
-            if (mergedOnly) {
-                Text("整章音频", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = {
-                    val f = treeChapter?.merged ?: return@Button
-                    PlayQueue.setTracks(listOf(Track(f, treeChapter?.title ?: "整章",
-                        id = "merged:${f.absolutePath}")), "chapterMerged")
-                    PlayQueue.playFrom(0, id = "chapterMerged")
-                }) { Text("▶ 播这一章", fontSize = 13.sp) }
-            } else {
-            Text("分段看台 · ${segs.size} 段", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            if (segs.isEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text("还没有分段", fontSize = 12.sp, color = Sub)
-            } else {
-                Spacer(Modifier.height(9.dp))
-                // R164 · 与 ChapterHub 共用固定列数；这段是 R163 后不可达的遗留视图，
-                // 物理删除排在 1.1.5 发完的重构轮，这里只保证两处口径不分叉。
-                segs.chunked(SEG_GRID_COLUMNS).forEach { row ->
-                    Row(Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        row.forEach { sg ->
-                            val label = "第 ${sg.index + 1} 段"
-                            val segId = sg.wav?.let { "seg:" + it.absolutePath } ?: ""
-                            val playable = sg.hasAudio && segId.isNotEmpty()
-                            val onThis = playable && pqSeg.trackId == segId
-                            val playing = onThis && pqSeg.isPlaying
-                            val base = if (playable) Good else Line
-                            Box(
-                                Modifier.size(30.dp)
-                                    .background(
-                                        if (playing) PrimarySoft else base.copy(alpha = 0.18f),
-                                        RoundedCornerShape(8.dp))
-                                    // 播放态与勾选集合都进 key，避免闭包捕获旧状态
-                                    .pointerInput(sg.index, segMulti, segChecked,
-                                        playable, playing, onThis) {
-                                        detectTapGestures(
-                                            onLongPress = {
-                                                if (playable) {
-                                                    segMulti = true
-                                                    segChecked = setOf(sg.index)
-                                                }
-                                            },
-                                            onTap = {
-                                                if (segMulti) {
-                                                    if (playable) segChecked =
-                                                        if (sg.index in segChecked)
-                                                            segChecked - sg.index
-                                                        else segChecked + sg.index
-                                                } else if (playing) PlayQueue.pausePreview()
-                                                else if (onThis) PlayQueue.resumePreview()
-                                                else sg.wav?.let { wav ->
-                                                    PlayQueue.setTracks(listOf(Track(wav, label, id = segId)), "seg")
-                                                    PlayQueue.playFrom(0, id = "seg")
-                                                }
-                                            }
-                                        )
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (segMulti) {
-                                    SelectBox(checked = sg.index in segChecked,
-                                        tint = Primary, boxColor = Card,
-                                        modifier = Modifier.size(18.dp))
-                                } else {
-                                    Text("${sg.index + 1}", fontSize = 12.sp,
-                                        color = if (playing) Primary else base)
-                                    if (playable)
-                                        Text(if (playing) "⏸" else "▶", fontSize = 12.sp, color = Good,
-                                            modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp))
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(5.dp))
-                }
-            }
-            }
-        }
-        Spacer(Modifier.height(18.dp))
-    }
-    if (segMulti) {
-        MultiSelectBar(
-            count = segChecked.size,
-            onSelectAll = {
-                segChecked = segs.filter { it.hasAudio }.map { it.index }.toSet()
-            },
-            onCancel = { exitSegMulti() },
-            allLabel = "全选已生成",
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            TextButton(onClick = {
-                val picked = segChecked.sorted().mapNotNull { i ->
-                    segs.getOrNull(i)?.wav?.let { w ->
-                        Track(w, "第 ${i + 1} 段", id = "seg:${w.absolutePath}")
-                    }
-                }
-                if (picked.isEmpty()) {
-                    Toast.makeText(c, "先勾几个已生成的小块", Toast.LENGTH_SHORT).show()
-                } else {
-                    // preview 队列：不占常驻条、不进播放器页、不进通知栏（R133 两态隔离）
-                    PlayQueue.setTracks(picked, "seg")
-                    PlayQueue.playFrom(0, id = "seg")
-                    exitSegMulti()
-                }
-            }) { Text("试听选中", fontSize = 12.sp, color = Primary) }
-            TextButton(onClick = {
-                val files = segChecked.sorted().mapNotNull { i -> segs.getOrNull(i)?.wav }
-                if (files.isEmpty()) Toast.makeText(c, "先勾几个已生成的小块",
-                    Toast.LENGTH_SHORT).show()
-                else confirmSegDel = files
-            }) { Text("删除选中", fontSize = 12.sp, color = Warn) }
-        }
-    }
-    }
-
-    if (confirmSegDel != null) {
-        val files = confirmSegDel!!
-        AlertDialog(
-            onDismissRequest = { confirmSegDel = null },
-            title = { Text("删除这 ${files.size} 个小块？", fontSize = 15.sp,
-                fontWeight = FontWeight.Bold) },
-            text = { Text("只删已生成的 WAV，分段计划还在；下次续跑会按原顺序重新生成，" +
-                "已拼好的整章音频不受影响。", fontSize = 13.sp) },
-            confirmButton = {
-                TextButton(onClick = {
-                    val killedPaths = files.map { it.absolutePath }
-                    val failed = AudioOps.deleteAll(files)
-                    AudioTree.forget(c, killedPaths)
-                    if (bookId != null && chapter != null)
-                        AudioTree.clearDone(c, bookId, chapter)
-                    PlayQueue.release()
-                    Toast.makeText(c, if (failed > 0) "有 $failed 个没删干净"
-                        else "已删除 ${files.size} 个小块", Toast.LENGTH_SHORT).show()
-                    confirmSegDel = null
-                    exitSegMulti()
-                    redoNonce++
-                }) { Text("删除", color = Warn) }
-            },
-            dismissButton = { TextButton(onClick = { confirmSegDel = null }) { Text("取消") } }
-        )
     }
 }
 

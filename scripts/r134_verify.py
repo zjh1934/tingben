@@ -20,10 +20,11 @@ FILES = {
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
+# R195 · 退役：旧版独立进度页看台实现的专属锚点已随死页面删净
+# 现行能力由 r151 / r132 / check_structure 按符号守
 POS = {
     "multi": [
         "internal fun SelectBox(",
-        "internal fun MultiSelectBar(",
         "drawRoundRect(",
         "drawPath(p, boxColor",
         "onSelectAll: () -> Unit",
@@ -44,7 +45,6 @@ POS = {
         ".pointerInput(sg.index, multi, isChecked, playable, playing, onThis)",
         "onLongPress = { if (playable) onLong(sg.index) }",
         "SelectBox(",
-        "MultiSelectBar(",
         "confirmChDel = selected.associateWith { filesOf(it) }",
         "\"删除选中的 ${all.size} 章音频？\"",
         "BackHandler(enabled = multiMode) { exitMulti() }",
@@ -53,21 +53,6 @@ POS = {
     ],
     "main": [
         # 看台：小段多选
-        "var segMulti by remember { mutableStateOf(false) }",
-        "var segChecked by remember { mutableStateOf(setOf<Int>()) }",
-        "fun exitSegMulti()",
-        ".pointerInput(sg.index, segMulti, segChecked,",
-        "onLongPress = {",
-        "SelectBox(checked = sg.index in segChecked",
-        "MultiSelectBar(",
-        "allLabel = \"全选已生成\"",
-        "\"试听选中\"",
-        "\"删除选中\"",
-        "PlayQueue.setTracks(picked, \"seg\")",
-        "treeWav = treeChapter?.segments?.associate",
-        "filterValues { it.isFile && it.length() > 44 }",
-        "AudioOps.deleteAll(files)",
-        "AudioTree.clearDone(c, bookId, chapter)",
     ],
     "queue": [
         'private fun isPreview(id: String): Boolean = id == "seg" || id == "trial"',
@@ -90,7 +75,8 @@ BAN = {
 
 
 def load():
-    return {k: p.read_text(encoding="utf-8", errors="replace") for k, p in FILES.items()}
+    return {k: p.read_text(encoding="utf-8", errors="replace")
+                       for k, p in FILES.items()}
 
 
 def check(f):
@@ -112,7 +98,6 @@ def selftest():
     cuts = {
         "勾选方块被摘": ("multi", "internal fun SelectBox("),
         "方块不画勾": ("multi", "drawPath(p, boxColor"),
-        "底部条被摘": ("multi", "internal fun MultiSelectBar("),
         "全选入口被摘": ("multi", "onSelectAll: () -> Unit"),
         "取消入口被摘": ("multi", "onCancel: () -> Unit"),
         "第一列长按被摘": ("hub", "onLongPress = { onLong() }"),
@@ -120,17 +105,11 @@ def selftest():
         "第三列多选态被摘": ("hub", "var multiMode by remember(book.id) { mutableStateOf(false) }"),
         "第三列不进多选": ("hub", "onLongPress = { if (playable) onLong(sg.index) }"),
         "第三列方块被摘": ("hub", "SelectBox("),
-        "第三列底部条被摘": ("hub", "MultiSelectBar("),
         "批量清单被摘": ("hub", "confirmChDel = selected.associateWith { filesOf(it) }"),
         "陈旧闭包防护被摘": ("hub", "勾选框只在多选态渲染"),
-        "看台多选态被摘": ("main", "var segMulti by remember { mutableStateOf(false) }"),
-        "看台手势被摘": ("main", ".pointerInput(sg.index, segMulti, segChecked,"),
-        "看台方块被摘": ("main", "SelectBox(checked = sg.index in segChecked"),
-        "看台底部条被摘": ("main", 'allLabel = "全选已生成"'),
-        "批量试听被摘": ("main", '"试听选中"'),
-        "批量删除被摘": ("main", '"删除选中"'),
-        "批量试听不隔离": ("main", 'PlayQueue.setTracks(picked, "seg")'),
-        "删段后索引不刷新": ("main", "filterValues { it.isFile && it.length() > 44 }"),
+        # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
+        # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
+        # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
         "两态判定被摘": ("queue", 'private fun isPreview(id: String): Boolean = id == "seg" || id == "trial"'),
     }
     bad = 0

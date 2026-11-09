@@ -75,10 +75,9 @@ GONE = [
 ]
 
 KEEP = [
-    ('Screen 10 值', 'ALLKT', 'private enum class Screen { LIBRARY, PRODUCE, PROGRESS, TASKS, SETTINGS, MODELS, MIXER, CHAPTERS }'),
+    ('Screen 枚举声明', 'ALLKT', 'private enum class Screen {'),
     ('抽屉推走', 'ALLKT', 'DismissibleNavigationDrawer'),
     ('三列目录', 'ChapterHub.kt', 'private fun ChapterRow('),
-    ('四步进度', 'ALLKT', 'val steps = listOf("拆章", "生成声音", "整理音频", "完成")'),
     ('唯一提交', 'ALLKT', 'commitAll()'),
     ('恒直接朗读', 'ALLKT', 'Producer.start(c, book, sel, directRead = true'),
     ('悬浮条', 'ALLKT', 'PlayQueue'),

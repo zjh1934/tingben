@@ -27,6 +27,7 @@ import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
+
 FILES = {
     "main": APP / "MainActivity.kt",
     "hub": APP / "ChapterHub.kt",
@@ -121,7 +122,8 @@ def checks(f):
 
 def selftest():
     base = {k: (p.read_text(encoding="utf-8") if p.is_file() else "")
-            for k, p in FILES.items()}
+
+                   for k, p in FILES.items()}
     assert not checks(base), "基线自己就红了，先修基线"
     cases = [
         ("导入后不进目录页", "main",
@@ -129,7 +131,7 @@ def selftest():
                              '                            EventLog.ui("BOOK_IMPORT_OPEN", "none")')
          .replace('                            nav.push(Screen.CHAPTERS)\n', '')),
         ("建书回退到只刷书架", "main",
-         lambda t: t.replace('onAdded = { id ->\n                        refresh++\n                        bookId = id\n                        taskBookId = id\n                        nav.push(Screen.CHAPTERS)\n                    }',
+         lambda t: t.replace('onAdded = { id ->\n                        refresh++\n                        bookId = id\n                        nav.push(Screen.CHAPTERS)\n                    }',
                              'onAdded = { _ -> refresh++ }')),
         ("首屏模型入口被摘", "main",
          lambda t: t.replace('if (modelMissing > 0) {', 'if (false) {')),
@@ -183,7 +185,8 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         sys.exit(1 if selftest() else 0)
     f = {k: (p.read_text(encoding="utf-8") if p.is_file() else "")
-         for k, p in FILES.items()}
+
+                   for k, p in FILES.items()}
     e = checks(f)
     if e:
         print("FAIL · R180 核心闭环")

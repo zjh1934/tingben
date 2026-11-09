@@ -8,6 +8,7 @@ R185 订正：双指纹比对后删 WAV 已换成 VoiceCache 分套归档 + 三 
 反向注入：旧形态塞回去必须拦下。
 """
 import pathlib, re, sys
+import screen_enum as se
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 KT = ROOT / "app/src/main/java/com/tingben/app"
@@ -16,8 +17,9 @@ MAIN = (KT / "MainActivity.kt").read_text(encoding="utf-8")
 CHROME = (KT / "AppChrome.kt").read_text(encoding="utf-8")
 ALLKT = NL.join(p.read_text(encoding="utf-8") for p in KT.rglob("*.kt"))
 
-WANT = {"LIBRARY", "PRODUCE", "PROGRESS", "TASKS",
-        "SETTINGS", "MODELS", "MIXER", "CHAPTERS"}
+# R195 · WANT 改为函数：每次从传入源码解析，删值/拆文件不再假红
+def WANT(m):
+    return se.declared(m)
 
 BAN_MAIN = ["Screen.CAST", "NAV_CAST", "CastScreen(", "角色音色", "角色预设",
             "角色映射", "给角色单独指定音色", "改动立即保存 · 对所有新任务生效",
@@ -35,7 +37,6 @@ KEEP = ["Prefs.legacyVoiceStamp(c)",
         "VoiceCache.switchTo(work, cacheKey)",
         "VoiceProfile.buildWithReport(globalVoice,",
         'private fun ChapterRow(',
-        'val steps = listOf("拆章", "生成声音", "整理音频", "完成")',
         "commitAll()", "DismissibleNavigationDrawer", "PlayQueue",
         "run(c, book, onlyChapters, true, thinkOverride, config)"]
 
@@ -46,8 +47,10 @@ def check(main=None, chrome=None, allkt=None):
     e = []
     em = re.search(r"private enum class Screen \{([^}]*)\}", m)
     got = set(re.findall(r"[A-Z_]+", em.group(1))) if em else set()
-    if got != WANT:
-        e.append("Screen 不是 10 值: " + str(got ^ WANT))
+    want = WANT(m)
+    if not want or got != want:
+        e.append("Screen 枚举解析失败或被改: " + str(got ^ want))
+    e += se.consistency(m)
     navs = re.findall(r"NAV_\w+ = \d", ch)
     if len(navs) != 7:
         e.append("抽屉不是 7 项: %d" % len(navs))
@@ -65,7 +68,7 @@ def check(main=None, chrome=None, allkt=None):
             e.append("守恒项丢失: " + s)
     if e:
         raise AssertionError("; ".join(e))
-    return len(WANT), len(BAN_MAIN) + len(BAN_CHROME)
+    return len(WANT(m)), len(BAN_MAIN) + len(BAN_CHROME)
 
 def selftest():
     caught = 0

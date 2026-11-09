@@ -47,7 +47,7 @@ ASSETS = {
 
 LAYERS = set("CEADKM PIRLFOTSXZ".replace(" ", ""))
 MODULES = set("GU BDI NMS CORPW AHLVQEZ".replace(" ", ""))
-PRIVATE_MARKERS = ("/data/workspace", "/home/", "ghp_", "github_pat_",
+PRIVATE_MARKERS = ("/data/user_persistent_data/听本", "/data/workspace", "/home/", "ghp_", "github_pat_",
                    "SANDBOX_EGRESS", "/Users/", "C:\\\\")
 ROOT_PREFIX = "/tingben/"
 
@@ -357,7 +357,7 @@ def selftest():
         ("归档回潮进索引", "code", "===/tingben/docs/===",
          "===/tingben/dev/===\n历史回执.md[CG3T]: F:- | R:- | A:- | S:-\n\n===/tingben/docs/==="),
         ("私有拓扑进资产", "code", "#AOCI-CODE-VOLUME: 1",
-         "#AOCI-CODE-VOLUME: 1 /data/workspace/tingben"),
+         "#AOCI-CODE-VOLUME: 1 /data/user_persistent_data/听本/tingben"),
         ("config 受管根清空", "cfg", '"managed_roots"', '"managed_roots_off"'),
         ("集成模式伪装", "cfg", '"protocol-level"', '"official-cli"'),
         ("CI 漏挂", "ci", "python3 scripts/aoci_check.py --selftest", ""),
