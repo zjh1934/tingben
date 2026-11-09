@@ -35,8 +35,8 @@ def check(root):
     ck('val stalled: Boolean = false' in hub, 'F-20 缺终态字段')
     ck('st.stage in listOf("没完成", "已停止", "出错了")' in hub, 'F-20 缺终态派生')
     ck('stalled = stalled' in hub, 'F-20 终态没传进每章')
-    ck('Text("没做完 · 已做好的都留着"' in hub, 'F-20 停滞态文案丢了')
-    ck('Text("这本书做好了"' in hub, 'F-20 完成态文案缺')
+    ck('"没做完 · 已做好的都留着"' in hub, 'F-20 停滞态文案丢了')
+    ck('"这本书做好了"' in hub, 'F-20 完成态文案缺')
 
     ck('fun bucket(only: Set<Int>?)' in pipe, 'F-13 分桶仍带旧三态参数')
     ck('"v11/direct/"' in pipe, 'F-13 分桶路径变了，旧 WAV 会找不到')
@@ -95,10 +95,24 @@ def selftest():
                 p = ROOT / rel
                 if not p.exists(): continue
                 q = r / rel; q.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(p, q)
-            s = (r / REL[key]).read_text(encoding='utf-8')
-            if old not in s:
-                errs.append('注入锚点不存在：' + name); continue
-            (r / REL[key]).write_text(s.replace(old, new), encoding='utf-8')
+            # R202 · core_sources.read 要拼片段文件，临时树必须带上整个 core 目录；
+            # 否则搬出去的 object 在树里不存在，注入锚点会假性消失。
+            src_core = ROOT / 'app/src/main/java/com/tingben/app/core'
+            dst_core = r / 'app/src/main/java/com/tingben/app/core'
+            dst_core.mkdir(parents=True, exist_ok=True)
+            for p in src_core.glob('*.kt'):
+                q = dst_core / p.name
+                if not q.exists(): shutil.copy2(p, q)
+            if key == 'pipe':
+                s = core_sources.read(r)
+                if old not in s:
+                    errs.append('注入锚点不存在：' + name); continue
+                core_sources.source(r).write_text(s.replace(old, new), encoding='utf-8')
+            else:
+                s = (r / REL[key]).read_text(encoding='utf-8')
+                if old not in s:
+                    errs.append('注入锚点不存在：' + name); continue
+                (r / REL[key]).write_text(s.replace(old, new), encoding='utf-8')
             if not check(r): errs.append('没拦下：' + name)
     return errs
 

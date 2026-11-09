@@ -28,6 +28,7 @@ HEADER = "package com.tingben.app.core\n\n"
 PARTS = (
     ("ChapterSplitter.kt", "object ChapterSplitter {", "object Annotator {"),
     ("Annotator.kt", "object Annotator {", "object AnnCache {"),
+    ("AnnCache.kt", "object AnnCache {", "object WavMerger {"),
 )
 
 
@@ -50,6 +51,25 @@ def _body(part: pathlib.Path) -> str:
         return ""
     j = t.find("\n", i)
     return t[j + 1:] if j >= 0 else ""
+
+
+def _prefix(part: pathlib.Path) -> str:
+    """片段文件里 @core-part 行（含）之前的头部：package + 该文件自己的 import。
+
+    R202 真编译教训：Pipeline.kt 顶部的 import 不会自动对每个拆分出来的文件生效，
+    Kotlin 按文件独立编译。AnnCache.kt 用到 File / Context，必须在自己的头部 import；
+    但这些行不能进 _body（否则合并视图会多出内容、与拆分前不再逐字节一致），
+    所以放在哨兵行之前，写回时整段保留。
+    """
+    fallback = HEADER + PART + part.stem + "\n"
+    if not part.is_file():
+        return fallback
+    t = part.read_text(encoding="utf-8", errors="replace")
+    i = t.find(PART)
+    if i < 0:
+        return fallback
+    j = t.find("\n", i)
+    return t[:j + 1] if j >= 0 else t + "\n"
 
 
 def _marker(name: str) -> str:
@@ -97,7 +117,7 @@ class SourcePath:
             body = t[i:j]
             t = t[:i] + _marker(name) + t[j:]
             part = _core(self.root) / name
-            writes.append((part, HEADER + PART + name[:-3] + "\n" + body))
+            writes.append((part, _prefix(part) + body))
         writes.append((self.path, t))
         for p, v in writes:
             p.write_text(v, encoding="utf-8")

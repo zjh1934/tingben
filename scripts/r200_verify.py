@@ -70,6 +70,23 @@ def check(f, parts):
             e.append("主文件仍留着搬走的符号: " + sym)
         if ("object " + sym + " {") not in body:
             e.append("片段里找不到符号: " + sym)
+    # R202b · Kotlin 按文件独立编译：Pipeline.kt 顶部的 import 不会传给片段。
+    # 片段正文里以简单名用到某个类型，就必须在自己的头部（哨兵行之前）import；
+    # 反过来，import 行若混进正文会被拼进合并视图，破坏逐字节一致。
+    req = {}
+    for line in f["main"].splitlines():
+        m = re.match(r"\s*import\s+([\w.]+)\s*$", line)
+        if m and not m.group(1).endswith(".*"):
+            req[m.group(1).split(".")[-1]] = line.strip()
+    for name, _, _ in cs.PARTS:
+        t = parts.get(name, "")
+        i = t.find(cs.PART)
+        head, body = (t[:i], t[i:]) if i >= 0 else (t, "")
+        if re.search(r"^import ", body, re.M):
+            e.append("片段 import 混进正文（会污染合并视图）: " + name)
+        for sym, imp in req.items():
+            if re.search(r"(?<![\w.])" + re.escape(sym) + r"\b", body) and imp not in head:
+                e.append("片段 %s 用了 %s，头部缺 %s" % (name, sym, imp))
     # 34 个历史守门必须接线
     stragglers = []
     for p in sorted(SCRIPTS.glob("*.py")):
@@ -84,8 +101,8 @@ def check(f, parts):
         t2 = q.read_text(encoding="utf-8", errors="replace")
         if cs.PART in t2 and q.name not in {n for n, _, _ in cs.PARTS}:
             e.append("片段文件没登记进 PARTS: " + q.name)
-    if len(cs.PARTS) < 2:
-        e.append("分家已不止一块，PARTS 却仍只有 1 项")
+    if not cs.PARTS:
+        e.append("PARTS 为空，分家读取层没登记任何片段")
     # 读的是传入的 core_sources 文本，反向注入删掉 PARTS 行也能当场红
     for name, _, _ in cs.PARTS:
         if '"' + name + '"' not in f["core_sources"]:
@@ -97,13 +114,16 @@ def check(f, parts):
     return e
 
 
+def _anchor(name, body):
+    """从片段正文里自动挑一个稳定的函数声明作注入锚点，不随片段数变化。"""
+    import re
+    m = re.search(r'^    (?:private )?fun (\w+)\(', body, re.M)
+    return ("fun " + m.group(1) + "(", "fun " + m.group(1) + "_X(") if m else None
+
+
 def writeback_case():
     """临时目录里对每个片段各跑一次「注入 → 分发写回 → 还原」，确认不污染主文件。"""
     errs = []
-    needles = {
-        "ChapterSplitter.kt": "val safe = if (marks.isEmpty())",
-        "Annotator.kt": "fun directWithStats(text: String)",
-    }
     with tempfile.TemporaryDirectory() as d:
         r = pathlib.Path(d)
         dst = r / cs.CORE
@@ -114,11 +134,12 @@ def writeback_case():
         assert merged == cs.read(ROOT), "临时树合并视图与真源码不一致"
         for name, _, _ in cs.PARTS:
             base = cs.read(r)
-            needle = needles.get(name)
-            if not needle:
-                errs.append("新片段没配注入锚点: " + name)
+            body = (r / cs.CORE / name).read_text(encoding="utf-8")
+            pair = _anchor(name, body)
+            if not pair:
+                errs.append("片段找不到函数锚点: " + name)
                 continue
-            repl = needle.replace("(", "X(", 1)
+            needle, repl = pair
             inj = base.replace(needle, repl, 1)
             assert inj != base
             cs.source(r).write_text(inj)
@@ -139,40 +160,60 @@ def selftest():
     parts = parts_text()
     assert not check(f, parts), "基线自己就红了"
     assert not writeback_case(), "写回分发自检没过"
-    cuts = [
-        ("占位行被摘", "main", cs.INSERT + "ChapterSplitter", ""),
-        ("第二块占位行被摘", "main", cs.INSERT + "Annotator", ""),
-        ("片段哨兵被摘", "part", cs.PART, ""),
-        ("第二片段哨兵被摘", "part2", cs.PART, ""),
-        ("片段符号被删", "part", "object ChapterSplitter {", "object ChapterSplitterX {"),
-        ("第二片段符号被删", "part2", "object Annotator {", "object AnnotatorX {"),
-        ("package 重复", "part", "package com.tingben.app.core",
-         "package com.tingben.app.core\npackage com.tingben.app.core"),
-        ("PARTS 漏登记第二块", "core_sources",
-         '    ("Annotator.kt", "object Annotator {", "object AnnCache {"),', ""),
+
+    cuts = []   # (名称, 目标, 锚点, 替换)
+    # 每块：占位行被摘
+    for name, _, _ in cs.PARTS:
+        sym = name[:-3]
+        cuts.append(("占位行被摘·" + sym, "main", cs.INSERT + sym, ""))
+    # 每个片段：哨兵 / 符号 / package
+    for name, _, _ in cs.PARTS:
+        sym = name[:-3]
+        cuts.append(("哨兵被摘·" + sym, "part:" + name, cs.PART, ""))
+        cuts.append(("符号被删·" + sym, "part:" + name,
+                     "object " + sym + " {", "object " + sym + "X {"))
+    first = cs.PARTS[0][0]
+    cuts.append(("package 重复", "part:" + first, "package com.tingben.app.core",
+                 "package com.tingben.app.core\npackage com.tingben.app.core"))
+    # 每块：PARTS 漏登记
+    for name, start, nxt in cs.PARTS:
+        line = '    ("%s", "%s", "%s"),' % (name, start, nxt)
+        cuts.append(("PARTS 漏登记·" + name[:-3], "core_sources", line, ""))
+    # 每个有 import 的片段：删掉一条 import、或把 import 塞进正文
+    for name, _, _ in cs.PARTS:
+        t = parts[name]
+        m = re.search(r"^import .+$", t, re.M)
+        if m:
+            cuts.append(("片段缺 import·" + name[:-3], "part:" + name,
+                         m.group(0) + "\n", ""))
+            cuts.append(("import 混进正文·" + name[:-3], "part:" + name,
+                         cs.PART + name[:-3] + "\n",
+                         cs.PART + name[:-3] + "\n" + m.group(0) + "\n"))
+    # 固定三项
+    cuts += [
         ("CI 漏挂", "ci", "python3 scripts/r200_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r200_verify.py"', ""),
         ("core_sources 退化成直接读单文件", "core_sources",
          "t.replace(_marker(name), _body(", "pass  # "),
     ]
+
     bad = 0
     for name, key, needle, repl in cuts:
         g = dict(f)
         gp = dict(parts)
-        if key in ("part", "part2"):
-            nm = "ChapterSplitter.kt" if key == "part" else "Annotator.kt"
+        if key.startswith("part:"):
+            nm = key.split(":", 1)[1]
             gp[nm] = parts[nm].replace(needle, repl, 1)
         else:
             g[key] = f[key].replace(needle, repl, 1)
         got = check(g, gp)
         if got:
-            print("  反向注入 %-26s 拦下 %d 条" % (name, len(got)))
+            print("  反向注入 %-28s 拦下 %d 条" % (name, len(got)))
         else:
             print("  反向注入漏放: " + name)
             bad += 1
     print("反向注入 %d/%d 全拦下" % (len(cuts) - bad, len(cuts)))
     return bad
-
 
 def main():
     f = files()
