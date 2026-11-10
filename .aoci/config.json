@@ -89,7 +89,8 @@
       "r218_verify.py",
       "r219_verify.py",
       "r220_verify.py",
-      "r221_verify.py"
+      "r221_verify.py",
+      "r223_verify.py"
     ]
   },
   "hook_strict": false,

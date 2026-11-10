@@ -137,7 +137,6 @@ KEEP = [
     "app/src/main/java/com/tingben/app/core/Pipeline.kt",
     "app/src/main/java/com/tingben/app/core/AudioLibrary.kt",
     "app/src/main/java/com/tingben/app/core/PlayQueue.kt",
-    "app/src/main/java/com/tingben/app/core/Prefs.kt",
     "app/src/main/java/com/tingben/app/core/ProduceConfig.kt",
     "app/src/main/java/com/tingben/app/core/VoiceProfile.kt",
     "app/src/main/java/com/tingben/app/ProduceService.kt",

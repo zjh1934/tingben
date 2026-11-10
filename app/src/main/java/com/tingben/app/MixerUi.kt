@@ -430,6 +430,10 @@ internal fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit) {
         placeholder = { Text("描述想要的音色", fontSize = 12.sp) },
         textStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
     )
+    // R223 · 默认已是青年女声；留空可回到升级前的中性声并认领回旧音频
+    Spacer(Modifier.height(4.dp))
+    Text("留空 = 旧默认中性声，可切回旧音频",
+        fontSize = 11.sp, color = Sub)
 }
 
 @OptIn(ExperimentalLayoutApi::class)

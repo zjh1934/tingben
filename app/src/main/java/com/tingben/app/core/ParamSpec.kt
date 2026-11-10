@@ -120,7 +120,7 @@ object ParamCatalog {
     )
 
     val UPPER: List<ParamSpec> = listOf(
-        ParamSpec("voice", "qt_tts_params.instruct", "音色身份描述", "（必填）",
+        ParamSpec("voice", "qt_tts_params.instruct", "音色身份描述", "青年女声（R223 默认）",
             "自由文本属性指令，VoiceDesign 的必需输入（O1:201-223 / O4:121-129）", "O1/O3/O4",
             emptyList(), ParamKind.ENGINE),
         ParamSpec("lang", "qt_tts_params.lang", "lang（语言）", "chinese",

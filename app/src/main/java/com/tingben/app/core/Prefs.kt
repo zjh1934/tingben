@@ -38,6 +38,12 @@ fun sha(s: String): String = try {
         .take(8).joinToString("") { "%02x".format(it) }
 } catch (_: Throwable) { s.hashCode().toString(16) }
 
+// R223 · 公开资料里适合长篇有声书的青年女声描述（云声配音 / DevPress /
+// Qwen 官方 VoiceDesign 控制示例 / Wiro 官方 Vivian-Serena 音色说明综合）。
+// 采样参数不决定性别年龄，女声只能由 instruct 身份层给。
+const val DEFAULT_VOICE = "声线清澈的青年女声，约 20–25 岁，标准普通话无明显口音；" +
+        "音调适中偏亮、不刺耳，吐字清晰，语调平和温柔，语速自然，适合长篇有声书朗读。"
+
 object Prefs {
     const val SCHEMA_VERSION = 2
     private const val FILE = "tingben_settings"
@@ -105,9 +111,15 @@ object Prefs {
     fun nonVerbal(c: Context) = sp(c).getBoolean(KEY_NONVERBAL, true)
     fun setNonVerbal(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_NONVERBAL, v).apply()
 
+    // R223 · 用 contains 区分「从没设置过」与「用户显式清空」：
+    // 前者给新默认女声；后者回落到 VoiceProfile.DEFAULT_IDENTITY（旧中性串），
+    // 且 voiceStamp 也回到旧值 —— 调音台点「清空」就能切回升级前那套、
+    // 认领回已做好的段，不丢进度。
     fun voiceDescription(c: Context): String {
         migrate(c)
-        return sp(c).getString(KEY_VOICE_DESC, "") ?: ""
+        val s = sp(c)
+        return if (s.contains(KEY_VOICE_DESC)) s.getString(KEY_VOICE_DESC, "") ?: ""
+        else DEFAULT_VOICE
     }
     fun setVoiceDescription(c: Context, v: String) =
         sp(c).edit().putString(KEY_VOICE_DESC, v.trim()).apply()
