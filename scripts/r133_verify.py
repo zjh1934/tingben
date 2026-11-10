@@ -49,7 +49,7 @@ POS = {
     ],
     "hub": [
         "if (st.preview) return",
-        "onExpand: () -> Unit",
+        "onRead: () -> Unit",
         ".clickable { onExpand() }",
         "IconSkip(false, HubPrimary",
         "IconSkip(true, HubPrimary",

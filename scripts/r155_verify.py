@@ -46,15 +46,15 @@ POS = {
         # ① 展开格子惰性化
         "ui.forEach { r ->",
         'item(key = "ch_${r.index}")',
-        "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
-        'key = { row -> "seg_${r.index}_${row.first().index}" })',
-        'item(key = "seg_head_${r.index}") {',
+        "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
+        'AnimatedVisibility(',
+        'SegGridHead(chapterSegs, segMulti',
         "private fun SegGridHead(",
         "private fun ChapterSegGrid(",
-        "expandedChapter = if (expandedChapter == r.index) null else r.index",
+        "val willOpen = expandedChapter != r.index",
         # ③ 阅读页可复制
         "SelectionContainer {",
-        "本章 ${segs.size} 小段",
+        "SegGridHead(chapterSegs, segMulti",
     ],
     "main": [
         # ② 调音弹层
@@ -135,14 +135,14 @@ def logic_cases(f):
             print("  %3d 段章：全量 %3d 个格子 → 只组合 %3d 个 ✓"
                   % (segs, old, new))
     # 一次只展开一章
-    if "expandedChapter = if (expandedChapter == r.index) null else r.index" not in h:
+    if "val willOpen = expandedChapter != r.index" not in h:
         bad.append("展开态不是单章互斥，会同时展开多章")
     else:
         print("  一次只展开一章 ✓（不是「每章下面都折叠」）")
     # 行为判据（也进 check，才能被反向注入拦住）
     # R163 · 单列后不再有 RawColumn 函数体，直接守整页里的惰性行
     rb = code_only(h)
-    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in rb:
+    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in rb:
         bad.append("展开格子没拆成父列表的独立 item")
     if "chunked(8).forEach" in rb:
         bad.append("展开格子仍是全量 forEach 组合")
@@ -179,7 +179,7 @@ def check(f):
                 e.append("旧形态回潮[%s]: %s" % (key, s[:65]))
     # R163 · 三列并一列后不再有 RawColumn 函数体，直接守单列里的惰性行
     rb = code_only(f["hub"])
-    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in rb or "chunked(8).forEach" in rb:
+    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in rb or "chunked(8).forEach" in rb:
         e.append("展开格子没有惰性化")
     db = code_only(mixer_dialog_body(f["main"]))
     if not db or "navigationBarsPadding()" not in db or "requestLeave?.invoke()" not in db:
@@ -199,15 +199,15 @@ def selftest():
     logic_bad = len(logic_cases(f))
     cuts = [
         ("展开格子退回全量 forEach", "hub",
-         "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
+         "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
          "val _all = segs.chunked(8).forEach { }; items(chapterSegs.chunked(8),"),
-        ("展开格子被整个摘掉", "hub", "items(chapterSegs.chunked(SEG_GRID_COLUMNS),", ""),
+        ("展开格子被整个摘掉", "hub", "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->", ""),
         ("章行退回单 items 整块", "hub", 'item(key = "ch_${r.index}")', ""),
-        ("段头被摘", "hub", 'item(key = "seg_head_${r.index}") {', ""),
+        ("段头被摘", "hub", 'SegGridHead(chapterSegs, segMulti', ""),
         ("单行渲染器被摘", "hub",
          "private fun ChapterSegGrid(", ""),
         ("单章互斥被破坏", "hub",
-         "expandedChapter = if (expandedChapter == r.index) null else r.index",
+         "val willOpen = expandedChapter != r.index",
          "expandedChapter = i"),
         ("阅读页可复制被摘", "hub", "SelectionContainer {", ""),
         ("系统导航区避让被摘", "main",

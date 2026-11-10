@@ -2,11 +2,11 @@
 
 > 只记「现在是什么」。下面做什么 → `ROADMAP.md`。本文件不写历史、不写复盘。
 
-**当前版本 `1.1.24` · 以 Release `v1.1.0-124` 安装包为基线重新推进**
+**当前版本 `1.1.25` · 以 Release `v1.1.0-124` 安装包为基线重新推进**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.24` |
+| 版本 | `1.1.25` |
 | 基线 | Release `v1.1.0-124` 的 `app-debug.apk`（18,085,718 字节，sha256 `2439290e…`） |
 | 版本真值源 | 根目录 `version.txt`；Gradle、CI、Release 标签与名称都从它读 |
 | 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk` |

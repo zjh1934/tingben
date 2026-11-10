@@ -44,7 +44,7 @@ def check(files):
             e.append("旧形态残留: " + s[:40])
 
     KEEP = [
-        '"本章 ${segs.size} 小段"',
+        'SegGridHead(chapterSegs, segMulti',
         'chapterSegs.chunked(SEG_GRID_COLUMNS)',
         'val pqSeg by PlayQueue.previewState.collectAsState()',
         'LinearProgressIndicator(progress = { bookPct }',
@@ -79,11 +79,11 @@ def main():
                  '        Text(if (playing) "⏸" else "▶", fontSize = 13.sp)\n        Spacer(Modifier.height(6.dp))'))),
             ("恢复图例解释文字",
              lambda t: dict(t, main=t["main"].replace(
-                 'if (segs.isEmpty())',
+                 'if (multi) {',
                  '            Text("绿=已出声 · 蓝=正在合成 · 灰=未开始 · 点格子看正文")\n            if (segs.isEmpty()) {'))),
             ("恢复展开正文标题",
              lambda t: dict(t, main=t["main"].replace(
-                 'if (segs.isEmpty())',
+                 'if (multi) {',
                  '            Text("第 1 段 · 送进声音模型的正文")\n            if (segs.isEmpty()) {'))),
             ("格子手势不再带播放与勾选态",
              lambda t: dict(t, main=t["main"].replace(
@@ -96,7 +96,7 @@ def main():
                  'val pqSeg by PlayQueue.previewState.collectAsState()', ''))),
             ("删掉看台板块",
              lambda t: dict(t, main=t["main"].replace(
-                 '"本章 ${segs.size} 小段"', 'Text("进度"'))),
+                 'SegGridHead(chapterSegs, segMulti', 'Text("进度"'))),
             ("索引退回旧口径",
              lambda t: dict(t, index=t["index"].replace('点格子即播 / 再点停', '看台 8 格展开正文'))),
             ("CI 漏挂验证",

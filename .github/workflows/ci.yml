@@ -421,6 +421,10 @@ jobs:
         run: python3 scripts/r217_verify.py
       - name: R217 反向注入
         run: python3 scripts/r217_verify.py --selftest
+      - name: R218 目录页真机反馈批次
+        run: python3 scripts/r218_verify.py
+      - name: R218 反向注入
+        run: python3 scripts/r218_verify.py --selftest
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

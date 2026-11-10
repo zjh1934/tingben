@@ -57,7 +57,8 @@ import java.io.File
 @Composable
 internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> Unit,
                           onProgress: () -> Unit, onDone: () -> Unit,
-                          onStarted: (Set<Int>?) -> Unit) {
+                          onStarted: (Set<Int>?) -> Unit,
+                          onResplit: () -> Unit = {}) {
     val st by Producer.state.collectAsState()
     var selected by remember(id, refresh) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
@@ -133,23 +134,13 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
     }
     val book = snapshot.book
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("← 书架") }
+        TextButton(onClick = onBack) { Text("← 目录") }
         Text(book.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text("${chapters.size} 章 · ${book.chars} 字", fontSize = 13.sp, color = Sub)
         Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("合成前调音", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-            TextButton(onClick = { mixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open") }) {
-                Text("调音 ›", fontSize = 12.sp, color = Primary)
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-
+        // R218 · 撤掉「合成前调音」入口卡片：调音在首页右上 / 目录页 / 设置页
+        // 都够得到，制作设置页不该再塞一枚没用的入口。
         if (st.output != null) {
             CardBox(Modifier.padding(bottom = 12.dp)) {
                 Text("做好了", fontWeight = FontWeight.Bold, color = Good)
@@ -160,20 +151,12 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
             }
         }
 
-        var showAllChapters by remember(book) { mutableStateOf(false) }
-
+        // R218 · 撤掉「制作范围」拆章勾选（目录页长按选章已能做，这里画蛇添足）。
+        // 这页只回答两件事：怎么念、怎么跑；设置只对这本书接下来的合成生效。
         ExpandGroup("① 做什么", "") {
             Text("原文整段送声音模型", fontSize = 13.sp, color = Sub)
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("制作范围", fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f))
-                TextButton(onClick = { selected = if (selected.size == chapters.size) emptySet() else chapters.map { it.index }.toSet() }) {
-                    Text(if (selected.size == chapters.size) "清空" else "全选")
-                }
-            }
-            Text(if (selected.isEmpty()) "整本 · 预计约 $estimate 块" else "已选 ${selected.size} 章 · 预计约 $estimate 块",
-                fontSize = 12.sp, color = Sub)
+            Spacer(Modifier.height(10.dp))
+            Text("整本 · 预计约 $estimate 块", fontSize = 12.sp, color = Sub)
             // R183 · 真机实测每段 50~220 秒。只给一句量级，不写教程、不常驻解释。
             Text("每段约 1–3 分钟，块越多等得越久", fontSize = 11.sp, color = Sub)
             if (cacheInfo.current > 0) {
@@ -186,27 +169,10 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
                 Text("另有 ${cacheInfo.others} 套音色留着（最多 ${cacheInfo.bestOther} 段），" +
                     "切回原来的设置就能接着用", fontSize = 12.sp, color = Sub)
             }
-            val visibleChapters = if (chapters.size > 20 && !showAllChapters)
-                chapters.take(20) else chapters
-            if (chapters.size >= 2) {
-                Spacer(Modifier.height(8.dp))
-                visibleChapters.forEach { ch ->
-                    Row(Modifier.fillMaxWidth().clickable {
-                        selected = if (ch.index in selected) selected - ch.index else selected + ch.index
-                    }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = ch.index in selected, onCheckedChange = {
-                            selected = if (it) selected + ch.index else selected - ch.index
-                        })
-                        Spacer(Modifier.width(6.dp))
-                        Text("${ch.index + 1}. ${ch.title.take(28)}", fontSize = 13.sp, maxLines = 1)
-                    }
-                }
-                if (chapters.size > 20) {
-                    TextButton(onClick = { showAllChapters = !showAllChapters }) {
-                        Text(if (showAllChapters) "收起" else "显示全部 ${chapters.size} 章")
-                    }
-                }
-            } else {
+            // R218 · 重新分章从目录页顶栏收进来做次要入口；底层能力与守卫原样保留
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = onResplit) {
+                Text("重新分章 ›", fontSize = 12.sp, color = Primary)
             }
         }
 

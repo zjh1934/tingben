@@ -177,7 +177,7 @@ def injections():
          lambda t: t.replace('Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY,',
                              'Screen.LIBRARY  -> ChromeSpec("听本", TAB_LIBRARY,')),
         ("二级页齿轮回潮", "main",
-         lambda t: t.replace('Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, canBack = true)',
+         lambda t: t.replace('Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)',
                              'Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, '
                              'showSettings = true, canBack = true)')),
         ("模型页去书架按钮回潮", "main",

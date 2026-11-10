@@ -31,10 +31,10 @@ HUB_POS = [
     "private fun SegGridHead(",
     "private fun ChapterSegGrid(",
     # 章行：默认点进阅读、长按进多选；R171 起常态只有听 / 展开两枚图标
-    "onTap = { openReader(r.index) }",
+    "onRead = { openReader(r.index) }",
     "onLong = { enterMulti(r.index) }",
     "IconButton(onClick = onListen",
-    "IconButton(onClick = onExpand",
+    "IconButton(onClick = onRead",
     # R171 · 三点「更多」撤掉，选中一律长按；勾选态必须能退出
     "BackHandler(enabled = multiMode) { exitMulti() }",
     "BackHandler(enabled = segMulti) { exitSegMulti() }",
@@ -55,7 +55,7 @@ HUB_POS = [
     "srcOf(i: Int): File?",
     # 分段小片：固定 10 列（整块居中 / 行内左对齐）+ 惰性行 + 点播暂停 + 长按多选
     "internal const val SEG_GRID_COLUMNS = 10",
-    "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
+    "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
     "BoxWithConstraints(",
     "contentAlignment = Alignment.Center",
     "repeat(SEG_GRID_COLUMNS)",
@@ -76,7 +76,7 @@ HUB_POS = [
     "AudioOps.deleteAll(files)",
     # 顶部：双进度 + 停止/继续 + 心跳
     "LinearProgressIndicator(progress = { bookPct }",
-    "LinearProgressIndicator(progress = { chPct }",
+    "LinearProgressIndicator(progress = { chapterPctNow }",
     'EventLog.ui("HUB_STOP", "book=${book.id}")',
     'EventLog.ui("HUB_RESUME", "book=${book.id}")',
     "colors = ButtonDefaults.buttonColors(containerColor = HubWarn)",
@@ -200,7 +200,7 @@ def injections():
          lambda t: t.replace("            if (multi) {\n                Box(Modifier.size(44.dp)",
                              "            if (true) {\n                Box(Modifier.size(44.dp)")),
         ("点章不再进阅读", "hub",
-         lambda t: t.replace("onTap = { openReader(r.index) }",
+         lambda t: t.replace("onRead = { openReader(r.index) }",
                              "onTap = { }")),
         ("长按不再进多选", "hub",
          lambda t: t.replace("onLong = { enterMulti(r.index) }",
@@ -218,7 +218,7 @@ def injections():
          lambda t: t.replace("contentAlignment = Alignment.Center",
                              "contentAlignment = Alignment.TopStart")),
         ("格子退回全量组合", "hub",
-         lambda t: t.replace("items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
+         lambda t: t.replace("chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
                              "items(listOf(chapterSegs),")),
         ("逐行居中回潮", "hub",
          lambda t: t.replace("repeat(SEG_GRID_COLUMNS)", "row.forEachIndexed { _, _ ->")),

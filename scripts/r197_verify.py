@@ -83,10 +83,12 @@ def check(f):
                 e.append("能力链缺失[%s]: %s" % (key, s[:62]))
     if "Screen.PRODUCE" not in f["main"]:
         e.append("PRODUCE 目的地整个没了")
-    # R198 · 常态顶栏 + 勾选态底部条，两枚入口缺一不可
+    # R218 · 常态顶栏收成一枚齿轮（不写文字），勾选态保留文字入口
     n_entry = f["hub"].count('"制作设置 ›"')
-    if n_entry != 2:
-        e.append("制作设置入口应为 2 枚（常态+勾选态），实为 %d" % n_entry)
+    if n_entry != 1:
+        e.append("勾选态制作设置文字入口应为 1 枚，实为 %d" % n_entry)
+    if 'Text("⚙", fontSize = 16.sp, color = HubPrimary)' not in f["hub"]:
+        e.append("常态顶栏齿轮入口被摘")
     if f["hub"].count("onProduceSetup(book.id)") != 2:
         e.append("两枚入口没都把 book.id 传出去")
     o = orphans(f["main"])
@@ -99,14 +101,11 @@ def selftest():
     f = load()
     assert not check(f), "基线自己就红了，先修基线"
     cuts = [
-        ("常态入口整块被摘", "hub",
-         '                TextButton(onClick = { onProduceSetup(book.id) }) {\n'
-         '                    Text("制作设置 ›", fontSize = 12.sp, color = HubPrimary)\n'
-         '                }\n'
-         '                TextButton(onClick = {\n'
-         '                    EventLog.ui("RESPLIT_OPEN"',
-         '                TextButton(onClick = {\n'
-         '                    EventLog.ui("RESPLIT_OPEN"'),
+        ("常态齿轮入口整块被摘", "hub",
+         '                IconButton(onClick = { onProduceSetup(book.id) },\n'
+         '                    modifier = Modifier.size(34.dp)) {\n'
+         '                    Text("⚙", fontSize = 16.sp, color = HubPrimary)\n'
+         '                }', ''),
         ("勾选态入口被摘", "hub",
          '                    TextButton(onClick = { onProduceSetup(book.id) }) {\n'
          '                        Text("制作设置 ›", fontSize = 12.sp, color = HubPrimary)\n'

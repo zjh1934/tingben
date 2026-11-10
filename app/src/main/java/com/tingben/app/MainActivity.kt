@@ -198,6 +198,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     // R178 · 通知点「任务」不再跳独立任务页：落到那本书的目录页并自动展开
     // 就地任务看板（R171 已把看板做进目录页）。能力搬干净后再物理删页。
     var hubOpenTasks by rememberSaveable { mutableStateOf(false) }
+    // R218 · 制作设置页点「重新分章」后回目录页唤起弹窗，能力不占顶栏也不丢
+    var resplitTick by rememberSaveable { mutableStateOf(0) }
     // R159 · 续跑确认。用户实证「关闭以后重新打开应用，它不一定弹」：
     // 原来 LaunchedEffect(Unit) 只在首次组合跑一次，加上 resumeSkipped 用
     // rememberSaveable 跨实例残留 —— 按返回退出再从桌面进（进程没被杀）就不弹，
@@ -544,7 +546,13 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             }
         }
     }
+    // R218 · 目录页顶栏写书名；读一次书架索引，随 refresh/切书更新
+    val chapterBookTitle = remember(bookId, refresh) {
+        bookId?.let { bid -> BookStore.list(ctx).find { it.id == bid }?.title } ?: ""
+    }
     val chrome = chromeOf(screen)
+    val shownChrome = if (screen == Screen.CHAPTERS)
+        chrome.copy(title = chapterBookTitle) else chrome
     DismissibleNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -578,7 +586,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Box(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
         Column(Modifier.fillMaxSize()) {
         AppTopBar(
-            spec = chrome,
+            spec = shownChrome,
             onMenu = {
                 EventLog.ui("DRAWER_NAV", "open")
                 scope.launch { drawerState.open() }
@@ -650,6 +658,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                             openBook(id)
                         },
                         openTasksOnStart = hubOpenTasks,
+                        resplitRequest = resplitTick,
                         onOpenModels = {
                             modelsFrom = Screen.CHAPTERS
                             nav.push(Screen.MODELS)
@@ -662,7 +671,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onBack = { nav.pop() },
                     onProgress = { openBook(bookId) },
                     onDone = { nav.clear(); openBook(bookId); refresh++ },
-                    onStarted = { lastSelection = it })
+                    onStarted = { lastSelection = it },
+                    onResplit = { nav.pop(); resplitTick++ })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
                     onOpenTask = { id -> openBook(id) },
                     onProgress = { id -> openBook(id) },

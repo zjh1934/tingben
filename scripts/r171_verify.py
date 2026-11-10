@@ -28,7 +28,7 @@ CI = ROOT / ".github/workflows/ci.yml"
 HUB_MUST = [
     "onLong = { enterMulti(r.index) }",
     "IconButton(onClick = onListen",
-    "IconButton(onClick = onExpand",
+    "IconButton(onClick = onRead",
     # 三点菜单撤掉，换成勾选态的三条退出路径
     "BackHandler(enabled = multiMode) { exitMulti() }",
     "BackHandler(enabled = segMulti) { exitSegMulti() }",

@@ -96,8 +96,10 @@ internal fun chromeOf(s: Screen): ChromeSpec = when (s) {
     // 齿轮 / ＋ 只留首页，二级页一律不给，右上角腾出整块空间。
     Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY,
         showImport = true, showSettings = true)
-    Screen.PRODUCE  -> ChromeSpec("制作", TAB_LIBRARY, canBack = true)
-    Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, canBack = true)
+    Screen.PRODUCE  -> ChromeSpec("制作设置", TAB_LIBRARY, canBack = true)
+    // R218 · 目录页顶栏直接写书名，不写「目录」二字（都进这本书了）。
+    // 标题由 App 层按 bookId 覆盖；这里留空串占位。
+    Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)
     Screen.TASKS    -> ChromeSpec("任务", TAB_TASKS, canBack = true)
     Screen.SETTINGS -> ChromeSpec("设置", canBack = true)
     Screen.MODELS   -> ChromeSpec("模型", canBack = true)

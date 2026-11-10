@@ -49,21 +49,21 @@ POS = {
         "var beatTick by remember { mutableStateOf(0) }",
         "EventLog.lastEngine()", "EventLog.lastEngineAgeMs()",
         "var confirmSegDel by remember",
-        'item(key = "seg_head_${r.index}")',
+        'visible = expandedChapter == r.index,',
         'HubDivider()',
-        'items(chapterSegs.chunked(SEG_GRID_COLUMNS),',
+        'chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->',
         "LazyColumn(Modifier.fillMaxSize(),",
         "row = row, pq = pqSeg,",
         "multi = segMulti, checked = segChecked,",
         "onTap = { sg -> tapSeg(sg) })",
-        "r: ChapterUi, multi: Boolean, checked: Boolean, expanded: Boolean,",
+        "r: ChapterUi, multi: Boolean, checked: Boolean,",
         "row: List<SegRow>, pq: PlaybackState,",
         "onTrial: () -> Unit, onDelete: () -> Unit",
         "var segMulti by remember",
         "var segChecked by remember",
-        '"本章 ${segs.size} 小段"',
-        '"暂无小段"',
-        "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
+        'SegGridHead(chapterSegs, segMulti',
+        'if (multi) {',
+        "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
         'EventLog.ui("SEG_ALL"',
         'EventLog.ui("SEG_TRIAL_PICKED"',
         'EventLog.ui("SEG_DELETE_ASK"',
@@ -178,13 +178,13 @@ def logic_cases(f):
             print("  多选 %-8s → %s" % (action, got))
 
     # R163 · 单列后展开章的小片就是按章过滤的，守「惰性行」而非「全量」
-    if not re.search(r'items\(chapterSegs\.chunked\(SEG_GRID_COLUMNS\)', f["hub"]):
+    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in f["hub"]:
         bad.append("展开章小片没有惰性行")
-        if "segMulti" not in body or "onDeleteSegs" not in body:
+        if "segMulti" not in f["hub"] or "onDelete" not in f["hub"]:
             bad.append("看台缺多选或删段出口")
-        if "heartbeat" not in body:
+        if "heartbeat" not in f["hub"]:
             bad.append("看台缺模型心跳")
-    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in f["hub"]:
+    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in f["hub"]:
         bad.append("全量格子没拆成惰性行")
     # 9137 段时应是约 914 个行 item，而不是 1 个巨型 item
     n = 9137
@@ -271,12 +271,12 @@ def selftest():
          "val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters)", ""),
         ("心跳刷新被摘", "hub", "var beatTick by remember { mutableStateOf(0) }", ""),
         ("引擎动作被摘", "hub", "EventLog.lastEngine()", ""),
-        ("看台区块被摘", "hub", 'item(key = "seg_head_${r.index}")', ""),
+        ("看台区块被摘", "hub", 'visible = expandedChapter == r.index,', ""),
         ("第二列没拿到全量段", "hub", "row = row, pq = pqSeg,",
          "segs = chapterSegs, pq = pqSeg,"),
         ("第二列没拿到心跳", "hub", "multi = segMulti, checked = segChecked,", ""),
         ("删段回调被摘", "hub", "onTap = { sg -> tapSeg(sg) })", ""),
-        ("全量格子被摘", "hub", 'items(chapterSegs.chunked(SEG_GRID_COLUMNS),', ""),
+        ("全量格子被摘", "hub", 'chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->', ""),
         ("退回一次性组合", "hub", 'HubDivider()',
          "segs.chunked(10).forEach"),
         ("多选态被摘", "hub", "var segMulti by remember", ""),
