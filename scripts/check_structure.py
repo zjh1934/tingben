@@ -2,6 +2,7 @@
 """听本 · CI 自检：必备文件 / 权重泄漏 / 无网络权限 / 包名 / KDoc 坑 / 审计符号。只依赖标准库。"""
 import ui_sources
 import core_sources
+import clip_view
 from pathlib import Path
 import os, re, sys
 ROOT = Path(__file__).resolve().parent.parent
@@ -126,7 +127,7 @@ if "= raw.lastIndexOf(']')" in pipe_src:
 if "o.optString(\"instruct\", \"平稳叙述\")" in pipe_src:
     errs.append("R68 回退：又出现手搓解析默认指令")
 
-main_src = (ui_sources.source(ROOT)).read_text(encoding="utf-8", errors="replace")
+main_src = clip_view.merged(ROOT)  # R215 · 合成真源在 core，视图跟着合
 R25_ALL = ["TextSplitter", "SPLIT_STATS", "directWithStats"]
 for sym in R25_ALL:
     if sym not in all_src: errs.append("缺少 R25 符号: " + sym)

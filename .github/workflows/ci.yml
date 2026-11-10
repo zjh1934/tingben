@@ -397,6 +397,26 @@ jobs:
         run: python3 scripts/r206_verify.py
       - name: R206 MainActivity 分家读取层反向注入
         run: python3 scripts/r206_verify.py --selftest
+      - name: R209 真机日志三条收口
+        run: python3 scripts/r209_verify.py
+      - name: R209 真机日志三条收口反向注入
+        run: python3 scripts/r209_verify.py --selftest
+      - name: R210 续跑全入口与日志去噪
+        run: python3 scripts/r210_verify.py
+      - name: R210 反向注入
+        run: python3 scripts/r210_verify.py --selftest
+      - name: R213 队列暂停落盘与主动开始
+        run: python3 scripts/r213_verify.py
+      - name: R213 反向注入与逻辑对拍
+        run: python3 scripts/r213_verify.py --selftest
+      - name: R214 界面主动推进批次
+        run: python3 scripts/r214_verify.py
+      - name: R214 反向注入
+        run: python3 scripts/r214_verify.py --selftest
+      - name: R215 首页即贴即听与合成真源
+        run: python3 scripts/r215_verify.py
+      - name: R215 反向注入
+        run: python3 scripts/r215_verify.py --selftest
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

@@ -89,7 +89,8 @@ class ProduceService : Service() {
             }
         }
 
-        fun update(c: Context, stage: String, done: Int, total: Int, msg: String) {
+        fun update(c: Context, stage: String, done: Int, total: Int, msg: String,
+                   chapterPct: Float = -1f) {
             if (finished) return
             lastStage = stage
             lastDone = done
@@ -101,7 +102,7 @@ class ProduceService : Service() {
                 if (msg.isNotBlank()) append(" · ").append(msg.take(48))
             }
             publish(c)
-            OverlayProgress.update(c, lastBook, stage, done, total)
+            OverlayProgress.update(c, lastBook, stage, done, total, chapterPct)
         }
 
         fun stopping(c: Context) {

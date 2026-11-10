@@ -1,16 +1,18 @@
 package com.tingben.app
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
+import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
-import android.widget.TextView
 import com.tingben.app.core.KeepAlive
 import com.tingben.app.core.Prefs
 import com.tingben.app.core.UiErrors
@@ -18,24 +20,24 @@ import com.tingben.app.diag.EventLog
 
 /**
  * R161 · 可选悬浮进度控件，默认关。
+ * R214 · 按用户口径重画：不写字，只留圆环 + 中间百分比数字。
  *
- * 用户口径是「能拿多大权限就拿多大权限」，但调研结论
- * （沙盒 `听本_后台保活与权限_方案.md`）写死两条：浮窗不是保活白名单，
- * Android 15+ 反而要求「有可见浮窗」才算后台启动豁免。所以它只做
- * 「看得见进度」的辅助，不承担续跑：停止 / 完成 / 超时 / 服务销毁
- * 都必须立刻 removeView，绝不留在屏幕上。
+ * 形态：整本书合成 = 上下两球叠成 8 字（上=整本进度、下=章节进度）；
+ *       首页「粘一段即贴即听」= 单球。两态由 chapterPct 是否 >= 0 决定。
+ * 可拖动：按住浮窗任意位置移动，位置只在本会话内有效，不落盘。
  *
- * 不用 Compose：Service 里没有 LifecycleOwner，挂 ComposeView 要额外造一套
- * owner，静态检查看不见、真机上最容易漏。纯 View + 主线程 Handler，
- * 权限没给就直接不显示，不弹窗、不报错、不拖垮制作。
+ * 浮窗不是保活白名单、不承担续跑；停止 / 完成 / 超时 / 服务销毁
+ * 都必须立刻 removeView。停止入口仍在通知与软件内，浮窗本身不再写「停止」二字。
  *
- * KeepAlive.kt 仍只负责权限引导，不碰 WindowManager；两件事不混在一起。
+ * 不用 Compose：Service 里没有 LifecycleOwner，挂 ComposeView 要额外造一套 owner。
+ * 纯 View + 主线程 Handler，权限没给就直接不显示，不弹窗、不拖垮制作。
  */
 object OverlayProgress {
 
     @Volatile private var root: View? = null
-    @Volatile private var titleView: TextView? = null
-    @Volatile private var infoView: TextView? = null
+    @Volatile private var lp: WindowManager.LayoutParams? = null
+    @Volatile private var topRing: RingView? = null
+    @Volatile private var bottomRing: RingView? = null
     private val main = Handler(Looper.getMainLooper())
 
     private fun enabled(c: Context): Boolean =
@@ -50,83 +52,128 @@ object OverlayProgress {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
+            // R214 · 改成 TOP|START，拖动时 x 增大就往右走，跟手指一致
+            gravity = Gravity.TOP or Gravity.START
             x = 16
             y = 96
         }
 
-    private fun build(c: Context): LinearLayout {
-        val bg = GradientDrawable().apply {
-            setColor(0xE8222222.toInt())
-            cornerRadius = 28f
+    /** 一枚球：底环 + 按百分比走的描边弧 + 中间数字，不写书名、不写解释。 */
+    private class RingView(c: Context, private val sizePx: Int) : View(c) {
+        var pct: Float = 0f
+            set(v) { field = v.coerceIn(0f, 1f); invalidate() }
+
+        private val stroke = sizePx * 0.11f
+        private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = stroke
+            color = 0x55FFFFFF
         }
+        private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = stroke
+            strokeCap = Paint.Cap.ROUND
+            color = 0xFF7CC4FF.toInt()
+        }
+        private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            textSize = sizePx * 0.40f
+            isFakeBoldText = true
+        }
+
+        override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(sizePx, sizePx)
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width / 2f
+            val cy = height / 2f
+            val r = sizePx / 2f - stroke
+            val oval = RectF(cx - r, cy - r, cx + r, cy + r)
+            canvas.drawArc(oval, 0f, 360f, false, track)
+            // 从 12 点方向顺时针描到百分比处：50% 就转到半圈
+            if (pct > 0f) canvas.drawArc(oval, -90f, 360f * pct, false, arc)
+            val fm = label.fontMetrics
+            canvas.drawText((pct * 100).toInt().toString(),
+                cx, cy - (fm.ascent + fm.descent) / 2f, label)
+        }
+    }
+
+    private fun build(c: Context): LinearLayout {
+        val size = (56 * c.resources.displayMetrics.density).toInt()
+        val top = RingView(c, size)
+        val bottom = RingView(c, size).apply { visibility = View.GONE }
+        val pad = (4 * c.resources.displayMetrics.density).toInt()
         val box = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
-            background = bg
-            setPadding(28, 20, 28, 20)
-            elevation = 8f
+            setPadding(pad, pad, pad, pad)
         }
-        val title = TextView(c).apply {
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            maxLines = 1
-        }
-        val info = TextView(c).apply {
-            textSize = 11f
-            setTextColor(0xFFBBBBBB.toInt())
-            setPadding(0, 6, 0, 0)
-        }
-        val stop = TextView(c).apply {
-            text = "停止"
-            textSize = 11f
-            setTextColor(0xFFFF8A80.toInt())
-            setPadding(0, 10, 0, 0)
-            setOnClickListener {
-                try {
-                    // 服务已在前台，只是补发一个取消 Intent，不是后台偷偷拉起
-                    c.startService(ProduceService.cancelIntent(c))
-                } catch (t: Throwable) {
-                    UiErrors.report("悬浮窗上的停止没生效，请在通知或软件里点停止", t)
+        box.addView(top)
+        // 两球略叠，视觉上成 8 字；单球时这枚 GONE，只剩上面那枚
+        box.addView(bottom, LinearLayout.LayoutParams(size, size).apply {
+            topMargin = -(size / 7)
+        })
+        // R214 · 可拖动：按住整块移动，落点只改 LayoutParams，不动任何状态
+        box.setOnTouchListener(object : View.OnTouchListener {
+            private var downX = 0
+            private var downY = 0
+            private var originX = 0
+            private var originY = 0
+            override fun onTouch(v: View, e: MotionEvent): Boolean {
+                val params = lp ?: return true
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = e.rawX.toInt(); downY = e.rawY.toInt()
+                        originX = params.x; originY = params.y
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        params.x = originX + e.rawX.toInt() - downX
+                        params.y = originY + e.rawY.toInt() - downY
+                        try {
+                            (v.context.getSystemService(Context.WINDOW_SERVICE)
+                                as? WindowManager)?.updateViewLayout(v, params)
+                        } catch (_: Throwable) { }
+                    }
                 }
-                hide(c)
+                return true
             }
-        }
-        box.addView(title)
-        box.addView(info)
-        box.addView(stop)
-        titleView = title
-        infoView = info
+        })
+        topRing = top
+        bottomRing = bottom
         return box
     }
 
-    /** 每次进度更新都走这里：不存在就建，存在就改文字。 */
-    fun update(c: Context, book: String, stage: String, done: Int, total: Int) {
+    /**
+     * chapterPct >= 0 → 双球（整本 + 章节，8 字）；< 0 → 单球（即贴即听）。
+     * 默认 -1f 保持旧调用点零改动。
+     */
+    fun update(c: Context, book: String, stage: String, done: Int, total: Int,
+               chapterPct: Float = -1f) {
         val app = c.applicationContext
-        if (!enabled(app)) {
-            hide(app)
-            return
-        }
+        if (!enabled(app)) { hide(app); return }
         main.post {
             try {
                 val wm = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
                     ?: return@post
                 if (root == null) {
+                    val params = lp()
                     val v = build(app)
-                    wm.addView(v, lp())
+                    wm.addView(v, params)
                     root = v
+                    lp = params
                     EventLog.log(EventLog.Kind.UI, "OVERLAY_SHOW", "悬浮进度已显示")
                 }
-                titleView?.text = if (book.isBlank()) "听本 · 制作中" else "《$book》"
-                infoView?.text = buildString {
-                    append(stage)
-                    if (total > 0) append(" · ").append(done).append("/").append(total)
+                topRing?.pct = if (total > 0) done.toFloat() / total else 0f
+                if (chapterPct >= 0f) {
+                    bottomRing?.visibility = View.VISIBLE
+                    bottomRing?.pct = chapterPct
+                } else {
+                    bottomRing?.visibility = View.GONE
                 }
             } catch (t: Throwable) {
                 // 厂商 ROM 可能拒绝 addView；浮窗是可选增强，不能拖垮制作
                 UiErrors.report("悬浮进度显示不了，制作照常进行", t)
-                root = null
-                titleView = null
-                infoView = null
+                root = null; lp = null; topRing = null; bottomRing = null
             }
         }
     }
@@ -136,9 +183,7 @@ object OverlayProgress {
         val app = c.applicationContext
         main.post {
             val v = root ?: return@post
-            root = null
-            titleView = null
-            infoView = null
+            root = null; lp = null; topRing = null; bottomRing = null
             try {
                 val wm = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
                 wm?.removeViewImmediate(v)

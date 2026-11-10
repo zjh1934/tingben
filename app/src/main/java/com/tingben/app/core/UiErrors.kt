@@ -33,8 +33,12 @@ object UiErrors {
         lastMsg = msg
         lastAt = now
         _events.tryEmit(msg)
-        EventLog.log(EventLog.Kind.CRASH, "UI_ERROR",
-            msg + (t?.let { " · " + (it.message ?: it.javaClass.simpleName) } ?: ""))
+        // R209 · 真机日志：文件/通知/播放类的可见失败全被记成 Kind.CRASH，
+        // 于是「最近一次崩溃（空）」和环形缓冲里混着 CRASH 条目自相矛盾。
+        // 改 AUDIT + Level.ERROR：崩溃缓冲干净，allErrors() 仍按 | ERROR | 捞得到。
+        EventLog.log(EventLog.Kind.AUDIT, "UI_ERROR",
+            msg + (t?.let { " · " + (it.message ?: it.javaClass.simpleName) } ?: ""),
+            level = EventLog.Level.ERROR)
     }
 
     fun playback(msg: String, t: Throwable?) = report("播放：$msg", t)

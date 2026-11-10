@@ -46,7 +46,10 @@ MAIN = [
     'BookStore.add(ctx, r.title, r.text)',
     'EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id}")',
     'nav.push(Screen.CHAPTERS)',
-    'onAdded = { id ->\n                        refresh++\n                        bookId = id',
+    # R215 · 首页改成即贴即听，不再把建书结果跳目录页；
+    # 但外部分享页仍要 onAdded 回收并回首页，能力不删。
+    'onAdded = { },   // R215',
+    'onAdded = { _ ->\n                    inputReadOpen = false',
     'onAdded(added.id)',
     'onAdded: (String) -> Unit',
     'modelMissing: Int = 0',
@@ -58,6 +61,7 @@ MAIN = [
 MAIN_BAN = [
     'BookStore.list(c).size > before',   # 建书不再只比数量
     'onAdded = { refresh++ }',            # 首页不再只刷书架
+    'onAdded = { id ->',                  # R215 首页不许再接建书 id 跳目录页
 ]
 HUB = [
     'val resumePos = remember(refresh, finishedChapters)',
@@ -133,9 +137,9 @@ def selftest():
          lambda t: t.replace('                            EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id}")',
                              '                            EventLog.ui("BOOK_IMPORT_OPEN", "none")')
          .replace('                            nav.push(Screen.CHAPTERS)\n', '')),
-        ("建书回退到只刷书架", "main",
-         lambda t: t.replace('onAdded = { id ->\n                        refresh++\n                        bookId = id\n                        nav.push(Screen.CHAPTERS)\n                    }',
-                             'onAdded = { _ -> refresh++ }')),
+        ("首页又跳目录页", "main",
+         lambda t: t.replace('onAdded = { },   // R215',
+                             'onAdded = { id -> nav.push(Screen.CHAPTERS) },')),
         ("首屏模型入口被摘", "main",
          lambda t: t.replace('if (modelMissing > 0) {', 'if (false) {')),
         ("首屏模型计数被摘", "main",

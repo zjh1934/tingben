@@ -89,8 +89,16 @@ object Producer {
             config = config, modeId = ModelStore.currentMode(c).id,
             splitRule = TaskResume.SPLIT_RULE,
             planEpoch = ChapterPlan.epoch(c, book.id))
-        val paused = TaskResume.queuePaused(c)
-        if (!busy && TaskResume.queue(c).isEmpty() && !paused) {
+        val queueEmpty = TaskResume.queue(c).isEmpty()
+        // R213 · 暂停标记只用来防「进程重启后自动把停掉的队列跑起来」。
+        // 队列已空时它只是上次收尾的残留；用户主动点合成是明确意图，
+        // 先清掉再直接开跑，否则会被排进一个暂停队列、点了没反应。
+        if (queueEmpty && TaskResume.queuePaused(c)) {
+            queuePaused = false
+            TaskResume.setQueuePaused(c, false)
+        }
+        val paused = TaskResume.queuePaused(c) && !queueEmpty
+        if (!busy && queueEmpty && !paused) {
             start(c, book, only, true, think, config)
             // R175 · P2-6：队列泵与自动续跑都查了，只有这条直接启动路径漏了。
             // FGS 起不来时 start() 已把任务存成 blocked，这里绝不能再报「开始制作」。
@@ -486,7 +494,12 @@ object Producer {
         val now = System.currentTimeMillis()
         if (stageChanged || now - lastNotifyMs >= PERSIST_INTERVAL_MS) {
             appCtx?.let { ctx ->
-                ProduceService.update(ctx.applicationContext, stage, done, total, msg)
+                // R214 · 取「最靠后那一章」的进度给悬浮窗下球。
+                // 不用 maxByOrNull 之类版本相关 API，纯循环最稳。
+                var chPct = -1f
+                for ((_, v) in chapterProgress) if (v > chPct) chPct = v
+                ProduceService.update(ctx.applicationContext, stage, done, total,
+                    msg, chPct)
             }
             lastNotifyMs = now
         }

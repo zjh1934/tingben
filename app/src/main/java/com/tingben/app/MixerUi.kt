@@ -50,7 +50,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import java.io.File
 
@@ -68,7 +67,10 @@ internal fun MixerDialog(c: Context, onClose: () -> Unit) {
     ) {
         // statusBars + navigationBars 都避让：全屏 Dialog 默认会伸到手势条下面，
         // 底部「保存 / 试听」被系统导航区压住，看起来就像「没有出口」。
-        Surface(Modifier.fillMaxSize()
+        // R214 · 上下略收：不再全屏撑满，底部留出空间，不压到内容与系统导航。
+        // statusBars / navigationBars 避让照旧保留（R155）。
+        Surface(Modifier.fillMaxWidth()
+            .fillMaxHeight(0.86f)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(12.dp),
@@ -187,67 +189,12 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
         busyTrial = true
         trialMsg = "合成中…"
         val job = scope.launch(Dispatchers.IO) {
+            // R215 · 合成主体下沉到 ClipSynth，试听与首页即贴即听共用同一份
+            // model / mode 分支 / 失败判定；这里只管状态、播放与 UI 文案。
             val res = runCatching {
-                ensureActive()
-                if (!NativeEngine.isAvailable()) throw IllegalStateException("本地引擎没装载，请重启 App")
-                ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }
-                val tk = ModelStore.modeFile(c, mode) ?: throw IllegalStateException("缺这一份模式主文件")
-                val tok = ModelStore.tokenizer(c) ?: throw IllegalStateException("缺共用底座")
-                val h = NativeEngine.ttsLoadGated(tk.absolutePath, tok.absolutePath, null)
-                if (h == 0L) throw IllegalStateException("声音模型正在装载，稍后再试")
-                try {
-                    ensureActive()
-                    when (mode) {
-                        ModelStore.Mode.BASE -> {
-                            val txt = src.refText.takeIf { it.isNotBlank() }
-                            if (!NativeEngine.ttsSetVoiceRef(h, VoiceRef.pcm(c), txt))
-                                throw IllegalStateException("参考音频没能交给引擎")
-                        }
-                        else -> NativeEngine.ttsClearVoiceRef(h)
-                    }
-                    val v = when (mode) {
-                        ModelStore.Mode.VOICE_DESIGN -> {
-                            val identity = src.voice.trim().ifBlank { DEFAULT_IDENTITY }
-                            SynthInput.Params(
-                                VoiceProfile.build(identity, src.perf.styleInstruct(),
-                                    "平稳、清晰地叙述，句间自然停顿。"), null)
-                        }
-                        ModelStore.Mode.CUSTOM_VOICE -> {
-                            // R165 · 第三份真机日志实证：MIXER_TRIAL_FAIL「没生成声音」，
-                            // TTS_PARAMS 里 speaker=null。官方示例 generate_custom_voice
-                            // 必须给 speaker（Vivian / Ryan），缺了引擎直接失败。
-                            // 正式合成（Pipeline 255 行）本来就有「没选就取音色表第一个」
-                            // 的兜底，试听却漏了 —— 两处口径对齐，别再白跑一趟。
-                            val tone = listOf(src.cvStyle.trim(), src.perf.styleInstruct().trim())
-                                .filter { it.isNotEmpty() }.joinToString("；")
-                            val speaker = listOf(src.speaker, Prefs.speakerName(c))
-                                .firstOrNull { it.isNotBlank() }
-                                ?: Prefs.speakerNames(c).firstOrNull()
-                                    ?.also { Prefs.setSpeakerName(c, it) }.orEmpty()
-                            if (speaker.isBlank())
-                                throw IllegalStateException("先在下面读取模型自带的音色表，挑一个音色再试听")
-                            SynthInput.Params(tone.ifBlank { null }, speaker)
-                        }
-                        ModelStore.Mode.BASE -> SynthInput.Params(null, null)
-                    }
-                    ensureActive()
-                    val f = File(c.filesDir, out)
-                    val code = NativeEngine.ttsSynthesize(h, text, v.instruct, v.speaker,
-                        "chinese", f.absolutePath, src.knobs)
-                    ensureActive()
-                    if (code != 0 || !f.exists() || f.length() <= 44) {
-                        EventLog.log(EventLog.Kind.ENGINE, "MIXER_TRIAL_EMPTY",
-                            "mode=${mode.id} · code=$code · " +
-                                "speaker=${v.speaker ?: "空"} · chars=${text.length} · " +
-                                "instructChars=${v.instruct?.length ?: 0}")
-                        throw IllegalStateException(
-                            SynthErrors.explain(code, f.exists() && f.length() > 44))
-                    }
-                    EventLog.log(EventLog.Kind.ENGINE, "MIXER_TRIAL",
-                        "来源=$label · mode=${mode.id} · chars=${text.length} · " +
-                            "seed=${src.knobs.seed} · bytes=${f.length()}")
-                    f.absolutePath
-                } finally { NativeEngine.ttsFreeGated(h) }
+                ClipSynth.synthesize(c, text, out, label) {
+                    myToken != trialToken || !isActive
+                }
             }
             withContext(Dispatchers.Main) {
                 if (myToken != trialToken || !isActive) return@withContext

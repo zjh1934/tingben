@@ -50,7 +50,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import java.io.File
 
@@ -209,6 +208,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     // 第四份日志里同一会话刷了 6 条。弹窗本身没问题（只 SHOW 了一次），
     // 收敛成「同一前台会话只记一次」，信息不丢、不再制造噪声。
     var resumeSkipLogged by remember { mutableStateOf(false) }
+    // R210 · no_pending 的节流状态，与 resumeSkipLogged 各管一条 reason，互不顶掉
+    var lastSkipReason by remember { mutableStateOf("") }
 
     var navStack by rememberSaveable { mutableStateOf("") }
     val nav = remember { NavHost(navStack, { screen }, { screen = it }, { navStack = it }) }
@@ -275,9 +276,16 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             Producer.pending(ctx) to Prefs.autoResumeOnStart(ctx)
         }
         if (p == null) {
-            EventLog.ui("RESUME_ASK_SKIP", "reason=no_pending")
+            // R210 · 日志里 no_pending 刷了 20+ 条，把真信息稀释了。
+            // R169 只节流了 decided；这里按「reason 变了才记」收敛，
+            // 状态从有任务变回无任务仍会记一条，信息不丢。
+            if (lastSkipReason != "no_pending") {
+                lastSkipReason = "no_pending"
+                EventLog.ui("RESUME_ASK_SKIP", "reason=no_pending")
+            }
             return@LaunchedEffect
         }
+        lastSkipReason = ""
         if (resumeDecided) {
             if (!resumeSkipLogged) {
                 resumeSkipLogged = true
@@ -512,15 +520,26 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     }
 
     val resumeTask: (TaskInfo) -> Unit = { t ->
-        val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
-        if (b != null) {
-            bookId = b.id
-            lastSelection = t.only
-            Producer.start(ctx, b, t.only, true, t.think, t.config)
-            // R163 · 续跑一律回这本书的目录页（现在只有一列）。
-            openBook(b.id)
+        // R210 · 收尾窗口判断下沉到唯一的生产启动 lambda。
+        // R209 只堵了目录页那枚「继续」按钮；但续跑询问弹层（onResume = resumeTask）
+        // 与任务看板「继续制作」都走这里，日志 05:09:35 正显示着弹层，
+        // 那两处同样会撞上 Producer.start 的 if (busy) return 而毫无反应。
+        if (Producer.isBusyForBook(t.bookId)) {
+            EventLog.ui("RESUME_BLOCKED_BUSY", "book=${t.bookId}")
+            Toast.makeText(ctx, "已点停止，正在收尾这一段，稍等再继续",
+                Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑", Toast.LENGTH_LONG).show()
+            val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
+            if (b != null) {
+                bookId = b.id
+                lastSelection = t.only
+                Producer.start(ctx, b, t.only, true, t.think, t.config)
+                // R163 · 续跑一律回这本书的目录页（现在只有一列）。
+                openBook(b.id)
+            } else {
+                Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑",
+                    Toast.LENGTH_LONG).show()
+            }
         }
     }
     val chrome = chromeOf(screen)
@@ -578,15 +597,23 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 // R162 · 主页就是输入框：粘贴文字直接建书，书列表搬到左边抽屉。
                 Screen.LIBRARY -> InputReadScreen(ctx,
                     onBack = { },
-                    onAdded = { id ->
-                        refresh++
-                        bookId = id
-                        nav.push(Screen.CHAPTERS)
-                    },
+                    onAdded = { },   // R215 · 首页即贴即听，不再建书、不再跳目录页
                     asHome = true,
                     importingBook = bookImporting,
                     modelMissing = modelMissing,
-                    onModels = { modelsFrom = Screen.LIBRARY; nav.push(Screen.MODELS) })
+                    onModels = { modelsFrom = Screen.LIBRARY; nav.push(Screen.MODELS) },
+                    onMixer = { chapterMixerOpen = true
+                        EventLog.ui("OVERLAY_MIXER", "open:home") },
+                    onTasks = {
+                        // 首页没「当前书」：有任务就打开那本书并就地展开看板
+                        TaskResume.active(ctx)?.bookId?.let {
+                            openBook(it); hubOpenTasks = true
+                        }
+                    },
+                    hasTask = remember(refresh, bookImporting) {
+                        (TaskResume.active(ctx)?.takeIf { it.phase != "done" } != null) ||
+                            TaskResume.queue(ctx).isNotEmpty()
+                    })
                 Screen.CHAPTERS -> {
                     ChapterHubScreen(ctx, bookId, refresh,
                         onBack = { nav.pop() },

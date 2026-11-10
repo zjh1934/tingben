@@ -510,8 +510,19 @@ internal fun ChapterHubScreen(
                                 val now = System.currentTimeMillis()
                                 if (now - lastHubTapMs >= 800L) {
                                     lastHubTapMs = now
-                                    EventLog.ui("HUB_RESUME", "book=${book.id}")
-                                    onResumeTask()
+                                    // R209 · 真机日志：点停止后后台那一段还要 1~3 分钟才收尾，
+                                    // 这期间 busy 仍为 true，Producer.start 会静默 return。
+                                    // 用户 5 秒内连点 4 次「继续」、界面毫无反应（05:06:52~57）。
+                                    // 删书 / 重新分章都已有「稍等」反馈，唯独续跑漏了。
+                                    if (Producer.isBusyForBook(book.id)) {
+                                        EventLog.ui("HUB_RESUME_BLOCKED",
+                                            "book=${book.id} reason=收尾中")
+                                        Toast.makeText(c, "已点停止，正在收尾这一段，稍等再继续",
+                                            Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        EventLog.ui("HUB_RESUME", "book=${book.id}")
+                                        onResumeTask()
+                                    }
                                 }
                             }, modifier = Modifier.height(32.dp),
                                 shape = RoundedCornerShape(50),

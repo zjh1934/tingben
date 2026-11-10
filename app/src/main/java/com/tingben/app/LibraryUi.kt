@@ -50,7 +50,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import java.io.File
 

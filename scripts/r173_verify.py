@@ -228,6 +228,23 @@ def struct_errors(f):
     if "ChapterPlan.epoch(c, t.bookId)" not in f["resume"]:
         e.append("TaskResume 没引用 ChapterPlan.epoch")
 
+    # ③b R216 · 真编译抓到的 Java File 属性误用防回潮。
+    # rc #184：R210 写诊断线索时用了 Swift/Python 风格的 ?.isDir，
+    # Kotlin 的 java.io.File 只有 isDirectory，静态守门全绿、真编译才报
+    # Unresolved reference。扫 FILES 视图 + 全仓真实 .kt，一个都不漏。
+    BAD_FILE_PROPS = ["isDir", "isExists", "getParentFile"]
+    def bad_props(t):
+        return [k for k in BAD_FILE_PROPS
+                if re.search(r"[?.]\s*" + k + r"\b", t)]
+    for key, txt in f.items():
+        if key == "ci": continue
+        for k in bad_props(txt):
+            e.append("%s 用了 Java File 不存在/不该用的 '%s'（Kotlin 用 isDirectory）" % (key, k))
+    for kt in sorted((ROOT / "app/src/main/java").rglob("*.kt")):
+        t = kt.read_text(encoding="utf-8", errors="replace")
+        for k in bad_props(t):
+            e.append("%s 用了 Java File 不存在/不该用的 '%s'（rc #184 真编译抓到）" % (kt.name, k))
+
     # ③ 新引用的类型要有 import 或全限定
     if "EventLog." in f["plan"] and "import com.tingben.app.diag.EventLog" not in f["plan"]:
         e.append("ChapterPlan 用了 EventLog 但没 import")
@@ -267,6 +284,8 @@ def selftest():
         ("zip 闸门回潮", "imp",
          lambda t: t.replace("buf[0] == 'P'.code.toByte() && buf[1] == 'K'.code.toByte()",
                              "false")),
+        ("File 属性误用回潮", "plan",
+         lambda t: t.replace("f.parentFile?.isDirectory", "f.parentFile?.isDir")),
         ("EventLog 没 import", "plan",
          lambda t: t.replace("import com.tingben.app.diag.EventLog\n", "")),
         ("CI 漏挂", "ci",

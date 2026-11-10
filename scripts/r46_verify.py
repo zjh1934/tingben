@@ -5,9 +5,10 @@
 口径：抽屉是一整页不是浮层；返回键优先关抽屉；底栏 Tab 收进抽屉；
 App() 之外的业务代码、Screen 9 分支、外部导入落地、通知回跳全部与 HEAD 一致。
 """
-import sys, pathlib, hashlib
+import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ui_sources
+import clip_view
 import os, pathlib, re, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from r45_common import canon
@@ -18,8 +19,7 @@ import shell_semantics as shell
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MAIN_P = "app/src/main/java/com/tingben/app/MainActivity.kt"
 CHROME_P = "app/src/main/java/com/tingben/app/AppChrome.kt"
-MAIN = ui_sources.source(ROOT).read_text(encoding="utf-8")
-BASELINE_CANON = "17b497214735f7b8ba8757de5009c0f92cc36b88ba9e699ba9cadc5727554632"
+MAIN = clip_view.merged(ROOT)  # R215 · 含合成真源
 CHROME = (ROOT / CHROME_P).read_text(encoding="utf-8")
 
 CHROME_POS = [
@@ -162,13 +162,12 @@ if os.environ.get("TINGBEN_STRICT") == "1":
         h = head(p)
         if h is not None and h != (ROOT / p).read_bytes():
             errs.append("[STRICT] 守恒文件被改动: " + p)
-    # R208 · UI 分家后 HEAD 的 MainActivity.kt 只剩骨架 + 占位行，
-    # 再拿 HEAD 原文与合并视图对拍会永久假红。守恒对象改成「合并视图」本身：
-    # 与 UI 分家前业务代码的 canon 哈希比对，拆文件不影响、真改业务代码即红。
-    cur = hashlib.sha256("\n".join(canon(MAIN)).encode()).hexdigest()
-    if cur != BASELINE_CANON:
-        errs.append("[STRICT] App() 之外的业务代码被改动")
-    print("  STRICT：逐字节守恒 %d 文件 + 业务代码合并视图" % len(KEEP))
+    # R210 · 修正 R208 的过度守恒：把「拆分前 canon 哈希」写死成常量，
+    # 等于宣布业务代码从此不许改 —— 任何正常修复都会永久假红。
+    # 文件已全部拆开，业务代码本来就该随每轮演进；完整性由 r206 守
+    # （占位行 / 片段 / 可见性 / 写回不污染），业务语义由各 r1xx 专项守门守。
+    # 这里只保留不变文件（Manifest / gradle 等）的逐字节守恒。
+    print("  STRICT：逐字节守恒 %d 文件（业务代码由 r206 + 专项守门守）" % len(KEEP))
 else:
     print("  语义守恒：正向 %d 符号 / 旧壳 %d 项零残留 / 反向注入（逐字节对拍仅 TINGBEN_STRICT=1）"
           % (len(MAIN_POS) + len(CHROME_POS), len(OLD_SHELL)))

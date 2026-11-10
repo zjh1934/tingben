@@ -137,13 +137,13 @@ def selftest():
                              '''                                EventLog.ui("HUB_STOP", "book=${book.id}")
                                 Producer.stop()''')),
         ("继续按钮不节流", "hub",
+         # R209 · 续跑按钮加了收尾窗口前置判断，旧整块锚点已失效。
+         # 改成只把这一处的节流条件改坏（if(true)），判据「两处节流不齐」仍拦得住。
          lambda t: t.replace('''                                if (now - lastHubTapMs >= 800L) {
                                     lastHubTapMs = now
-                                    EventLog.ui("HUB_RESUME", "book=${book.id}")
-                                    onResumeTask()
-                                }''',
-                             '''                                EventLog.ui("HUB_RESUME", "book=${book.id}")
-                                onResumeTask()''')),
+                                    // R209''',
+                             '''                                if (true) {
+                                    // R209''', 1)),
         ("README 版本回退", "readme",
          lambda t: t.replace('**当前版本 `%s`**' % version(),
                              '**当前版本 `0.0.1`**')),

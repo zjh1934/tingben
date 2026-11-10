@@ -60,11 +60,24 @@ object ChapterPlan {
                 a.put(JSONObject().put("index", ch.index).put("title", ch.title)
                     .put("start", ch.start).put("end", ch.end))
             }
+            // R210 · BookStore.dir 已 mkdirs，但章节表可能由旧版本 / 外部清理后的
+            // 书触发，写前再兜一次目录，零成本。不猜根因、不删已有文件、不重试。
+            file(c, bookId).parentFile?.mkdirs()
             val ok = AtomicJson.write(file(c, bookId), JSONObject()
                 .put("schema", plan.schema).put("ruleId", plan.ruleId)
                 .put("sha", plan.sha).put("chapters", a)
                 .put("epoch", plan.epoch).toString())
-            if (!ok) UiErrors.storage("章节表没写进磁盘，下次进目录页会重新识别", null)
+            if (!ok) {
+                // R209 · 真机日志 05:07:41：极短文本建书时报了这句，却没留下任何
+                // 可定位的线索（空间 279GB、t=null）。不动 AtomicJson 的写入语义，
+                // 只把现场状态带进消息，下一份日志就能判是目标已存在还是 fsync 偶发。
+                val f = file(c, bookId)
+                val part = java.io.File(f.parentFile, f.name + ".part")
+                UiErrors.storage("章节表没写进磁盘，下次进目录页会重新识别" +
+                    " · 目标存在=${f.isFile} · 残留=${part.isFile}" +
+                    " · 目录存在=${f.parentFile?.isDirectory} · 可写=${f.parentFile?.canWrite()}" +
+                    " · 章数=${plan.chapters.size}", null)
+            }
         } catch (t: Throwable) {
             UiErrors.storage("章节表写入失败，下次进目录页会重新识别", t)
         }

@@ -17,6 +17,7 @@ selftest 全程纯内存注入，一个字节都不写源文件。
 """
 import ui_sources
 import core_sources
+import clip_view
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -74,6 +75,14 @@ BAN = [
 ]
 
 
+def _load():
+    # R215 · 试听失败判定搬到 core/ClipSynth.kt，main 视图跟着合，判据不变
+    d = {k: (p.read_text(encoding="utf-8") if p.is_file() else "")
+         for k, p in FILES.items() if k != "main"}
+    d["main"] = clip_view.merged(ROOT)
+    return d
+
+
 def checks(f):
     e = []
     if not (APP / "core/SynthErrors.kt").is_file():
@@ -95,8 +104,7 @@ def checks(f):
 
 
 def selftest():
-    base = {k: (p.read_text(encoding="utf-8") if p.is_file() else "")
-            for k, p in FILES.items()}
+    base = _load()
     assert not checks(base), "基线自己就红了，先修基线"
     cases = [
         ("试听退回裸错误码", "main",
@@ -159,8 +167,7 @@ def selftest():
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         sys.exit(1 if selftest() else 0)
-    f = {k: (p.read_text(encoding="utf-8") if p.is_file() else "")
-         for k, p in FILES.items()}
+    f = _load()
     e = checks(f)
     if e:
         print("FAIL · R183 真机实证四件")

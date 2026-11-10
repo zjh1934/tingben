@@ -63,7 +63,11 @@ ANCHORS = {
         "WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY",
         "wm?.removeViewImmediate(v)",
         "fun hide(c: Context)",
-        "c.startService(ProduceService.cancelIntent(c))",
+        # R214 · 浮窗改成「啥也不写」的双球圆环 + 可拖动：
+        # 原来那枚「停止」文字按钮按用户口径撤掉，停止仍走通知与软件内按钮。
+        "canvas.drawArc(oval, -90f, 360f * pct, false, arc)",
+        "MotionEvent.ACTION_MOVE",
+        "chapterPct >= 0f",
     ],
     "eventlog": [
         "getHistoricalProcessExitReasons(null, 0, 8)",
@@ -125,8 +129,15 @@ def check(f=None):
     if hides < 4:
         e.append("悬浮窗收起出口不全：ProduceService 只有 %d 处 hide，应 ≥4"
                  "（stopping/finish/onDestroy/onTimeout）" % hides)
-    if "OverlayProgress.update(c, lastBook, stage, done, total)" not in svc:
+    if "OverlayProgress.update(c, lastBook, stage, done, total, chapterPct)" not in svc:
         e.append("进度更新没同步到悬浮窗")
+    # R214 · 浮窗不许再写字：纯圆环 + 中间数字
+    if "import android.widget.TextView" in f["overlay"]:
+        e.append("悬浮窗又写起文字（用户口径：啥也不写）")
+    if "cancelIntent" in f["overlay"]:
+        e.append("悬浮窗又挂停止按钮，停止应留在通知与软件内")
+    if "Gravity.TOP or Gravity.START" not in f["overlay"]:
+        e.append("可拖动的坐标系退回 TOP|END，手指方向会反")
 
     # 默认关是硬口径，不许悄悄打开
     if re.search(r'getBoolean\(KEY_OVERLAY_PROGRESS,\s*true\)', f["prefs"]):
@@ -171,6 +182,12 @@ def selftest():
          't.stage == "已达时长上限" -> "已达时长上限"', ""),
         ("悬浮控件本体被摘", "overlay", "object OverlayProgress", "object OverlayProgressX"),
         ("removeView 被摘", "overlay", "wm?.removeViewImmediate(v)", ""),
+        ("圆环描边被摘", "overlay",
+         "canvas.drawArc(oval, -90f, 360f * pct, false, arc)", ""),
+        ("拖动被摘", "overlay", "MotionEvent.ACTION_MOVE", "MotionEvent.ACTION_UP"),
+        ("双球开关被摘", "overlay", "chapterPct >= 0f", "true"),
+        ("浮窗又写字", "overlay", "import android.graphics.Canvas",
+         "import android.widget.TextView\nimport android.graphics.Canvas"),
         ("权限检查被摘", "overlay",
          "Prefs.overlayProgress(c) && KeepAlive.overlayGranted(c)",
          "true"),

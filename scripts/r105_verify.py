@@ -7,6 +7,7 @@
 """
 import ui_sources
 import core_sources
+import clip_view
 import pathlib, re, sys
 import screen_enum as se
 
@@ -16,7 +17,7 @@ N = ROOT / 'app/src/main/java/com/tingben/app/engine/NativeEngine.kt'
 PL = core_sources.source(ROOT)
 CI = ROOT / '.github/workflows/ci.yml'
 
-main = M.read_text(encoding='utf-8')
+main = clip_view.merged(ROOT)  # R215 · 含合成真源
 native = N.read_text(encoding='utf-8')
 pipe = PL.read_text(encoding='utf-8')
 ci = CI.read_text(encoding='utf-8')
@@ -60,13 +61,17 @@ errs += check(trial, 'trial', [
     'val myToken = trialToken + 1',
     'trialToken = myToken',
     'trialJob?.cancel()',
-    'ensureActive()',
+    # R215 · 合成主体搬到 ClipSynth，协程取消检查从 ensureActive()
+    # 变成 cancelled() 回调；真源仍在本视图里，判据不放宽，只换符号。
+    'ClipSynth.synthesize(c, text, out, label)',
+    'myToken != trialToken || !isActive',
+    'if (cancelled())',
     'if (myToken != trialToken || !isActive) return@withContext',
     'trialJob = job',
     'Text("停止", fontSize = 12.sp)',
 ])
-if trial.count('ensureActive()') < 4:
-    errs.append('ensureActive 检查点不足 4 处')
+if trial.count('if (cancelled())') < 4:
+    errs.append('合成取消检查点不足 4 处（cancelled）')
 
 errs += check(trial, '旧形态', [], absent=[
     'val h = NativeEngine.ttsLoad(tk.absolutePath',
@@ -108,6 +113,8 @@ def violates(a, b, c):
             bad.append('trial 缺 ' + s[:36])
     if 'fun ttsLoadGated(' not in b or 'tryBeginTtsLoad' not in b:
         bad.append('单 loader 丢失')
+    if a.count('if (cancelled())') < 4:
+        bad.append('合成取消检查点被摘')
     for name, src in (('main', a), ('pipeline', c)):
         if 'NativeEngine.ttsLoad(' in src or 'NativeEngine.ttsFree(' in src:
             bad.append(name + ' 出现裸装载/释放')
@@ -128,6 +135,8 @@ if '--selftest' in sys.argv:
             a.replace('trialJob?.cancel()', 'Unit'), b, c)),
         ('撤掉停止入口', lambda a, b, c: (
             a.replace('if (busyTrial) stopTrial()', 'if (false) Unit', 1), b, c)),
+        ('撤掉合成取消检查', lambda a, b, c: (
+            a.replace('if (cancelled())', 'if (false)', 4), b, c)),
     ]
     ok = 0
     for label, fn in cases:

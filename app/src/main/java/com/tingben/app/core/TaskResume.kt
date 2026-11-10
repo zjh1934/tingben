@@ -75,13 +75,26 @@ object TaskResume {
     fun clearQueue(c: Context) { AtomicJson.delete(queueFile(c)) }
 
     // 暂停状态落盘：进程被杀后重开软件，不会把用户主动停掉的队列又跑起来。
-    fun queuePaused(c: Context): Boolean = when (val r = AtomicJson.read(pauseFile(c))) {
-        is AtomicJson.Read.Ok -> r.text.trim() == "1"
-        else -> false
+    // R213 · AtomicJson.legal 只放行 { / [ 开头的 JSON，原来这里写纯 "1"
+    // 被静默拒写：1.1.22 真机日志 05:07:38 记了「QUEUE_PAUSE 队列停在原地」，
+    // 05:09:35 诊断快照却是「暂停=false」。标记从来没落过盘。
+    fun queuePaused(c: Context): Boolean {
+        // 兼容早期裸写留下的纯标量文件（AtomicJson.read 会把它判成 Corrupt）
+        try {
+            val f = pauseFile(c)
+            if (f.isFile && f.readText().trim() == "1") return true
+        } catch (_: Throwable) { }
+        return when (val r = AtomicJson.read(pauseFile(c))) {
+            is AtomicJson.Read.Ok -> try {
+                JSONObject(r.text).optInt("paused", 0) == 1
+            } catch (_: Throwable) { r.text.trim() == "1" }
+            else -> false
+        }
     }
 
     fun setQueuePaused(c: Context, v: Boolean) {
-        if (v) AtomicJson.write(pauseFile(c), "1")
+        if (v) AtomicJson.write(pauseFile(c),
+            JSONObject().put("paused", 1).toString())
         else AtomicJson.delete(pauseFile(c))
     }
 

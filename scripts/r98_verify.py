@@ -8,6 +8,7 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ui_sources
+import clip_view
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -22,7 +23,10 @@ FILES = {
 }
 
 def load():
-    return {k: p.read_text() for k, p in FILES.items()}
+    # R215 · 合成真源搬到 core/ClipSynth.kt，main 视图跟着合，判据不变
+    d = {k: p.read_text() for k, p in FILES.items() if k != "main"}
+    d["main"] = clip_view.merged(ROOT)
+    return d
 
 def mixer(s):
     i = s.find("private fun MixerScreen(")

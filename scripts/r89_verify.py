@@ -15,6 +15,7 @@ R162 用户把目标定死：主页输入框 / 抽屉放书 / 右上角 ＋ 与�
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import ui_sources
+import clip_view
 import pathlib, re, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import nav_semantics as nav
@@ -23,7 +24,7 @@ import shell_semantics as shell
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CHROME = ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt"
-MAIN = ui_sources.source(ROOT)
+MAIN = clip_view.merged(ROOT)  # R215 · 含合成真源
 CI = ROOT / ".github/workflows/ci.yml"
 
 # R195 · 动态解析
@@ -57,7 +58,7 @@ def txt(p):
 
 
 def main():
-    files = {"chrome": txt(CHROME), "main": txt(MAIN), "ci": txt(CI)}
+    files = {"chrome": txt(CHROME), "main": MAIN, "ci": txt(CI)}
     errs = check(files)
     if "--selftest" in sys.argv:
         injections = list(shell.injections())
