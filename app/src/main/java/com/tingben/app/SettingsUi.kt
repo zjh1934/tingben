@@ -57,20 +57,47 @@ import java.io.File
 @Composable
 internal fun OverlayProgressRow(c: Context) {
     var on by remember { mutableStateOf(Prefs.overlayProgress(c)) }
+    // R217 · 用户说「悬浮窗的开关好像没有做」：开关其实在，但默认关、藏在
+    // 设置页末尾，而且打开后若没给「显示在其他应用上层」权限会静默不显示，
+    // 看起来就像开关是假的。回前台复检权限，把状态与去授权的出口摆在同一行。
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var permTick by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) permTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+    val permOk = remember(permTick) { KeepAlive.overlayGranted(c) }
+    fun askPermission() {
+        if (!KeepAlive.requestOverlay(c))
+            Toast.makeText(c, "打不开设置页，请到应用详情里开「显示在其他应用上层」",
+                Toast.LENGTH_LONG).show()
+        else Toast.makeText(c, "允许后回来，制作时就能看到悬浮进度",
+                Toast.LENGTH_LONG).show()
+    }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("悬浮进度", fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold, color = palette.text)
             Spacer(Modifier.height(2.dp))
-            Text(if (on) "制作时显示 · 停止即收起" else "关闭",
-                fontSize = 11.sp, color = Sub)
+            Text(if (!on) "关闭" else if (!permOk) "还需允许「显示在其他应用上层」"
+                 else "制作时显示 · 停止即收起",
+                fontSize = 11.sp, color = if (on && !permOk) Warn else Sub)
         }
         Spacer(Modifier.width(8.dp))
+        if (on && !permOk) {
+            TextButton(onClick = { askPermission() }) {
+                Text("去允许 ›", fontSize = 12.sp, color = Primary)
+            }
+        }
         Switch(checked = on, onCheckedChange = {
             on = it
             Prefs.setOverlayProgress(c, it)
             if (!it) OverlayProgress.hide(c)
-            EventLog.ui("OVERLAY_SETTING", "on=$it")
+            else if (!permOk) askPermission()
+            EventLog.ui("OVERLAY_SETTING", "on=$it · perm=$permOk")
         })
     }
 }

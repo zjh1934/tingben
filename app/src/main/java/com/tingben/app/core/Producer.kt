@@ -494,10 +494,13 @@ object Producer {
         val now = System.currentTimeMillis()
         if (stageChanged || now - lastNotifyMs >= PERSIST_INTERVAL_MS) {
             appCtx?.let { ctx ->
-                // R214 · 取「最靠后那一章」的进度给悬浮窗下球。
+                // R217 · 取「章号最大那一章」的进度给悬浮窗下球。
+                // R214 原来比对的是 value（取所有章里进度最大的），做到第 2 章
+                // 时下球还停在第 1 章的 100%，看着像卡住。比对 key 才是当前章。
                 // 不用 maxByOrNull 之类版本相关 API，纯循环最稳。
                 var chPct = -1f
-                for ((_, v) in chapterProgress) if (v > chPct) chPct = v
+                var chIdx = -1
+                for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }
                 ProduceService.update(ctx.applicationContext, stage, done, total,
                     msg, chPct)
             }

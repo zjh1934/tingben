@@ -52,7 +52,7 @@ def check(f):
         e.append("ProduceService.update 没接章节进度")
     if "OverlayProgress.update(c, lastBook, stage, done, total, chapterPct)" not in sv:
         e.append("章节进度没透传到浮窗")
-    if "for ((_, v) in chapterProgress) if (v > chPct) chPct = v" not in pr:
+    if "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }" not in pr:
         e.append("Producer.emit 没取章节进度")
     # ③ 首页：1/3 屏、粘贴钮进框内、右上双入口
     for k in ["fillMaxHeight(0.36f)", "Alignment.BottomEnd",
@@ -95,7 +95,7 @@ def selftest():
         ("链路没接章节", "service", "chapterPct: Float = -1f", ""),
         ("链路没透传", "service", "total, chapterPct)", "total)"),
         ("emit 没算章节", "producer",
-         "for ((_, v) in chapterProgress) if (v > chPct) chPct = v", ""),
+         "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }", ""),
         ("框又占满屏", "input", "fillMaxHeight(0.36f)", "weight(1f)"),
         ("粘贴钮出框", "input", "Alignment.BottomEnd", "Alignment.TopEnd"),
         ("任务入口不置灰", "input", "enabled = hasTask", "enabled = true"),

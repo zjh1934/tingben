@@ -417,6 +417,10 @@ jobs:
         run: python3 scripts/r215_verify.py
       - name: R215 反向注入
         run: python3 scripts/r215_verify.py --selftest
+      - name: R217 悬浮窗开关与百分比数字
+        run: python3 scripts/r217_verify.py
+      - name: R217 反向注入
+        run: python3 scripts/r217_verify.py --selftest
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

@@ -62,7 +62,10 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                             onModels: () -> Unit = {},
                             onMixer: () -> Unit = {},
                             onTasks: () -> Unit = {},
-                            hasTask: Boolean = false) {
+                            hasTask: Boolean = false,
+                            // R217 · 悬浮窗开关摆到首页右上角，不用翻设置页
+                            overlayOn: Boolean = false,
+                            onOverlayToggle: () -> Unit = {}) {
     val clipboard = LocalClipboardManager.current
     val inputScope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
@@ -105,6 +108,10 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                 TextButton(onClick = onTasks, enabled = hasTask) {
                     Text("任务", fontSize = 12.sp,
                         color = if (hasTask) Primary else Sub)
+                }
+                TextButton(onClick = onOverlayToggle) {
+                    Text(if (overlayOn) "悬浮·开" else "悬浮·关", fontSize = 12.sp,
+                        color = if (overlayOn) Primary else Sub)
                 }
             }
         }

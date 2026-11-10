@@ -84,7 +84,8 @@
       "r213_verify.py",
       "r214_verify.py",
       "clip_view.py",
-      "r215_verify.py"
+      "r215_verify.py",
+      "r217_verify.py"
     ]
   },
   "hook_strict": false,

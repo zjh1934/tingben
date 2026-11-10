@@ -58,7 +58,11 @@ object OverlayProgress {
             y = 96
         }
 
-    /** 一枚球：底环 + 按百分比走的描边弧 + 中间数字，不写书名、不写解释。 */
+    /** R217 · 0~1 比例 → 0~100 的纯数值文本；越界一律夹住，绝不露出段号。 */
+    private fun pctLabel(pct: Float): String =
+        (pct * 100).toInt().coerceIn(0, 100).toString()
+
+    /** 一枚球：底环 + 按百分比走的描边弧 + 中间百分比数字，不写书名、不写解释。 */
     private class RingView(c: Context, private val sizePx: Int) : View(c) {
         var pct: Float = 0f
             set(v) { field = v.coerceIn(0f, 1f); invalidate() }
@@ -81,6 +85,15 @@ object OverlayProgress {
             textSize = sizePx * 0.40f
             isFakeBoldText = true
         }
+        // R217 · 用户真机反馈：球上写「1」「2」看着像段号，不像百分比。
+        // 数字主体仍是 0~100 的纯数值（0% 写 0、90% 写 90），右侧补一个小号
+        // % 字符标明单位；不写书名、不写解释、不写段数。
+        private val percentSign = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            textSize = sizePx * 0.16f
+            isFakeBoldText = true
+        }
 
         override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(sizePx, sizePx)
 
@@ -94,8 +107,13 @@ object OverlayProgress {
             // 从 12 点方向顺时针描到百分比处：50% 就转到半圈
             if (pct > 0f) canvas.drawArc(oval, -90f, 360f * pct, false, arc)
             val fm = label.fontMetrics
-            canvas.drawText((pct * 100).toInt().toString(),
-                cx, cy - (fm.ascent + fm.descent) / 2f, label)
+            val baseY = cy - (fm.ascent + fm.descent) / 2f
+            val num = pctLabel(pct)
+            val signW = percentSign.measureText("%")
+            // 数字略偏左、% 贴在右，两块合起来仍居中
+            canvas.drawText(num, cx - signW / 2f - sizePx * 0.01f, baseY, label)
+            canvas.drawText("%", cx + label.measureText(num) / 2f,
+                baseY - sizePx * 0.11f, percentSign)
         }
     }
 

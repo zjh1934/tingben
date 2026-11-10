@@ -175,6 +175,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var miniBook by rememberSaveable { mutableStateOf<String?>(null) }
     var lastSelection by rememberSaveable { mutableStateOf<Set<Int>?>(null) }
     var refresh by rememberSaveable { mutableStateOf(0) }
+    // R217 · 悬浮窗开关状态提升到 App 层，首页与设置页共用同一份真值
+    var overlayOn by remember { mutableStateOf(Prefs.overlayProgress(ctx)) }
     // R180 · 新装用户打开软件第一眼就该知道「还差模型」，而不是等点合成才撞墙。
     // 只给状态 + 一个能按的入口，不写教程（用户硬口径）；模型齐了整行自动消失。
     val modelMissing = remember(refresh) { ModelStore.missing(ctx).size }
@@ -613,6 +615,23 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     hasTask = remember(refresh, bookImporting) {
                         (TaskResume.active(ctx)?.takeIf { it.phase != "done" } != null) ||
                             TaskResume.queue(ctx).isNotEmpty()
+                    },
+                    overlayOn = overlayOn,
+                    onOverlayToggle = {
+                        val next = !overlayOn
+                        Prefs.setOverlayProgress(ctx, next)
+                        overlayOn = next
+                        if (!next) OverlayProgress.hide(ctx)
+                        else if (!KeepAlive.overlayGranted(ctx)) {
+                            if (!KeepAlive.requestOverlay(ctx))
+                                Toast.makeText(ctx,
+                                    "打不开设置页，请到应用详情里开「显示在其他应用上层」",
+                                    Toast.LENGTH_LONG).show()
+                            else Toast.makeText(ctx,
+                                "允许后回来，制作时就能看到悬浮进度",
+                                Toast.LENGTH_LONG).show()
+                        }
+                        EventLog.ui("OVERLAY_SETTING", "on=$next · from=home")
                     })
                 Screen.CHAPTERS -> {
                     ChapterHubScreen(ctx, bookId, refresh,
