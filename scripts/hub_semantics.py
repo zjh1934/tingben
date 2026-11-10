@@ -42,7 +42,7 @@ HUB_POS = [
     # R171 · 任务看板就地看，不切独立任务页
     'EventLog.ui("HUB_TASKS"',
     "TaskBoardDialog(",
-    "Box(Modifier.size(44.dp).clickable { onToggle(r.index) }",
+    "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
     # 勾选框只在多选态：ChapterRow 里 if (multi) 分支
     "SelectBox(checked = checked, tint = HubPrimary",
     # 章级操作（原第三列能力，删列不丢）
@@ -79,7 +79,7 @@ HUB_POS = [
     "LinearProgressIndicator(progress = { chapterPctNow }",
     'EventLog.ui("HUB_STOP", "book=${book.id}")',
     'EventLog.ui("HUB_RESUME", "book=${book.id}")',
-    "colors = ButtonDefaults.buttonColors(containerColor = HubWarn)",
+    "fun hubStop()",
     # 可播汇总 / 顺序播放 / 队列就地管理
     "\"按顺序播放\"",
     "AudioLibrary.playableItems(c, book.id)",
@@ -136,17 +136,13 @@ def _between(src: str, start: str, end: str) -> str:
 
 
 def chapter_row_ok(hub: str) -> bool:
-    """勾选框只在多选态出现；常态给听 / 展开两枚图标（R171 起无三点菜单）。"""
+    """R219 · 章名左边常驻一枚勾（点勾即选中，不再靠长按），右边眼睛+耳机两枚。"""
     body = _between(hub, "private fun ChapterRow(", "/** 代码绘制的耳机")
     if not body:
         return False
-    i = body.find("if (multi) {")
-    j = body.find("} else {", i)
-    if i < 0 or j < 0:
-        return False
-    multi, normal = body[i:j], body[j:]
-    return ("SelectBox(" in multi and "SelectBox(" not in normal
-            and normal.count("IconButton(") >= 2)
+    return ("Box(Modifier.size(34.dp).clickable { onToggle(r.index) }" in body
+            and "SelectBox(" in body
+            and body.count("IconButton(") >= 2)
 
 
 def grid_fixed_columns(hub: str) -> bool:
@@ -196,9 +192,9 @@ def injections():
          lambda t: t.replace("internal fun ChapterHubScreen(",
                              "private val HubTitles = listOf(\"章节\", \"合成\", \"可播\")\n"
                              "internal fun ChapterHubScreen(")),
-        ("章行退回勾选框常驻", "hub",
-         lambda t: t.replace("            if (multi) {\n                Box(Modifier.size(44.dp)",
-                             "            if (true) {\n                Box(Modifier.size(44.dp)")),
+        ("章行左侧勾被摘", "hub",
+         lambda t: t.replace("Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
+                             "")),
         ("点章不再进阅读", "hub",
          lambda t: t.replace("onRead = { openReader(r.index) }",
                              "onTap = { }")),

@@ -214,6 +214,12 @@ object TaskResume {
             "重新分章后章号变了，旧任务与已生成的分段不能再接着用，请重新选章制作"
         else {
             val w = AnnCache.dirFor(c, t.bookId, t.only)
+            val splitFile = File(w, "split_stamp.txt")
+            val oldSplit = if (splitFile.exists()) splitFile.readText().trim() else ""
+            val hasWav = w.listFiles { _, n -> n.endsWith(".wav") }?.isNotEmpty() == true
+            if (hasWav && oldSplit != TextSplitter.SPLIT_EPOCH.toString()) {
+                "切分粒度改过，旧分段的段号对不上了，请从头重做（原来那套留着不删）"
+            } else {
             val modeFile = File(w, "mode_stamp.txt")
             if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
                 "换过模式或音色输入，会切到这套音色的缓存；原来那套的进度留着，切回原设置就能接着用"
@@ -232,6 +238,7 @@ object TaskResume {
                     }
                     null
                 }
+            }
             }
         }
     } catch (_: Throwable) { null }

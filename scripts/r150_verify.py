@@ -47,7 +47,7 @@ POS = {
         "LinearProgressIndicator(progress = { chapterPctNow }",
         'EventLog.ui("HUB_STOP"', 'EventLog.ui("HUB_RESUME"',
         "Producer.stop()", "onResumeTask()",
-        "整本 ${(bookPct * 100).toInt()}% ·",
+        "整体 ${(bookPct * 100).toInt()}%",
         "onRead: () -> Unit,",
         "row: List<SegRow>, pq: PlaybackState,",
         "onRead = { openReader(r.index) }",

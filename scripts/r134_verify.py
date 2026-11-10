@@ -52,7 +52,7 @@ POS = {
         "\"删除选中的 ${all.size} 章音频？\"",
         "BackHandler(enabled = multiMode) { exitMulti() }",
         # 陈旧状态捕获防护
-        "勾选框只在多选态渲染",
+        "章名左边常驻一枚勾",
     ],
     "main": [
         # 看台：小段多选
@@ -109,7 +109,7 @@ def selftest():
         "第三列不进多选": ("hub", "onLongPress = { if (playable) onLong(sg.index) }"),
         "第三列方块被摘": ("hub", "SelectBox("),
         "批量清单被摘": ("hub", "confirmChDel = selected.associateWith { filesOf(it) }"),
-        "陈旧闭包防护被摘": ("hub", "勾选框只在多选态渲染"),
+        "陈旧闭包防护被摘": ("hub", "章名左边常驻一枚勾"),
         # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
         # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
         # R195 · 旧页批量操作锚点随独立进度页删净，此例退役

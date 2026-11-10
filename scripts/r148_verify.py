@@ -44,7 +44,10 @@ POS = {
         "已停止，正在收尾当前这一小段", "try { wav.delete() }",
         "SiteNoise.clean(text)",
     ],
-    "split": ["const val TARGET_CHARS = 240", "const val SOFT_CAP = 420"],
+    # R219 · 真机「大块读不全」→ 收回 R148 的 240/420，回到 110/260，
+    # 并加 SPLIT_EPOCH 进音色键与续跑判据，旧段绝不按段号复用。
+    "split": ["const val TARGET_CHARS = 110", "const val SOFT_CAP = 260",
+              "const val SPLIT_EPOCH = 3"],
     "noise": ["object SiteNoise", "fun clean(text: String)", "章节内容开始",
               "下载和分享更多电子书", "fun droppedCount"],
     "hub": ["var expandedChapter by remember(book.id)"],
@@ -63,7 +66,8 @@ BAN = {
         "minOf(work.usableSpace, AudioLibrary.dir(c).usableSpace)",
         "存储空间不够，这次大约要", "halted(annotated.size, annotated.size",
     ],
-    "split": ["const val TARGET_CHARS = 110"],
+    # R219 · 240/420 大块会把句尾读不全，禁止回潮；细切由 POS 守
+    "split": ["const val TARGET_CHARS = 240", "const val SOFT_CAP = 420"],
     "hub": ["var savedCol by rememberSaveable(book.id)"],
     "main": [
         "onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) }",
@@ -142,14 +146,16 @@ def logic_cases(f):
             if any(r.match(l) for r in comp):
                 bad.append("正文被误删: " + l[:30])
 
-    # ③ 切段阈值确实变大了（防「改了注释没改常量」）
+    # ③ R219 · 回到细切且代际在（防「改了注释没改常量 / 旧分段串内容」）
     import re as _re
     t = _re.search(r"TARGET_CHARS = (\d+)", f["split"])
     s = _re.search(r"SOFT_CAP = (\d+)", f["split"])
-    if not t or int(t.group(1)) < 200:
-        bad.append("TARGET_CHARS 没真正调大")
+    if not t or int(t.group(1)) > 160:
+        bad.append("TARGET_CHARS 没回到细切（>160 会读不全）")
     if not s or int(s.group(1)) <= int(t.group(1) if t else 0):
         bad.append("SOFT_CAP 必须大于 TARGET_CHARS")
+    if "SPLIT_EPOCH" not in f["split"]:
+        bad.append("缺切分代际，旧分段会按段号串进新内容")
 
     print("逻辑用例 %s" % ("通过" if not bad else "有失败"))
     return bad
@@ -181,7 +187,8 @@ def selftest():
          "minOf(work.usableSpace, AudioLibrary.dir(c).usableSpace)"),
         ("停止立即反馈被摘", "pipe", "已停止，正在收尾当前这一小段", ""),
         ("丢弃当前段被摘", "pipe", "try { wav.delete() }", ""),
-        ("切段阈值回退", "split", "const val TARGET_CHARS = 240", "const val TARGET_CHARS = 110"),
+        ("又切回大块", "split", "const val TARGET_CHARS = 110", "const val TARGET_CHARS = 240"),
+        ("切分代际被摘", "split", "const val SPLIT_EPOCH = 3", ""),
         ("站点清洗接线被摘", "pipe", "SiteNoise.clean(text)", "TextSplitter.split(text)"),
         ("站点清洗对象被摘", "noise", "object SiteNoise", "object Noise"),
         ("模型导入又跳书架", "main", "模型都齐了，回书架导入一本书就能开始",

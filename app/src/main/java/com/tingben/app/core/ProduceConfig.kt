@@ -32,8 +32,10 @@ data class ProduceConfig(
         style.instruct, pace.instruct, intensity.instruct, extraInstruct.trim()
     ).filter { it.isNotBlank() }.joinToString("；")
 
+    // R219 · 切分代际也进指纹：粒度一变，旧套分段整体归档，不混进新书
     fun audioStamp(): String = sha(listOf(
-        style.name, pace.name, intensity.name, extraInstruct
+        style.name, pace.name, intensity.name, extraInstruct,
+        TextSplitter.SPLIT_EPOCH.toString()
     ).joinToString("|"))
 
     fun summary(): String = "${style.label} · ${pace.label} · ${intensity.label} · " +

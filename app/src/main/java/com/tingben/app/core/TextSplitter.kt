@@ -1,13 +1,16 @@
 package com.tingben.app.core
 
 object TextSplitter {
-    // R148 · 1.1.3 日志：81.9 万字切成 9137 段（平均 88 字），
-    // 每段推理 54~209 秒，整本要跑十几天。切得碎不是「模型吃不下」，
-    // 是每段都有固定开销、段数太多。调到约 240 字，段数减半以上，
-    // 仍远低于 maxNewTokens=2048 的安全区间，且保持标点边界与逐字无损。
-    const val TARGET_CHARS = 240
+    // R219 · 真机实证收回 R148 的「切大块」：240 字/段会把长句尾读不全、
+    // 合成出来缺内容（用户原话「分的大了会丢失内容」）。R148 之前的口径是
+    // 110 / 260，段数多、慢，但逐字完整。内容完整优先于快，回到原值。
+    // SPLIT_EPOCH 进音色缓存键与任务续跑判据：换粒度后旧分段绝不按段号复用。
+    const val TARGET_CHARS = 110
 
-    const val SOFT_CAP = 420
+    const val SOFT_CAP = 260
+
+    /** 1 = R148 前的细切 110/260；2 = R148 的 240/420；3 = 本次回到细切。 */
+    const val SPLIT_EPOCH = 3
 
     private const val OPENERS = "“「『‘"
     private const val CLOSERS = "”」』’\"'"

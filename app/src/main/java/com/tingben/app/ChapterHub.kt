@@ -265,6 +265,8 @@ internal fun ChapterHubScreen(
     // R178 · 真机日志里 17:59:40 STOP → 17:59:41 RESUME 只隔 0.3 秒，
     // 停止/继续连点会把刚停下的任务又拉起来。800ms 内只认第一次。
     var lastHubTapMs by remember { mutableStateOf(0L) }
+    // R219 · 点进度条滚到正在制作的那一章，不用一章章翻
+    val chapterListState = rememberLazyListState()
 
     // 一次读盘、书内共用同一份真值：按章展开的小段与整本分段计划同源。
     var hubSegs by remember(book.id) { mutableStateOf(emptyList<SegRow>()) }
@@ -446,6 +448,41 @@ internal fun ChapterHubScreen(
     }
     val showHead = bookRunning || stalledTask || chNow != null ||
         (task?.bookId == book.id && st.stage == "完成")
+    // R219 · 停止/继续逻辑抽出来，按钮移到顶栏与制作设置、任务一排
+    fun hubStop() {
+        val now = System.currentTimeMillis()
+        if (now - lastHubTapMs >= 800L) {
+            lastHubTapMs = now
+            EventLog.ui("HUB_STOP", "book=${book.id}")
+            Producer.stop()
+        }
+    }
+    fun hubResume() {
+        val now = System.currentTimeMillis()
+        if (now - lastHubTapMs >= 800L) {
+            lastHubTapMs = now
+            if (Producer.isBusyForBook(book.id)) {
+                EventLog.ui("HUB_RESUME_BLOCKED", "book=${book.id} reason=收尾中")
+                Toast.makeText(c, "已点停止，正在收尾这一段，稍等再继续",
+                    Toast.LENGTH_SHORT).show()
+            } else {
+                EventLog.ui("HUB_RESUME", "book=${book.id}")
+                onResumeTask()
+            }
+        }
+    }
+    // R219 · 正在做的那一章：章进度里最靠后且没做完的；没有就取选章范围
+    val makingChapter = remember(st.chapterProgress, task, ui.size) {
+        var idx = -1
+        for ((k, v) in st.chapterProgress) if (v < 1f && k > idx) idx = k
+        if (idx < 0) idx = task?.only?.maxOrNull() ?: 0
+        idx.coerceIn(0, (ui.size - 1).coerceAtLeast(0))
+    }
+    fun scrollToMaking() {
+        resplitScope.launch {
+            chapterListState.animateScrollToItem(makingChapter)
+        }
+    }
     val finishedChapters = ui.count { it.playable || it.audio != null }
     val totalBytes = ui.sumOf { it.audio?.bytes ?: 0L }
     val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }
@@ -459,14 +496,29 @@ internal fun ChapterHubScreen(
 
     Box(Modifier.fillMaxSize().background(HubBg)) {
         Column(Modifier.fillMaxSize()) {
+            // R219 · 书名已在系统顶栏，这里只放三枚操作，右对齐成同一排：
+            // 停止/继续、任务、制作设置（齿轮）。「N 章 · EPUB 内置目录」撤掉。
             Row(Modifier.fillMaxWidth().background(HubCard)
-                .padding(horizontal = 14.dp, vertical = 4.dp),
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("${chapters.size} 章 · ${ChapterPlan.ruleName(curRule)}",
-                    fontSize = 11.sp, color = HubSub, maxLines = 1,
-                    modifier = Modifier.weight(1f))
-                // R218 · 顶栏不再堆两枚文字按钮：制作设置收成一枚齿轮，
-                // 重新分章挪进制作设置页做次要入口（底层能力 + 收尾守卫原样留着）。
+                if (bookRunning) {
+                    TextButton(onClick = { hubStop() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                        Text("停止", fontSize = 12.sp, color = HubWarn)
+                    }
+                } else if (stalledTask) {
+                    TextButton(onClick = { hubResume() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                        Text("继续", fontSize = 12.sp, color = HubPrimary)
+                    }
+                }
+                TextButton(onClick = {
+                    EventLog.ui("HUB_TASKS", "book=${book.id}")
+                    showTasks = true
+                }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    Text("任务", fontSize = 12.sp, color = HubPrimary)
+                }
                 IconButton(onClick = { onProduceSetup(book.id) },
                     modifier = Modifier.size(34.dp)) {
                     Text("⚙", fontSize = 16.sp, color = HubPrimary)
@@ -491,90 +543,36 @@ internal fun ChapterHubScreen(
                     Text("继续 ›", fontSize = 12.sp, color = HubPrimary)
                 }
             }
-            if (showHead) {
-                Column(Modifier.fillMaxWidth().background(HubCard)
-                    .padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            when {
-                                bookRunning -> "正在制作 · $doneNow/$totalNow 块"
-                                stalledTask -> "没做完 · 已做好的都留着"
-                                chNow != null -> "整本 $doneNow/$totalNow 块"
-                                else -> "这本书做好了"
-                            },
-                            fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            color = if (stalledTask) HubWarn else HubPrimary,
-                            modifier = Modifier.weight(1f))
-                        if (bookRunning) {
-                            Button(onClick = {
-                                val now = System.currentTimeMillis()
-                                if (now - lastHubTapMs >= 800L) {
-                                    lastHubTapMs = now
-                                    EventLog.ui("HUB_STOP", "book=${book.id}")
-                                    Producer.stop()
-                                }
-                            }, modifier = Modifier.height(32.dp),
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = HubWarn)) {
-                                Text("停止", fontSize = 12.sp, color = palette.onWarn)
-                            }
-                        } else if (stalledTask) {
-                            Button(onClick = {
-                                val now = System.currentTimeMillis()
-                                if (now - lastHubTapMs >= 800L) {
-                                    lastHubTapMs = now
-                                    // R209 · 真机日志：点停止后后台那一段还要 1~3 分钟才收尾，
-                                    // 这期间 busy 仍为 true，Producer.start 会静默 return。
-                                    // 用户 5 秒内连点 4 次「继续」、界面毫无反应（05:06:52~57）。
-                                    // 删书 / 重新分章都已有「稍等」反馈，唯独续跑漏了。
-                                    if (Producer.isBusyForBook(book.id)) {
-                                        EventLog.ui("HUB_RESUME_BLOCKED",
-                                            "book=${book.id} reason=收尾中")
-                                        Toast.makeText(c, "已点停止，正在收尾这一段，稍等再继续",
-                                            Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        EventLog.ui("HUB_RESUME", "book=${book.id}")
-                                        onResumeTask()
-                                    }
-                                }
-                            }, modifier = Modifier.height(32.dp),
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(horizontal = 14.dp)) {
-                                Text("继续", fontSize = 12.sp)
-                            }
-                        }
-                    }
-                    if (bookRunning) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(heartbeat, fontSize = 11.sp, color = HubSub, maxLines = 2)
-                    }
-                }
-                HubDivider()
-            }
-            // R218 · 整本 / 本章两条进度条常驻，不跟着展开弹出来；
-            // 段数文案（共 N 小段 / 已合成 M 小段）按真机反馈撤掉，只留百分比。
+            // R219 · 两条都加高到装得下字；整体百分比在条左边，整本条内写
+            // 「已完成 X%」，本章只靠条走了多少表达、不再写数字。整块可点，
+            // 点了滚到正在制作的那一章。
             Column(Modifier.fillMaxWidth().background(HubCard)
-                .padding(horizontal = 14.dp, vertical = 8.dp)) {
-                Text("整本 ${(bookPct * 100).toInt()}% · 本章 ${(chapterPctNow * 100).toInt()}%",
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+                .clickable { scrollToMaking() }) {
+                Text("整体 ${(bookPct * 100).toInt()}%",
                     fontSize = 12.sp, color = HubSub)
-                Spacer(Modifier.height(5.dp))
-                LinearProgressIndicator(progress = { bookPct },
-                    modifier = Modifier.fillMaxWidth().height(6.dp))
-                Spacer(Modifier.height(5.dp))
+                Spacer(Modifier.height(4.dp))
+                Box(Modifier.fillMaxWidth().height(22.dp),
+                    contentAlignment = Alignment.Center) {
+                    LinearProgressIndicator(progress = { bookPct },
+                        modifier = Modifier.fillMaxWidth().height(22.dp),
+                        color = HubPrimary, trackColor = HubLine)
+                    Text("已完成 ${(bookPct * 100).toInt()}%", fontSize = 12.sp,
+                        color = Color.White,
+                        modifier = Modifier.background(Color(0x66000000),
+                            RoundedCornerShape(4.dp)).padding(horizontal = 6.dp))
+                }
+                Spacer(Modifier.height(4.dp))
                 LinearProgressIndicator(progress = { chapterPctNow },
-                    modifier = Modifier.fillMaxWidth().height(4.dp))
+                    modifier = Modifier.fillMaxWidth().height(18.dp),
+                    color = HubGood, trackColor = HubLine)
             }
             HubDivider()
             // 可播汇总 / 顺序播放 / 队列：原来散在第三列和任务页，现在一行收口。
             Row(Modifier.fillMaxWidth().background(HubCard)
                 .padding(horizontal = 12.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text(if (totalBytes > 0)
-                        "可播 $finishedChapters/${ui.size} 章 · %.1f MB".format(
-                            totalBytes / 1024f / 1024f)
-                    else "可播 $finishedChapters/${ui.size} 章",
-                    fontSize = 12.sp, color = HubSub, modifier = Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
                 if (finishedChapters > 0) {
                     // R180 · 一处构造播放队列，两个入口共用，只读一次盘。
                     fun playBook(atId: String?, fromMs: Long?) {
@@ -617,15 +615,10 @@ internal fun ChapterHubScreen(
                         showQueue = true
                     }) { Text("队列 ${queued.size}", fontSize = 12.sp, color = HubPrimary) }
                 }
-                // R171 · 任务看板就地看：不切去独立任务页，跨书任务在这本书里就能管。
-                TextButton(onClick = {
-                    EventLog.ui("HUB_TASKS", "book=${book.id}")
-                    showTasks = true
-                }) { Text("任务 ›", fontSize = 12.sp, color = HubPrimary) }
             }
             HubDivider()
 
-            LazyColumn(Modifier.fillMaxSize(),
+            LazyColumn(Modifier.fillMaxSize(), state = chapterListState,
                 contentPadding = PaddingValues(bottom = 100.dp)) {
                 ui.forEach { r ->
                     item(key = "ch_${r.index}") {
@@ -633,17 +626,26 @@ internal fun ChapterHubScreen(
                             r = r, multi = multiMode, checked = r.index in selected,
                             // R218 · 点章名 = 展开小段；看书交给右侧小眼睛
                             onTap = {
-                                val willOpen = expandedChapter != r.index
-                                expandedChapter = if (willOpen) r.index else null
-                                EventLog.ui("HUB_CH_EXPAND",
-                                    "ch=${r.index} open=$willOpen",
-                                    mapOf("book" to book.id))
+                                // R219 · 这一章没有小段（没在制作）就点了也没反应，
+                                // 不再弹出一块空的小格子。
+                                val map = hubSegChapters
+                                val hasSegs = map != null &&
+                                    hubSegs.any { map[it.index] == r.index }
+                                if (hasSegs) {
+                                    val willOpen = expandedChapter != r.index
+                                    expandedChapter = if (willOpen) r.index else null
+                                    EventLog.ui("HUB_CH_EXPAND",
+                                        "ch=${r.index} open=$willOpen",
+                                        mapOf("book" to book.id))
+                                }
                             },
                             onLong = { enterMulti(r.index) },
                             onToggle = { i ->
                                 val on = i !in selected
-                                selected = if (on) selected + i else selected - i
-                                EventLog.ui("CH_TOGGLE", "ch=$i on=$on n=${selected.size}")
+                                val next = if (on) selected + i else selected - i
+                                selected = next
+                                multiMode = next.isNotEmpty()
+                                EventLog.ui("CH_TOGGLE", "ch=$i on=$on n=${next.size}")
                             },
                             onRead = { openReader(r.index) },
                             onListen = {
@@ -976,9 +978,9 @@ internal fun ChapterHubScreen(
 }
 
 /**
- * 章行：R218 起点章名展开小段，长按进多选，右侧小眼睛（看原文）/ 小耳机（听成品）。
- * 勾选框只在多选态渲染（用户实证「后面的勾选框长按以后才显示」）。
- * 章名下一根细进度条直接表达合成进度，不用再切到别的列去看。
+ * R219 · 章名左边常驻一枚勾（点勾即选中、不再靠长按进多选），
+ * 右边只留小眼睛（看原文）/ 小耳机（听成品）；点章名展开小段。
+ * 章名下一根细进度条直接表达合成进度。
  */
 @Composable
 private fun ChapterRow(
@@ -1001,25 +1003,22 @@ private fun ChapterRow(
             // 只有 1.74~1.85:1，远低于 4.5:1。R167 把「浅色保留灰字层级」当层级，
             // 实际是读不了。深浅两色统一 palette.text（浅色近黑 / 深色纯白），
             // 「有没有做好」交给右侧耳机图标的颜色，不再靠把字压淡来表达。
+            // R219 · 章名左边一排勾：点一下即选中，不需要长按才出现
+            Box(Modifier.size(34.dp).clickable { onToggle(r.index) },
+                contentAlignment = Alignment.Center) {
+                SelectBox(checked = checked, tint = HubPrimary,
+                    boxColor = HubCard, modifier = Modifier.size(18.dp))
+            }
             Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
                 color = palette.text,
                 modifier = Modifier.weight(1f))
-            if (multi) {
-                Box(Modifier.size(44.dp).clickable { onToggle(r.index) },
-                    contentAlignment = Alignment.Center) {
-                    SelectBox(checked = checked, tint = HubPrimary,
-                        boxColor = HubCard, modifier = Modifier.size(20.dp))
-                }
-            } else {
-                // R218 · 小眼睛=看原文，小耳机=听已合成的这章；点章名展开小段
-                IconButton(onClick = onRead, modifier = Modifier.size(36.dp)) {
-                    EyeIcon(HubPrimary)
-                }
-                IconButton(onClick = onListen,
-                    enabled = r.audio != null || r.playable,
-                    modifier = Modifier.size(36.dp)) {
-                    HeadphoneIcon(if (r.audio != null || r.playable) HubPrimary else HubGrey)
-                }
+            IconButton(onClick = onRead, modifier = Modifier.size(36.dp)) {
+                EyeIcon(HubPrimary)
+            }
+            IconButton(onClick = onListen,
+                enabled = r.audio != null || r.playable,
+                modifier = Modifier.size(36.dp)) {
+                HeadphoneIcon(if (r.audio != null || r.playable) HubPrimary else HubGrey)
             }
         }
         if (p != null && p > 0f) {
@@ -1088,9 +1087,10 @@ private fun SegGridHead(
     segs: List<SegRow>, multi: Boolean, picked: Int,
     onAll: () -> Unit, onTrial: () -> Unit, onDelete: () -> Unit
 ) {
+    // R219 · 非多选态整块不渲染，展开后顶部不再留一块空白
+    if (!multi) return
     Column(Modifier.fillMaxWidth().background(HubSoft)
-        .padding(horizontal = 16.dp, vertical = 8.dp)) {
-        // R218 · 「本章 N 小段 / M 段已生成」按真机反馈撤掉，只留多选操作行
+        .padding(horizontal = 16.dp, vertical = 2.dp)) {
         if (multi) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("已选 $picked", fontSize = 12.sp, fontWeight = FontWeight.Bold,

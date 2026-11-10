@@ -542,6 +542,11 @@ object Producer {
         }
         val thinkOn = thinkOverride ?: false
         val work = AnnCache.dirFor(c, book.id, only)
+        // R219 · 记下这批分段用的粒度；续跑时若代际不同，绝不复按段号用旧段
+        try {
+            work.mkdirs()
+            File(work, "split_stamp.txt").writeText(TextSplitter.SPLIT_EPOCH.toString())
+        } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
             "chunks=${chunks.size} · 预设=" + config.summary())
         EventLog.resetEngine()

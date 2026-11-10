@@ -29,7 +29,7 @@ POS = [
     ("阅读位置落盘", HUB, "ReadingState.save(c, book.id, i)"),
     ("上次读到细条", HUB, "上次读到 第 ${lastRead + 1} 章"),
     ("翻章也写位置", HUB, "{ next -> openReader(next) }"),
-    ("本章文案", HUB, "整本 ${(bookPct * 100).toInt()}% · 本章 ${(chapterPctNow * 100).toInt()}%"),
+    ("本章文案", HUB, "整体 ${(bookPct * 100).toInt()}%"),
     ("重新分章入口", HUB, 'resplitRequest > 0'),
     ("三列分发", HUB, "LazyColumn(Modifier.fillMaxSize(),"),
     ("停滞态集合", HUB, 'listOf("没完成", "已停止", "出错了")'),

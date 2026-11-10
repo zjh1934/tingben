@@ -68,7 +68,7 @@ def check(f):
     # ⑤ 两条进度条常驻 + 展开动效 + 段数文案撤掉
     for k in ["val chapterPctNow =", "LinearProgressIndicator(progress = { bookPct }",
               "LinearProgressIndicator(progress = { chapterPctNow }",
-              '"整本 ${(bookPct * 100).toInt()}% · 本章 ${(chapterPctNow * 100).toInt()}%"',
+              '"整体 ${(bookPct * 100).toInt()}%"',
               "AnimatedVisibility(", "expandVertically() + fadeIn()",
               "shrinkVertically() + fadeOut()",
               "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->"]:

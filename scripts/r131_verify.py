@@ -52,8 +52,8 @@ POS = {
         "item(key = \"ch_${r.index}\")",
         "继续队列",
         "队列 ${queued.size}",
-        "可播 $finishedChapters/${ui.size} 章",
-        "%.1f MB",
+        "按顺序播放",
+        "AudioLibrary.playableItems(c, book.id)",
     ],
     "ci": ["python3 scripts/r131_verify.py --selftest"],
 }
@@ -108,7 +108,7 @@ def selftest():
         "第二列不承接任务": ("hub", "item(key = \"ch_${r.index}\")"),
         "续跑入口被摘": ("hub", "继续队列"),
         "任务队列入口被摘": ("hub", "队列 ${queued.size}"),
-        "第三列不承接音频": ("hub", "可播 $finishedChapters/${ui.size} 章"),
+        "第三列不承接音频": ("hub", "按顺序播放"),
     }
     bad = 0
     for name, (k, needle) in cuts.items():

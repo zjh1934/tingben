@@ -57,7 +57,7 @@ POS = {
         "ChapterPlan.resolve(c, b, text)",
         "front?.let { fi ->",
         '"书前 ${fi.chars} 字已跳过"',
-        'Text("停止", fontSize = 12.sp, color = palette.onWarn)',
+        'Text("停止", fontSize = 12.sp, color = HubWarn)',
         "IconPlayPause(st.isPlaying, palette.onPrimary",
         "color = segNumberColor(playing, playable, multi, isChecked))",
         # J1 看图修复：未生成格子不再是 18% 透明
@@ -348,7 +348,7 @@ def selftest():
         ("硬编码白字回潮", "main", 'Text("卸载模型", fontSize = 12.sp, color = palette.onWarn)',
          'Text("卸载模型", fontSize = 12.sp, color = Color.White)'),
         ("停止按钮白字回潮", "hub",
-         'Text("停止", fontSize = 12.sp, color = palette.onWarn)',
+         'Text("停止", fontSize = 12.sp, color = HubWarn)',
          'Text("停止", fontSize = 12.sp, color = Color.White)'),
         ("FrontInfo 被摘", "plan",
          "data class FrontInfo(val chars: Int, val noisy: Boolean)", ""),
