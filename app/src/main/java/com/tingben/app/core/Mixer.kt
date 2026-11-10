@@ -126,7 +126,9 @@ object Mixer {
         return buildList {
             add(MixerRow("身份层", "音色描述（instruct ①）", voice))
             add(MixerRow("身份层", "拟声表达", if (Prefs.nonVerbal(c)) "开" else "关"))
-            add(MixerRow("表演层", "跨书默认风格（新任务）", cfg.summary().substringBefore(" · 段间")))
+            // R221 · 三档停用，风格层只可能是自填附加语气
+            add(MixerRow("表演层", "跨书默认风格（新任务）",
+                cfg.extraInstruct.trim().ifBlank { "无附加语气" }))
             add(MixerRow("表演层", "instruct 模板版本", "v$INSTRUCT_TEMPLATE_VERSION"))
             add(MixerRow("采样", "seed", if (k.seed < 0) "随机（每次不同）" else k.seed.toString()))
             add(MixerRow("采样", "temperature（主 talker）", k.temperature.toString()))

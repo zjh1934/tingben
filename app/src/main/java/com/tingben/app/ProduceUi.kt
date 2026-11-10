@@ -152,7 +152,9 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
         }
 
         // R218 · 撤掉「制作范围」拆章勾选（目录页长按选章已能做，这里画蛇添足）。
-        // 这页只回答两件事：怎么念、怎么跑；设置只对这本书接下来的合成生效。
+        // R221 · 「② 怎么念」整块砍掉：三个写死档位拼进 instruct 会跟自己填的
+        // 音色描述 / 预设音色念法抢 prompt，base 模式还完全无效。
+        // 这页只回答两件事：做什么、怎么跑；设置只对这本书接下来的合成生效。
         ExpandGroup("① 做什么", "") {
             Text("原文整段送声音模型", fontSize = 13.sp, color = Sub)
             Spacer(Modifier.height(10.dp))
@@ -176,16 +178,8 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
             }
         }
 
-        ExpandGroup("② 怎么念", cfg.summary()) {
-            OptionRow("朗读档位", "",
-                ReadingStyle.values().map { it to it.label }, cfg.style) { cfg = cfg.copy(style = it) }
-            OptionRow("语速倾向", "",
-                Pace.values().map { it to it.label }, cfg.pace) { cfg = cfg.copy(pace = it) }
-            OptionRow("情绪强度", "",
-                Intensity.values().map { it to it.label }, cfg.intensity) { cfg = cfg.copy(intensity = it) }
-        }
-
-        ExpandGroup("③ 怎么跑", "") {
+        // R221 · ② 只留「怎么跑」：段间静音 / 失败重做不进 instruct，不打架
+        ExpandGroup("② 怎么跑", "") {
             OptionRow("段间静音", "",
                 ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) { cfg = cfg.copy(gapMs = it) }
             OptionRow("分段失败重做", "",

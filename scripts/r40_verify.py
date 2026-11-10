@@ -8,7 +8,7 @@ from r45_common import strip_r45, canon
 """R40 · 调音台「统一提交」验证（纯标准库，不依赖 Android SDK）。
 
 跑三类：
-  1) diff 对拍 6 组：Python 复刻 17 个生效字段，期望 N 与源码字段表一致；
+  1) diff 对拍 6 组：Python 复刻生效字段，期望 N 与源码字段表一致；
      同时断言 dims/dimText 不进 diff、voice 空值等价于 DEFAULT_IDENTITY。
   2) 反向注入 6 例：内存中把源码改坏，断言脚本真的会响（防「自检恒绿」）。
   3) 守恒清单：MainActivity 前 1880 行、4B/prompt/native/服务/manifest/gradle
@@ -33,11 +33,13 @@ CONSERVE = [
     "app/build.gradle.kts",
 ]
 
-FIELDS = ["voice"] + ["k_" + s for s in
-    ["seed", "maxNewTokens", "temperature", "topK", "topP",
-     "repetitionPenalty", "subTemperature", "subTopK", "subTopP"]] + \
-    ["perf_" + s for s in ["style", "pace", "intensity", "gapMs", "gateRetries"]] + \
-    ["nonVerbal", "castEnabled"]
+# R221 · 三档停用，风格层只认 gapMs / gateRetries / extraInstruct
+FIELDS = (["voice"]
+          + ["k_" + s for s in ["seed", "maxNewTokens", "temperature",
+                                "topK", "topP", "repetitionPenalty",
+                                "subTemperature", "subTopK", "subTopP"]]
+          + ["perf_" + s for s in ["gapMs", "gateRetries", "extraInstruct"]]
+          + ["nonVerbal", "castEnabled"])
 
 def py_diff(a, d):
     """复刻 MixerCommit.diff：逐字段比，voice 空串按默认身份归一。"""
@@ -60,7 +62,7 @@ def scenarios():
     a = base()
     s1 = dict(a)
     s2 = dict(a); s2["k_temperature"] = "0.6"
-    s3 = dict(a); s3["voice"] = "温和女声"; s3["k_seed"] = "1234"; s3["perf_pace"] = "SLOW"
+    s3 = dict(a); s3["voice"] = "温和女声"; s3["k_seed"] = "1234"; s3["perf_gapMs"] = "600"
     s4 = dict(a); s4["voice"] = ""
     s5 = dict(a); s5["dims"] = {"GENDER": "女声"}; s5["dimText"] = "女声"
     return [(a, s1, 0, "无变更"), (a, s2, 1, "只改 1 个采样"),
@@ -83,11 +85,12 @@ def check_sources(main, draft):
     lits = re.findall(r'"((?:\\.|[^"\\])*)"', main) + re.findall(r'"((?:\\.|[^"\\])*)"', draft)
     for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
         if any(banned in x for x in lits): errs.append("旧生效动词残留: " + banned)
-    if draft.count("put(") != 13:
-        errs.append("diff 源码调用数 != 13")
-    for label in ["音色身份", "朗读档位", "语速倾向", "情绪强度", "段间静音",
-                  "失败重做", "附加语气", "拟声表达", "ParamCatalog.SAMPLING.forEach"]:
+    # R221 · 不再写死 put 数量：三档停用后 13→10，写死计数每改一行就假红
+    for label in ["音色身份", "段间静音", "失败重做", "附加语气", "拟声表达",
+                  "ParamCatalog.SAMPLING.forEach"]:
         if label not in draft: errs.append("diff 缺字段: " + label)
+    for banned in ['put("朗读档位"', 'put("语速倾向"', 'put("情绪强度"']:
+        if banned in draft: errs.append("R221 回潮：停用三档又进 diff " + banned)
     for sym in ["保存", "改动还没保存", "丢弃并离开", "MixerCommit.commit(c, draft, n)"]:
         if sym not in main: errs.append("缺 P0 界面符号: " + sym)
     for banned in ["待提交", "提交变更", "有未提交变更"]:

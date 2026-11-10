@@ -3,8 +3,8 @@
 """R197 · 「制作设置」能力可达性守门。
 
 导航壳重排后，Screen.PRODUCE 的分发 / chromeOf 都还在，211 行 ProduceScreen
-里的细粒度制作能力（朗读档位 / 语速 / 情绪 / 段间静音 / 重试 / 音色缓存
-摘要 / 从头重做）也是唯一实现，**却没有任何跳转入口** —— 目录页只用
+里的制作能力（段间静音 / 重试 / 音色缓存摘要 / 从头重做）是唯一实现，
+**却没有任何跳转入口** —— 目录页只用
 默认 ProduceConfig() 一键开跑，用户根本够不着。R197 在目录页多选底部条
 补了「制作设置 ›」入口，本脚本守两件事：
 
@@ -44,9 +44,8 @@ POS = {
         '"每段约 1–3 分钟，块越多等得越久"',
         '"这套音色已做好 ${cacheInfo.current} 段，接着做不用重来"',
         '"从头重做（清掉已做的块）"',
-        'OptionRow("朗读档位"',
-        'OptionRow("语速倾向"',
-        'OptionRow("情绪强度"',
+        # R221 · 三档写死预设已整块砍掉，只守「怎么跑」
+        'ExpandGroup("② 怎么跑", "")',
         'OptionRow("段间静音"',
         'OptionRow("分段失败重做"',
     ],
@@ -75,12 +74,20 @@ def orphans(main):
     return out
 
 
+BAN = {
+    "main": ['ExpandGroup("② 怎么念"', 'OptionRow("朗读档位"',
+             'OptionRow("语速倾向"', 'OptionRow("情绪强度"'],
+}
+
 def check(f):
     e = []
     for key, needles in POS.items():
         for s in needles:
             if s not in f[key]:
                 e.append("能力链缺失[%s]: %s" % (key, s[:62]))
+    for key, banned in BAN.items():
+        for s in banned:
+            if s in f[key]: e.append("R221 停用三档回潮[%s]: %s" % (key, s[:50]))
     if "Screen.PRODUCE" not in f["main"]:
         e.append("PRODUCE 目的地整个没了")
     # R218 · 常态顶栏收成一枚齿轮（不写文字），勾选态保留文字入口
@@ -120,7 +127,9 @@ def selftest():
         ("耗时提示被摘", "main", '"每段约 1–3 分钟，块越多等得越久"', ""),
         ("音色缓存摘要被摘", "main", '"这套音色已做好 ${cacheInfo.current} 段，接着做不用重来"', ""),
         ("从头重做被摘", "main", '"从头重做（清掉已做的块）"', ""),
-        ("朗读档位被摘", "main", 'OptionRow("朗读档位"', ""),
+        ("段间静音被摘", "main", 'OptionRow("段间静音"', ""),
+        ("停用三档回潮", "main", 'ExpandGroup("② 怎么跑", "")',
+         'OptionRow("朗读档位"'),
         ("枚举值被删", "main", "PRODUCE, TASKS", "TASKS"),
         ("CI 漏挂", "ci", "python3 scripts/r197_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r197_verify.py"', ""),

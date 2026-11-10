@@ -72,7 +72,8 @@ def check(f):
               "fun hubStop()", "fun hubResume()"]:
         if k not in hb: e.append("顶栏缺: " + k[:56])
     # ④ 空章不展开 / 左侧勾 / 零留白
-    for k in ["val hasSegs = map != null", "if (hasSegs) {",
+    for k in ["val generated = segsHere.any { it.hasAudio }",
+              "if (generated || making) {",
               "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
               "multiMode = next.isNotEmpty()",
               "if (!multi) return",
@@ -104,7 +105,7 @@ def selftest():
         ("废话回潮", "hub", "fun hubStop()", 'Text("可播 3/10 章")'),
         ("顶栏按钮不齐", "hub", "horizontalArrangement = Arrangement.End", ""),
         ("停止按钮被摘", "hub", 'Text("停止", fontSize = 12.sp, color = HubWarn)', ""),
-        ("空章又弹块", "hub", "if (hasSegs) {", "if (true) {"),
+        ("空章又弹块", "hub", "if (generated || making) {", "if (true) {"),
         ("左侧勾被摘", "hub", "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }", ""),
         ("点勾不进多选", "hub", "multiMode = next.isNotEmpty()", ""),
         ("展开头部留白回潮", "hub", "if (!multi) return", ""),

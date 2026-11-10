@@ -8,6 +8,8 @@ B R185 分套缓存漏了音频状态侧车：chapter_done.json（整章另存�
    留在根目录 → 换音色后续跑会复用旧音色成品，一本书混两种声音。
    现在把 chapter_done.json / redo.json 和 wav 一起随套搬动，切回再搬回；
    切分产物仍留根目录共享。顺带修 AudioOps forget 的脆弱写法。
+R220 · 换套改成「复制留档 + 根目录认领保留」：已做好的整章成品索引不再
+   从根目录消失，已合成的章不丢；切回原设置仍能逐字节还原。
 
 selftest 全程纯内存注入 + tempfile 逻辑对拍，源文件零写入。
 用法：python3 scripts/r188_verify.py [--selftest]
@@ -31,8 +33,8 @@ CACHE = [
     '!hasAudioState(work) -> incoming',
     'val sides = sideFiles(work)',
     'if (src.isNotEmpty() || sides.isNotEmpty()) {',
-    'sides.forEach { f -> moveSide(f, File(bucket, f.name)) }',
-    'sideFiles(target).forEach { f -> moveSide(f, File(work, f.name)) }',
+    'sides.forEach { f -> copySide(f, File(bucket, f.name)) }',
+    'targetSides.forEach { f -> moveSide(f, File(work, f.name)) }',
     'val alive = dirs.count { d ->',
     'others = alive',
 ]
@@ -76,10 +78,10 @@ def selftest():
         ("侧车列表被摘", "cache",
          lambda t: t.replace('    private val SIDECARS = listOf("chapter_done.json", "redo.json")',
                              '    private val SIDECARS = emptyList<String>()')),
-        ("换套不搬侧车", "cache",
-         lambda t: t.replace('            sides.forEach { f -> moveSide(f, File(bucket, f.name)) }\n', '')),
+        ("换套不留侧车副本", "cache",
+         lambda t: t.replace('            sides.forEach { f -> copySide(f, File(bucket, f.name)) }\n', '')),
         ("切回不取侧车", "cache",
-         lambda t: t.replace('            sideFiles(target).forEach { f -> moveSide(f, File(work, f.name)) }\n', '')),
+         lambda t: t.replace('            targetSides.forEach { f -> moveSide(f, File(work, f.name)) }\n', '')),
         ("只有侧车时不归档", "cache",
          lambda t: t.replace('if (src.isNotEmpty() || sides.isNotEmpty()) {',
                              'if (src.isNotEmpty()) {')),
@@ -117,7 +119,7 @@ def selftest():
 
 
 def logic_check():
-    """按 VoiceCache 等价规则在临时目录跑四组切换，验证侧车随套、不混音色。"""
+    """R220 · 按等价规则跑四组切换，验证侧车复制留档 + 根目录认领保留。"""
     import tempfile, shutil
     PREFIX, KEY = "_voice_", "voice_cache_key.txt"
     SIDES = ["chapter_done.json", "redo.json"]
@@ -145,12 +147,17 @@ def logic_check():
         bucket = work / (PREFIX + cur)
         if src or sd:
             bucket.mkdir(exist_ok=True)
+            # R220 · 复制留档，根目录那份认领保留
             for n in src:
-                move(work / n, bucket / n)
+                shutil.copyfile(work / n, bucket / n)
             for n in sd:
-                move(work / n, bucket / n)
+                shutil.copyfile(work / n, bucket / n)
         target = work / (PREFIX + key)
-        if target.is_dir():
+        if target.is_dir() and (wavs(target) or sides(target)):
+            for n in src:
+                (work / n).unlink()
+            for n in sd:
+                (work / n).unlink()
             for n in wavs(target):
                 move(target / n, work / n)
             for n in sides(target):
@@ -160,29 +167,29 @@ def logic_check():
     bad = 0
     d = None
     try:
-        # ① 换音色后根目录不能留 chapter_done.json（否则新音色复用旧成品）
+        # ① 换音色后已做好的整章成品索引与散段都认领保留，旧套另存副本
         d = pathlib.Path(tempfile.mkdtemp(prefix="r188_a_"))
         for i in range(5):
             (d / ("direct_%04d.wav" % i)).write_bytes(b"A" * 128)
         (d / "chapter_done.json").write_text('[{"index":0,"file":"/audio/chapter_old.wav"}]')
         switch(d, "keyA")
         switch(d, "keyB")
-        assert sides(d) == [], "换套后根目录仍留着旧成品索引 → 会混音色"
-        assert sides(d / (PREFIX + "keyA")) == ["chapter_done.json"], "旧套没留住成品索引"
-        assert wavs(d) == [], "换套后当前套不该有旧段"
+        assert sides(d) == ["chapter_done.json"], "R220：已做好的整章不能丢"
+        assert sides(d / (PREFIX + "keyA")) == ["chapter_done.json"], "旧套副本要留住成品索引"
+        assert len(wavs(d)) == 5, "R220：已做好的段认领保留，不从头重做"
 
-        # ② 切回原套：成品索引逐字节回来
+        # ② 切回原套：成品索引逐字节回来，混合套也留着副本
         switch(d, "keyA")
         assert (d / "chapter_done.json").read_text() == '[{"index":0,"file":"/audio/chapter_old.wav"}]'
         assert len(wavs(d)) == 5
-        assert sides(d / (PREFIX + "keyB")) == [], "新套不该凭空多出旧索引"
+        assert sides(d / (PREFIX + "keyB")) == ["chapter_done.json"], "混合套副本该留着"
 
-        # ③ 只有侧车、没有散段（整章都另存过）也必须归档
+        # ③ 只有侧车、没有散段（整章都另存过）也必须留档 + 认领保留
         d2 = pathlib.Path(tempfile.mkdtemp(prefix="r188_b_"))
         (d2 / "chapter_done.json").write_text('[{"index":0,"file":"/audio/chapter_only.wav"}]')
         switch(d2, "keyA")
         switch(d2, "keyB")
-        assert sides(d2) == [], "只另存整章的书换音色后仍会复用旧成品"
+        assert sides(d2) == ["chapter_done.json"], "只另存整章的书，已做好的章不能丢"
         assert sides(d2 / (PREFIX + "keyA")) == ["chapter_done.json"]
         shutil.rmtree(d2)
 
@@ -196,7 +203,7 @@ def logic_check():
         shutil.rmtree(d3)
         shutil.rmtree(d)
         d = None
-        print("逻辑对拍 4/4：换套不留旧索引 / 切回逐字节恢复 / 仅侧车也归档 / 升级不动进度")
+        print("逻辑对拍 4/4：换套留住旧索引 / 切回逐字节恢复 / 仅侧车也留档 / 升级不动进度")
     except Exception as ex:
         bad += 1
         print("  逻辑对拍失败:", str(ex)[:110])
@@ -217,4 +224,4 @@ if __name__ == "__main__":
         for x in e:
             print("  ✗", x)
         sys.exit(1)
-    print("R188 整章成品不混音色 / 侧车随套 / CI 失败日志写触发分支：PASS")
+    print("R188 整章成品认领保留 / 侧车复制留档 / CI 失败日志写触发分支：PASS")

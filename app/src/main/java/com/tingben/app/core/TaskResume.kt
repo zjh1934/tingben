@@ -220,24 +220,29 @@ object TaskResume {
             if (hasWav && oldSplit != TextSplitter.SPLIT_EPOCH.toString()) {
                 "切分粒度改过，旧分段的段号对不上了，请从头重做（原来那套留着不删）"
             } else {
+            // R220 · 调音台 / 模式改过不再算「任务失效」。旧逻辑返回一句话，
+            // realProgress 当场归零、自动续跑被拦，用户看着就像全没了。
+            // 现在 VoiceCache 把已做好的段认领保留，这里只记一笔并写回 stamp，
+            // 点继续就按新参数做剩下的段。
             val modeFile = File(w, "mode_stamp.txt")
             if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
-                "换过模式或音色输入，会切到这套音色的缓存；原来那套的进度留着，切回原设置就能接着用"
+                EventLog.log(EventLog.Kind.PIPELINE, "MODE_CHANGED_KEEP",
+                    "换过模式/音色输入，已做好的段与章节留着，后面按新设置继续")
+                null
             } else {
                 val voiceFile = File(w, "voice_stamp.txt")
                 val oldVoice = if (voiceFile.exists()) voiceFile.readText().trim() else ""
                 val currentVoice = Prefs.voiceStamp(c)
-                if (voiceFile.exists() && oldVoice != currentVoice &&
-                    oldVoice != Prefs.legacyVoiceStamp(c)) {
-                    "改过调音台设置，会切到这套音色的缓存；原来那套的进度留着，切回原设置就能接着用"
-                } else {
-                    if (voiceFile.exists() && oldVoice != currentVoice) {
-                        try { voiceFile.writeText(currentVoice) } catch (_: Throwable) { }
-                        EventLog.log(EventLog.Kind.PIPELINE, "VOICE_STAMP_MIGRATE",
-                            "旧指纹写回新口径，已生成段保持不变")
-                    }
-                    null
+                val legacy = oldVoice != Prefs.legacyVoiceStamp(c)
+                if (voiceFile.exists() && oldVoice != currentVoice) {
+                    try { voiceFile.writeText(currentVoice) } catch (_: Throwable) { }
+                    EventLog.log(EventLog.Kind.PIPELINE,
+                        if (legacy) "VOICE_CHANGED_KEEP" else "VOICE_STAMP_MIGRATE",
+                        if (legacy)
+                            "改过调音台设置，已做好的段与章节不丢，后面按新参数继续"
+                        else "旧指纹写回新口径，已生成段保持不变")
                 }
+                null
             }
             }
         }
@@ -246,7 +251,8 @@ object TaskResume {
     fun active(c: Context): TaskInfo? = readAll(c).firstOrNull { it.phase != "done" }
 
     // 返回 null = 可以自动续跑；非 null = 不自动跑的原因（直接给用户看）。
-    // 只拦「用户主动停 / 失败中断 / 切章规则变了 / 书没了 / 模型没齐 / 调音改过」。
+    // 只拦「用户主动停 / 失败中断 / 切章规则变了 / 书没了 / 模型没齐」。
+    // R220 · 调过调音台不再拦：已做好的段认领保留，点继续按新参数接着做。
     // 进程被杀或崩溃留下的 interrupted 任务不拦，正是要自动接上的那种。
     fun autoResumeBlockReason(c: Context, t: TaskInfo): String? {
         if (t.phase == "reconfirm")

@@ -2,6 +2,8 @@ package com.tingben.app.core
 
 import org.json.JSONObject
 
+// R221 · 三个枚举停用：不再拼进 instruct。留着只为读旧任务 JSON /
+// 旧调音台预设不炸，字段本身对合成零影响。
 enum class ReadingStyle(val label: String, val hint: String, val instruct: String) {
     NARRATION("叙事", "平稳讲故事，适合大部分小说", "整体保持平稳叙述的节奏，不刻意演戏"),
     DIALOGUE("对白", "对白更分明，旁白退后", "对白部分语气更分明，旁白保持克制退后"),
@@ -28,9 +30,10 @@ data class ProduceConfig(
     val gateRetries: Int = 1,
     val extraInstruct: String = ""
 ) {
-    fun styleInstruct(): String = listOf(
-        style.instruct, pace.instruct, intensity.instruct, extraInstruct.trim()
-    ).filter { it.isNotBlank() }.joinToString("；")
+    // R221 · 风格层只留用户自己填的附加语气，不再叠三句写死预设。
+    // voice_design 不再被「平稳叙述/语速适中」冲淡身份层；custom_voice
+    // 不再和自填 cvStyle 拼成一串；base 本来就忽略 instruct。
+    fun styleInstruct(): String = extraInstruct.trim()
 
     // R219 · 切分代际也进指纹：粒度一变，旧套分段整体归档，不混进新书
     fun audioStamp(): String = sha(listOf(
@@ -38,8 +41,9 @@ data class ProduceConfig(
         TextSplitter.SPLIT_EPOCH.toString()
     ).joinToString("|"))
 
-    fun summary(): String = "${style.label} · ${pace.label} · ${intensity.label} · " +
-            "段间静音 ${gapMs}ms · 失败重做 $gateRetries 次"
+    // R221 · 日志里也不再显示已停用的三档
+    fun summary(): String = "段间静音 ${gapMs}ms · 失败重做 $gateRetries 次" +
+            (if (extraInstruct.isBlank()) "" else " · 附加语气：${extraInstruct.trim()}")
 
     fun toJson(): JSONObject = JSONObject()
         .put("schema", SCHEMA)

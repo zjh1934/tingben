@@ -49,13 +49,14 @@ def check(f):
         e.append("制作设置页的重新分章次要入口被摘")
     # ③ 制作设置页收敛
     for k in ["onResplit: () -> Unit = {}", 'Text("← 目录")',
-              'ExpandGroup("① 做什么", "")', 'ExpandGroup("② 怎么念"',
-              'ExpandGroup("③ 怎么跑", "")',
+              'ExpandGroup("① 做什么", "")', 'ExpandGroup("② 怎么跑", "")',
               '"每段约 1–3 分钟，块越多等得越久"',
               '"从头重做（清掉已做的块）"']:
         if k not in pr: e.append("制作设置页缺: " + k[:60])
     for k in ['"制作范围"', "Checkbox(checked = ch.index in selected",
-              '"合成前调音"', "showAllChapters", 'Text("← 书架")']:
+              '"合成前调音"', "showAllChapters", 'Text("← 书架")',
+              'ExpandGroup("② 怎么念"', 'OptionRow("朗读档位"',
+              'OptionRow("语速倾向"', 'OptionRow("情绪强度"']:
         if k in pr: e.append("制作设置页画蛇添足的块回潮: " + k[:40])
     # ④ 章行：小眼睛 + 小耳机、点章名展开
     for k in ["onRead: () -> Unit, onListen: () -> Unit",

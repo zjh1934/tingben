@@ -157,7 +157,7 @@ def logic_cases(f):
         for s in ("IconPlayPause(", "IconSkip(", '"▶"', '"⏸"', "播放 ›", "停止 ›"):
             if s in body:
                 bad.append("小段序号上又盖了按钮/字符：" + s)
-        if body.count("Text(\"${sg.index + 1}\"") != 1:
+        if body.count("Text(\"${sg.index - base + 1}\"") != 1:
             bad.append("小段格子必须只显示一个序号 Text")
 
     # ⑤ 章展开必须走 IO，不能组合期读盘

@@ -285,6 +285,11 @@ internal fun ChapterHubScreen(
         val map = hubSegChapters
         if (ch == null || map == null) emptyList()
         else hubSegs.filter { map[it.index] == ch }
+                    }
+    // R220 · 小段编号每章从 1 重新开始，不再接着前一章的一堆大数字。
+    // 文件里的段号仍是整本连续的（续跑/拼接都靠它），只改显示。
+    val chapterBase = remember(chapterSegs) {
+        chapterSegs.minOfOrNull { it.index } ?: 0
     }
     var beatTick by remember { mutableStateOf(0) }
     LaunchedEffect(st.running) {
@@ -626,12 +631,18 @@ internal fun ChapterHubScreen(
                             r = r, multi = multiMode, checked = r.index in selected,
                             // R218 · 点章名 = 展开小段；看书交给右侧小眼睛
                             onTap = {
-                                // R219 · 这一章没有小段（没在制作）就点了也没反应，
-                                // 不再弹出一块空的小格子。
+                                // R220 · 旧判据拿「整本切分计划」判有段，结果每章
+                                // 都有灰格、点谁都展开。这里只认这章真生成过段，
+                                // 或这章正在制作；没做过的章点了就是没反应。
                                 val map = hubSegChapters
-                                val hasSegs = map != null &&
-                                    hubSegs.any { map[it.index] == r.index }
-                                if (hasSegs) {
+                                val segsHere = if (map != null)
+                                    hubSegs.filter { map[it.index] == r.index }
+                                else emptyList()
+                                val generated = segsHere.any { it.hasAudio }
+                                val making = (bookRunning &&
+                                    (task?.only?.contains(r.index) != false)) ||
+                                    ((st.chapterProgress[r.index] ?: 0f) > 0f)
+                                if (generated || making) {
                                     val willOpen = expandedChapter != r.index
                                     expandedChapter = if (willOpen) r.index else null
                                     EventLog.ui("HUB_CH_EXPAND",
@@ -661,7 +672,7 @@ internal fun ChapterHubScreen(
                             enter = expandVertically() + fadeIn(),
                             exit = shrinkVertically() + fadeOut()
                         ) {
-                            Column(Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth().background(HubSoft)) {
                                 SegGridHead(chapterSegs, segMulti, segChecked.size,
                                     onAll = {
                                         segChecked = chapterSegs.filter { it.hasAudio }
@@ -671,7 +682,7 @@ internal fun ChapterHubScreen(
                                     onTrial = {
                                         val picked = segChecked.sorted().mapNotNull { i ->
                                             chapterSegs.firstOrNull { it.index == i }?.wav?.let { w ->
-                                                Track(w, "第 ${i + 1} 段",
+                                                Track(w, "第 ${i - chapterBase + 1} 段",
                                                     id = "seg:${w.absolutePath}")
                                             }
                                         }
@@ -701,7 +712,7 @@ internal fun ChapterHubScreen(
                                     })
                                 chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->
                                     ChapterSegGrid(
-                                        row = row, pq = pqSeg,
+                                        row = row, pq = pqSeg, base = chapterBase,
                                         multi = segMulti, checked = segChecked,
                                         onLong = { i -> segMulti = true; segChecked = setOf(i) },
                                         onToggle = { i ->
@@ -1120,13 +1131,13 @@ private fun SegGridHead(
  */
 @Composable
 private fun ChapterSegGrid(
-    row: List<SegRow>, pq: PlaybackState,
+    row: List<SegRow>, pq: PlaybackState, base: Int = 0,
     multi: Boolean, checked: Set<Int>,
     onLong: (Int) -> Unit, onToggle: (Int) -> Unit, onTap: (SegRow) -> Unit
 ) {
     BoxWithConstraints(
-        Modifier.fillMaxWidth().background(HubSoft)
-            .padding(horizontal = 16.dp, vertical = 3.dp),
+        Modifier.fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 2.dp),
         contentAlignment = Alignment.Center
     ) {
         val gap = 4.dp
@@ -1164,7 +1175,7 @@ private fun ChapterSegGrid(
                             SelectBox(checked = isChecked, tint = HubPrimary,
                                 boxColor = HubCard, modifier = Modifier.size(16.dp))
                         } else {
-                            Text("${sg.index + 1}", fontSize = 11.sp,
+                            Text("${sg.index - base + 1}", fontSize = 11.sp,
                                 color = segNumberColor(playing, playable, multi, isChecked))
                         }
                     }

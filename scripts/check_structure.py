@@ -449,8 +449,15 @@ if "MixerCommit.commit(c, draft, n)" not in mixer_block:
     errs.append("R40 回退：界面没走唯一出口 MixerCommit.commit")
 if draft_src.count("Prefs.set") != 7:
     errs.append("R98 回退：commit 写入口不是 7 个（实际 %d）" % draft_src.count("Prefs.set"))
-if draft_src.count("put(") != 13:
-    errs.append("R98 回退：diff 源码调用数不是 12（实际 %d）" % (draft_src.count("put(") - 1))
+# R221 · 不再写死 put 数量（三档停用后 12→9）。改守关键 diff 行齐全 +
+# 停用三档零回潮，避免以后每改一行就假红。
+for sym in ['put("音色身份（全书固定）"', 'put("段间静音"', 'put("失败重做"',
+            'put("附加语气"', 'put("拟声表达"', 'put("预设音色"',
+            'put("参考音频转录"', 'put("预设音色念法"',
+            "ParamCatalog.SAMPLING.forEach"]:
+    if sym not in draft_src: errs.append("R98 回退：diff 缺 " + sym[:46])
+for banned in ['put("朗读档位"', 'put("语速倾向"', 'put("情绪强度"']:
+    if banned in draft_src: errs.append("R221 回潮：停用三档又进 diff " + banned)
 lits = ui_literals(main_src) + ui_literals(draft_src)
 for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应用预设"]:
     if any(banned in x for x in lits):

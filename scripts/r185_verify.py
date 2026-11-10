@@ -4,7 +4,9 @@
 
 旧行为：run() 里 voice / mode / preset 三个 stamp 任一变了，就把 work 根下
 所有 direct_*.wav 全删（真机日志 MODE_INVALIDATE 作废 9 段、real 9/88→1/88）。
-新行为：段音频按音色组合指纹分套归档，切换只搬不删；切回原设置零重算。
+R185 新行为：段音频按音色组合指纹分套归档，切换只搬不删；切回零重算。
+R220 再修正真机「每动一次调音台就要全部消失」：换套时旧套**复制**留档，
+根目录已生成段原样认领为新套起点，点继续只把剩下的段按新参数合成。
 
 守的是：
  1 VoiceCache 新增（keyOf / switchTo / summary / 升级迁移 / 上限 purge）
@@ -34,7 +36,7 @@ FILES = {
 CACHE = [
     'private const val PREFIX = "_voice_"',
     'private const val KEY_FILE = "voice_cache_key.txt"',
-    'private const val MAX_KEEP = 12',
+    'private const val MAX_KEEP = 24',
     'fun keyOf(voice: String, mode: String, preset: String): String',
     'fun switchTo(work: File, key: String): Switch',
     'fun summary(work: File, key: String): Summary',
@@ -52,7 +54,7 @@ PIPE = [
     'val cacheKey = VoiceCache.keyOf(voiceStamp, modeStamp, presetStamp)',
     'val sw = VoiceCache.switchTo(work, cacheKey)',
     '"VOICE_CACHE_SWITCH",',
-    '旧成果没删，切回原设置就能接着用',
+    '已做好的不重做，后面按新参数继续',
     'try { File(work, "voice_stamp.txt").writeText(voiceStamp) }',
     'try { File(work, "mode_stamp.txt").writeText(modeStamp) }',
     'try { File(work, "produce_stamp.txt").writeText(presetStamp) }',
@@ -62,7 +64,9 @@ PIPE = [
 ]
 TREE = ['if (f.parentFile?.name?.startsWith("_voice_") == true) return@forEach']
 RESUME = [
-    '切回原设置就能接着用',
+    '后面按新参数继续',
+    'VOICE_CHANGED_KEEP',
+    'MODE_CHANGED_KEEP',
 ]
 MAIN = [
     'mutableStateOf(VoiceCache.Summary(0, 0, 0, 0L))',
@@ -100,8 +104,8 @@ def checks(f):
         for key in ("pipe", "resume", "main"):
             if s in f[key]:
                 e.append("旧形态回潮[%s]: %s" % (key, s[:60]))
-    if f["resume"].count("切回原设置就能接着用") < 2:
-        e.append("TaskResume 两处失效文案没都改")
+    if "VOICE_CHANGED_KEEP" not in f["resume"] or "MODE_CHANGED_KEEP" not in f["resume"]:
+        e.append("TaskResume 两处「改设置不丢成果」事件没都改")
     if f["cache"].count("try { keyFile(work).writeText(key) }") < 2:
         e.append("VoiceCache 同套直写 / 换套落盘两处 key 没都写")
     if "python3 scripts/r185_verify.py --selftest" not in f["ci"]:
@@ -158,7 +162,7 @@ def selftest():
         ("清理弹窗不提归档", "main",
          lambda t: t.replace('会连留着的其他音色缓存一起清掉', '只删制作过程里生成的分段 WAV')),
         ("TaskResume 又写重出声", "resume",
-         lambda t: t.replace('切回原设置就能接着用', '接着做会按新设置重出声')),
+         lambda t: t.replace('后面按新参数继续', '接着做会按新设置重出声')),
         ("CI 漏挂", "ci",
          lambda t: t.replace("python3 scripts/r185_verify.py --selftest", "")),
     ]
@@ -176,7 +180,7 @@ def selftest():
 
 
 def logic_check():
-    """在临时目录里按 VoiceCache 的等价规则跑三组切换，验证「只搬不删」。
+    """R220 · 在临时目录按 VoiceCache 等价规则跑三组切换，验证「复制留档 + 认领保留」。
 
     源文件一个字节都不动；只操作 tempfile 里造出来的假 wav。
     """
@@ -197,34 +201,41 @@ def logic_check():
             return
         src = wavs(work)
         bucket = work / (PREFIX + cur)
-        bucket.mkdir(exist_ok=True)
-        for n in src:
-            (work / n).rename(bucket / n)
+        if src:
+            bucket.mkdir(exist_ok=True)
+            # R220 · 复制留档，根目录那份认领为新套起点，不搬走
+            for n in src:
+                shutil.copyfile(work / n, bucket / n)
         target = work / (PREFIX + key)
-        if target.is_dir():
+        if target.is_dir() and wavs(target):
+            # 切回用过的设置：混合套已留档，根目录清成空再搬回纯套
+            for n in src:
+                (work / n).unlink()
             for n in wavs(target):
                 (target / n).rename(work / n)
         kf.write_text(key)
 
-    def seed(work, n, tag):
-        for i in range(n):
+    def seed(work, n, tag, start=0):
+        for i in range(start, start + n):
             (work / ("direct_%04d.wav" % i)).write_bytes((tag + str(i)).encode() * 100)
 
     bad = 0
     try:
-        # ① 做 9 段 → 换套做 3 段 → 切回原套：9 段逐字节回来，不重算
+        # ① 做 9 段 → 换套（认领保留）→ 再做 3 段 → 切回原套：9 段逐字节回来
         d = pathlib.Path(tempfile.mkdtemp(prefix="r185_a_"))
         seed(d, 9, "A")
-        original = {n.name: n.read_bytes() for n in d.iterdir() if n.is_file()}
+        original = {n.name: n.read_bytes() for n in d.iterdir()
+                    if n.is_file() and n.name.startswith("direct_")}
         switch(d, "keyA")
         switch(d, "keyB")
-        assert wavs(d) == [], "换套后当前套应为空"
-        seed(d, 3, "B")
+        assert len(wavs(d)) == 9, "换套不能把已做好的 9 段清空"
+        assert len(wavs(d / (PREFIX + "keyA"))) == 9, "旧套副本要留着"
+        seed(d, 3, "B", start=9)
         switch(d, "keyA")
-        back = [n for n in wavs(d)]
+        back = wavs(d)
         assert len(back) == 9, "切回原套应拿到 9 段，实际 %d" % len(back)
         assert all((d / n).read_bytes() == original[n] for n in original), "切回的段内容被改了"
-        assert len(wavs(d / (PREFIX + "keyB"))) == 3, "B 套的 3 段该留着"
+        assert len(wavs(d / (PREFIX + "keyB"))) == 12, "混合套 12 段该留着"
         shutil.rmtree(d)
 
         # ② 升级平滑：无 key、三个 stamp 与当前一致 → 认领，不搬走
@@ -235,15 +246,15 @@ def logic_check():
         assert not (d / (PREFIX + "legacy")).exists(), "不该凭空造归档套"
         shutil.rmtree(d)
 
-        # ③ 升级 + 换了音色：旧段归档留着，当前套干净，不混音色
+        # ③ 升级 + 换了音色：已做好的段认领保留，旧套另存一份副本
         d = pathlib.Path(tempfile.mkdtemp(prefix="r185_c_"))
         seed(d, 9, "A")
         switch(d, "keyB", legacy_stamps="keyA")
-        assert wavs(d) == [], "换了音色不该把旧音色段混进当前套"
-        assert len(wavs(d / (PREFIX + "keyA"))) == 9, "旧套 9 段必须留着"
+        assert len(wavs(d)) == 9, "R220：换套不丢已做好的段"
+        assert len(wavs(d / (PREFIX + "keyA"))) == 9, "旧套 9 段副本必须留着"
         shutil.rmtree(d)
 
-        print("逻辑对拍 3/3：切回零重算 / 升级不清进度 / 换套不混音色")
+        print("逻辑对拍 3/3：切回零重算 / 升级不清进度 / 换套不丢已做段")
     except Exception as ex:
         bad += 1
         print("  逻辑对拍失败:", str(ex)[:110])
@@ -263,4 +274,4 @@ if __name__ == "__main__":
         for x in e:
             print("  ✗", x)
         sys.exit(1)
-    print("R185 音色缓存：切换只搬不删 / 切回零重算 / 归档不混进成品 / 升级平滑：PASS")
+    print("R185 音色缓存：复制留档 / 认领不丢 / 切回零重算 / 升级平滑：PASS")

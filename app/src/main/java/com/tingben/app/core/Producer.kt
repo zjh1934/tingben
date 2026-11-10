@@ -608,8 +608,8 @@ object Producer {
         val sw = VoiceCache.switchTo(work, cacheKey)
         if (sw.archived > 0 || sw.restored > 0) {
             EventLog.log(EventLog.Kind.PIPELINE, "VOICE_CACHE_SWITCH",
-                "音色套=$cacheKey · 归档 ${sw.archived} 段 · 取回 ${sw.restored} 段" +
-                    " · 旧成果没删，切回原设置就能接着用")
+                "音色套=$cacheKey · 旧套留档 ${sw.archived} 段 · 认领 ${sw.restored} 段" +
+                    " · 已做好的不重做，后面按新参数继续（切回原设置可还原）")
         }
         try { File(work, "voice_stamp.txt").writeText(voiceStamp) } catch (_: Throwable) { }
         try { File(work, "mode_stamp.txt").writeText(modeStamp) } catch (_: Throwable) { }

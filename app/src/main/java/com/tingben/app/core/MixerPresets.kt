@@ -96,9 +96,10 @@ object MixerPresetStore {
         MixerPreset("builtin_stable", "稳定朗读", "", emptyMap(),
             TtsKnobs(temperature = 0.6f, subTemperature = 0.6f, repetitionPenalty = 1.1f, seed = 42L),
             ProduceConfig(), true),
+        // R221 · 风格枚举停用，张力由采样参数拉开，不再往 instruct 塞写死句
         MixerPreset("builtin_drama", "戏剧张力", "", emptyMap(),
             TtsKnobs(temperature = 1.1f, subTemperature = 0.8f, seed = 42L),
-            ProduceConfig(style = ReadingStyle.DRAMA, intensity = Intensity.FULL), true),
+            ProduceConfig(), true),
         MixerPreset("builtin_exact", "完全确定", "", emptyMap(),
             TtsKnobs(temperature = 0f, subTemperature = 0f, seed = 42L),
             ProduceConfig(), true)

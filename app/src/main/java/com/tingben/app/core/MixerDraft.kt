@@ -44,9 +44,7 @@ object MixerCommit {
         ParamCatalog.SAMPLING.forEach { s ->
             put(s.label, s.read(a.knobs), s.read(d.knobs), TIMING_NOW)
         }
-        put("朗读档位", a.perf.style.label, d.perf.style.label, TIMING_NEXT)
-        put("语速倾向", a.perf.pace.label, d.perf.pace.label, TIMING_NEXT)
-        put("情绪强度", a.perf.intensity.label, d.perf.intensity.label, TIMING_NEXT)
+        // R221 · 三个写死档位已停用，不再进 diff；风格层只认自填附加语气
         put("段间静音", "${a.perf.gapMs} ms", "${d.perf.gapMs} ms", TIMING_NEXT)
         put("失败重做", "${a.perf.gateRetries} 次", "${d.perf.gateRetries} 次", TIMING_NEXT)
         put("附加语气", a.perf.extraInstruct, d.perf.extraInstruct, TIMING_NEXT)

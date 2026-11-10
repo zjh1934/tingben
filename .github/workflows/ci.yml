@@ -429,6 +429,14 @@ jobs:
         run: python3 scripts/r219_verify.py
       - name: R219 反向注入
         run: python3 scripts/r219_verify.py --selftest
+      - name: R220 调音台不丢成果与章内段号
+        run: python3 scripts/r220_verify.py
+      - name: R220 反向注入
+        run: python3 scripts/r220_verify.py --selftest
+      - name: R221 怎么念真砍与进度不丢
+        run: python3 scripts/r221_verify.py
+      - name: R221 反向注入
+        run: python3 scripts/r221_verify.py --selftest
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

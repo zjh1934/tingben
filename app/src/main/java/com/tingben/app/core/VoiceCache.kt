@@ -6,11 +6,12 @@ import java.security.MessageDigest
 
 /**
  * R185 · 调音色不再让前面做好的段作废。
- *
- * 一本书的段音频按「音色组合指纹」分套存。换音色时把当前这套搬到
- * `_voice_{旧key}/` 留着，再把目标套搬回根目录；切回原设置时把目标套
- * 搬回来即可，零重算。切分产物（ann_*.json / segmap.json / 章号索引 / stamp）
- * 留在根目录，跨套共享 —— 切分从来不会因为音色改变。
+ * R220 · 真机「每动一次调音台就要全部消失」：原来换套是把根目录的段
+ * 搬走归档、新套从 0 开始，进度跟着归零，几小时白等。现在改成
+ * **旧套留一份副本归档，根目录的段原样认领为新套起点** —— 已做好的
+ * 段与整章成品都不丢，点继续只把剩下的段按新参数合成（Producer 本来
+ * 就跳过已有 wav）。切回用过的设置时，先把当前混合套归档、再从那套
+ * 搬回，仍能精确还原。切分产物（ann_/segmap/章号索引/stamp）始终共享。
  *
  * 为什么不直接改文件名带 hash：现有工程到处是 `direct_%04d.wav` 与
  * `listFiles { it.isFile && endsWith(".wav") }` 的约定，改命名要动十几处，
@@ -19,7 +20,8 @@ import java.security.MessageDigest
 object VoiceCache {
     private const val PREFIX = "_voice_"
     private const val KEY_FILE = "voice_cache_key.txt"
-    private const val MAX_KEEP = 12
+    // R220 · 用户经常微调，复制归档比原来搬走更占份数，放宽到 24 套
+    private const val MAX_KEEP = 24
 
     /**
      * R188 · 这两个不是切分产物，是「音频状态」，必须和 wav 同一套：
@@ -99,6 +101,23 @@ object VoiceCache {
         }
     } catch (_: Throwable) { false }
 
+    /** R220 · 归档用「副本」：根目录那份留着认领，不搬走。 */
+    private fun copyWav(from: File, to: File): Boolean = try {
+        if (to.exists() && !to.delete()) false
+        else {
+            from.copyTo(to, overwrite = true)
+            to.exists() && to.length() > 44
+        }
+    } catch (_: Throwable) { false }
+
+    private fun copySide(from: File, to: File): Boolean = try {
+        if (to.exists() && !to.delete()) false
+        else {
+            from.copyTo(to, overwrite = true)
+            to.exists()
+        }
+    } catch (_: Throwable) { false }
+
     /** 侧车是小 JSON，不能套用 wav 的 >44 字节判据。 */
     private fun moveSide(from: File, to: File): Boolean = try {
         if (to.exists() && !to.delete()) false
@@ -110,7 +129,7 @@ object VoiceCache {
         }
     } catch (_: Throwable) { false }
 
-    /** 换套：旧的归档、目标套搬回来。同一套则什么都不做。 */
+    /** R220 · 换套：旧套留副本归档，根目录段认领为新套起点。同一套不动。 */
     fun switchTo(work: File, key: String): Switch {
         val cur = readKey(work, key)
         // 老数据第一次写 key 文件：段本来就是这一套的，直接认领，不做任何搬动。
@@ -120,25 +139,34 @@ object VoiceCache {
         }
         try { work.mkdirs() } catch (_: Throwable) { }
 
-        var archived = 0
-        val bucket = File(work, PREFIX + cur.ifBlank { "empty" })
         val src = rootWavs(work)
         val sides = sideFiles(work)
+        var archived = 0
         // R188 · 即使 wav 全被「另存整章」删光了，只要还有 chapter_done.json
-        // 也必须归档，否则换音色后旧成品会被拼进新书。
+        // 也必须归档。R220 改成复制：根目录那份留着，不搬走、进度不归零。
         if (src.isNotEmpty() || sides.isNotEmpty()) {
+            val bucket = File(work, PREFIX + cur.ifBlank { "empty" })
             try { bucket.mkdirs() } catch (_: Throwable) { }
-            src.forEach { f -> if (moveWav(f, File(bucket, f.name))) archived++ }
-            sides.forEach { f -> moveSide(f, File(bucket, f.name)) }
+            src.forEach { f -> if (copyWav(f, File(bucket, f.name))) archived++ }
+            sides.forEach { f -> copySide(f, File(bucket, f.name)) }
         }
 
-        var restored = 0
         val target = File(work, PREFIX + key)
-        if (target.isDirectory) {
-            rootWavs(target).forEach { f ->
+        val targetWavs = rootWavs(target)
+        val targetSides = sideFiles(target)
+        var restored = 0
+        if (targetWavs.isNotEmpty() || targetSides.isNotEmpty()) {
+            // 切回用过的设置：当前混合套已归档过，先清成空，再把那一套搬回，
+            // 避免把别的参数的段带进来。
+            src.forEach { f -> try { f.delete() } catch (_: Throwable) { } }
+            sides.forEach { f -> try { f.delete() } catch (_: Throwable) { } }
+            targetWavs.forEach { f ->
                 if (moveWav(f, File(work, f.name))) restored++
             }
-            sideFiles(target).forEach { f -> moveSide(f, File(work, f.name)) }
+            targetSides.forEach { f -> moveSide(f, File(work, f.name)) }
+        } else {
+            // 全新参数：根目录的已生成段认领为本套起点，后面按新参数继续做。
+            restored = src.size
         }
         try { keyFile(work).writeText(key) } catch (_: Throwable) { }
         purge(work)
@@ -166,7 +194,7 @@ object VoiceCache {
 
     /**
      * 防无限膨胀：最多留 12 套。真要删了也明写日志，不静默抹掉用户的成果。
-     * 12 套 × 88 段 × 约 2.8MB ≈ 3GB，对这台 278GB 可用的设备可忽略。
+     * R220 · 放宽到 24 套：复制归档后每次微调都会多一份，别挤掉旧套。
      */
     private fun purge(work: File) {
         try {
