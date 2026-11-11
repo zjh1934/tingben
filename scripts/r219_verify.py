@@ -53,8 +53,7 @@ def check(f):
               "chapterListState.animateScrollToItem(makingChapter)",
               "state = chapterListState",
               '.clickable { scrollToMaking() }',
-              '"整体 ${(bookPct * 100).toInt()}%"',
-              '"已完成 ${(bookPct * 100).toInt()}%"',
+              "LinearProgressIndicator(progress = { chapterPctNow }",
               "height(22.dp)", "height(18.dp)"]:
         if k not in hb: e.append("进度/滚动缺: " + k[:56])
     for k in ['"可播 $finishedChapters/${ui.size} 章"',
@@ -103,7 +102,7 @@ def selftest():
         ("点条不滚动", "hub", "chapterListState.animateScrollToItem(makingChapter)", ""),
         ("列表没接 state", "hub", "state = chapterListState", ""),
         ("进度条底色被摘", "hub", "trackColor = HubLine", ""),
-        ("条上不写已完成", "hub", '"已完成 ${(bookPct * 100).toInt()}%"', ""),
+        ("本章进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
         ("废话回潮", "merged", "fun hubStop()", 'Text("可播 3/10 章")'),
         ("顶栏按钮不齐", "merged", "trailing = when (screen)", ""),
         ("停止按钮被摘", "merged", 'IconButton(onClick = { hubStop() }', ""),

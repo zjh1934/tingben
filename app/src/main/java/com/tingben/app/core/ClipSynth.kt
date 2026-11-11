@@ -3,7 +3,6 @@ package com.tingben.app.core
 import android.content.Context
 import com.tingben.app.diag.EventLog
 import com.tingben.app.engine.NativeEngine
-import java.io.File
 
 /**
  * R215 · 「粘一段文字即贴即听」与「调音台试听」共用的合成真源。
@@ -75,14 +74,16 @@ object ClipSynth {
                 ModelStore.Mode.BASE -> SynthInput.Params(null, null)
             }
             if (cancelled()) throw IllegalStateException("已取消")
-            val f = File(c.filesDir, outName)
+            // R256 · 试听临时文件统一进 cacheDir/trial，播完由 PlayQueue 清掉。
+            // 原来落在 filesDir 根目录，和 work/audio 混着且永不回收。
+            val f = TrialFiles.file(c, outName)
             val code = NativeEngine.ttsSynthesize(h, text, v.instruct, v.speaker,
                 "chinese", f.absolutePath, src.knobs)
             if (cancelled()) throw IllegalStateException("已取消")
             if (code != 0 || !f.exists() || f.length() <= 44) {
                 EventLog.log(EventLog.Kind.ENGINE, "MIXER_TRIAL_EMPTY",
                     "来源=$label · mode=${mode.id} · code=$code · " +
-                        "speaker=${v.speaker ?: "空"} · chars=${text.length} · " +
+                        "speaker=${EventLog.safe(v.speaker)} · chars=${text.length} · " +
                         "instructChars=${v.instruct?.length ?: 0}")
                 throw IllegalStateException(
                     SynthErrors.explain(code, f.exists() && f.length() > 44))

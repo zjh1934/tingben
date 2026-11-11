@@ -67,9 +67,12 @@ private val HubGrey: Color get() = palette.grey
  * 这不是数据问题（R128 修过灰格消失），是对比度问题。按主题分别给可见度。
  */
 private fun segCellColor(playable: Boolean, playing: Boolean,
-                         multi: Boolean = false, checked: Boolean = false): Color = when {
+                         multi: Boolean = false, checked: Boolean = false,
+                         pendingRedo: Boolean = false): Color = when {
     multi && checked -> HubPrimary
     playing -> HubPrimary
+    // R253 · 标记重做后立刻转琥珀「待重做」，不再看着还是绿的、点了没反应。
+    pendingRedo -> HubWarn.copy(alpha = if (appThemeDark) 0.44f else 0.36f)
     playable -> HubGood.copy(alpha = if (appThemeDark) 0.34f else 0.26f)
     else -> HubGrey.copy(alpha = if (appThemeDark) 0.46f else 0.48f)
 }
@@ -82,9 +85,11 @@ internal const val SEG_GRID_COLUMNS = 10
  * 看着就是「字不显眼」。改取 text 后是 5.29 / 4.84:1；浅色沿用原色不动。
  */
 private fun segNumberColor(playing: Boolean, playable: Boolean,
-                           multi: Boolean, checked: Boolean): Color = when {
+                           multi: Boolean, checked: Boolean,
+                           pendingRedo: Boolean = false): Color = when {
     multi && checked -> palette.onPrimary
     playing -> palette.onPrimary
+    pendingRedo -> palette.text
     appThemeDark -> palette.text
     playable -> HubPrimary
     else -> HubSub
@@ -260,6 +265,8 @@ internal fun ChapterHubScreen(
     var selected by rememberSaveable(book.id) { mutableStateOf<Set<Int>>(emptySet()) }
     var multiMode by remember(book.id) { mutableStateOf(false) }
     var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }
+    // R253 · 长按章行弹就地菜单（像桌面右键），与「勾选后进底部批量条」是两组操作。
+    var menuChapter by remember(book.id) { mutableStateOf<Int?>(null) }
     var segMulti by remember(book.id) { mutableStateOf(false) }
     var segChecked by remember(book.id) { mutableStateOf(setOf<Int>()) }
     var showQueue by remember { mutableStateOf(false) }
@@ -278,16 +285,28 @@ internal fun ChapterHubScreen(
     var hubSegs by remember(book.id) { mutableStateOf(emptyList<SegRow>()) }
     var hubSegChapters by remember(book.id) { mutableStateOf<Map<Int, Int>?>(null) }
     val pqSeg by PlayQueue.previewState.collectAsState()
-    LaunchedEffect(book.id, st.done, localTick, task?.bookId) {
+    // R262 · 没展开任何章时不再每段完成都全量读一遍整本分段计划（2 万+ 段），
+    // 只在展开制作章时随进度刷；redo / 删段 / 拼章靠 localTick 显式刷一次。
+    LaunchedEffect(book.id, st.running, localTick, task?.bookId,
+        if (expandedChapter != null) st.done else 0) {
         val (all, map) = withContext(Dispatchers.IO) {
             val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
             Workbench.segments(c, t) to Workbench.segChapters(c, t)
         }
         hubSegs = all
         hubSegChapters = map
-        // R243 · 回溯补齐：装新版前已合成好的小段不会自己长出章节成品。
-        // 只把「该章所有未删段都有 wav」的章交出去；缺一块就整章不拼。
+    }
+    // R257 · 回溯补齐从 st.done 驱动里拆出来。1.1.30 真机日志：
+    // CHAPTER_MERGE_ENSURE 共 50 次、全是「补拼 0 章 / 跳过 338 章」，且每段
+    // 合成完都跟一条——制作每完成一段就全量扫 26678 段 + 338 章，白烧 IO，
+    // 还把诊断日志刷满、看起来像拼接坏了。制作中必然缺块，没必要扫；
+    // 只在「切书 / 任务跑与不跑切换、且当前没在跑」时补一次。收尾 Producer
+    // 自己也调 ensureChapterAudios，两处幂等（audioFor 去重）。
+    LaunchedEffect(book.id, st.running) {
+        if (st.running) return@LaunchedEffect
         val made = withContext(Dispatchers.IO) {
+            val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
+            val (all, map) = Workbench.segments(c, t) to Workbench.segChapters(c, t)
             val drops = SegDrops.snapshot(c, book.id)
             val byCh = LinkedHashMap<Int, MutableList<File>>()
             for (sg in all) {
@@ -309,7 +328,7 @@ internal fun ChapterHubScreen(
         val map = hubSegChapters
         if (ch == null || map == null) emptyList()
         else hubSegs.filter { map[it.index] == ch }
-                    }
+    }
     // R220 · 小段编号每章从 1 重新开始，不再接着前一章的一堆大数字。
     // 文件里的段号仍是整本连续的（续跑/拼接都靠它），只改显示。
     val chapterBase = remember(chapterSegs) {
@@ -334,29 +353,41 @@ internal fun ChapterHubScreen(
     }
 
     // 章级导出 / 转格式 / 删除：从原第三列整段搬来，删列不丢能力。
+    // R252 · 两个 CreateDocument 回调都在主线程，原来 copyTo / toM4a 同步跑：
+    // 转 M4A 是 MediaCodec 把整章 PCM 编成 AAC，长章节几十秒，必卡 UI 甚至 ANR。
+    // 统一切 IO，转码前给个即时反馈；临时文件与 pending 状态在协程末尾清。
+    val exportScope = rememberCoroutineScope()
     var pendingSrc by remember { mutableStateOf<File?>(null) }
     var tmpCopy by remember { mutableStateOf<File?>(null) }
     val saveWav = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
         val src = pendingSrc ?: tmpCopy
-        if (uri != null && src != null)
-            Toast.makeText(c, if (AudioOps.copyTo(c, src, uri)) "已复制" else "复制失败",
-                Toast.LENGTH_SHORT).show()
-        tmpCopy?.delete(); tmpCopy = null; pendingSrc = null
+        if (uri != null && src != null) {
+            exportScope.launch {
+                val ok = withContext(Dispatchers.IO) { AudioOps.copyTo(c, src, uri) }
+                Toast.makeText(c, if (ok) "已复制" else "复制失败",
+                    Toast.LENGTH_SHORT).show()
+                tmpCopy?.delete(); tmpCopy = null; pendingSrc = null
+            }
+        } else { tmpCopy?.delete(); tmpCopy = null; pendingSrc = null }
     }
     val saveM4a = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/mp4")) { uri ->
         val src = pendingSrc ?: tmpCopy
         if (uri != null && src != null) {
-            val tmp = File(c.cacheDir, "conv_${System.currentTimeMillis()}.m4a")
-            val r = AudioOps.toM4a(c, src, tmp)
-            if (r.ok) Toast.makeText(c,
-                if (AudioOps.copyTo(c, tmp, uri)) "已转存 M4A" else "写出失败",
-                Toast.LENGTH_SHORT).show()
-            else Toast.makeText(c, r.reason, Toast.LENGTH_LONG).show()
-            tmp.delete()
-        }
-        tmpCopy?.delete(); tmpCopy = null; pendingSrc = null
+            Toast.makeText(c, "正在转 M4A…", Toast.LENGTH_SHORT).show()
+            exportScope.launch {
+                val tmp = File(c.cacheDir, "conv_${System.currentTimeMillis()}.m4a")
+                val r = withContext(Dispatchers.IO) { AudioOps.toM4a(c, src, tmp) }
+                if (r.ok) {
+                    val ok = withContext(Dispatchers.IO) { AudioOps.copyTo(c, tmp, uri) }
+                    Toast.makeText(c, if (ok) "已转存 M4A" else "写出失败",
+                        Toast.LENGTH_SHORT).show()
+                } else Toast.makeText(c, r.reason, Toast.LENGTH_LONG).show()
+                tmp.delete()
+                tmpCopy?.delete(); tmpCopy = null; pendingSrc = null
+            }
+        } else { tmpCopy?.delete(); tmpCopy = null; pendingSrc = null }
     }
     fun filesOf(i: Int): Pair<List<File>, File?> {
         val ch = AudioTree.load(c).firstOrNull { it.bookId == book.id }
@@ -382,8 +413,7 @@ internal fun ChapterHubScreen(
             pane = Pane.Reader(i)
         }
     }
-    val lastRead = snapshot.lastRead
-
+    // R253 · 「上次读到」细条已从目录页撤掉，阅读位置仍由 openReader 落盘。
     fun playChapter(i: Int, single: Boolean) {
         val q = "chapter:${book.id}"
         if (single) {
@@ -414,7 +444,7 @@ internal fun ChapterHubScreen(
         selected = emptySet()
         multiMode = false
         EventLog.log(EventLog.Kind.PIPELINE, "HUB_ACTION",
-            "书=${book.title} 章数=$n 档=直接朗读")
+            "书=${EventLog.safe(book.title)} 章数=$n 档=直接朗读")
     }
     fun enterMulti(i: Int) {
         multiMode = true
@@ -428,6 +458,9 @@ internal fun ChapterHubScreen(
     // 注册在 pane 的 BackHandler 之后（Compose 后注册优先），弹层优先收起。
     BackHandler(enabled = pane != null) { pane = null }
     BackHandler(enabled = multiMode) { exitMulti() }
+    // R255 · 长按小菜单优先消费返回键：原来菜单弹着按返回会直接退勾选态
+    // 甚至离开这本书，和左勾 / 底部条抢操作。菜单与底部条也互斥显示。
+    BackHandler(enabled = menuChapter != null) { menuChapter = null }
     BackHandler(enabled = segMulti) { exitSegMulti() }
     BackHandler(enabled = showTasks) { showTasks = false }
     BackHandler(enabled = showQueue) { showQueue = false }
@@ -485,10 +518,38 @@ internal fun ChapterHubScreen(
         if (idx < 0) idx = task?.only?.maxOrNull() ?: 0
         idx.coerceIn(0, (ui.size - 1).coerceAtLeast(0))
     }
+    // R262 · 只有「正在合成」的章才有资格展开小段：章进度里跑着且没做完的，
+    // 加上进度条定位到的当前章。没在制作、或这章没在跑 → 点不开、不读盘、
+    // 不过滤整本分段计划，连展开体的 item 都不生成。
+    val liveChapters: Set<Int> = remember(st.chapterProgress, makingChapter, bookRunning) {
+        if (!bookRunning) emptySet()
+        else st.chapterProgress.filter { (_, v) -> v > 0f && v < 1f }.keys.toSet() + makingChapter
+    }
+    LaunchedEffect(bookRunning) { if (!bookRunning) expandedChapter = null }
     fun scrollToMaking() {
         resplitScope.launch {
             chapterListState.animateScrollToItem(makingChapter)
         }
+    }
+    // R253 · 长按菜单「整章重做」：该章所有段标记重做、撤掉旧整章成品（否则
+    // ensureChapterAudios 会因 audioFor 非空跳过、小耳机还播旧的），再启动只做这章。
+    // 小块 WAV 不删：重做失败也能用「拼成整章」手动恢复。
+    fun redoWholeChapter(ch: Int) {
+        val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
+        val work = Workbench.workDir(c, t)
+        val map = hubSegChapters
+        val segsHere = if (map != null) hubSegs.filter { map[it.index] == ch } else emptyList()
+        if (work == null || segsHere.isEmpty()) {
+            Toast.makeText(c, "没找到这一章的制作记录", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AudioLibrary.audioFor(c, book.id, ch)?.let { AudioLibrary.removeFile(c, it.file) }
+        segsHere.forEach { SegPlan.markSeg(work, it.index) }
+        Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))
+        EventLog.ui("CH_REDO", "ch=$ch n=${segsHere.size}")
+        localTick++
+        Toast.makeText(c, "第 ${ch + 1} 章已排重做，按当前调音台重新合成",
+            Toast.LENGTH_LONG).show()
     }
     val finishedChapters = ui.count { it.playable || it.audio != null }
     val totalBytes = ui.sumOf { it.audio?.bytes ?: 0L }
@@ -512,36 +573,15 @@ internal fun ChapterHubScreen(
                             .padding(horizontal = 14.dp, vertical = 3.dp))
                 }
             }
-            if (!st.running && lastRead != null && lastRead in chapters.indices) {
-                Row(Modifier.fillMaxWidth().background(HubCard)
-                    .clickable { openReader(lastRead) }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("上次读到 第 ${lastRead + 1} 章 · ${chapters[lastRead].title}",
-                        fontSize = 12.sp, color = HubSub, maxLines = 1,
-                        modifier = Modifier.weight(1f))
-                    Text("继续 ›", fontSize = 12.sp, color = HubPrimary)
-                }
-            }
-            // R219 · 两条都加高到装得下字；整体百分比在条左边，整本条内写
-            // 「已完成 X%」，本章只靠条走了多少表达、不再写数字。整块可点，
-            // 点了滚到正在制作的那一章。
+            // R253/R255 · 顶部只留两条纯进度条，不写任何解释文字：
+            // 「上次读到 第 N 章 · 继续」「整体 X%」「已完成 X%」逐条撤掉。
+            // 条高与可点滚到制作章照旧；百分比靠条走了多少表达。
             Column(Modifier.fillMaxWidth().background(HubCard)
                 .padding(horizontal = 14.dp, vertical = 6.dp)
                 .clickable { scrollToMaking() }) {
-                Text("整体 ${(bookPct * 100).toInt()}%",
-                    fontSize = 12.sp, color = HubSub)
-                Spacer(Modifier.height(4.dp))
-                Box(Modifier.fillMaxWidth().height(22.dp),
-                    contentAlignment = Alignment.Center) {
-                    LinearProgressIndicator(progress = { bookPct },
-                        modifier = Modifier.fillMaxWidth().height(22.dp),
-                        color = HubPrimary, trackColor = HubLine)
-                    Text("已完成 ${(bookPct * 100).toInt()}%", fontSize = 12.sp,
-                        color = Color.White,
-                        modifier = Modifier.background(Color(0x66000000),
-                            RoundedCornerShape(4.dp)).padding(horizontal = 6.dp))
-                }
+                LinearProgressIndicator(progress = { bookPct },
+                    modifier = Modifier.fillMaxWidth().height(22.dp),
+                    color = HubPrimary, trackColor = HubLine)
                 Spacer(Modifier.height(4.dp))
                 LinearProgressIndicator(progress = { chapterPctNow },
                     modifier = Modifier.fillMaxWidth().height(18.dp),
@@ -573,7 +613,7 @@ internal fun ChapterHubScreen(
                     if (resumePos != null && resumePos.positionMs > 5000L) {
                         TextButton(onClick = {
                             playBook(resumePos.trackId, resumePos.positionMs)
-                            EventLog.ui("HUB_RESUME_LISTEN", "book=${book.id}")
+                            EventLog.ui("HUB_RESUME_LISTEN", "book=${book.id.take(8)}")
                         }) {
                             Text("接着听 · %d:%02d ›".format(
                                 resumePos.positionMs / 60000,
@@ -606,26 +646,29 @@ internal fun ChapterHubScreen(
                             r = r, multi = multiMode, checked = r.index in selected,
                             // R218 · 点章名 = 展开小段；看书交给右侧小眼睛
                             onTap = {
-                                // R220 · 旧判据拿「整本切分计划」判有段，结果每章
-                                // 都有灰格、点谁都展开。这里只认这章真生成过段，
-                                // 或这章正在制作；没做过的章点了就是没反应。
-                                val map = hubSegChapters
-                                val segsHere = if (map != null)
-                                    hubSegs.filter { map[it.index] == r.index }
-                                else emptyList()
-                                val generated = segsHere.any { it.hasAudio }
-                                val making = (bookRunning &&
-                                    (task?.only?.contains(r.index) != false)) ||
-                                    ((st.chapterProgress[r.index] ?: 0f) > 0f)
-                                if (generated || making) {
-                                    val willOpen = expandedChapter != r.index
-                                    expandedChapter = if (willOpen) r.index else null
-                                    EventLog.ui("HUB_CH_EXPAND",
-                                        "ch=${r.index} open=$willOpen",
-                                        mapOf("book" to book.id))
+                                // R262 · 没在合成的章点了就是没反应：直接收起，
+                                // 连整本分段计划的 filter 都不跑（2 万+ 段不用算）。
+                                if (!bookRunning || r.index !in liveChapters) {
+                                    expandedChapter = null
+                                } else {
+                                    val map = hubSegChapters
+                                    val segsHere = if (map != null)
+                                        hubSegs.filter { map[it.index] == r.index }
+                                    else emptyList()
+                                    val generated = segsHere.any { it.hasAudio }
+                                    val making = (bookRunning &&
+                                        (task?.only?.contains(r.index) != false)) ||
+                                        ((st.chapterProgress[r.index] ?: 0f) > 0f)
+                                    if (generated || making) {
+                                        val willOpen = expandedChapter != r.index
+                                        expandedChapter = if (willOpen) r.index else null
+                                        EventLog.ui("HUB_CH_EXPAND",
+                                            "ch=${r.index} open=$willOpen",
+                                            mapOf("book" to book.id))
+                                    }
                                 }
                             },
-                            onLong = { enterMulti(r.index) },
+                            onLong = { menuChapter = r.index },
                             onToggle = { i ->
                                 val on = i !in selected
                                 val next = if (on) selected + i else selected - i
@@ -637,8 +680,15 @@ internal fun ChapterHubScreen(
                             onListen = {
                                 EventLog.ui("HUB_LISTEN", "ch=${r.index}")
                                 playChapter(r.index, single = true)
-                            })
+                            },
+                            menuExpanded = menuChapter == r.index,
+                            onDismissMenu = { menuChapter = null },
+                            onMenuSelect = { enterMulti(r.index) },
+                            onMenuRedo = { redoWholeChapter(r.index) },
+                            canRedo = r.audio != null || r.playable)
                     }
+                    // R262 · 没在合成的章连这个 item 都不生成：不组合、不渲染、不计算。
+                    if (r.index == expandedChapter && r.index in liveChapters) {
                     // R218 · 展开收进同一个 item 用 AnimatedVisibility 进出，
                     // 不再整块突然插进来；两条进度条已常驻，不会「从上面弹出来」。
                     item(key = "seg_body_${r.index}") {
@@ -658,9 +708,6 @@ internal fun ChapterHubScreen(
                                         val work = Workbench.workDir(c, t)
                                         val ch = expandedChapter
                                         when {
-                                            st.running -> Toast.makeText(c,
-                                                "先等当前制作收尾，再重做选中段",
-                                                Toast.LENGTH_SHORT).show()
                                             rows.isEmpty() -> Toast.makeText(c,
                                                 "先勾几个已生成的小块",
                                                 Toast.LENGTH_SHORT).show()
@@ -668,16 +715,24 @@ internal fun ChapterHubScreen(
                                                 "没找到这本书的制作记录",
                                                 Toast.LENGTH_SHORT).show()
                                             else -> {
+                                                // R253 · 不再在制作中一口拒绝。标记即排队：
+                                                // 没在跑 → 立刻开一轮；正在跑 → enqueueOrStart
+                                                // 把重做任务排进队列，当前这段读完由队列泵
+                                                // 自动接上，绝不算断正在合成的段。
                                                 rows.forEach { SegPlan.markSeg(work, it.index) }
-                                                EventLog.ui("SEG_REDO", "n=${rows.size}")
+                                                EventLog.ui("SEG_REDO",
+                                                    "n=${rows.size} running=${st.running}")
                                                 exitSegMulti()
                                                 if (ch != null) {
                                                     Producer.enqueueOrStart(c, book, setOf(ch),
                                                         null, Prefs.defaultPerf(c))
                                                 }
-                                                localTick++
+                                                localTick++   // 立刻重读 redo.json，格子转琥珀
                                                 Toast.makeText(c,
-                                                    "已标记 ${rows.size} 段，按当前调音台重新合成",
+                                                    if (st.running)
+                                                        "已标记 ${rows.size} 段（格子转黄）：当前这段读完自动接重做"
+                                                    else
+                                                        "已标记 ${rows.size} 段，按当前调音台重新合成",
                                                     Toast.LENGTH_LONG).show()
                                             }
                                         }
@@ -732,6 +787,7 @@ internal fun ChapterHubScreen(
                             }
                         }
                     }
+                    }
                 }
             }
         }
@@ -739,7 +795,9 @@ internal fun ChapterHubScreen(
         // 章节多选：合成 + 调音 + 单章成品操作，全在这一条胶囊里。
         // R171 · 条件从「有勾选」放宽到「在勾选态」：全取消勾选后条子不再凭空
         // 消失，用户始终看得见「取消」，按返回也能退（BackHandler 已接）。
-        if (multiMode) {
+        // R255 · 长按小菜单弹出时收起底部批量条，两者不同时出现，不抢操作。
+        // 已勾选的章不丢（selected 不清），菜单一关条子回来。
+        if (multiMode && menuChapter == null) {
             MultiSelectBar(
                 count = selected.size,
                 onSelectAll = {
@@ -752,28 +810,28 @@ internal fun ChapterHubScreen(
             ) {
                 if (selected.isNotEmpty()) {
                     // R224 · 一排字 → 有底色的按钮，长按选中后一眼能看出哪些能点
-                    ActionChip("调音 ›", onClick = onMixer)
-                    ActionChip("制作设置 ›", onClick = { onProduceSetup(book.id) })
-                    ActionChip("合成音频", onClick = { startAction(HubAction.SYNTH) })
+                    ActionChip("调音 ›", icon = UiIcon.MIXER, onClick = onMixer)
+                    ActionChip("制作设置 ›", icon = UiIcon.SETTINGS, onClick = { onProduceSetup(book.id) })
+                    ActionChip("合成音频", icon = UiIcon.SYNTH, onClick = { startAction(HubAction.SYNTH) })
                     if (selected.size == 1) {
                         val i = selected.first()
                         val has = ui.getOrNull(i)?.let { it.audio != null || it.playable } ?: false
                         if (has) {
-                            ActionChip("拼成整章", onClick = {
+                            ActionChip("拼成整章", icon = UiIcon.MERGE, onClick = {
                                 val (segs, _) = filesOf(i)
                                 val rr = AudioOps.mergeChapter(c, book.id, book.title, i, segs)
                                 Toast.makeText(c, if (rr.ok) rr.reason.ifBlank { "已拼成整章" }
                                     else rr.reason, Toast.LENGTH_LONG).show()
                                 exitMulti(); localTick++
                             })
-                            ActionChip("另存 WAV", onClick = {
+                            ActionChip("另存 WAV", icon = UiIcon.WAV, onClick = {
                                 val src = srcOf(i)
                                 if (src != null) { pendingSrc = src; saveWav.launch("chapter.wav") }
                                 else Toast.makeText(c, "这一章还没有可导出的音频",
                                     Toast.LENGTH_SHORT).show()
                                 exitMulti()
                             })
-                            ActionChip("转 M4A", onClick = {
+                            ActionChip("转 M4A", icon = UiIcon.M4A, onClick = {
                                 val src = srcOf(i)
                                 if (src != null) { pendingSrc = src; saveM4a.launch("chapter.m4a") }
                                 else Toast.makeText(c, "这一章还没有可转的音频",
@@ -782,7 +840,7 @@ internal fun ChapterHubScreen(
                             })
                         }
                     }
-                    ActionChip("删除选中音频", danger = true, onClick = {
+                    ActionChip("删除选中音频", danger = true, icon = UiIcon.DELETE, onClick = {
                         confirmChDel = selected.associateWith { filesOf(it) }
                     })
                 }
@@ -841,7 +899,7 @@ internal fun ChapterHubScreen(
                         } else {
                             Producer.start(c, b, t.only, true, t.think, t.config)
                             onOpenBook(t.bookId)
-                            EventLog.ui("HUB_TASK_RESUME", "book=${t.bookId}")
+                            EventLog.ui("HUB_TASK_RESUME", "book=${t.bookId.take(8)}")
                         }
                     }
                 },
@@ -981,7 +1039,7 @@ internal fun ChapterHubScreen(
                                     "已按${ChapterPlan.ruleName(rid)}重新分为 $n 章 · 旧任务请重新选章",
                                     Toast.LENGTH_LONG).show()
                                 EventLog.log(EventLog.Kind.MODEL, "CHAPTER_RESPLIT",
-                                    "书=${book.title} 规则=$rid 章数=$n")
+                                    "书=${EventLog.safe(book.title)} 规则=$rid 章数=$n")
                             }
                         }
                     }) { Text("应用", color = HubPrimary) }
@@ -1003,9 +1061,12 @@ internal fun ChapterHubScreen(
 private fun ChapterRow(
     r: ChapterUi, multi: Boolean, checked: Boolean,
     onTap: () -> Unit, onLong: () -> Unit, onToggle: (Int) -> Unit,
-    onRead: () -> Unit, onListen: () -> Unit
+    onRead: () -> Unit, onListen: () -> Unit,
+    menuExpanded: Boolean, onDismissMenu: () -> Unit, onMenuSelect: () -> Unit,
+    onMenuRedo: () -> Unit, canRedo: Boolean
 ) {
     val p = r.synthesized?.coerceIn(0f, 1f)
+    Box(Modifier.fillMaxWidth()) {
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().height(52.dp)
@@ -1045,6 +1106,18 @@ private fun ChapterRow(
             }
         }
         HubDivider()
+    }
+    // R253 · 长按就地菜单：只放两组里「章级」的动作，勾选后的批量操作仍在底部条。
+    DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
+        DropdownMenuItem(
+            text = { Text("勾选此章", fontSize = 13.sp) },
+            onClick = { onDismissMenu(); onMenuSelect() })
+        if (canRedo) {
+            DropdownMenuItem(
+                text = { Text("整章重做", fontSize = 13.sp) },
+                onClick = { onDismissMenu(); onMenuRedo() })
+        }
+    }
     }
 }
 
@@ -1165,9 +1238,10 @@ private fun ChapterSegGrid(
                     val isChecked = sg.index in checked
                     Box(
                         Modifier.size(cell)
-                            .background(segCellColor(playable, playing, multi, isChecked),
-                                RoundedCornerShape(8.dp))
-                            .pointerInput(sg.index, multi, isChecked, playable, playing, onThis) {
+                            .background(segCellColor(playable, playing, multi, isChecked,
+                                    sg.pendingRedo), RoundedCornerShape(8.dp))
+                            .pointerInput(sg.index, multi, isChecked, playable, playing,
+                                    onThis, sg.pendingRedo) {
                                 detectTapGestures(
                                     onLongPress = { if (playable) onLong(sg.index) },
                                     onTap = {
@@ -1183,7 +1257,8 @@ private fun ChapterSegGrid(
                                 boxColor = HubCard, modifier = Modifier.size(16.dp))
                         } else {
                             Text("${sg.index - base + 1}", fontSize = 11.sp,
-                                color = segNumberColor(playing, playable, multi, isChecked))
+                                color = segNumberColor(playing, playable, multi, isChecked,
+                                    sg.pendingRedo))
                         }
                     }
                 }
@@ -1290,54 +1365,58 @@ internal fun MiniPlayBar(
     val frac = if (st.durationMs > 0)
         (st.positionMs.toFloat() / st.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
-    // 整条可点：点一下展开全屏播放器页，像音乐 App 那样
-    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
-        .background(HubCard, RoundedCornerShape(18.dp))
+    // R262 · 与全屏播放器同款视觉：小封面 + mm:ss + 倍速胶囊 + 三枚图标，
+    // 进度条落到卡片底边而不是压在顶上；整条仍可点开全屏页。
+    val timeText = "%02d:%02d / %02d:%02d".format(
+        st.positionMs / 60000, st.positionMs / 1000 % 60,
+        st.durationMs / 60000, st.durationMs / 1000 % 60)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+        .background(HubCard, RoundedCornerShape(20.dp))
         .clickable { onExpand() }
-        .padding(horizontal = 4.dp)) {
+        .padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PlayerCover(HubPrimary, 44.dp, st.isPlaying)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(st.label.ifBlank { "未在播放" }, fontSize = 13.sp, maxLines = 1,
+                    fontWeight = FontWeight.Bold, color = palette.text)
+                Spacer(Modifier.height(3.dp))
+                Text(timeText, fontSize = 11.sp, color = HubSub)
+            }
+            // K1 · 用户实证「播放整章应该能调倍速」。原来倍速只藏在全屏
+            // 播放器页里，听整章时看到的是这条常驻条，根本找不到入口。
+            // 这里给一枚常驻胶囊：点一下循环切档，播放器页仍留五档直选。
+            Box(Modifier.height(28.dp)
+                    .background(HubSoft, RoundedCornerShape(50))
+                    .clickable {
+                        val next = PlayQueue.nextSpeed(st.speed)
+                        PlayQueue.setSpeed(next)
+                        EventLog.ui("PLAY_SPEED", "x=$next from=bar")
+                    }
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center) {
+                Text(PlayQueue.speedLabel(st.speed), fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, color = HubPrimary)
+            }
+            Spacer(Modifier.width(4.dp))
+            // 全部换成代码绘制的真图标，不再用「‹ ⏸ ▶ ›」字符
+            IconButton(onClick = { PlayQueue.previous() }, modifier = Modifier.size(34.dp)) {
+                IconSkip(false, HubPrimary, Modifier.size(18.dp))
+            }
+            IconButton(onClick = { PlayQueue.toggle() },
+                modifier = Modifier.size(36.dp)
+                    .background(HubPrimary, RoundedCornerShape(50))) {
+                IconPlayPause(st.isPlaying, palette.onPrimary, Modifier.size(18.dp))
+            }
+            IconButton(onClick = { PlayQueue.next() }, modifier = Modifier.size(34.dp)) {
+                IconSkip(true, HubPrimary, Modifier.size(18.dp))
+            }
+        }
+        Spacer(Modifier.height(9.dp))
         Box(Modifier.fillMaxWidth().height(3.dp)
             .background(HubLine, RoundedCornerShape(50))) {
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight()
                 .background(HubPrimary, RoundedCornerShape(50)))
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(st.label.ifBlank { "未在播放" }, fontSize = 13.sp, maxLines = 1,
-                    fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${st.positionMs / 1000}s / ${st.durationMs / 1000}s",
-                        fontSize = 12.sp, color = HubSub)
-                    Spacer(Modifier.weight(1f))
-                    // K1 · 用户实证「播放整章应该能调倍速」。原来倍速只藏在全屏
-                    // 播放器页里，听整章时看到的是这条常驻条，根本找不到入口。
-                    // 这里给一枚常驻胶囊：点一下循环切档，播放器页仍留五档直选。
-                    Box(Modifier.height(26.dp)
-                            .background(HubSoft, RoundedCornerShape(50))
-                            .clickable {
-                                val next = PlayQueue.nextSpeed(st.speed)
-                                PlayQueue.setSpeed(next)
-                                EventLog.ui("PLAY_SPEED", "x=$next from=bar")
-                            }
-                            .padding(horizontal = 10.dp),
-                        contentAlignment = Alignment.Center) {
-                        Text(PlayQueue.speedLabel(st.speed), fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold, color = HubPrimary)
-                    }
-                }
-            }
-            // 全部换成代码绘制的真图标，不再用「‹ ⏸ ▶ ›」字符
-            IconButton(onClick = { PlayQueue.previous() }, modifier = Modifier.size(38.dp)) {
-                IconSkip(false, HubPrimary, Modifier.size(20.dp))
-            }
-            IconButton(onClick = { PlayQueue.toggle() },
-                modifier = Modifier.size(38.dp)
-                    .background(HubPrimary, RoundedCornerShape(50))) {
-                IconPlayPause(st.isPlaying, palette.onPrimary, Modifier.size(18.dp))
-            }
-            IconButton(onClick = { PlayQueue.next() }, modifier = Modifier.size(38.dp)) {
-                IconSkip(true, HubPrimary, Modifier.size(20.dp))
-            }
         }
     }
 }
@@ -1520,12 +1599,23 @@ private fun TaskBoardDialog(
                                 TextButton(onClick = {
                                     onDismiss()
                                     onOpenBook(t.bookId)
-                                }) { Text("打开这本书 ›", fontSize = 11.sp, color = HubPrimary) }
+                                }) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        UiIconGlyph(UiIcon.EXPORT, HubPrimary)
+                                        Spacer(Modifier.width(3.dp))
+                                        Text("打开这本书 ›", fontSize = 11.sp, color = HubPrimary)
+                                    }
+                                }
                                 Spacer(Modifier.weight(1f))
                                 TextButton(onClick = { confirmDelete = t },
                                     enabled = !runningThis) {
-                                    Text("删除任务", fontSize = 11.sp,
-                                        color = if (runningThis) HubSub else HubWarn)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        UiIconGlyph(UiIcon.DELETE,
+                                            if (runningThis) HubSub else HubWarn)
+                                        Spacer(Modifier.width(3.dp))
+                                        Text("删除任务", fontSize = 11.sp,
+                                            color = if (runningThis) HubSub else HubWarn)
+                                    }
                                 }
                             }
                         }

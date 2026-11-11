@@ -60,12 +60,12 @@ POS = {
         "front?.let { fi ->",
         '"书前 ${fi.chars} 字已跳过"',
         "IconPlayPause(st.isPlaying, palette.onPrimary",
-        "color = segNumberColor(playing, playable, multi, isChecked))",
+        "color = segNumberColor(playing, playable, multi, isChecked,",
         # J1 看图修复：未生成格子不再是 18% 透明
         "private fun segCellColor(",
         "0.46f else 0.48f",
-        "segCellColor(playable, playing, multi, isChecked)",
-        "segCellColor(playable, playing, multi, isChecked)",
+        "segCellColor(playable, playing, multi, isChecked,",
+        "segCellColor(playable, playing, multi, isChecked,",
     ],
     "theme": [
         "val onWarn: Color",
@@ -364,9 +364,9 @@ def selftest():
         ("格子色函数被摘", "hub", "private fun segCellColor(", ""),
         ("未生成格子退回 18%", "hub", "0.46f else 0.48f",
          "0.18f else 0.18f"),
-        ("第一列格子没用公共色", "hub", "segCellColor(playable, playing, multi, isChecked)", ""),
+        ("第一列格子没用公共色", "hub", "segCellColor(playable, playing, multi, isChecked,", ""),
         ("第二列格子没用公共色", "hub",
-         "segCellColor(playable, playing, multi, isChecked)", ""),
+         "segCellColor(playable, playing, multi, isChecked,", ""),
         # 这个串在设置页主题分段器也出现一次，注入必须只改 ParamLine 段，
         # 否则删掉的是别处的那一处，本条永远拦不住。
         ("刷新键退回空心框", "main", None,

@@ -69,12 +69,13 @@ def check(f):
     # ⑤ 两条进度条常驻 + 展开动效 + 段数文案撤掉
     for k in ["val chapterPctNow =", "LinearProgressIndicator(progress = { bookPct }",
               "LinearProgressIndicator(progress = { chapterPctNow }",
-              '"整体 ${(bookPct * 100).toInt()}%"',
+              "modifier = Modifier.fillMaxWidth().height(22.dp),",
               "AnimatedVisibility(", "expandVertically() + fadeIn()",
               "shrinkVertically() + fadeOut()",
               "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->"]:
         if k not in hb: e.append("进度/展开缺: " + k[:60])
-    for k in ['"本章 ${segs.size} 小段"', "小段已生成", "还没有小段"]:
+    for k in ['"本章 ${segs.size} 小段"', "小段已生成", "还没有小段",
+              '"已完成 ${(bookPct * 100).toInt()}%"', '"整体 ${(bookPct * 100).toInt()}%"']:
         if k in hb: e.append("段数文案回潮: " + k[:40])
     # ⑥ 顶栏只剩一枚齿轮 + 勾选态文字入口
     if hb.count('"制作设置 ›"') != 1:

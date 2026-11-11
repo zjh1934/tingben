@@ -66,7 +66,7 @@ def check(f):
     # ③ 裁剪试听
     for k in ["fun trialRefClip(d: DecodedAudio, startMs: Long, endMs: Long)",
               "val bytes = AudioDecode.clipWav(d.wav, startMs, endMs)",
-              'File(c.cacheDir, "ref_clip_trial.wav")',
+              'TrialFiles.file(c, "ref_clip_trial.wav")',
               "f.writeBytes(bytes)",
               'PlayQueue.setTracks(listOf(Track(f, "裁剪试听",',
               'id = "trial:ref_clip")), "trial")',

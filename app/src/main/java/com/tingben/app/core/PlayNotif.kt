@@ -14,6 +14,12 @@ object PlayNotif {
     private const val CHANNEL = "tingben_play"
     private const val ID = 20261107
 
+    /** R248 · 收听位置，替代「正在播放 / 已暂停」这类状态废话。 */
+    private fun mmss(ms: Long): String {
+        val s = (ms / 1000L).coerceAtLeast(0L)
+        return "%02d:%02d".format(s / 60, s % 60)
+    }
+
     private fun ensureChannel(c: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = c.getSystemService(NotificationManager::class.java) ?: return
@@ -38,6 +44,8 @@ object PlayNotif {
         // 两态隔离：小段 / 调音台试听不占用播放控制通知
         if (s.label.isEmpty() || s.preview) { cancel(c); return }
         ensureChannel(c)
+        // R248 · 提前建好平台会话，MediaStyle 才能把锁屏/线控接上。
+        PlaySession.ensure(c)
         // 点通知主体 = 回到软件并展开播放器页，而不是停在书架猜「刚才播到哪」
         val open = PendingIntent.getActivity(
             c, 0,
@@ -45,15 +53,22 @@ object PlayNotif {
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 .putExtra("open_player", true),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        // R248 · 借鉴播放器通知：进度条 + 位置/时长，不再写状态形容词。
+        val style = Notification.MediaStyle().setShowActionsInCompactView(0, 1, 2)
+        PlaySession.token?.let { style.setMediaSession(it) }
         val b = Notification.Builder(c, CHANNEL)
             .setContentTitle(s.label.ifBlank { "听本" })
-            .setContentText(if (s.isPlaying) "正在播放" else "已暂停")
+            .setContentText(mmss(s.positionMs) + " / " + mmss(s.durationMs))
+            .setProgress(
+                s.durationMs.coerceAtLeast(1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                s.positionMs.coerceAtLeast(0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                false)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(open)
             .setOnlyAlertOnce(true)
             .setOngoing(s.isPlaying)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setStyle(Notification.MediaStyle().setShowActionsInCompactView(0, 1, 2))
+            .setStyle(style)
         b.addAction(Notification.Action.Builder(android.R.drawable.ic_media_previous,
             "上一段", action(c, "com.tingben.app.PLAY_PREV", 1)).build())
         b.addAction(Notification.Action.Builder(

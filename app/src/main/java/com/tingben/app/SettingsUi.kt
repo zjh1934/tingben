@@ -248,7 +248,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     var devOpen by remember { mutableStateOf(false) }
 
     // R156 · 成品导出：让用户用系统文件管理器自己选一个文件夹（一般是 Download），
-    // 记住后把每章成品 WAV 平铺写进去。不开放内部 work/audio 路径配置，
+    // 记住后把每章成品 WAV 按书名分文件夹写进去。不开放内部 work/audio 路径配置，
     // 理由写在 core/AudioExport.kt 的类注释里。
     val expScope = rememberCoroutineScope()
     // R158 · 系统特殊权限不给 result code，用户从设置页返回后必须复检。
@@ -265,8 +265,29 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     val ovOk = remember(permTick) { KeepAlive.overlayGranted(c) }
     var expTreeLabel by remember { mutableStateOf(AudioExport.treeLabel(c)) }
     var expCount by remember { mutableStateOf(0) }
+    var segTotal by remember { mutableStateOf(0) }
     LaunchedEffect(refresh) {
         expCount = withContext(Dispatchers.IO) { AudioExport.collect(c).size }
+        segTotal = withContext(Dispatchers.IO) {
+            File(c.filesDir, "work").walkTopDown()
+                .count { it.isFile && it.name.endsWith(".wav") }
+        }
+    }
+    // 两个本机目录在设置里可达：私有目录第三方文件管理器进不去，
+    // 所以应用内列清单，点一个文件另存到用户自己挑的位置。
+    var browseRoot by remember { mutableStateOf<File?>(null) }
+    var browseLabel by remember { mutableStateOf("") }
+    var pendingSave by remember { mutableStateOf<File?>(null) }
+    val saveOne = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
+        val src = pendingSave
+        pendingSave = null
+        if (uri != null && src != null) {
+            expScope.launch {
+                val ok = withContext(Dispatchers.IO) { AudioOps.copyTo(c, src, uri) }
+                Toast.makeText(c, if (ok) "已另存" else "另存失败", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
     val treeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -439,7 +460,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Text("选择", fontSize = 12.sp)
                 }
             }
-            SettingLine("成", "已做好 $expCount 个整章成品", "平铺导出到你选的文件夹") {
+            SettingLine("成", "已做好 $expCount 个整章成品", "按书名分文件夹 · WAV") {
                 Button(enabled = expCount > 0, onClick = {
                         val tree = AudioExport.treeUri(c)
                         if (tree == null) {
@@ -466,6 +487,28 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     shape = RoundedCornerShape(50),
                     contentPadding = PaddingValues(horizontal = 14.dp)) {
                     Text("导出全部", fontSize = 12.sp)
+                }
+            }
+            SettingLine("块", "中间小块 $segTotal 个", "合成中的临时音频 · 拼成整章后清") {
+                Button(onClick = {
+                        browseLabel = "中间小块"
+                        browseRoot = File(c.filesDir, "work")
+                    },
+                    modifier = Modifier.height(34.dp),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp)) {
+                    Text("查看", fontSize = 12.sp)
+                }
+            }
+            SettingLine("章", "整章成品目录", "按书名分文件夹 · WAV") {
+                Button(onClick = {
+                        browseLabel = "整章成品"
+                        browseRoot = AudioLibrary.dir(c)
+                    },
+                    modifier = Modifier.height(34.dp),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 14.dp)) {
+                    Text("查看", fontSize = 12.sp)
                 }
             }
         }
@@ -517,5 +560,68 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
+        browseRoot?.let { root ->
+            LocalFilesDialog(root, browseLabel,
+                onSave = { f ->
+                    pendingSave = f
+                    try { saveOne.launch(f.name) }
+                    catch (_: Throwable) { pendingSave = null }
+                },
+                onDismiss = { browseRoot = null })
+        }
+
+    }
+}
+
+/** 本机音频目录的应用内浏览：列两层 WAV，点一个另存到用户挑的位置。 */
+@Composable
+internal fun LocalFilesDialog(root: File, label: String,
+                             onSave: (File) -> Unit, onDismiss: () -> Unit) {
+    val files = remember(root.absolutePath) {
+        val out = mutableListOf<File>()
+        root.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") }?.let { out.addAll(it) }
+        root.listFiles()?.filter { it.isDirectory }?.forEach { d ->
+            d.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") }?.let { out.addAll(it) }
+        }
+        out.sortedByDescending { it.lastModified() }
+    }
+    Dialog(onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Card(Modifier.fillMaxWidth(0.92f), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(14.dp)) {
+                Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(3.dp))
+                Text("${files.size} 个 WAV · 点一个另存到你自己挑的位置",
+                    fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.height(10.dp))
+                if (files.isEmpty()) {
+                    Text("这里现在没有音频文件", fontSize = 12.sp, color = Sub)
+                } else {
+                    LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                        items(files, key = { it.absolutePath }) { f ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onSave(f) }
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(f.name, fontSize = 12.sp, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
+                                    f.parentFile?.name?.takeIf { it != root.name }?.let { p ->
+                                        Text(p, fontSize = 10.sp, color = Sub)
+                                    }
+                                }
+                                Text("%.1f MB".format(f.length() / 1024f / 1024f),
+                                    fontSize = 11.sp, color = Sub)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End)) { Text("关闭") }
+            }
+        }
     }
 }

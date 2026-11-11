@@ -60,8 +60,17 @@ def check(f):
                   "only = setOf(chapter),",
                   "CHAPTER_MERGE_ONE"]:
             if k not in body: e.append("按章拼缺: " + k[:56])
-        for banned in ["deleteAll(", "AudioTree.forget", "AudioTree.markDone"]:
-            if banned in body: e.append("自动拼章动了小块/续跑: " + banned)
+        # R255 · 用户改口径：整章拼好就清中间小块。约束不是放宽而是换严：
+        # 必须「先写 chapter_done 再删小块」（否则续跑会把整章重做一遍），
+        # 且 markDone 失败要有保留小块的兜底。顺序由下面的下标比较守住。
+        for k in ["AudioTree.markDone", "if (!marked)", "deleteAll(",
+                  "AudioTree.forget", "CHAPTER_MERGE_CLEAN"]:
+            if k not in body: e.append("R255 清小块缺: " + k[:56])
+        i_mark = body.find("AudioTree.markDone")
+        i_keep = body.find("if (!marked)")
+        i_del = body.find("deleteAll(")
+        if not (0 <= i_mark < i_keep < i_del):
+            e.append("R255 顺序错：没先写章状态/没兜底就删了小块")
     # ④ Producer 收尾按章拼，整本成品仍在
     # R242 · rc #204 真编译实证：c=appCtx 是 Context?，守卫被摘会报
     # Argument type mismatch（静态守门抓不到），单列一条硬判据。
@@ -121,8 +130,10 @@ def selftest():
         ("按章拼函数调用被摘", "ops",
          "WavMerger.merge(parts = parts, out = dst, gapMs = gapMs, declickMs = declickMs)", ""),
         ("按章拼没登记", "ops", "only = setOf(chapter),", ""),
-        ("自动拼章删小块", "ops", "EventLog.log(EventLog.Kind.PIPELINE, \"CHAPTER_MERGE_ONE\"",
-         "AudioTree.forget(c, parts.map { it.absolutePath })\n        EventLog.log(EventLog.Kind.PIPELINE, \"CHAPTER_MERGE_ONE\""),
+        # R255 · 旧注入往函数里塞 forget 看是否变红；现在 forget 本就在，
+        # 换成摘掉「先写章状态」与「失败保留」两处真约束。
+        ("清小块没写章状态", "ops", "AudioTree.markDone(it, chapter, dst)", ""),
+        ("章状态失败没兜底", "ops", "if (!marked) {", "if (false) {"),
         ("开关被摘", "producer", "if (c != null && Prefs.autoMergeChapter(c)) {", "if (false) {"),
         ("按章拼调用被摘", "producer",
          "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,", ""),

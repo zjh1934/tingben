@@ -93,7 +93,7 @@ POS = {
         'b.origin == "input"',
         '"$INPUT_DIR/"',
         'if (n > 1) "${base}_$n"',
-        '"第%02d章.wav".format(ch + 1)',
+        '"%03d_%s.wav".format(ch + 1, safeName(t))',
         "fun ensureDir(rel: String): Uri?",
         "private fun findChildDir(",
         "DocumentsContract.Document.MIME_TYPE_DIR, part",
@@ -167,7 +167,7 @@ def collect_layout(books):
         used[key] = n
         d = prefix + (base if n == 1 else "%s_%d" % (base, n))
         for ch in chapters:
-            out.append((d, "第%02d章.wav" % (ch + 1)))
+            out.append((d, "%03d_第 %d 章.wav" % (ch + 1, ch + 1)))
     return out
 
 
@@ -253,9 +253,9 @@ def logic_cases(f):
     ]
     got = collect_layout(books)
     want = [
-        ("怨气撞铃", "第01章.wav"), ("怨气撞铃", "第02章.wav"),
-        ("输入朗读/粘贴的文字", "第01章.wav"),
-        ("输入朗读/粘贴的文字_2", "第01章.wav"),
+        ("怨气撞铃", "001_第 1 章.wav"), ("怨气撞铃", "002_第 2 章.wav"),
+        ("输入朗读/粘贴的文字", "001_第 1 章.wav"),
+        ("输入朗读/粘贴的文字_2", "001_第 1 章.wav"),
     ]
     if got != want:
         bad.append("导出目录分层错：%r" % (got,))

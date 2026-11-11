@@ -46,6 +46,9 @@ object EventLog {
      */
     fun safe(s: String?): String =
         if (s.isNullOrEmpty()) "空" else "len=${s.length} h=${sha(s).take(8)}"
+
+    /** R261 · snapshotBlock 里有同名局部 safe(lambda)，取别名避免遮蔽，也不写自引用前缀。 */
+    private fun redact(s: String?): String = safe(s)
     private const val RING_MAX = 200
 
     fun lastEngine(): Pair<String, String> = lastEngineAction to lastEngineDetail
@@ -218,7 +221,7 @@ object EventLog {
             append("- 书架: `${safe { BookStore.list(c).size }}` 本\n")
             append("- 当前任务: `${safe {
                 val t = TaskResume.active(c)
-                if (t == null) "无" else "${safe(t.title)} · ${t.phase} · ${t.done}/${t.total} · 规则 ${t.splitRule}"
+                if (t == null) "无" else "${redact(t.title)} · ${t.phase} · ${t.done}/${t.total} · 规则 ${t.splitRule}"
             }}`\n")
             append("- 队列: `${safe { TaskResume.queueSize(c) }}` 项 · 暂停=`${safe { TaskResume.queuePaused(c) }}`\n")
             append("- 成品音频: `${safe { AudioLibrary.list(c).size }}` 条\n")
@@ -226,15 +229,15 @@ object EventLog {
             append("- 模型缺件: `${safe { ModelStore.missing(c) }}`\n")
             append("- 制作状态: `${safe {
                 val p = Producer.state.value
-                "${p.stage} · ${p.done}/${p.total} · ${p.message}"
+                "${p.stage} · ${p.done}/${p.total} · msg=${redact(p.message)}"
             }}`\n")
             append("- 主播放: `${safe {
                 val s = PlayQueue.state.value
-                "${s.label} · playing=${s.isPlaying} · ${s.positionMs}/${s.durationMs}ms · 队列 ${s.queueId}"
+                "label=${redact(s.label)} · playing=${s.isPlaying} · ${s.positionMs}/${s.durationMs}ms · 队列 ${s.queueId}"
             }}`\n")
             append("- 试听: `${safe {
                 val s = PlayQueue.previewState.value
-                "${s.label} · playing=${s.isPlaying} · 队列 ${s.queueId}"
+                "label=${redact(s.label)} · playing=${s.isPlaying} · 队列 ${s.queueId}"
             }}`\n")
             append("- 主题: `${safe { Prefs.themeMode(c) }}`\n")
             append("- 事件日志: `${safe { file?.length() ?: 0L }}` 字节 · 详细 `${safe { detailFile?.length() ?: 0L }}` 字节\n")

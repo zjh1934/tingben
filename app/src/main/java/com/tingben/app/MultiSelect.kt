@@ -37,20 +37,32 @@ internal fun ActionChip(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    danger: Boolean = false
+    danger: Boolean = false,
+    icon: UiIcon? = null
 ) {
     val tint = if (danger) palette.warn else palette.primary
     Box(
         modifier.padding(end = 6.dp)
+            .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(if (danger) palette.warn.copy(alpha = 0.13f)
                         else palette.primarySoft)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium,
-            color = tint, maxLines = 1)
+        // R247 · 图标 + 文字并存：图标给一眼可辨的视觉锚，文字保住抽象动作的可读性。
+        if (icon != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UiIconGlyph(icon, tint, glyphSize = 18.dp)
+                Spacer(Modifier.width(5.dp))
+                Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    color = tint, maxLines = 1)
+            }
+        } else {
+            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                color = tint, maxLines = 1)
+        }
     }
 }
 
@@ -121,13 +133,13 @@ internal fun MultiSelectBar(
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(containerColor = palette.card),
         shape = RoundedCornerShape(28.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Text("已选 $count", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            Text("已选 $count", fontSize = 13.sp, fontWeight = FontWeight.Bold,
                 color = palette.primary, modifier = Modifier.padding(start = 8.dp))
-            ActionChip(allLabel, onClick = {
+            ActionChip(allLabel, icon = UiIcon.ALL, onClick = {
                 onSelectAll()
                 EventLog.ui("MULTI_ALL_BAR", allLabel)
             })
@@ -138,7 +150,7 @@ internal fun MultiSelectBar(
             }
             // R171 · 原来只有一个灰色 ×，用户「不知道这个勾选态怎么取消」。
             // 换成看得见的「取消」文字，图标留作辅助，事件名不动。
-            ActionChip("取消", onClick = {
+            ActionChip("取消", icon = UiIcon.CANCEL, onClick = {
                 onCancel()
                 EventLog.ui("MULTI_CANCEL_BAR", "")
             }, modifier = Modifier.padding(start = 2.dp))

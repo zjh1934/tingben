@@ -23,6 +23,10 @@ def files():
         "ci": rd(ROOT / ".github/workflows/ci.yml"),
         "r135": rd(ROOT / "scripts/r135_verify.py"),
         "config": rd(ROOT / ".aoci/config.json"),
+        "icons": rd(APP / "UiIcons.kt"),
+        "chrome": rd(APP / "AppChrome.kt"),
+        "mixer": rd(APP / "MixerUi.kt"),
+        "task": rd(APP / "TaskUi.kt"),
     }
 
 CHIPS = ["ActionChip(\"调音 ›\"", "ActionChip(\"制作设置 ›\"",
@@ -53,6 +57,27 @@ def check(f):
         e.append("抽屉左滑没限定主页")
     if "gesturesEnabled = true" in mn:
         e.append("抽屉左滑又对全局页面开放")
+    # ⑤ R247 · 其余字按钮配代码自绘图标（文字保留，老字面量判据零迁移）
+    ic = f["icons"]
+    for k in ["enum class UiIcon {", "internal fun UiIconGlyph(",
+              "Canvas(Modifier.size(glyphSize))", "0.30f * i.toFloat()",
+              "strokeWidth = sw, cap = StrokeCap.Round"]:
+        if k not in ic: e.append("图标库缺: " + k[:52])
+    for v in ["MIXER", "SETTINGS", "SYNTH", "MERGE", "WAV", "M4A", "DELETE",
+              "PLAY", "STOP", "LISTEN", "EXPORT", "CANCEL", "ALL", "AUDIO", "TASKS"]:
+        if "UiIcon." + v + " ->" not in ic: e.append("枚举值没画: " + v)
+    if "icon: UiIcon? = null" not in m or "UiIconGlyph(icon, tint" not in m:
+        e.append("ActionChip 没接图标槽")
+    if hb.count("icon = UiIcon.") < 7:
+        e.append("目录页动作条图标没配齐（实 %d）" % hb.count("icon = UiIcon."))
+    # 只禁渲染出来的 ⚙ 字符；KDoc 里解释「不用 ⚙ 字符」的说明不算回潮
+    if 'Text("⚙' in f["chrome"]:
+        e.append("⚙ 字符回潮（应走 GearIcon 代码自绘）")
+    if "GearIcon(primary)" not in f["chrome"]:
+        e.append("抽屉设置没用真齿轮")
+    for name, src, need in [("裁剪弹层", f["mixer"], "UiIconGlyph(UiIcon.AUDIO"),
+                            ("任务页", f["task"], "UiIconGlyph(UiIcon.LISTEN")]:
+        if need not in src: e.append(name + "没接图标")
     # ④ 登记
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r224_verify.py --selftest"),
                               ("清单", f["r135"], '"r224_verify.py"'),
@@ -82,6 +107,14 @@ def selftest():
          "gesturesEnabled = false"),
         ("CI 漏挂", "ci", "python3 scripts/r224_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r224_verify.py"', ""),
+        ("图标库被摘", "icons", "enum class UiIcon {", ""),
+        ("局部函数 Float×Int 回潮", "icons", "0.30f * i.toFloat()", "0.30f * i"),
+        ("ActionChip 图标槽被摘", "multi", "icon: UiIcon? = null", ""),
+        ("动作条图标被摘", "hub", 'ActionChip("拼成整章", icon = UiIcon.MERGE',
+         'ActionChip("拼成整章"'),
+        ("⚙ 字符回潮", "chrome", "GearIcon(primary)", 'Text("⚙ 设置"'),
+        ("裁剪弹层图标被摘", "mixer", "UiIconGlyph(UiIcon.AUDIO", ""),
+        ("任务页图标被摘", "task", "UiIconGlyph(UiIcon.LISTEN", ""),
     ]
     bad = 0
     for name, key, needle, repl in cuts:
@@ -98,4 +131,4 @@ if __name__ == "__main__":
         print("R224 FAIL", len(e))
         for x in e: print(" -", x)
         sys.exit(1)
-    print("R224 批次1 多选动作按钮化 / 抽屉手势仅主页：PASS")
+    print("R224 批次1 多选动作按钮化 / 抽屉手势仅主页 / R247 图标接线：PASS")

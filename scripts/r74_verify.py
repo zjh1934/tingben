@@ -27,9 +27,8 @@ POS = [
     ("逐章真值来源", HUB, "chapterProgress[ch.index] else null"),
     ("固定列网格", HUB, "chunked(SEG_GRID_COLUMNS)"),
     ("阅读位置落盘", HUB, "ReadingState.save(c, book.id, i)"),
-    ("上次读到细条", HUB, "上次读到 第 ${lastRead + 1} 章"),
     ("翻章也写位置", HUB, "{ next -> openReader(next) }"),
-    ("本章文案", HUB, "整体 ${(bookPct * 100).toInt()}%"),
+    ("整本条纯色", HUB, "modifier = Modifier.fillMaxWidth().height(22.dp),"),
     ("重新分章入口", HUB, 'resplitRequest > 0'),
     ("三列分发", HUB, "LazyColumn(Modifier.fillMaxSize(),"),
     ("停滞态集合", HUB, 'listOf("没完成", "已停止", "出错了")'),
@@ -47,6 +46,10 @@ NEG = [
     ("旧字段 unannotatedAudio", HUB, "val unannotatedAudio: Boolean"),
     ("直接 pane 赋值", HUB, "{ i -> pane = Pane.Reader(i) }"),
     ("旧四列注释", HUB, "平级排成四列左右滑"),
+    # R253 · 目录页「上次读到 第 N 章 · 继续」细条撤掉（R230 书架已撤），不许回潮
+    ("「上次读到」细条回潮", HUB, "上次读到 第 ${lastRead + 1} 章"),
+    # R255 · 条内「已完成 X%」与「整体 X%」都撤了，不许回潮
+    ("条内文字回潮", HUB, "已完成 ${(bookPct * 100).toInt()}%"),
 ]
 
 def brackets(text, name):

@@ -18,7 +18,6 @@ import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
 import java.security.MessageDigest
-import java.util.UUID
 
 // @core-part: Producer
 object Producer {
@@ -71,7 +70,7 @@ object Producer {
             else
                 "上次做到《${fixed.title}》，已做好的块都留着。点「继续制作」从这接着跑，不用重算。")
         EventLog.log(EventLog.Kind.PIPELINE, "TASK_RESTORE",
-            "book=${fixed.title} phase=${fixed.phase} real=$real/${fixed.total}" +
+            "book=${EventLog.safe(fixed.title)} phase=${fixed.phase} real=$real/${fixed.total}" +
                 (if (why != null) " invalidate=$why" else ""))
     }
 
@@ -228,7 +227,7 @@ object Producer {
         val why = TaskResume.autoResumeBlockReason(c, t)
         if (why != null) {
             EventLog.log(EventLog.Kind.PIPELINE, "TASK_AUTO_RESUME_SKIP",
-                "book=${t.title} phase=${t.phase} reason=$why")
+                "book=${EventLog.safe(t.title)} phase=${t.phase} reason=$why")
             return why
         }
         val book = BookStore.list(c).find { it.id == t.bookId }
@@ -236,7 +235,7 @@ object Producer {
         start(c, book, t.only, true, t.think, t.config)
         if (lastStartError != null) return lastStartError
         EventLog.log(EventLog.Kind.PIPELINE, "TASK_AUTO_RESUME",
-            "book=${t.title} phase=${t.phase} done=${t.done}/${t.total}")
+            "book=${EventLog.safe(t.title)} phase=${t.phase} done=${t.done}/${t.total}")
         return "已自动接着上次的《${t.title}》继续制作"
     }
 
@@ -493,15 +492,20 @@ object Producer {
             persistTick(force = stageChanged)
         }
         val now = System.currentTimeMillis()
+        // R217 · 取「章号最大那一章」的进度给悬浮窗下球。
+        // R214 原来比对的是 value（取所有章里进度最大的），做到第 2 章
+        // 时下球还停在第 1 章的 100%，看着像卡住。比对 key 才是当前章。
+        // 不用 maxByOrNull 之类版本相关 API，纯循环最稳。
+        var chPct = -1f
+        var chIdx = -1
+        for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }
+        // R255 · 上球真机反馈「不更新」：浮窗刷新从通知节流里拆出来，每段必刷。
+        // 通知仍按 stage 切换 / 1.5s 节流，互不拖累。
+        appCtx?.let { ctx ->
+            ProduceService.overlay(ctx.applicationContext, done, total, chPct)
+        }
         if (stageChanged || now - lastNotifyMs >= PERSIST_INTERVAL_MS) {
             appCtx?.let { ctx ->
-                // R217 · 取「章号最大那一章」的进度给悬浮窗下球。
-                // R214 原来比对的是 value（取所有章里进度最大的），做到第 2 章
-                // 时下球还停在第 1 章的 100%，看着像卡住。比对 key 才是当前章。
-                // 不用 maxByOrNull 之类版本相关 API，纯循环最稳。
-                var chPct = -1f
-                var chIdx = -1
-                for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }
                 ProduceService.update(ctx.applicationContext, stage, done, total,
                     msg, chPct)
             }
@@ -794,15 +798,21 @@ object Producer {
                         "合成段 ${i + 1}/${toSpeak.size}")
                     val v = live.params
                     lastLive = live
+                    // R257 · 1.1.30 真机日志实证：这里原来把正文前 50 字与
+                    // instruct（音色描述/导演指令）原文写进日志，R225 的「零落盘」
+                    // 漏了这一处。全部改长度 + 短哈希，排查仍够用（段号、字数、
+                    // 指令长度、音色是否变化），但不再落用户内容。
                     EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
-                        "段 ${i + 1}/${toSpeak.size} [${live.speaker}] " +
-                            live.text.take(50).replace('\n', '⏎') + " → " + (v.instruct ?: "（无指令）"),
+                        "段 ${i + 1}/${toSpeak.size} · " +
+                            "text=${EventLog.safe(live.text)} · " +
+                            "instruct=${EventLog.safe(v.instruct)} · " +
+                            "speaker=${EventLog.safe(live.speaker)}",
                         level = EventLog.Level.TRACE,
-                        fields = mapOf("seg" to (i + 1).toString(), "speaker" to live.speaker,
+                        fields = mapOf("seg" to (i + 1).toString(),
                             "textChars" to live.text.length.toString(),
                             "instructChars" to (v.instruct?.length ?: 0).toString(),
                             "lang" to "chinese", "mode" to ModelStore.currentMode(c).id,
-                            "speakerParam" to (v.speaker ?: "null")))
+                            "speakerParam" to EventLog.safe(v.speaker)))
                     // R235 · 参数只给真正合成的那一段用；运行中改设置下一段即生效
                     lastParams = v
                 }
@@ -901,7 +911,7 @@ object Producer {
         }
 
         emit("正在整理音频", annotated.size, annotated.size, gateFails + synthFails, "正在把各段接成一个音频…")
-        val outFile = File(AudioLibrary.dir(c), "${UUID.randomUUID()}.wav")
+        val outFile = AudioLibrary.bookWholeFile(c, book.id, book.title)
         val finalBytes = wavs.sumOf { it.length() } + 16L * 1024 * 1024
         if (finalBytes > outFile.parentFile!!.usableSpace) {
             _state.value = Progress(false, "没完成", annotated.size, annotated.size,
@@ -923,7 +933,7 @@ object Producer {
         val item = AudioLibrary.register(c, book.id, book.title, only, direct, outFile, chapters.size)
         val regWarn = AudioLibrary.writeError
         EventLog.log(EventLog.Kind.PIPELINE, "AUDIO_REGISTER",
-            "${item.title} · ${item.scope} · ${item.mode} · ${item.bytes} 字节")
+            "${EventLog.safe(item.title)} · ${item.scope} · ${item.mode} · ${item.bytes} 字节")
         try {
             val chJson = JSONArray()
             val firstOffset = LinkedHashMap<Int, Long>()

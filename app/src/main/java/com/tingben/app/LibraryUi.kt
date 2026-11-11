@@ -103,7 +103,7 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     val next = !(b.id in pinned)
                     libScope.launch(Dispatchers.IO) {
                         BookStore.setPinned(c, b.id, next)
-                        EventLog.ui("BOOK_PIN_TAP", "id=${b.id} on=$next")
+                        EventLog.ui("BOOK_PIN_TAP", "id=${b.id.take(8)} on=$next")
                         withContext(Dispatchers.Main) { onChanged() }
                     }
                     menuBook = null

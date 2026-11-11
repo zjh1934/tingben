@@ -73,12 +73,7 @@ object AudioExport {
 
     fun clearTree(c: Context) = saveTree(c, null)
 
-    private fun safeName(s: String): String {
-        val cleaned = s.map { ch ->
-            if (ch in "/\\:*?\"<>|\u0000\u0001" || ch.isISOControl()) '_' else ch
-        }.joinToString("").trim().trim('.')
-        return cleaned.take(60).ifBlank { "听本" }
-    }
+    private fun safeName(s: String): String = AudioLibrary.safeName(s)
 
     /**
      * 收集全部书、全部已完成的整章成品。
@@ -97,8 +92,11 @@ object AudioExport {
             val n = (used[key] ?: 0) + 1
             used[key] = n
             val dir = prefix + if (n > 1) "${base}_$n" else base
+            val plan = ChapterPlan.load(c, b.id)?.chapters
             for ((ch, a) in items) {
-                out += Item(dir, "第%02d章.wav".format(ch + 1), a.file)
+                val t = plan?.getOrNull(ch)?.title?.takeIf { it.isNotBlank() }
+                    ?: "第 ${ch + 1} 章"
+                out += Item(dir, "%03d_%s.wav".format(ch + 1, safeName(t)), a.file)
             }
         }
         return out

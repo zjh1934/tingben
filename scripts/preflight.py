@@ -88,8 +88,8 @@ def _api(path, timeout=10):
 
 
 def _net_ok():
-    # R242 · 根路径探活偶发 8 秒超时会误报 BLOCK（线上 Release 其实已查得到）。
-    # 改成与 _remote_ok 同源的带令牌仓库请求，并允许一次重试；两者口径对齐。
+    # R242 · 根路径探活偶发超时会误报 BLOCK（线上 Release 其实已查得到）。
+    # 改成同源带令牌仓库请求并允许一次重试；R246 与 _remote_ok 统一两次机会。
     for _ in range(2):
         if _api("/repos/zjh1934/tingben") is not None:
             return True
@@ -97,8 +97,14 @@ def _net_ok():
 
 
 def _remote_ok():
-    d = _api("/repos/zjh1934/tingben/git/ref/heads/main")
-    return bool(d and d.get("object", {}).get("sha"))
+    # R246 · 发版后复跑实测：单次请求偶发超时会把「远端可读」误判成缺项，
+    # 两次复跑又是 READY。与 _net_ok / _clean_ok 同口径，给两次机会去噪；
+    # 只有两次都拿不到 sha 才算缺项，不放宽判定。
+    for _ in range(2):
+        d = _api("/repos/zjh1934/tingben/git/ref/heads/main")
+        if d and d.get("object", {}).get("sha"):
+            return True
+    return False
 
 
 def _clean_ok():
@@ -185,6 +191,10 @@ def self_guard(src, ci):
         e.append("CI 漏挂 preflight --selftest")
     if "for _ in range(2):" not in src or "timeout=20" not in src:
         e.append("工作区探针瞬时抖动重试被摘（会误报 BLOCK 卡住发版）")
+    # R246 · 判唯一短语，不数 "def _remote_ok():" 出现次数——那个字面量
+    # 自己也在本判据里，数出来恒 ≥2，正是 R241 踩过的自指恒红坑。
+    if "只有两次都拿不到 sha 才算缺项" not in src:
+        e.append("远端探针瞬时抖动重试被摘（发版后会误报 BLOCK）")
     return e
 
 

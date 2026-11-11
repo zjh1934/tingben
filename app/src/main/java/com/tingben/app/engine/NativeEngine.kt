@@ -66,7 +66,7 @@ object NativeEngine {
                 "topK=${knobs.topK} topP=${knobs.topP} rep=${knobs.repetitionPenalty} " +
                 "subTemp=${knobs.subTemperature} subTopK=${knobs.subTopK} subTopP=${knobs.subTopP} " +
                 "lang=${lang ?: "auto"} instructChars=${instruct?.length ?: 0} " +
-                "speaker=${speaker ?: "null"} hash=${knobs.hash()}",
+                "speaker=${EventLog.safe(speaker)} hash=${knobs.hash()}",
             level = EventLog.Level.TRACE)
         return ttsSynthesizeRaw(handle, text, instruct, speaker, lang, outWavPath,
             knobs.seed, knobs.maxNewTokens, knobs.temperature, knobs.topK, knobs.topP,

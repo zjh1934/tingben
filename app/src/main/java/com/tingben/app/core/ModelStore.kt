@@ -88,30 +88,33 @@ object ModelStore {
                 throw IllegalStateException("文件没能保存，原文件已放回")
             }
             bak.delete()
-            EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT", "$safe ${out.length()}")
+            EventLog.log(EventLog.Kind.MODEL, "MODEL_IMPORT",
+                "${EventLog.safe(name)} · ${out.length()} 字节")
             return out
         } catch (t: Throwable) {
             tmp.delete()
             val reason = t.message ?: ""
             EventLog.log(EventLog.Kind.CRASH, "MODEL_IMPORT_FAIL",
-                "$safe ${t.javaClass.simpleName}: $reason")
+                "${EventLog.safe(name)} · ${t.javaClass.simpleName} · " +
+                    "msg=${EventLog.safe(reason)}")
             throw t
         }
     }
 
-    fun delete(c: Context, f: File) { f.delete(); EventLog.log(EventLog.Kind.MODEL, "MODEL_DELETE", f.name) }
+    fun delete(c: Context, f: File) { f.delete(); EventLog.log(EventLog.Kind.MODEL, "MODEL_DELETE", EventLog.safe(f.name)) }
 
     fun cleanup(c: Context) {
         try {
             dir(c).listFiles()?.filter { it.isFile &&
                 (it.name.endsWith(".part") || it.name.endsWith(".bak")) }?.forEach {
-                EventLog.log(EventLog.Kind.MODEL, "PART_DISCARD", "${it.name} ${it.length()}")
+                EventLog.log(EventLog.Kind.MODEL, "PART_DISCARD",
+                    "kind=${it.name.substringAfterLast('.')} · ${EventLog.safe(it.name)} · ${it.length()}")
                 it.delete()
             }
             // R175 · 疑似残件不自动删（不替用户做破坏性决定），但明确记账
             files(c).filter { !looksLikeGguf(it) }.forEach {
                 EventLog.log(EventLog.Kind.MODEL, "MODEL_SUSPECT",
-                    "${it.name} ${it.length()} 字节 · 头不对或过小，已排除在可用模型之外")
+                    "${EventLog.safe(it.name)} ${it.length()} 字节 · 头不对或过小，已排除在可用模型之外")
             }
         } catch (_: Throwable) { }
     }

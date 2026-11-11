@@ -75,7 +75,7 @@ class ProduceService : Service() {
             finished = false
             // R166 · title/type 已在 detail 里，fields 原样再来一遍纯属双写。
             EventLog.log(EventLog.Kind.PIPELINE, "FGS_BEGIN",
-                "title=$title type=${fgsTypeLabel()} reason=用户从界面主动开始长任务")
+                "title=${EventLog.safe(title)} type=${fgsTypeLabel()} reason=用户从界面主动开始长任务")
             return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     ctx.startForegroundService(startIntent(ctx, title))
@@ -108,6 +108,15 @@ class ProduceService : Service() {
             }
             publish(c)
             OverlayProgress.update(c, lastBook, stage, done, total, chapterPct)
+        }
+
+        /**
+         * R255 · 浮窗专用刷新，绕开通知的 1.5s 节流。合成主循环每段都会调，
+         * 上球 done/total 不再被节流窗口吃掉；通知仍走 update() 的节流路径。
+         */
+        fun overlay(c: Context, done: Int, total: Int, chapterPct: Float) {
+            if (finished) return
+            OverlayProgress.update(c, lastBook, lastStage, done, total, chapterPct)
         }
 
         fun stopping(c: Context) {

@@ -148,7 +148,7 @@ def checks(main: str, chrome: str) -> list:
         for s in needles:
             if s in src:
                 e.append("R165 撤销形态回潮[%s]: %s" % (k, s[:52]))
-    if "MIXER_TRIAL_EMPTY" in main and "speaker=${v.speaker" not in main:
+    if "MIXER_TRIAL_EMPTY" in main and "speaker=${EventLog.safe(v.speaker)}" not in main:
         e.append("试听空结果没记 speaker 状态，下次日志还是定性不了")
     if old_menu_items(chrome):
         e.append("抽屉功能菜单回潮: %d 项" % len(old_menu_items(chrome)))

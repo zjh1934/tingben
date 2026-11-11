@@ -8,7 +8,6 @@ import android.media.MediaMuxer
 import android.net.Uri
 import com.tingben.app.diag.EventLog
 import java.io.File
-import java.util.UUID
 
 object AudioOps {
     data class Result(val ok: Boolean, val file: File? = null, val reason: String = "", val kept: Int = 0)
@@ -45,8 +44,8 @@ object AudioOps {
     fun mergeChapter(c: Context, bookId: String, bookTitle: String, chapter: Int,
                      parts: List<File>, gapMs: Int = 0, declickMs: Int = 30): Result {
         if (parts.isEmpty()) return Result(false, reason = "这一章还没有音频小块")
-        val dst = File(AudioLibrary.dir(c),
-            "chapter_${bookId.take(8)}_%03d_%s.wav".format(chapter + 1, UUID.randomUUID().toString().take(8)))
+        val dst = AudioLibrary.chapterFile(c, bookId, bookTitle, chapter,
+            AudioTree.chapterTitle(c, bookId, chapter))
         val ok = WavMerger.merge(parts, dst, gapMs, declickMs)
         if (!ok || dst.length() <= 44) {
             dst.delete()
@@ -72,15 +71,16 @@ object AudioOps {
 
     /**
      * R231 · 整本合成收尾时，给「这一章」单独出一份成品音频。
-     * 与手动 mergeChapter 的区别：不删小块、不写 chapter_done、不动 forget。
-     * 整本成品、续跑用的段文件、音色分套全部原样保留，拼失败也只跳过这一章。
-     * 登记成单章 item 后，目录页小耳机（playChapter / latestByChapter）直接播它。
+     * R255 · 用户口径：整章既已拼好，中间态小块就该清掉，别占着私有目录。
+     * 顺序有讲究——先写 chapter_done 再删小块：Producer 续跑靠 doneChapterFiles
+     * 走 covered 跳过，不写就删会让整章重做。markDone 失败就保留小块并说实话。
+     * 整本成品已在收尾前生成，音色分套不动；登记成单章 item 后小耳机直接播它。
      */
     fun mergeChapterAuto(c: Context, bookId: String, bookTitle: String, chapter: Int,
                          parts: List<File>, gapMs: Int = 0, declickMs: Int = 30): Result {
         if (parts.isEmpty()) return Result(false, reason = "这一章还没有音频小块")
-        val dst = File(AudioLibrary.dir(c),
-            "chapter_${bookId.take(8)}_%03d_%s.wav".format(chapter + 1, UUID.randomUUID().toString().take(8)))
+        val dst = AudioLibrary.chapterFile(c, bookId, bookTitle, chapter,
+            AudioTree.chapterTitle(c, bookId, chapter))
         // R231 · 具名参数：与手动 mergeChapter 的同一串区分，守门注入能精准定位
         val ok = WavMerger.merge(parts = parts, out = dst, gapMs = gapMs, declickMs = declickMs)
         if (!ok || dst.length() <= 44) {
@@ -92,6 +92,18 @@ object AudioOps {
             direct = true, file = dst, allChapterCount = chapter + 1)
         EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_ONE",
             "ch=${chapter + 1} · ${parts.size} 块 · ${dst.length()} 字节")
+        // R255 · 先记「这章的成品在哪」，续跑才会复用成品而不是重做整章。
+        val work = parts.firstOrNull()?.parentFile
+        val marked = work?.let { AudioTree.markDone(it, chapter, dst) } ?: false
+        if (!marked) {
+            return Result(true, dst, kept = parts.size,
+                reason = "整章已拼好，但章状态没记上，中间小块先留着")
+        }
+        val killedPaths = parts.map { it.absolutePath }
+        val kept = deleteAll(parts)
+        AudioTree.forget(c, killedPaths)
+        EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_CLEAN",
+            "ch=${chapter + 1} · 清掉 ${killedPaths.size - kept} 个中间小块")
         return Result(true, dst, kept = parts.size)
     }
 
@@ -122,7 +134,7 @@ object AudioOps {
 
     fun mergedTemp(c: Context, parts: List<File>): Result {
         if (parts.isEmpty()) return Result(false, reason = "这里还没有音频小块")
-        val out = File(c.cacheDir, "audio_copy_${System.currentTimeMillis()}.wav")
+        val out = TrialFiles.file(c, "audio_copy_${System.currentTimeMillis()}.wav")
         val ok = WavMerger.merge(parts, out, 0, 30)
         if (!ok || out.length() <= 44) {
             out.delete()
@@ -228,7 +240,7 @@ object AudioOps {
     }
 
     fun deleteMerged(c: Context, file: File): Boolean =
-        AudioLibrary.remove(c, file.nameWithoutExtension)
+        AudioLibrary.removeFile(c, file)
 
     fun deleteAll(files: List<File>): Int {
         var failed = 0

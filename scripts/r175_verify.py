@@ -71,7 +71,7 @@ RESUME = [
 AUDIO = [
     '"${item.id}.meta.json"',
     '"$stem.meta.json"',
-    '"${id}.chapters.json", "${id}.meta.json"',
+    'listOf("${stem}.chapters.json", "${stem}.meta.json")',
     'meta.optString("bookId", "")',
     "chapterIndices",
 ]
@@ -194,7 +194,7 @@ def selftest():
         ("魔数常量被改", "pipe",
          lambda t: t.replace('private const val GGUF_MAGIC = "GGUF"', 'private const val GGUF_MAGIC = "XXXX"')),
         ("删音频不删侧车", "audio",
-         lambda t: t.replace('listOf("${id}.chapters.json", "${id}.meta.json")', "listOf()")),
+         lambda t: t.replace('listOf("${stem}.chapters.json", "${stem}.meta.json")', "listOf()")),
         ("register 不写 meta", "audio",
          lambda t: t.replace('"${item.id}.meta.json"', '"${item.id}.none.json"')),
         ("恢复不读 meta", "audio",

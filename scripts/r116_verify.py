@@ -46,12 +46,19 @@ def check(queue=QUEUE, audio=AUDIO, r66=R66):
         e.append('F-31 remove 不存在')
     else:
         b = rm.group(1)
-        if not re.search(r'!\w+\.delete\(\)[\s\S]{0,160}return false', b):
-            e.append('F-31 删失败没保留记录并返回失败')
         if 'File(dir(c), "$id.wav")' not in b:
             e.append('F-31 兜底条目没按磁盘文件定位')
-        if 'all.filter { it.id != id }' not in b:
-            e.append('F-31 成功路径没移除索引条目')
+        # R260 · remove 现在只定位文件，删失败/移记录都收敛在 removeAt 里。
+        # 判据跟过去，仍按语义判，不放宽。
+        ra = re.search(r'private fun removeAt\(c: Context, all: List<AudioItem>, f: File\): Boolean \{([\s\S]*?)\n    \}', audio)
+        if not ra:
+            e.append('F-31 removeAt 不存在')
+        else:
+            rb = ra.group(1)
+            if not re.search(r'!\w+\.delete\(\)[\s\S]{0,160}return false', rb):
+                e.append('F-31 删失败没保留记录并返回失败')
+            if 'all.filterNot { it.file.absolutePath == f.absolutePath }' not in rb:
+                e.append('F-31 成功路径没按路径移除索引条目')
 
     if ('TaskResume.byBook(c, bookId)?.modeId' not in audio and
             'val madeMode = TaskResume.load(c)?.modeId' not in audio):

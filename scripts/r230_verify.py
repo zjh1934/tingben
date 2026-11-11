@@ -33,7 +33,7 @@ def check(f):
     # ① 抽屉：标题单独一行、导入独占一排、设置收进左下角
     for k in ['Text("＋ 导入一本书", fontSize = 13.sp)',
               'Button(\n                onClick = onImport,',
-              'Text("⚙ 设置", fontSize = 13.sp, color = primary)',
+              'GearIcon(primary)\n                        Spacer(Modifier.width(6.dp))',
               "Box(Modifier.weight(1f)) { content() }"]:
         if k not in ch: e.append("抽屉布局缺: " + k[:52])
     # AppTopBar 与 AppDrawerSheet 各有一处；抽屉那处被摘就只剩 1
@@ -66,7 +66,7 @@ def check(f):
               "detectTapGestures(", "onLongPress = { menuBook = b.id }",
               "onTap = { onOpen(b.id) }",
               "BookStore.setPinned(c, b.id, next)",
-              'EventLog.ui("BOOK_PIN_TAP", "id=${b.id} on=$next")',
+              'EventLog.ui("BOOK_PIN_TAP", "id=${b.id.take(8)} on=$next")',
               "confirmDelete = b.id", 'Text("删除", fontSize = 13.sp, color = Warn)']:
         if k not in lb: e.append("长按菜单缺: " + k[:52])
     if '上次读到 第 ${lastRead + 1} 章' in lb:
@@ -97,7 +97,8 @@ def selftest():
         ("导入又挤回标题行", "chrome", 'Button(\n                onClick = onImport,',
          'TextButton(onClick = onImport)'),
         ("导入整排被摘", "chrome", 'Text("＋ 导入一本书", fontSize = 13.sp)', ""),
-        ("抽屉左下设置被摘", "chrome", 'Text("⚙ 设置", fontSize = 13.sp, color = primary)', ""),
+        ("抽屉左下设置被摘", "chrome",
+         'GearIcon(primary)\n                        Spacer(Modifier.width(6.dp))', ""),
         ("抽屉设置没接线", "main", 'EventLog.ui("DRAWER_SETTINGS", "open")', ""),
         ("主页加号回潮", "shell", "Screen.LIBRARY  -> ChromeSpec(\"\", TAB_LIBRARY)",
          'Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY,\n        showImport = true)'),

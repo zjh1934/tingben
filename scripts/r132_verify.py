@@ -48,7 +48,7 @@ POS = {
         "转 M4A",
         "删除选中",
         "BackHandler(enabled = multiMode) { exitMulti() }",
-        "if (multiMode) {",
+        "if (multiMode && menuChapter == null) {",
         "confirmChDel = selected.associateWith { filesOf(it) }",
         "confirmChDel?.let { all ->",
         "val (segs, merged) = files",

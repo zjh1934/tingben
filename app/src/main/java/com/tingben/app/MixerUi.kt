@@ -145,7 +145,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
         scope.launch(Dispatchers.IO) {
             val r = runCatching {
                 val bytes = AudioDecode.clipWav(d.wav, startMs, endMs)
-                val f = File(c.cacheDir, "ref_clip_trial.wav")
+                val f = TrialFiles.file(c, "ref_clip_trial.wav")
                 f.writeBytes(bytes)
                 f
             }
@@ -252,7 +252,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                 // 把「最近一次崩溃」和崩溃前环形缓冲都污染了，其实软件根本没崩。
                 res.exceptionOrNull()?.let {
                     EventLog.log(EventLog.Kind.ENGINE, "MIXER_TRIAL_FAIL",
-                        "mode=${mode.id} · ${it.message ?: "未知原因"}")
+                        "mode=${mode.id} · msg=${EventLog.safe(it.message ?: "未知原因")}")
                 }
             }
         }
@@ -764,7 +764,13 @@ internal fun RefClipDialog(
         confirmButton = {
             TextButton(onClick = {
                 onUse((totalMs * startFrac).toLong(), (totalMs * endFrac).toLong())
-            }) { Text("用这一段", fontSize = 13.sp, color = Primary) }
+            }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    UiIconGlyph(UiIcon.AUDIO, Primary)
+                    Spacer(Modifier.width(4.dp))
+                    Text("用这一段", fontSize = 13.sp, color = Primary)
+                }
+            }
         },
         dismissButton = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -772,9 +778,21 @@ internal fun RefClipDialog(
                     if (pv.isPlaying) PlayQueue.stopPreview()
                     else onTrial((totalMs * startFrac).toLong(),
                         (totalMs * endFrac).toLong())
-                }) { Text(if (pv.isPlaying) "停止试听" else "试听选中",
-                    fontSize = 13.sp, color = Primary) }
-                TextButton(onClick = onCancel) { Text("取消", fontSize = 13.sp) }
+                }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        UiIconGlyph(if (pv.isPlaying) UiIcon.STOP else UiIcon.PLAY, Primary)
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (pv.isPlaying) "停止试听" else "试听选中",
+                            fontSize = 13.sp, color = Primary)
+                    }
+                }
+                TextButton(onClick = onCancel) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        UiIconGlyph(UiIcon.CANCEL, palette.sub)
+                        Spacer(Modifier.width(4.dp))
+                        Text("取消", fontSize = 13.sp)
+                    }
+                }
             }
         }
     )

@@ -114,7 +114,7 @@ def selftest():
         ("常态齿轮入口整块被摘", "main",
          'Text("⚙", fontSize = 16.sp', ''),
         ("勾选态入口被摘", "hub",
-         'ActionChip("制作设置 ›", onClick = { onProduceSetup(book.id) })',
+         'ActionChip("制作设置 ›", icon = UiIcon.SETTINGS, onClick = { onProduceSetup(book.id) })',
          ''),
         ("只剩一枚入口", "hub", '"制作设置 ›"', '"制作设置"'),
         ("两枚都没传 book.id", "hub", 'onProduceSetup(book.id)', 'onProduceSetup("")'),

@@ -491,6 +491,14 @@ jobs:
         run: python3 scripts/r239_verify.py --selftest
       # R242 · 只挂自检：正向 preflight 会探 API / 查工作区，挂进每次 push
       # 会让 CI 平白多一次外部依赖；由发版轮在沙盒手动跑正向。
+      - name: R248 播放通知锁控与进度
+        run: python3 scripts/r248_verify.py
+      - name: R248 反向注入
+        run: python3 scripts/r248_verify.py --selftest
+      - name: R257 真机日志实证（脱敏补漏 / 拼章去抖）
+        run: python3 scripts/r257_verify.py
+      - name: R257 反向注入
+        run: python3 scripts/r257_verify.py --selftest
       - name: R241 发版前置自检逻辑
         run: python3 scripts/preflight.py --selftest
       - name: R172 正向守门

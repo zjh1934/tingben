@@ -43,7 +43,8 @@ POS = {
     "hub": [
         "var hubSegs by remember(book.id)",
         "var hubSegChapters by remember(book.id)",
-        "LaunchedEffect(book.id, st.done, localTick, task?.bookId)",
+        "LaunchedEffect(book.id, st.running, localTick, task?.bookId,",
+        "if (expandedChapter != null) st.done else 0)",
         "Workbench.segments(c, t) to Workbench.segChapters(c, t)",
         "val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters)",
         "var beatTick by remember { mutableStateOf(0) }",
@@ -269,6 +270,8 @@ def selftest():
         ("段章映射被摘", "hub", "var hubSegChapters by remember(book.id)", ""),
         ("第一列派生被摘", "hub",
          "val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters)", ""),
+        ("展开态刷新退化成每段全扫", "hub",
+         "if (expandedChapter != null) st.done else 0", "st.done"),
         ("心跳刷新被摘", "hub", "var beatTick by remember { mutableStateOf(0) }", ""),
         ("引擎动作被摘", "hub", "EventLog.lastEngine()", ""),
         ("看台区块被摘", "hub", 'visible = expandedChapter == r.index,', ""),

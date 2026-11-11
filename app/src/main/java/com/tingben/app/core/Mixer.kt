@@ -182,7 +182,7 @@ object Mixer {
 
     fun logPreset(action: String, p: MixerPreset) {
         EventLog.log(EventLog.Kind.ENGINE, "MIXER_PRESET",
-            "$action · id=${p.id} · name=${p.name} · voiceChars=${p.voice.length} · " +
+            "$action · id=${p.id} · name=${EventLog.safe(p.name)} · voiceChars=${p.voice.length} · " +
                 "dims=${p.fields.size} · hash=${p.knobs.hash()} · perf=${p.perf.audioStamp()} · " +
                 "builtin=${p.builtin}")
     }

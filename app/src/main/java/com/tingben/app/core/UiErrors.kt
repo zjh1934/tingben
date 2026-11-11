@@ -36,8 +36,11 @@ object UiErrors {
         // R209 · 真机日志：文件/通知/播放类的可见失败全被记成 Kind.CRASH，
         // 于是「最近一次崩溃（空）」和环形缓冲里混着 CRASH 条目自相矛盾。
         // 改 AUDIT + Level.ERROR：崩溃缓冲干净，allErrors() 仍按 | ERROR | 捞得到。
+        // R261 · 异常 message 常带私有路径/URI（FileNotFoundException 整串），
+        // 一处收口：保留异常类名，原文只留长度+短哈希。msg 是代码里的固定诊断文案，照旧。
         EventLog.log(EventLog.Kind.AUDIT, "UI_ERROR",
-            msg + (t?.let { " · " + (it.message ?: it.javaClass.simpleName) } ?: ""),
+            msg + (t?.let { " · ${it.javaClass.simpleName} · " +
+                "msg=${EventLog.safe(it.message ?: "")}" } ?: ""),
             level = EventLog.Level.ERROR)
     }
 

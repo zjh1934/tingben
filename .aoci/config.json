@@ -103,7 +103,9 @@
       "r237_verify.py",
       "r238_verify.py",
       "r239_verify.py",
-      "preflight.py"
+      "preflight.py",
+      "r248_verify.py",
+      "r257_verify.py"
     ]
   },
   "hook_strict": false,

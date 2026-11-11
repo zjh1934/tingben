@@ -26,14 +26,14 @@ MULTI = SRC / "MultiSelect.kt"
 CI = ROOT / ".github/workflows/ci.yml"
 
 HUB_MUST = [
-    "onLong = { enterMulti(r.index) }",
+    "onLong = { menuChapter = r.index }",
     "IconButton(onClick = onListen",
     "IconButton(onClick = onRead",
     # 三点菜单撤掉，换成勾选态的三条退出路径
     "BackHandler(enabled = multiMode) { exitMulti() }",
     "BackHandler(enabled = segMulti) { exitSegMulti() }",
     "BackHandler(enabled = showTasks) { showTasks = false }",
-    "if (multiMode) {",
+    "if (multiMode && menuChapter == null) {",
     # 任务看板就地：与独立任务页同源，不另造状态口径
     "TaskBoardDialog(",
     "TaskResume.list(c)",
@@ -123,7 +123,8 @@ def selftest():
         ("返回退出被摘", "hub", lambda t: t.replace(
             "BackHandler(enabled = multiMode) { exitMulti() }", "")),
         ("选空又藏条", "hub", lambda t: t.replace(
-            "        if (multiMode) {", "        if (multiMode && selected.isNotEmpty()) {")),
+            "        if (multiMode && menuChapter == null) {",
+            "        if (multiMode && menuChapter == null && selected.isNotEmpty()) {")),
         ("任务看板被摘", "hub", lambda t: t.replace("TaskBoardDialog(", "NoBoard(")),
         ("看板不走同源数据", "hub", lambda t: t.replace("TaskResume.list(c)", "emptyList()")),
         ("取消按钮被摘", "multi", lambda t: t.replace('ActionChip("取消"', 'Text("×"')),

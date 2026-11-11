@@ -66,7 +66,7 @@ POS = {
     "hub": [
         "按顺序播放",
         '"全选章节"',
-        'onLong = { enterMulti(r.index) }',
+        'onLong = { menuChapter = r.index }',
         'BackHandler(enabled = multiMode) { exitMulti() }',
         "Box(Modifier.size(34.dp)",
         "SelectBox(checked = isChecked",
@@ -142,8 +142,14 @@ def logic_cases(f):
     for kt in (ROOT / "app/src/main/java/com/tingben/app").rglob("*.kt"):
         ls = kt.read_text(encoding="utf-8", errors="replace").splitlines()
         for i, l in enumerate(ls):
-            if not (l.lstrip().startswith("private fun ") or l.lstrip().startswith("internal fun ")
-                    or l.lstrip().startswith("fun ")):
+            # R247 · UiIcons.kt 在 Canvas lambda 里用了缩进 8 的局部 fun ln/ring
+            # 封装 drawLine，它们不需要也不允许标 @Composable。判据只看
+            # 顶层 / 成员级函数（缩进 < 8），局部辅助函数跳过；不算放宽：
+            # 真绘制 composable 全在顶层，重复注解与漏注解照样拦。
+            if (len(l) - len(l.lstrip())) >= 8:
+                continue
+            if not (l.startswith("private fun ") or l.startswith("internal fun ")
+                    or l.startswith("fun ")):
                 continue
             pre = "\n".join(ls[max(0, i - 3):i])
             n = pre.count("@Composable")
@@ -151,7 +157,14 @@ def logic_cases(f):
                 bad.append("%s:%d 同一函数上重复 @Composable" % (kt.name, i + 1))
             # 函数体里调了 Canvas/drawLine/Text 等 Composable，却没有 @Composable
             if n == 0:
-                body = "\n".join(ls[i:i + 14])
+                # R262 · 固定 14 行窗口会越过下一个顶层 fun，把 PlayerCover
+                # 的 Canvas( 算到前面 mmss() 头上。截到下一个声明为止。
+                body_ls = []
+                for j in range(i, min(i + 14, len(ls))):
+                    if j > i and re.match(r'(?:private |internal |public )?fun ', ls[j]):
+                        break
+                    body_ls.append(ls[j])
+                body = "\n".join(body_ls)
                 if "Canvas(" in body or "drawPath(" in body or "drawLine(" in body:
                     bad.append("%s:%d 绘制函数丢了 @Composable" % (kt.name, i + 1))
     icons = (ROOT / "app/src/main/java/com/tingben/app/PlayIcons.kt").read_text(encoding="utf-8")
@@ -233,7 +246,7 @@ def selftest():
         ("章节全选被摘", "hub",
          '"全选章节"', ""),
         ("章节反选被摘", "hub",
-         'onLong = { enterMulti(r.index) }', ""),
+         'onLong = { menuChapter = r.index }', ""),
         ("勾选热区缩回", "hub", "Box(Modifier.size(34.dp)", "Box(Modifier.size(24.dp)"),
         ("日志退回 txt", "main",
          'ActivityResultContracts.CreateDocument("text/markdown")',

@@ -29,6 +29,49 @@ object AudioLibrary {
     fun dir(c: Context) = File(c.filesDir, "audio").apply { mkdirs() }
     private fun index(c: Context) = File(dir(c), "index.json")
 
+    /** 目录名/文件名统一清洗：去路径分隔符与控制字符、限长、空则兜底。 */
+    fun safeName(s: String): String {
+        val cleaned = s.map { ch ->
+            if (ch in "/\\:*?\"<>|\u0000\u0001" || ch.isISOControl()) '_' else ch
+        }.joinToString("").trim().trim('.')
+        return cleaned.take(60).ifBlank { "听本" }
+    }
+
+    /**
+     * 整章成品按书名分目录：audio/<书名>/。同名书另开带短 id 的目录，
+     * 不然两本书的 001_第一章.wav 会互相覆盖（导出侧 R157 早防过这件事）。
+     */
+    fun bookDir(c: Context, bookId: String, bookTitle: String): File {
+        val base = File(dir(c), safeName(bookTitle))
+        if (!base.isDirectory) return base.apply { mkdirs() }
+        val owner = base.listFiles()
+            ?.firstOrNull { it.isFile && it.name.endsWith(".meta.json") }
+            ?.let { f ->
+                try { JSONObject(f.readText()).optString("bookId", "") }
+                catch (_: Throwable) { "" }
+            } ?: ""
+        val target = if (owner.isBlank() || owner == bookId) base
+        else File(dir(c), safeName(bookTitle) + "_" + bookId.take(6))
+        return target.apply { mkdirs() }
+    }
+
+    /** 章成品名 = 全书章序号 + 目录里那一章的名字，如 003_第三章 山雨欲来.wav。 */
+    fun chapterFile(c: Context, bookId: String, bookTitle: String,
+                    chapter: Int, chapterTitle: String): File =
+        File(bookDir(c, bookId, bookTitle),
+            "%03d_%s.wav".format(chapter + 1, safeName(chapterTitle)))
+
+    /** 整本合成的那一个音频，也跟着书进同一个目录，不再平铺顶层 UUID。 */
+    fun bookWholeFile(c: Context, bookId: String, bookTitle: String): File =
+        File(bookDir(c, bookId, bookTitle), "整本.wav")
+
+    /** 成品可能散在顶层（旧版、整本成品）与各书名子目录，恢复扫描都看。 */
+    fun candidateDirs(c: Context): List<File> {
+        val out = mutableListOf(dir(c))
+        dir(c).listFiles()?.filter { it.isDirectory }?.let { out.addAll(it) }
+        return out
+    }
+
     fun scopeLabel(only: Set<Int>?): String = when {
         only == null || only.isEmpty() -> "整本"
         only.size == 1 -> "第 ${only.first() + 1} 章"
@@ -174,9 +217,12 @@ object AudioLibrary {
                 item.chapters.sorted().forEach { arr.put(it) }
                 meta.put("chapterIndices", arr)
             }
-            AtomicJson.write(File(dir(c), "${item.id}.meta.json"), meta.toString())
+            AtomicJson.write(File(item.file.parentFile ?: dir(c),
+                "${item.id}.meta.json"), meta.toString())
         } catch (_: Throwable) { }
-        all.removeAll { it.id == item.id }
+        // R259 · 成品名是「章序号_章名.wav」，两本同名书的同章文件同名（id 撞车）。
+        // 原来按 id 去重会把另一本书的记录一起清掉；只去掉同一路径的重复登记。
+        all.removeAll { it.file.absolutePath == item.file.absolutePath }
         all.add(0, item)
         lastRegisterOk = writeIndex(c, all)
         return item
@@ -184,42 +230,47 @@ object AudioLibrary {
 
     fun list(c: Context): List<AudioItem> {
         val items = (readIndex(c) ?: mutableListOf()).toMutableList()
-        val known = items.map { it.file.name }.toSet()
+        val known = items.map { it.file.absolutePath }.toSet()
         try {
             val books = BookStore.list(c)
-            dir(c).listFiles()
-                ?.filter { it.isFile && it.length() > 44 && it.name.endsWith(".wav") && it.name !in known }
-                ?.forEach { f ->
-                    val stem = f.nameWithoutExtension
-                    // R175 · 先认自描述元数据；没有才退回旧的按文件名猜
-                    val meta = try {
-                        val r = AtomicJson.read(File(dir(c), "$stem.meta.json"))
-                        if (r is AtomicJson.Read.Ok) JSONObject(r.text) else null
-                    } catch (_: Throwable) { null }
-                    val cm = Regex("""^chapter_([0-9a-fA-F]{8})_(\d{3})_[0-9a-fA-F]{8}$""").matchEntire(stem)
-                    val ch = cm?.groupValues?.get(2)?.toIntOrNull()?.let { it - 1 }
-                    val b = if (cm != null)
-                        books.find { it.id.take(8).equals(cm.groupValues[1], ignoreCase = true) }
-                    else books.find { it.id == stem }
-                    if (meta != null) {
-                        val idx = meta.optJSONArray("chapterIndices")
-                        val chs = if (idx == null) emptySet() else
-                            (0 until idx.length()).mapNotNull { idx.optInt(it, -1).takeIf { v -> v >= 0 } }.toSet()
-                        items.add(AudioItem(stem, f,
-                            meta.optString("bookId", "").ifBlank { null },
-                            meta.optString("title", "有声书").ifBlank { "有声书" },
-                            meta.optString("scope", "整本").ifBlank { "整本" },
-                            meta.optString("mode", "—").ifBlank { "—" },
-                            meta.optLong("createdAt", f.lastModified()),
-                            meta.optLong("bytes", f.length()), chs, chs.isNotEmpty()))
-                    } else if (cm != null && b != null && ch != null && ch >= 0) {
-                        items.add(AudioItem(stem, f, b.id, b.title, scopeLabel(setOf(ch)), "—",
-                            f.lastModified(), f.length(), setOf(ch), true))
-                    } else {
-                        items.add(AudioItem(stem, f, b?.id, b?.title ?: "有声书",
-                            "整本（旧版）", "—", f.lastModified(), f.length()))
+            // 整章成品按书名分了子目录，恢复扫描要连这些子目录一起看；
+            // 顶层仍留着旧版 chapter_*.wav 与整本成品，兼容逻辑不删。
+            candidateDirs(c).forEach { folder ->
+                folder.listFiles()
+                    ?.filter { it.isFile && it.length() > 44 && it.name.endsWith(".wav") &&
+                            it.absolutePath !in known }
+                    ?.forEach { f ->
+                        val stem = f.nameWithoutExtension
+                        // R175 · 先认自描述元数据；没有才退回旧的按文件名猜
+                        val meta = try {
+                            val r = AtomicJson.read(File(f.parentFile ?: folder, "$stem.meta.json"))
+                            if (r is AtomicJson.Read.Ok) JSONObject(r.text) else null
+                        } catch (_: Throwable) { null }
+                        val cm = Regex("""^chapter_([0-9a-fA-F]{8})_(\d{3})_[0-9a-fA-F]{8}$""").matchEntire(stem)
+                        val ch = cm?.groupValues?.get(2)?.toIntOrNull()?.let { it - 1 }
+                        val b = if (cm != null)
+                            books.find { it.id.take(8).equals(cm.groupValues[1], ignoreCase = true) }
+                        else books.find { it.id == stem }
+                        if (meta != null) {
+                            val idx = meta.optJSONArray("chapterIndices")
+                            val chs = if (idx == null) emptySet() else
+                                (0 until idx.length()).mapNotNull { idx.optInt(it, -1).takeIf { v -> v >= 0 } }.toSet()
+                            items.add(AudioItem(stem, f,
+                                meta.optString("bookId", "").ifBlank { null },
+                                meta.optString("title", "有声书").ifBlank { "有声书" },
+                                meta.optString("scope", "整本").ifBlank { "整本" },
+                                meta.optString("mode", "—").ifBlank { "—" },
+                                meta.optLong("createdAt", f.lastModified()),
+                                meta.optLong("bytes", f.length()), chs, chs.isNotEmpty()))
+                        } else if (cm != null && b != null && ch != null && ch >= 0) {
+                            items.add(AudioItem(stem, f, b.id, b.title, scopeLabel(setOf(ch)), "—",
+                                f.lastModified(), f.length(), setOf(ch), true))
+                        } else {
+                            items.add(AudioItem(stem, f, b?.id, b?.title ?: "有声书",
+                                "整本（旧版）", "—", f.lastModified(), f.length()))
+                        }
                     }
-                }
+            }
         } catch (_: Throwable) { }
         return items.sortedByDescending { it.createdAt }
     }
@@ -242,7 +293,7 @@ object AudioLibrary {
 
     fun chapterStartMs(c: Context, item: AudioItem, chapterIndex: Int): Long {
         if (!item.chaptersKnown) return 0L
-        val f = File(dir(c), "${item.id}.chapters.json")
+        val f = File(item.file.parentFile ?: dir(c), "${item.id}.chapters.json")
         val body = when (val r = AtomicJson.read(f)) {
             is AtomicJson.Read.Ok -> r.text
             else -> return 0L
@@ -256,23 +307,45 @@ object AudioLibrary {
     }
 
     fun remove(c: Context, id: String): Boolean {
-        val all = readIndex(c)
-        if (all == null) {
-            writeError = "音频记录损坏，删除暂不可用"
-            UiErrors.storage(writeError!!, null)
-            return false
+        val all = readIndex(c) ?: return corruptRemove()
+        val recorded = all.find { it.id == id }?.file
+        val f = recorded ?: run {
+            var found: File? = null
+            for (d in candidateDirs(c)) {
+                val cand = File(d, "$id.wav")
+                if (cand.isFile) { found = cand; break }
+            }
+            found ?: File(dir(c), "$id.wav")
         }
-        val f = all.find { it.id == id }?.file ?: File(dir(c), "$id.wav")
-        if (!writeIndex(c, all.filter { it.id != id })) return false
+        return removeAt(c, all, f)
+    }
+
+    /** R259 · 有完整 File 时直接按路径删，不用同名 id 去猜是哪本书的成品。 */
+    fun removeFile(c: Context, f: File): Boolean {
+        val all = readIndex(c) ?: return corruptRemove()
+        return removeAt(c, all, f)
+    }
+
+    private fun corruptRemove(): Boolean {
+        writeError = "音频记录损坏，删除暂不可用"
+        UiErrors.storage(writeError!!, null)
+        return false
+    }
+
+    private fun removeAt(c: Context, all: List<AudioItem>, f: File): Boolean {
+        // R259 · 两本同名书的同章成品 id 会撞车，按 id 过滤会连坐删掉另一本的记录。
+        if (!writeIndex(c, all.filterNot { it.file.absolutePath == f.absolutePath })) return false
         if (f.isFile && !f.delete()) {
             writeError = "记录已移除，但文件删不掉，会在「我的音频」里重新出现"
             UiErrors.storage(writeError!!, null)
             return false
         }
         // R175 · P3-8：原来只删 .wav，.chapters.json / .meta.json 留成孤儿，
-        // 越删越多；现在一并清掉。
-        listOf("${id}.chapters.json", "${id}.meta.json").forEach { n ->
-            try { File(dir(c), n).delete() } catch (_: Throwable) { }
+        // 越删越多；现在一并清掉，且按实际所在目录找伴生文件。
+        val home = f.parentFile ?: dir(c)
+        val stem = f.nameWithoutExtension
+        listOf("${stem}.chapters.json", "${stem}.meta.json").forEach { n ->
+            try { File(home, n).delete() } catch (_: Throwable) { }
         }
         return true
     }

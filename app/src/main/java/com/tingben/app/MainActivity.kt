@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         EventLog.log(EventLog.Kind.MODEL, "EXTERNAL_INTENT",
-            "action=${i.action ?: "无"} uri=${raw?.take(90) ?: "无"}")
+            "action=${i.action ?: "无"} uri=${EventLog.safe(raw)}")
         incomingFlow.value = System.currentTimeMillis().toString() + "|" + (raw ?: "empty:")
     }
 
@@ -296,7 +296,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             return@LaunchedEffect
         }
         EventLog.ui("RESUME_CHECK",
-            "book=${p.task.title} action=${p.action} auto=$auto phase=${p.task.phase}")
+            "book=${EventLog.safe(p.task.title)} action=${p.action} auto=$auto phase=${p.task.phase}")
         if (auto && p.action == Producer.ResumeAction.AUTO) {
             resumeDecided = true
             EventLog.ui("RESUME_AUTO", "id=${p.task.bookId.take(8)} · title=${EventLog.safe(p.task.title)}")
@@ -305,7 +305,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         } else {
             resumeAsk = p
             EventLog.ui("RESUME_ASK_SHOW",
-                "book=${p.task.title} phase=${p.task.phase} action=${p.action}")
+                "book=${EventLog.safe(p.task.title)} phase=${p.task.phase} action=${p.action}")
         }
     }
 
@@ -330,7 +330,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             ctx.contentResolver.takePersistableUriPermission(
                 uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Throwable) { }
-        EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_BEGIN", "$tag ${uri.toString().take(90)}")
+        EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_BEGIN", "$tag ${EventLog.safe(uri.toString())}")
         bookImporting = true
         scope.launch(Dispatchers.IO) {
             val result = runCatching { Importer.read(ctx, uri) }
@@ -360,7 +360,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         if (added != null) {
                             bookId = added.id
                             nav.push(Screen.CHAPTERS)
-                            EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id}")
+                            EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id.take(8)}")
                         }
                         Toast.makeText(ctx,
                             if (added != null) "已加入书架：${r.title}（${r.kind}）"
@@ -427,7 +427,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     nav.clear()
                     screen = Screen.CHAPTERS
                     hubOpenTasks = true
-                    EventLog.ui("NOTIF_TASKS_OPEN", "book=${b.id}")
+                    EventLog.ui("NOTIF_TASKS_OPEN", "book=${b.id.take(8)}")
                 } else {
                     Toast.makeText(ctx, "暂时没有没做完的任务", Toast.LENGTH_SHORT).show()
                 }
@@ -527,7 +527,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         // 与任务看板「继续制作」都走这里，日志 05:09:35 正显示着弹层，
         // 那两处同样会撞上 Producer.start 的 if (busy) return 而毫无反应。
         if (Producer.isBusyForBook(t.bookId)) {
-            EventLog.ui("RESUME_BLOCKED_BUSY", "book=${t.bookId}")
+            EventLog.ui("RESUME_BLOCKED_BUSY", "book=${t.bookId.take(8)}")
             Toast.makeText(ctx, "已点停止，正在收尾这一段，稍等再继续",
                 Toast.LENGTH_SHORT).show()
         } else {
@@ -777,7 +777,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 action = p.action,
                 onPrimary = {
                     EventLog.ui("RESUME_ASK_PRIMARY",
-                        "book=${p.task.title} action=${p.action}")
+                        "book=${EventLog.safe(p.task.title)} action=${p.action}")
                     resumeAsk = null
                     resumeDecided = true
                     when (p.action) {

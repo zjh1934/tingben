@@ -81,6 +81,26 @@ object AudioTree {
     fun bookKey(bookId: String) = bookId
     fun chapterKey(bookId: String, chapter: Int) = "$bookId#$chapter"
 
+    /**
+     * 章成品文件名里的「目录里那章的名字」。章节表是权威来源；
+     * 老书没有章节表时退回 work/ 下的 chapters.json，最后才用序号兜底。
+     */
+    fun chapterTitle(c: Context, bookId: String, chapter: Int): String {
+        try {
+            ChapterPlan.load(c, bookId)?.chapters?.getOrNull(chapter)?.title
+                ?.takeIf { it.isNotBlank() }?.let { return it }
+        } catch (_: Throwable) { }
+        try {
+            val root = File(c.filesDir, "work/$bookId")
+            for (f in root.walkTopDown().filter { it.isFile && it.name == "chapters.json" }) {
+                val t = readChapterTitles(f.parentFile ?: continue)?.get(chapter)
+                    ?.takeIf { it.isNotBlank() }
+                if (t != null) return t
+            }
+        } catch (_: Throwable) { }
+        return "第 ${chapter + 1} 章"
+    }
+
     private fun nameOf(o: JSONObject, key: String): String? =
         o.optJSONObject("names")?.optString(key, "")?.takeIf { it.isNotBlank() }
 
@@ -117,15 +137,14 @@ object AudioTree {
     }
 
     fun mergedFile(c: Context, bookId: String, chapter: Int): File? =
-        AudioLibrary.list(c)
-            .filter { it.bookId == bookId && it.chaptersKnown && it.chapters.size == 1 &&
-                chapter in it.chapters && it.file.name.startsWith("chapter_") && it.file.isFile }
+        chapterOnlyItems(c)
+            .filter { it.bookId == bookId && chapter in it.chapters }
             .maxByOrNull { it.createdAt }?.file
 
     fun chapterOnlyItems(c: Context): List<AudioItem> =
         AudioLibrary.list(c).filter {
             it.bookId != null && it.chaptersKnown && it.chapters.size == 1 &&
-                it.file.name.startsWith("chapter_") && it.file.isFile && it.file.length() > 44
+                it.file.isFile && it.file.length() > 44
         }
 
     private fun doneFile(dir: File) = File(dir, "chapter_done.json")

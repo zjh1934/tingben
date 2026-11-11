@@ -98,6 +98,9 @@ object PlayQueue {
     private fun previewFinish() {
         _previewState.value = PlaybackState(speed = 1f, ended = true,
             queueId = previewQueueId, preview = true)
+        // R256 · 试听播完就丢。只清 trial 通道、只清 cacheDir/trial：
+        // seg 通道是制作中的小块，audio/work 是正式数据，一个都不碰。
+        if (previewQueueId == "trial") appCtx?.let { TrialFiles.sweep(it) }
     }
 
     private fun previewOpen(i: Int) {
@@ -175,11 +178,15 @@ object PlayQueue {
     }
 
     fun stopPreview() {
+        // R256 · 关窗 / 取消 / 切走也把试听文件丢掉，不等下一次播完。
+        // 必须在清空 previewQueueId 之前判，否则认不出这是试听通道。
+        val wasTrial = previewQueueId == "trial"
         previewReleasePlayer()
         previewTracks = emptyList()
         previewIndex = -1
         previewQueueId = ""
         _previewState.value = PlaybackState(speed = 1f)
+        if (wasTrial) appCtx?.let { TrialFiles.sweep(it) }
     }
 
     fun isPreviewPlaying(): Boolean = _previewState.value.isPlaying
@@ -188,9 +195,18 @@ object PlayQueue {
         val s = _state.value
         // 小段试听不进通知栏：它是「这一块听起来对不对」，不是一次收听会话。
         if (s.preview) { clearNotif(); return }
-        appCtx?.let { PlayNotif.show(it, s) }
+        appCtx?.let {
+            // R248 · 锁屏/线控/元数据先跟状态同步，再刷通知栏。
+            PlaySession.sync(it, s)
+            PlayNotif.show(it, s)
+        }
     }
-    private fun clearNotif() { appCtx?.let { PlayNotif.cancel(it) } }
+    private fun clearNotif() {
+        appCtx?.let {
+            PlayNotif.cancel(it)
+            PlaySession.deactivate()
+        }
+    }
 
     // R182 · 短暂失焦（来电、导航播报）结束后要自动续播。原来三种 loss 一律
     // pause()，而 pause() 会 abandonFocus() —— 请求都放弃了，系统的 GAIN 再也不会
@@ -230,6 +246,9 @@ object PlayQueue {
         if (appCtx != null) return
         val ctx = c.applicationContext
         appCtx = ctx
+        // R248 · 平台 MediaSession 在 attach 的主线程提前建好；后续 notifyNow
+        // 只 sync 状态、不再重建，避免非主线程无 Looper 时构造抛异常。
+        PlaySession.ensure(ctx)
         var x: Context? = c
         while (x is android.content.ContextWrapper) {
             if (x is Activity) { activityRef = WeakReference(x); break }

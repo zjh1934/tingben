@@ -281,7 +281,12 @@ internal fun AppDrawerSheet(
             Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onSettings) {
-                    Text("⚙ 设置", fontSize = 13.sp, color = primary)
+                    // R247 · ⚙ 字符换成 R162 就画好的真齿轮，文字保留
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        GearIcon(primary)
+                        Spacer(Modifier.width(6.dp))
+                        Text("设置", fontSize = 13.sp, color = primary)
+                    }
                 }
             }
         }

@@ -193,22 +193,40 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                             }
                         } else if (runningThis) {
                             TextButton(onClick = { onProgress(t.bookId) }) {
-                                Text("看进度 ›", fontSize = 12.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    UiIconGlyph(UiIcon.SYNTH, Primary)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("看进度 ›", fontSize = 12.sp)
+                                }
                             }
                         } else {
                             TextButton(onClick = {
                                 EventLog.ui("TASK_PLAY", "id=${t.bookId.take(8)}")
                                 onAudio(t.bookId)
-                            }) { Text("听成品 ›", fontSize = 12.sp) }
+                            }) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    UiIconGlyph(UiIcon.LISTEN, Primary)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("听成品 ›", fontSize = 12.sp)
+                                }
+                            }
                         }
                         Spacer(Modifier.width(4.dp))
                         TextButton(onClick = { onOpenTask(t.bookId) }) {
-                            Text("打开这本书 ›", fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                UiIconGlyph(UiIcon.EXPORT, Primary)
+                                Spacer(Modifier.width(4.dp))
+                                Text("打开这本书 ›", fontSize = 12.sp)
+                            }
                         }
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = { confirmDelete = t }, enabled = !runningThis) {
-                            Text("删除任务", fontSize = 12.sp,
-                                color = if (runningThis) Sub else Warn)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                UiIconGlyph(UiIcon.DELETE, if (runningThis) Sub else Warn)
+                                Spacer(Modifier.width(4.dp))
+                                Text("删除任务", fontSize = 12.sp,
+                                    color = if (runningThis) Sub else Warn)
+                            }
                         }
                     }
                 }

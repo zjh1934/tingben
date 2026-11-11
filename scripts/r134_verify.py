@@ -46,7 +46,7 @@ POS = {
         "var segChecked by remember(book.id) { mutableStateOf(setOf<Int>()) }",
         "fun enterMulti(i: Int)",
         "fun exitMulti()",
-        ".pointerInput(sg.index, multi, isChecked, playable, playing, onThis)",
+        "onThis, sg.pendingRedo) {",
         "onLongPress = { if (playable) onLong(sg.index) }",
         "SelectBox(",
         "confirmChDel = selected.associateWith { filesOf(it) }",

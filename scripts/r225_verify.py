@@ -58,7 +58,14 @@ def check(f):
         e.append("Producer 三处预设日志没全换 summarySafe")
     if "import com.tingben.app.diag.EventLog" not in f["cfg"]:
         e.append("ProduceConfig 漏 EventLog import（R187 会红）")
-    # ④ 诊断包里的书名与抬头
+    # ④ 诊断包：R261 起快照段用 redact 别名（段内有同名局部 safe 会遮蔽），
+    #    用户内容一律不许裸插值。按语义判，不绑旧字面量。
+    snap = f["log"][f["log"].find("private fun snapshotBlock"):]
+    for pat, why in [(r'\$\{t\.title\b', "运行快照仍写任务书名"),
+                     (r'\$\{p\.message\b', "运行快照仍写制作状态原文"),
+                     (r'\$\{s\.label\b', "运行快照仍写播放标签原文")]:
+        if re.search(pat, snap): e.append(why)
+    if snap.count("redact(") < 4: e.append("运行快照脱敏别名调用不足")
     if '"${t.title} · ${t.phase}' in f["log"]: e.append("运行快照仍写任务书名")
     if "可能含书名与正文片段" in f["log"]: e.append("诊断摘要抬头仍宣称含原文")
     # ⑤ 书名日志改带内部 id 与字数
@@ -105,7 +112,7 @@ def selftest():
          'config.summary() + " · 指纹=" + presetStamp'),
         ("summarySafe 被删", "cfg", "fun summarySafe(): String", ""),
         ("import 被摘", "cfg", "import com.tingben.app.diag.EventLog\n", ""),
-        ("快照写回书名", "log", '"${safe(t.title)} · ${t.phase}', '"${t.title} · ${t.phase}'),
+        ("快照写回书名", "log", '"${redact(t.title)} · ${t.phase}', '"${t.title} · ${t.phase}'),
         ("抬头回潮", "log", "不含书名/正文/音色描述原文", "可能含书名与正文片段"),
         ("CI 漏挂", "ci", "python3 scripts/r225_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r225_verify.py"', ""),

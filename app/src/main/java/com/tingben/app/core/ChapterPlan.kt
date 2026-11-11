@@ -180,17 +180,17 @@ object ChapterPlan {
             TaskResume.dequeue(c, bookId)
         } catch (t: Throwable) {
             EventLog.log(EventLog.Kind.MODEL, "RESPLIT_TASK_FAIL",
-                "任务作废失败 book=$bookId ${t.message ?: ""}")
+                "任务作废失败 book=${bookId.take(8)} msg=${EventLog.safe(t.message ?: "")}")
         }
         try {
             val work = File(c.filesDir, "work/$bookId")
             if (work.exists()) work.deleteRecursively()
         } catch (t: Throwable) {
             EventLog.log(EventLog.Kind.MODEL, "RESPLIT_WORK_FAIL",
-                "分段缓存没清干净 book=$bookId ${t.message ?: ""}")
+                "分段缓存没清干净 book=${bookId.take(8)} msg=${EventLog.safe(t.message ?: "")}")
         }
         EventLog.log(EventLog.Kind.MODEL, "RESPLIT_INVALIDATE",
-            "书=$bookId 旧任务标待确认 / 队列移除 / 分段与章号索引作废")
+            "书=${bookId.take(8)} 旧任务标待确认 / 队列移除 / 分段与章号索引作废")
     }
 
     /** 重新分章：用户显式操作。返回新章数；章号会变，调用方必须提示音频需重做。 */

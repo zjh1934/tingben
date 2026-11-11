@@ -533,7 +533,7 @@ def r166_errs(lg, sv, pi):
     # 增量字段必须还在，别把「去冗余」做成「删日志」
     # R235 · 逐段实时参数后文本取自 live.text（不再预拼 toSpeak），
     # 字段本身 textChars 仍是增量信息，判据按符号迁移、一个字没放宽。
-    for keep in ('"textChars" to live.text.length.toString()', '"speakerParam" to (v.speaker'):
+    for keep in ('"textChars" to live.text.length.toString()', '"speakerParam" to EventLog.safe(v.speaker)'):
         if keep not in pi:
             e.append("R166 误删：有增量信息的字段没了 " + keep[:34])
     return e

@@ -44,7 +44,7 @@ FILES = {
 MAIN = [
     'val modelMissing = remember(refresh) { ModelStore.missing(ctx).size }',
     'BookStore.add(ctx, r.title, r.text)',
-    'EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id}")',
+    'EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id.take(8)}")',
     'nav.push(Screen.CHAPTERS)',
     # R215 · 首页改成即贴即听，不再把建书结果跳目录页；
     # 但外部分享页仍要 onAdded 回收并回首页，能力不删。
@@ -134,7 +134,7 @@ def selftest():
     assert not checks(base), "基线自己就红了，先修基线"
     cases = [
         ("导入后不进目录页", "main",
-         lambda t: t.replace('                            EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id}")',
+         lambda t: t.replace('                            EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id.take(8)}")',
                              '                            EventLog.ui("BOOK_IMPORT_OPEN", "none")')
          .replace('                            nav.push(Screen.CHAPTERS)\n', '')),
         ("首页又跳目录页", "main",

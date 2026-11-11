@@ -34,10 +34,10 @@ def check(f):
     h, m, u, r = f["hub"], f["producer"], f["produce"], f["r95"]
     # ① 段级重做 UI
     for k in ['onRedo = {', 'SegPlan.markSeg(work, it.index)',
-              'EventLog.ui("SEG_REDO", "n=${rows.size}")',
+              'EventLog.ui("SEG_REDO",',
               'Producer.enqueueOrStart(c, book, setOf(ch),',
               '"已标记 ${rows.size} 段，按当前调音台重新合成"',
-              '"先等当前制作收尾，再重做选中段"',
+              '"已标记 ${rows.size} 段（格子转黄）：当前这段读完自动接重做"',
               '"重做选中" to onRedo',
               'onAll: () -> Unit, onTrial: () -> Unit, onRedo: () -> Unit, onDelete: () -> Unit']:
         if k not in h: e.append("段级重做 UI 缺: " + k[:56])
@@ -96,7 +96,7 @@ def selftest():
         ("重做按钮被摘", "hub", '"重做选中" to onRedo', ""),
         ("不标记 redo", "hub", 'SegPlan.markSeg(work, it.index)', ""),
         ("重做不启动", "hub", 'Producer.enqueueOrStart(c, book, setOf(ch),', ""),
-        ("运行中重做不拦", "hub", '"先等当前制作收尾，再重做选中段"', ""),
+        ("排队反馈被摘", "hub", '"已标记 ${rows.size} 段（格子转黄）：当前这段读完自动接重做"', ""),
         ("启动不读默认", "hub", "Producer.enqueueOrStart(c, book, selected, null, Prefs.defaultPerf(c))", "Producer.enqueueOrStart(c, book, selected, null, ProduceConfig())"),
         ("设置不落盘", "produce", "Prefs.setDefaultPerf(c, cfg)", ""),
         ("实时参数函数被摘", "producer", "fun liveSeg(i: Int): LiveSeg {", ""),

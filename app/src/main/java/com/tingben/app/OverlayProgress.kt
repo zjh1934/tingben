@@ -181,7 +181,14 @@ object OverlayProgress {
                     lp = params
                     EventLog.log(EventLog.Kind.UI, "OVERLAY_SHOW", "悬浮进度已显示")
                 }
-                topRing?.pct = if (total > 0) done.toFloat() / total else 0f
+                val topPct = if (total > 0) done.toFloat() / total else 0f
+                topRing?.pct = topPct
+                // R255 · 上球真机反馈「不更新」：每次都强制重绘一次；不落书名，
+                // 只记两个纯数值，真机日志可定位是上游没传还是 View 没画。
+                topRing?.postInvalidate()
+                EventLog.log(EventLog.Kind.UI, "OVERLAY_PCT",
+                    "top=${(topPct * 100).toInt()} bottom=${(chapterPct * 100).toInt()} " +
+                        "done=$done total=$total", level = EventLog.Level.TRACE)
                 if (chapterPct >= 0f) {
                     bottomRing?.visibility = View.VISIBLE
                     bottomRing?.pct = chapterPct
