@@ -6,8 +6,9 @@
 结果导航壳一改就集体假红。这里把判据收敛成「能力还在不在」：
 
   · 主页 = 输入框
-  · 左边抽屉 = 我导进去的书（不再是功能菜单）
-  · 右上角（仅首页）= ＋ 导入 / 齿轮设置；顶栏不放品牌名（R164）
+  · 右边抽屉 = 我导进去的书（不再是功能菜单）
+  · R230 · ＋ 导入独占抽屉顶部一排、齿轮设置收进抽屉左下角；
+    主页右上角只留「调音 / 任务」两枚；顶栏不放品牌名（R164）
   · 模型收进设置、调音台在合成前弹层、任务能力在书里第二列与开软件弹窗
   · 7 个 NAV_ id 只留给旧状态恢复兼容，界面一处都不渲染
 
@@ -91,6 +92,7 @@ def home_is_input(main: str) -> bool:
 
 
 def topbar_has_settings(main: str, chrome: str) -> bool:
+    # R230 · 名字沿用历史，判的是「设置入口仍在」：抽屉左下角 + 顶栏可选槽。
     return "onSettings = {" in main and "GearIcon(" in chrome
 
 
@@ -108,9 +110,14 @@ def topbar_scope(main: str) -> list:
     for name, args in branches:
         if name != "LIBRARY" and ("showSettings = true" in args or "showImport = true" in args):
             e.append("二级页 %s 又挂了齿轮 / ＋" % name)
+    # R230 · 主页右上角 ＋/齿轮 全部撤掉，导入与设置搬进抽屉。
+    # 判据反过来：任何分支再挂 showSettings/showImport = true 都算回潮。
     lib = [a for n, a in branches if n == "LIBRARY"]
-    if not lib or "showSettings = true" not in lib[0] or "showImport = true" not in lib[0]:
-        e.append("首页丢了齿轮 / ＋")
+    if not lib:
+        e.append("找不到 LIBRARY 顶栏规格")
+    for name, args in branches:
+        if "showSettings = true" in args or "showImport = true" in args:
+            e.append("R230 回潮：%s 又挂了齿轮 / ＋" % name)
     return e
 
 
@@ -174,8 +181,8 @@ def injections():
         ("齿轮消失", "chrome",
          lambda t: t.replace('        if (spec.showSettings) {', '        if (false) {')),
         ("品牌名回潮", "main",
-         lambda t: t.replace('Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY,',
-                             'Screen.LIBRARY  -> ChromeSpec("听本", TAB_LIBRARY,')),
+         lambda t: t.replace('Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY)',
+                             'Screen.LIBRARY  -> ChromeSpec("听本", TAB_LIBRARY)')),
         ("二级页齿轮回潮", "main",
          lambda t: t.replace('Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)',
                              'Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, '

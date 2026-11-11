@@ -79,7 +79,8 @@ def check(f):
     # ⑥ 顶栏只剩一枚齿轮 + 勾选态文字入口
     if hb.count('"制作设置 ›"') != 1:
         e.append("勾选态制作设置文字入口数不对")
-    if 'Text("⚙", fontSize = 16.sp, color = HubPrimary)' not in hb:
+    # R226 · 常态齿轮上移系统顶栏（合并视图）
+    if 'Text("⚙", fontSize = 16.sp' not in mg:
         e.append("常态顶栏齿轮入口被摘")
     # ⑦ 登记
     if "python3 scripts/r218_verify.py --selftest" not in f["ci"]:
@@ -98,7 +99,7 @@ def selftest():
         ("顶栏又写目录", "shell",
          'Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)',
          'Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, canBack = true)'),
-        ("重新分章回顶栏", "hub", 'Text("⚙", fontSize = 16.sp, color = HubPrimary)',
+        ("重新分章回顶栏", "merged", 'Text("⚙", fontSize = 16.sp',
          'Text("重新分章 ›", fontSize = 12.sp, color = HubPrimary)'),
         ("重分章链路断", "merged", "onResplit = { nav.pop(); resplitTick++ })", ""),
         ("制作范围勾选回潮", "produce", 'ExpandGroup("① 做什么", "")',
@@ -110,7 +111,7 @@ def selftest():
         ("本章进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
         ("展开动效被摘", "hub", "expandVertically() + fadeIn()", ""),
         ("段数文案回潮", "hub", "AnimatedVisibility(", '"本章 12 小段"'),
-        ("齿轮被摘", "hub", 'Text("⚙", fontSize = 16.sp, color = HubPrimary)', ""),
+        ("齿轮被摘", "merged", 'Text("⚙", fontSize = 16.sp', ""),
         ("CI 漏挂", "ci", "python3 scripts/r218_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r218_verify.py"', ""),
     ]

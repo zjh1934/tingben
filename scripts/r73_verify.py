@@ -39,7 +39,9 @@ NEED = [
     ('设置页不折叠', 'MainActivity.kt', 'collapsible = false'),
     ('输入朗读页', 'MainActivity.kt', 'private fun InputReadScreen('),
     ('试听文本可保存', 'MainActivity.kt', 'Prefs.setTrialText(c, trialText)'),
-    ('本机数据常驻', 'MainActivity.kt', 'SettingsSection("本机数据", "本机", collapsible = false)'),
+    # R242 · R238 把「本机数据」+「成品文件」两张同 badge 碎卡合并成一张，
+    # 旧标题已删、判据恒红；按现状迁移，仍要求一张「本机」卡常驻，不放宽。
+    ('本机数据常驻', 'MainActivity.kt', 'SettingsSection("文件与数据", "本机", collapsible = false)'),
     ('两枚试听按钮', 'MainActivity.kt', 'Text("试听 · 已保存"'),
     ('主题键', 'Prefs.kt', 'KEY_THEME_MODE = "themeMode"'),
     ('字号键', 'Prefs.kt', 'KEY_FONT_SCALE = "readerFontScale"'),

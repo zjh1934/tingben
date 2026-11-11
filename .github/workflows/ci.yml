@@ -441,6 +441,58 @@ jobs:
         run: python3 scripts/r223_verify.py
       - name: R223 反向注入
         run: python3 scripts/r223_verify.py --selftest
+      - name: R224 批次1 按钮化与抽屉手势
+        run: python3 scripts/r224_verify.py
+      - name: R224 反向注入
+        run: python3 scripts/r224_verify.py --selftest
+      - name: R225 日志脱敏
+        run: python3 scripts/r225_verify.py
+      - name: R225 反向注入
+        run: python3 scripts/r225_verify.py --selftest
+      - name: R226 顶栏合并与归因
+        run: python3 scripts/r226_verify.py
+      - name: R226 反向注入
+        run: python3 scripts/r226_verify.py --selftest
+      - name: R230 抽屉与首页布局 / 悬浮开关
+        run: python3 scripts/r230_verify.py
+      - name: R230 反向注入
+        run: python3 scripts/r230_verify.py --selftest
+      - name: R231 按章拼合与拼接设置
+        run: python3 scripts/r231_verify.py
+      - name: R231 反向注入
+        run: python3 scripts/r231_verify.py --selftest
+      - name: R233 删段记账与跳过
+        run: python3 scripts/r233_verify.py
+      - name: R233 反向注入
+        run: python3 scripts/r233_verify.py --selftest
+      - name: R234 平台内置解码底座与播放器选型
+        run: python3 scripts/r234_verify.py
+      - name: R234 反向注入
+        run: python3 scripts/r234_verify.py --selftest
+      - name: R235 段级重做与运行中热更新
+        run: python3 scripts/r235_verify.py
+      - name: R235 反向注入
+        run: python3 scripts/r235_verify.py --selftest
+      - name: R236 波形裁剪与 30 秒闸
+        run: python3 scripts/r236_verify.py
+      - name: R236 反向注入
+        run: python3 scripts/r236_verify.py --selftest
+      - name: R237 通知两条进度与裁剪试听
+        run: python3 scripts/r237_verify.py
+      - name: R237 反向注入
+        run: python3 scripts/r237_verify.py --selftest
+      - name: R238 设置页统一行与索引口径
+        run: python3 scripts/r238_verify.py
+      - name: R238 反向注入
+        run: python3 scripts/r238_verify.py --selftest
+      - name: R239 设置页第二批统一行
+        run: python3 scripts/r239_verify.py
+      - name: R239 反向注入
+        run: python3 scripts/r239_verify.py --selftest
+      # R242 · 只挂自检：正向 preflight 会探 API / 查工作区，挂进每次 push
+      # 会让 CI 平白多一次外部依赖；由发版轮在沙盒手动跑正向。
+      - name: R241 发版前置自检逻辑
+        run: python3 scripts/preflight.py --selftest
       - name: R172 正向守门
         run: python3 scripts/r172_verify.py
       - name: assembleDebug

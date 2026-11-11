@@ -184,7 +184,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                         if (!runningThis && t.phase != "done") {
                             // R172 · 重新分章后旧 only 是旧章号，不能拿它直接开跑
                             Button(onClick = {
-                                EventLog.ui("TASK_RESUME", "book=${t.title}")
+                                EventLog.ui("TASK_RESUME", "id=${t.bookId.take(8)}")
                                 onResume(t)
                             }, enabled = !otherBusy && t.phase != "reconfirm",
                                 modifier = Modifier.height(34.dp),
@@ -199,7 +199,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                             }
                         } else {
                             TextButton(onClick = {
-                                EventLog.ui("TASK_PLAY", "book=${t.title}")
+                                EventLog.ui("TASK_PLAY", "id=${t.bookId.take(8)}")
                                 onAudio(t.bookId)
                             }) { Text("听成品 ›", fontSize = 12.sp) }
                         }
@@ -228,7 +228,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
             },
             confirmButton = {
                 TextButton(onClick = {
-                    EventLog.ui("TASK_DELETE", "book=${t.title}")
+                    EventLog.ui("TASK_DELETE", "id=${t.bookId.take(8)}")
                     scope.launch(Dispatchers.IO) {
                         TaskResume.remove(c, t.bookId)
                         TaskResume.dequeue(c, t.bookId)

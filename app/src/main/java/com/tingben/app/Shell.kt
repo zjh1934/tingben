@@ -77,8 +77,8 @@ internal fun queryName(c: Context, uri: Uri): String {
 // 统一返回表（R130）：哪一页返回到哪一页，只在这里定义一次。
 // 根级页（书架 / 任务 / 设置）靠抽屉切换，没有返回键；
 // 二级页一律回自己的来源，栈被清掉时也按这张表兜底，不会莫名跳回书架。
-// R162 · 主页只有输入框这一屏。设置从右上角齿轮进、任务从通知/书里进，
-// 都是二级页，一律能返回主页。
+// R162 · 主页只有输入框这一屏。R230 · ＋ 与齿轮都从主页右上角撤掉：
+// 导入挪到抽屉顶部独占一排、设置挪到抽屉左下角；任务/调音留在顶栏右侧。
 internal val ROOT_SCREENS = setOf(Screen.LIBRARY)
 
 internal fun canGoBack(s: Screen): Boolean = s !in ROOT_SCREENS
@@ -92,10 +92,9 @@ internal fun backTargetOf(s: Screen, modelsFrom: Screen): Screen =
     }
 
 internal fun chromeOf(s: Screen): ChromeSpec = when (s) {
-    // R164 · 品牌名从顶栏撤掉：已经在用这个软件，左上角不必再写一遍「听本」。
-    // 齿轮 / ＋ 只留首页，二级页一律不给，右上角腾出整块空间。
-    Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY,
-        showImport = true, showSettings = true)
+    // R164 · 品牌名从顶栏撤掉。R230 · 右上角 ＋/齿轮 全部撤掉，
+    // 首页只留 ☰ 与右侧「调音 / 任务」两枚（trailing 由 App 层挂）。
+    Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY)
     Screen.PRODUCE  -> ChromeSpec("制作设置", TAB_LIBRARY, canBack = true)
     // R218 · 目录页顶栏直接写书名，不写「目录」二字（都进这本书了）。
     // 标题由 App 层按 bookId 覆盖；这里留空串占位。

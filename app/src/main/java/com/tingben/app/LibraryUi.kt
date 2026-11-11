@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -87,6 +89,33 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     val pinned = remember(refresh) { BookStore.pinned(c) }
     val libScope = rememberCoroutineScope()
     var confirmDelete by remember { mutableStateOf<String?>(null) }
+    // R230 · 置顶 / 删除不再常驻卡片右侧，长按书名才弹
+    var menuBook by remember { mutableStateOf<String?>(null) }
+
+    menuBook?.let { id ->
+        val b = books.find { it.id == id } ?: return@let
+        AlertDialog(
+            onDismissRequest = { menuBook = null },
+            title = { Text(b.title, fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            text = { Text("置顶或删除", fontSize = 12.sp, color = Sub) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val next = !(b.id in pinned)
+                    libScope.launch(Dispatchers.IO) {
+                        BookStore.setPinned(c, b.id, next)
+                        EventLog.ui("BOOK_PIN_TAP", "id=${b.id} on=$next")
+                        withContext(Dispatchers.Main) { onChanged() }
+                    }
+                    menuBook = null
+                }) { Text(if (b.id in pinned) "取消置顶" else "置顶", fontSize = 13.sp) }
+            },
+            dismissButton = {
+                TextButton(onClick = { menuBook = null; confirmDelete = b.id }) {
+                    Text("删除", fontSize = 13.sp, color = Warn)
+                }
+            }
+        )
+    }
 
     confirmDelete?.let { id ->
         AlertDialog(
@@ -160,7 +189,12 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                 val (done, total) = progress[b.id] ?: (0 to 0)
                 val pct = if (total > 0) done.toFloat() / total.toFloat() else 0f
                 val isPinned = b.id in pinned
-                CardBox(Modifier.padding(bottom = 12.dp).clickable { onOpen(b.id) }) {
+                // R230 · 点书名开书、长按书名弹置顶/删除，两个手势同一个检测器
+                CardBox(Modifier.padding(bottom = 12.dp).pointerInput(b.id) {
+                    detectTapGestures(
+                        onTap = { onOpen(b.id) },
+                        onLongPress = { menuBook = b.id })
+                }) {
                     Row(Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -187,38 +221,7 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                                 if (total > 0) "已做好 $done/$total 章"
                                 else "还没分章",
                                 fontSize = 11.sp, color = Sub)
-                            if (lastRead != null) {
-                                Spacer(Modifier.height(6.dp))
-                                Text("上次读到 第 ${lastRead + 1} 章", fontSize = 11.sp,
-                                    color = Primary,
-                                    modifier = Modifier
-                                        .background(PrimarySoft, RoundedCornerShape(50))
-                                        .padding(horizontal = 10.dp, vertical = 3.dp))
-                            }
-                        }
-                        Spacer(Modifier.width(6.dp))
-                        // 右边只留两个有用的动作：置顶、删除。
-                        // 不再放「›」——用户实证「右箭头没有任何价值」。
-                        Column(horizontalAlignment = Alignment.End) {
-                            TextButton(onClick = {
-                                val next = !isPinned
-                                libScope.launch(Dispatchers.IO) {
-                                    BookStore.setPinned(c, b.id, next)
-                                    EventLog.ui("BOOK_PIN_TAP",
-                                        "id=${b.id} on=$next")
-                                    withContext(Dispatchers.Main) { onChanged() }
-                                }
-                            }, modifier = Modifier.height(34.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp)) {
-                                Text(if (isPinned) "取消置顶" else "置顶",
-                                    fontSize = 12.sp,
-                                    color = if (isPinned) Primary else Sub)
-                            }
-                            TextButton(onClick = { confirmDelete = b.id },
-                                modifier = Modifier.height(34.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp)) {
-                                Text("删除", fontSize = 12.sp, color = Warn)
-                            }
+                            // R230 · 「上次读到 第 N 章」撤掉，制作进度条保留
                         }
                     }
                 }

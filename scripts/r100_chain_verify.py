@@ -30,7 +30,7 @@ RULES = [
     ('app/src/main/java/com/tingben/app/core/Pipeline.kt',
      'SynthInput.prepare(c, ttsHandle)', '模式：参考音频交给句柄'),
     ('app/src/main/java/com/tingben/app/core/Pipeline.kt',
-     'val v = SynthInput.params(c, a.instruct, config.styleInstruct())', '模式：逐段按字段语义供料'),
+     'SynthInput.params(c, built.first, style), Prefs.ttsKnobs(c)', '模式：逐段按字段语义供料'),
     ('app/src/main/java/com/tingben/app/core/SynthInput.kt',
      'Mode.VOICE_DESIGN -> Params(instructVD, null)', 'voice_design：instruct 必填 / speaker 空'),
     ('app/src/main/java/com/tingben/app/core/SynthInput.kt',

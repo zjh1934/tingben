@@ -6,6 +6,7 @@ import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
+import com.tingben.app.diag.EventLog
 import java.io.File
 import java.util.UUID
 
@@ -67,6 +68,31 @@ object AudioOps {
         val kept = deleteAll(parts)
         AudioTree.forget(c, killedPaths)
         return Result(true, dst, kept = kept)
+    }
+
+    /**
+     * R231 · 整本合成收尾时，给「这一章」单独出一份成品音频。
+     * 与手动 mergeChapter 的区别：不删小块、不写 chapter_done、不动 forget。
+     * 整本成品、续跑用的段文件、音色分套全部原样保留，拼失败也只跳过这一章。
+     * 登记成单章 item 后，目录页小耳机（playChapter / latestByChapter）直接播它。
+     */
+    fun mergeChapterAuto(c: Context, bookId: String, bookTitle: String, chapter: Int,
+                         parts: List<File>, gapMs: Int = 0, declickMs: Int = 30): Result {
+        if (parts.isEmpty()) return Result(false, reason = "这一章还没有音频小块")
+        val dst = File(AudioLibrary.dir(c),
+            "chapter_${bookId.take(8)}_%03d_%s.wav".format(chapter + 1, UUID.randomUUID().toString().take(8)))
+        // R231 · 具名参数：与手动 mergeChapter 的同一串区分，守门注入能精准定位
+        val ok = WavMerger.merge(parts = parts, out = dst, gapMs = gapMs, declickMs = declickMs)
+        if (!ok || dst.length() <= 44) {
+            dst.delete()
+            File(dst.parentFile, dst.name + ".part").delete()
+            return Result(false, reason = "这一章拼接没成功，小块都留着")
+        }
+        AudioLibrary.register(c, bookId, bookTitle, only = setOf(chapter),
+            direct = true, file = dst, allChapterCount = chapter + 1)
+        EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_ONE",
+            "ch=${chapter + 1} · ${parts.size} 块 · ${dst.length()} 字节")
+        return Result(true, dst, kept = parts.size)
     }
 
     fun mergedTemp(c: Context, parts: List<File>): Result {

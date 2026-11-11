@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
-"""R95 · 落盘预检 + 阅读位置精度：正向 / 旧形态零残留 / 守恒 / 反向注入。
+"""R95 · 落盘预检顺序 + 阅读位置接线：正向 / 旧形态零残留 / 守恒 / 反向注入。
 
+R235 修准：原来 POS 里 10 条锚点全绑死 R148 之前的旧公式（60 秒兜底、
+needBytes > freeBytes 一刀切、estimate()），代码早重写成「按预算能做多少做多少」，
+导致正向恒红。公式本身的 8 组对拍与常量一致性由 r95_space_parity.py 独立承担，
+本脚本只守「顺序」与「接线」，不镜像复跑它。守恒判据一条没删，
+ttsSynthesize 从 UI 合并视图迁到 core 合并视图（R205 后合成在 Producer.kt）。
 沙盒无 Android SDK，静态绿 ≠ 编译过；真编译由 CI 负责。
 """
 import ui_sources
@@ -24,7 +29,7 @@ POS = {
         'is JSONObject -> v.optInt("chapter", -1)',
         'fun last(c: Context, bookId: String): Int? = pos(c, bookId)?.chapter',
         'fun save(c: Context, bookId: String, chapter: Int, para: Int? = null, offset: Int? = null)',
-        'val same = old?.chapter == chapter',
+        'val same = prev?.chapter == chapter',
         'reading_state.json',
     ],
     "hub": [
@@ -36,27 +41,26 @@ POS = {
         'ReadingState.save(c, book.id, i, p, off)',
         'LazyColumn(state = listState,',
         'ReadingState.save(c, book.id, i)',
-        'ReadingState.last(c, book.id)',
     ],
     "pipe": [
+        # R235 · 换成 R148 之后的现行锚点；数值对拍在 r95_space_parity.py
         'val pending = (0 until toSpeak.size).count',
         'val segBytes = if (sample.isNotEmpty()) sample.average().toLong()',
-        '24_000L * 2L * 60L',
-        'pending * segBytes * 3L / 2L + mergeBytes + 16L * 1024 * 1024',
-        'minOf(work.usableSpace, AudioLibrary.dir(c).usableSpace)',
-        'if (needBytes > freeBytes)',
-        'STORAGE_SHORT',
+        '24_000L * 2L * 12L',
+        'c.filesDir.usableSpace',
+        'if (estimateBytes > budgetBytes)',
+        'val budgetSegs =',
+        'var spaceStopped = false',
+        'STORAGE_PARTIAL',
+        'STORAGE_PARTIAL_STOP',
+        '清出空间后点「继续制作」',
         'val finalBytes = wavs.sumOf { it.length() } + 16L * 1024 * 1024',
         'if (finalBytes > outFile.parentFile!!.usableSpace)',
-        'STORAGE_SHORT_MERGE',
-        '存储空间不够',
-        '清出空间后在任务里点「继续制作」',
-        '音频接不起来',
         'WavMerger.merge(wavs, outFile, config.gapMs)',
         'for ((i, a) in toSpeak.withIndex())',
     ],
     "ci": ['scripts/r95_verify.py', 'scripts/r95_space_parity.py'],
-    "parity": ['def estimate(', 'def merge_need(', 'SEG_FALLBACK = 24_000 * 2 * 60'],
+    "parity": ['def budget(', 'def merge_need(', 'SEG_FALLBACK = 24_000 * 2 * 12'],
 }
 
 BAN = {
@@ -67,9 +71,9 @@ BAN = {
 
 KEEP = {
     "chrome": ['internal fun AppDrawerSheet(', 'private fun GearIcon('],
-    "main": ['SETTINGS, MODELS, CHAPTERS }', 'commitAll()', 'ttsSynthesize('],
+    "main": ['SETTINGS, MODELS, CHAPTERS }', 'commitAll()'],
     "pipe": ['AudioLibrary.register(c, book.id, book.title', 'TaskResume.save(c, done)',
-             'ProduceService.update'],
+             'ProduceService.update', 'NativeEngine.ttsSynthesize('],
 }
 
 OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '导出日志', '标注进度']
@@ -93,9 +97,9 @@ def check(f):
             if s in f[k]:
                 e.append('[%s] 旧说法残留: %s' % (k, s))
     p = f['pipe']
-    if p.find('if (needBytes > freeBytes)') > p.find('for ((i, a) in toSpeak.withIndex())'):
+    if p.find('if (estimateBytes > budgetBytes)') > p.find('for ((i, a) in toSpeak.withIndex())'):
         e.append('预检写在合成循环之后，等于没拦住')
-    if p.find('STORAGE_SHORT_MERGE') > p.find('val ok = WavMerger.merge'):
+    if p.find('if (finalBytes > outFile.parentFile!!.usableSpace)') > p.find('val ok = WavMerger.merge'):
         e.append('合并预检写在 merge 之后，等于没拦住')
     return e
 
@@ -120,13 +124,13 @@ if __name__ == '__main__':
         cases = [
             ('删旧数据兼容读', 'reading', lambda t: t.replace('is Number ->', '// x')),
             ('只存章不存段', 'reading', lambda t: t.replace('para: Int? = null, offset: Int? = null', 'x: Int = 0')),
-            ('换章不清零', 'reading', lambda t: t.replace('val same = old?.chapter == chapter', 'val same = true')),
+            ('换章不清零', 'reading', lambda t: t.replace('val same = prev?.chapter == chapter', 'val same = true')),
             ('看书页不恢复', 'hub', lambda t: t.replace('rememberLazyListState(', 'remember { } //')),
             ('看书页不落盘', 'hub', lambda t: t.replace('ReadingState.save(c, book.id, i, p, off)', '// x')),
             ('退回无 state 列表', 'hub', lambda t: t.replace('LazyColumn(state = listState,', 'LazyColumn(')),
-            ('删合成前预检', 'pipe', lambda t: t.replace('if (needBytes > freeBytes)', 'if (false)')),
+            ('删合成前预检', 'pipe', lambda t: t.replace('if (estimateBytes > budgetBytes)', 'if (false)')),
             ('删合并前预检', 'pipe', lambda t: t.replace('if (finalBytes > outFile.parentFile!!.usableSpace)', 'if (false)')),
-            ('空间提示塌回笼统', 'pipe', lambda t: t.replace('存储空间不够', '没能生成音频')),
+            ('空间提示塌回笼统', 'pipe', lambda t: t.replace('清出空间后点「继续制作」', '没能生成音频')),
             ('CI 摘验证', 'ci', lambda t: t.replace('scripts/r95_verify.py', 'x.py')),
             ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r95_space_parity.py', 'x.py')),
             ('守恒破坏·壳层', 'chrome', lambda t: t.replace('private fun GearIcon(', 'private fun BrokenGear(')),

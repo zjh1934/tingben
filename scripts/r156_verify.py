@@ -71,7 +71,9 @@ POS = {
         "AudioExport.saveTree(c, uri)",
         "AudioExport.treeLabel(c)",
         "ActivityResultContracts.OpenDocumentTree()) { uri ->",
-        'SettingsSection("成品文件", "本机", collapsible = false)',
+                # R238 · 两张同 badge 碎卡合并成一张，卡片仍在、导出链路一条没少，
+        # 判据按现状迁移、不放宽。
+'SettingsSection("文件与数据", "本机", collapsible = false)',
         "导出位置",
         "AudioExport.exportAll(c, tree)",
         "先点「选择」挑一个文件夹",
@@ -260,8 +262,8 @@ def selftest():
         ("设置页选目录被摘", "main",
          "ActivityResultContracts.OpenDocumentTree()", ""),
         ("记住位置被摘", "main", "AudioExport.saveTree(c, uri)", ""),
-        ("成品文件卡片被摘", "main",
-         'SettingsSection("成品文件", "本机", collapsible = false)', ""),
+        ("文件与数据卡片被摘", "main",
+         'SettingsSection("文件与数据", "本机", collapsible = false)', ""),
         ("私有目录教程回潮", "main", '"导出位置"',
          '"导出位置；设置 → 应用管理，文件管理器进不去"'),
         ("内部路径教程回潮", "main", '"导出位置"',

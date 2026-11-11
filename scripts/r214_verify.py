@@ -54,12 +54,15 @@ def check(f):
         e.append("章节进度没透传到浮窗")
     if "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }" not in pr:
         e.append("Producer.emit 没取章节进度")
-    # ③ 首页：1/3 屏、粘贴钮进框内、右上双入口
-    for k in ["fillMaxHeight(0.36f)", "Alignment.BottomEnd",
-              "onMixer: () -> Unit = {}", "onTasks: () -> Unit = {}",
-              "hasTask: Boolean = false", 'Text("调音"', 'Text("任务"',
-              "enabled = hasTask", "color = if (hasTask) Primary else Sub"]:
+    # ③ R230 · 输入框 1/3 屏 + 粘贴钮进框内（内容区）；
+    #    调音/任务入口上移系统顶栏，按符号在合并视图里守。
+    for k in ["fillMaxHeight(0.36f)", "Alignment.BottomEnd"]:
         if k not in it: e.append("首页缺: " + k[:52])
+    for k in ['Text("调音"', 'Text("任务"',
+              "enabled = homeHasTask",
+              "color = if (homeHasTask) Primary else Sub",
+              "val homeHasTask = remember(refresh, bookImporting)"]:
+        if k not in mg: e.append("顶栏入口缺: " + k[:52])
     if "Modifier.fillMaxWidth().weight(1f)" in it:
         e.append("输入框又退回占满整屏")
     # ④ 弹层收小但仍避让导航
@@ -70,9 +73,8 @@ def check(f):
     if "Modifier.fillMaxSize()" in mx.split("MixerDialog")[1][:400]:
         e.append("弹层又全屏撑满")
     # ⑤ MainActivity 接线：onTasks / hasTask 不能是空实现
-    for k in ["onMixer = { chapterMixerOpen = true", "onTasks = {",
-              "hubOpenTasks = true", "hasTask = remember(refresh, bookImporting)",
-              "TaskResume.queue(ctx).isNotEmpty()"]:
+    for k in ["chapterMixerOpen = true", "hubOpenTasks = true",
+              "TaskResume.queue(ctx).isNotEmpty()", "Screen.LIBRARY -> {"]:
         if k not in mg: e.append("主界面接线缺: " + k[:52])
     # ⑥ 登记
     if "python3 scripts/r214_verify.py --selftest" not in f["ci"]:
@@ -98,11 +100,11 @@ def selftest():
          "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }", ""),
         ("框又占满屏", "input", "fillMaxHeight(0.36f)", "weight(1f)"),
         ("粘贴钮出框", "input", "Alignment.BottomEnd", "Alignment.TopEnd"),
-        ("任务入口不置灰", "input", "enabled = hasTask", "enabled = true"),
+        ("任务入口不置灰", "merged", "enabled = homeHasTask", "enabled = true"),
         ("弹层没收小", "mixer", "fillMaxHeight(0.86f)", "fillMaxSize()"),
         ("弹层丢导航避让", "mixer", "navigationBarsPadding()", ""),
         ("主界面没接任务", "merged",
-         "hasTask = remember(refresh, bookImporting)", "hasTask = false"),
+         "val homeHasTask = remember(refresh, bookImporting)", "val homeHasTask = false"),
         ("CI 漏挂", "ci", "python3 scripts/r214_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r214_verify.py"', ""),
     ]

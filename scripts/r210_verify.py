@@ -49,7 +49,8 @@ def check(f):
             e.append("收尾判断没排在 start 之前")
     # ChapterHub 里这个调用串有两处（重新分章守卫 + 续跑按钮），
     # 认 R209 特有的记账符号才精确；那一处由 r209 守门独立把守。
-    if "HUB_RESUME_BLOCKED" not in f["hub"]:
+    # R226 · 双保险随按钮上移系统顶栏，main 已是合并视图
+    if "HUB_RESUME_BLOCKED" not in f["main"]:
         e.append("目录页那枚「继续」的双保险被摘")
     # ② no_pending 按 reason 变化才记，且不能顶掉 R169 的 decided 节流
     for k in ["var lastSkipReason by remember", 'lastSkipReason != "no_pending"',
@@ -83,7 +84,7 @@ def selftest():
         ("下沉判断被摘", "main", "Producer.isBusyForBook(t.bookId)", "false"),
         ("被拦不记账", "main", "RESUME_BLOCKED_BUSY", "RESUME_BLOCKED"),
         ("被拦不给反馈", "main", "稍等再继续", ""),
-        ("目录页双保险被摘", "hub", "HUB_RESUME_BLOCKED", "HUB_RESUME"),
+        ("目录页双保险被摘", "main", "HUB_RESUME_BLOCKED", "HUB_RESUME"),
         ("no_pending 节流被摘", "main", 'lastSkipReason != "no_pending"', "true"),
         ("R169 节流被顶掉", "main", "if (!resumeSkipLogged)", "if (true)"),
         ("r46 哈希守恒回潮", "r46", "STRICT：逐字节守恒", "BASELINE_CANON = \"x\"\n    STRICT：逐字节守恒"),

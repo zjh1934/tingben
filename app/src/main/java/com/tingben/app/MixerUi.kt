@@ -10,8 +10,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +56,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import java.io.File
+import kotlin.math.abs
 
 // @ui-part: MixerUi
 @Composable
@@ -114,18 +119,58 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
     var trialMsg by remember { mutableStateOf("") }
 
     var refState by remember(tick) { mutableStateOf(VoiceRef.status(c)) }
+    // R236 · 选完文件先拿全段波形，弹裁剪框拖选，确认后才落盘
+    var refClip by remember { mutableStateOf<DecodedAudio?>(null) }
     var speakerList by remember(tick) { mutableStateOf(Prefs.speakerNames(c)) }
     var speakerBusy by remember { mutableStateOf(false) }
     val pickRef = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch(Dispatchers.IO) {
+            // R234/R236 · mp3 / m4a / aac / ogg 经平台内置解码成 24k 单声道 WAV，
+            // 同时拿到波形峰值；不直接落盘，先让用户拖选一小段。
+            val r = runCatching { AudioDecode.decode(c, uri) }
+            withContext(Dispatchers.Main) {
+                r.onSuccess { refClip = it }
+                r.onFailure {
+                    Toast.makeText(c, it.message ?: "这段音频读不了",
+                        Toast.LENGTH_LONG).show()
+                }
+                tick++
+            }
+        }
+    }
+    // R237 · 试听选中段：裁出临时 wav 走 PlayQueue 的 preview 通道（"trial"），
+    // 不占整本书的播放控制通知，也不进 VoiceRef 落盘，拖着把手可以反复听。
+    fun trialRefClip(d: DecodedAudio, startMs: Long, endMs: Long) {
+        scope.launch(Dispatchers.IO) {
             val r = runCatching {
-                val b = c.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("打不开这个文件")
-                VoiceRef.save(c, b)
+                val bytes = AudioDecode.clipWav(d.wav, startMs, endMs)
+                val f = File(c.cacheDir, "ref_clip_trial.wav")
+                f.writeBytes(bytes)
+                f
+            }
+            withContext(Dispatchers.Main) {
+                r.onSuccess { f ->
+                    PlayQueue.setTracks(listOf(Track(f, "裁剪试听",
+                        id = "trial:ref_clip")), "trial")
+                    PlayQueue.playFrom(0, id = "trial")
+                }
+                r.onFailure {
+                    Toast.makeText(c, it.message ?: "这段试听不了",
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    // R236 · 裁剪确认：纯字节裁一段，再走 VoiceRef.save 的原校验与原子落盘
+    fun applyRefClip(d: DecodedAudio, startMs: Long, endMs: Long) {
+        scope.launch(Dispatchers.IO) {
+            val r = runCatching {
+                VoiceRef.save(c, AudioDecode.clipWav(d.wav, startMs, endMs))
             }
             withContext(Dispatchers.Main) {
                 refState = VoiceRef.status(c)
+                refClip = null
                 tick++
                 Toast.makeText(c, r.exceptionOrNull()?.message ?: "参考音频已导入",
                     Toast.LENGTH_LONG).show()
@@ -365,6 +410,16 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
         }
     }
 
+    // R236 · 波形拖拽裁剪：借鉴 Ringdroid，两端把手拖选，默认给前 10 秒
+    refClip?.let { d ->
+        RefClipDialog(
+            data = d,
+            onCancel = { refClip = null },
+            onTrial = { s, e -> trialRefClip(d, s, e) },
+            onUse = { s, e -> applyRefClip(d, s, e) }
+        )
+    }
+
     if (showLeave) {
         AlertDialog(
             onDismissRequest = { showLeave = false },
@@ -520,7 +575,7 @@ internal fun BasePane(
         }
     }
     Spacer(Modifier.height(6.dp))
-    TextButton(onClick = onPick) { Text("导入一小段人声 ›", fontSize = 12.sp) }
+    TextButton(onClick = onPick) { Text("导入并裁剪 ›", fontSize = 12.sp) }
     Spacer(Modifier.height(12.dp))
     Text("这段录音念的是什么（可留空）", fontSize = 12.sp,
         fontWeight = FontWeight.Bold, color = palette.text)
@@ -622,3 +677,101 @@ internal fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) 
  * R158b 硬口径：不写教程，不写「接着跑不会重算…」这类解释句；
  * 状态用一枚胶囊说清，进度用一根条说清。
  */
+
+
+/**
+ * R236 · 参考音频波形裁剪弹层。
+ *
+ * 交互借鉴 Ringdroid（AOSP 开源铃声编辑器）：波形铺开、按住两端把手拖出选区、
+ * 选好才导出。这里用 Compose 自绘 Canvas，不引波形库 / FFmpeg；
+ * d.peaks 是 R234 解码时按 20ms 窗算好的峰值，直接画，不再读盘。
+ * 默认选前 10 秒：参考音频公开口径 3~10 秒最稳，导入整首歌也不会一进来就超长。
+ */
+@Composable
+internal fun RefClipDialog(
+    data: DecodedAudio,
+    onCancel: () -> Unit,
+    onTrial: (Long, Long) -> Unit,
+    onUse: (Long, Long) -> Unit
+) {
+    val totalMs = data.durationMs.coerceAtLeast(1L)
+    var startFrac by remember(data) { mutableStateOf(0f) }
+    var endFrac by remember(data) {
+        mutableStateOf(minOf(1f, 10_000f / totalMs))
+    }
+    var dragging by remember(data) { mutableStateOf(0) } // 1=左把手 2=右把手
+    val selectedMs = (totalMs * (endFrac - startFrac)).toLong()
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("裁一段人声", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                Text("按住波形两端拖，选一小段干净人声", fontSize = 12.sp,
+                    color = palette.text)
+                Spacer(Modifier.height(8.dp))
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(112.dp)
+                        .background(Bg)
+                        .pointerInput(data.peaks.size) {
+                            detectDragGestures(
+                                onDragStart = { pos ->
+                                    val f = (pos.x / size.width.toFloat())
+                                        .coerceIn(0f, 1f)
+                                    dragging = if (abs(f - startFrac) <= abs(f - endFrac)) 1 else 2
+                                },
+                                onDrag = { change, _ ->
+                                    val f = (change.position.x / size.width.toFloat())
+                                        .coerceIn(0f, 1f)
+                                    if (dragging == 1)
+                                        startFrac = minOf(f, endFrac - 0.02f).coerceAtLeast(0f)
+                                    else
+                                        endFrac = maxOf(f, startFrac + 0.02f).coerceAtMost(1f)
+                                    change.consume()
+                                }
+                            )
+                        }
+                ) {
+                    val w = size.width
+                    val h = size.height
+                    val n = data.peaks.size.coerceAtLeast(1)
+                    val barW = (w / n).coerceAtLeast(1f).coerceAtMost(6f)
+                    for (i in 0 until n) {
+                        val x = i * w / n
+                        val f = i.toFloat() / n
+                        val col = if (f in startFrac..endFrac) Primary
+                                  else Primary.copy(alpha = 0.22f)
+                        val ph = (data.peaks[i].coerceIn(0f, 1f) * h * 0.44f)
+                            .coerceAtLeast(2f)
+                        drawLine(col, Offset(x, h / 2 - ph), Offset(x, h / 2 + ph),
+                            strokeWidth = barW)
+                    }
+                    drawLine(Warn, Offset(startFrac * w, 0f), Offset(startFrac * w, h),
+                        strokeWidth = 3f)
+                    drawLine(Warn, Offset(endFrac * w, 0f), Offset(endFrac * w, h),
+                        strokeWidth = 3f)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("已选 %.1f 秒 / 共 %.1f 秒".format(
+                    selectedMs / 1000f, totalMs / 1000f), fontSize = 12.sp,
+                    color = palette.text)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onUse((totalMs * startFrac).toLong(), (totalMs * endFrac).toLong())
+            }) { Text("用这一段", fontSize = 13.sp, color = Primary) }
+        },
+        dismissButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    onTrial((totalMs * startFrac).toLong(),
+                        (totalMs * endFrac).toLong())
+                }) { Text("试听选中", fontSize = 13.sp, color = Primary) }
+                TextButton(onClick = onCancel) { Text("取消", fontSize = 13.sp) }
+            }
+        }
+    )
+}

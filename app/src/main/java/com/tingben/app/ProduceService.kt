@@ -2,6 +2,7 @@ package com.tingben.app
 
 import android.app.Notification
 import android.app.NotificationChannel
+import android.widget.RemoteViews
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -34,6 +35,9 @@ class ProduceService : Service() {
         @Volatile private var lastDone = 0
         @Volatile private var lastTotal = 0
         @Volatile private var lastStage = "准备中"
+        // R237 · 当前章进度早就在 update() 里传进来（给悬浮窗下球用），
+        // 只是通知没用。存一份给第二条进度条，Producer 链路一行不动。
+        @Volatile private var lastChapterPct = -1f
         @Volatile private var finished = false
         @Volatile private var foreground = false
 
@@ -95,6 +99,7 @@ class ProduceService : Service() {
             lastStage = stage
             lastDone = done
             lastTotal = total
+            lastChapterPct = chapterPct
             lastText = buildString {
                 if (lastBook.isNotBlank()) append("《").append(lastBook).append("》 · ")
                 append(stage)
@@ -168,8 +173,8 @@ class ProduceService : Service() {
                 val ctx = c.applicationContext
                 ensureChannel(ctx)
                 val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
-                nm.notify(NOTIF_ID, buildNotification(ctx, lastTitle, lastText,
-                    lastDone, lastTotal, final))
+                nm.notify(NOTIF_ID, buildNotification(ctx, lastTitle,
+                    lastDone, lastTotal, lastChapterPct, final))
             }
         }
     }
@@ -248,8 +253,8 @@ class ProduceService : Service() {
         runCatching {
             ensureChannel(this)
             getSystemService(NotificationManager::class.java)?.notify(
-                NOTIF_ID, buildNotification(this, lastTitle, lastText,
-                    lastDone, lastTotal, true))
+                NOTIF_ID, buildNotification(this, lastTitle,
+                    lastDone, lastTotal, lastChapterPct, true))
         }
         runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
         stopSelf()
@@ -269,7 +274,8 @@ class ProduceService : Service() {
     }
 
     private fun startForegroundCompat(title: String, text: String) {
-        val n = buildNotification(this, title, text, lastDone, lastTotal, finished)
+        val n = buildNotification(this, title, lastDone, lastTotal,
+            lastChapterPct, finished)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -297,7 +303,8 @@ private fun ensureChannel(c: Context) {
 }
 
 private fun buildNotification(
-    c: Context, title: String, text: String, done: Int, total: Int, final: Boolean
+    c: Context, title: String, done: Int, total: Int,
+    chapterPct: Float, final: Boolean
 ): Notification {
     val open = PendingIntent.getActivity(
         c, 0,
@@ -305,13 +312,24 @@ private fun buildNotification(
             Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra("open_tasks", true),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    // R237 · 两条进度条走自定义 RemoteViews，不要「整本 X% · 本章 Y%」这类文字。
+    // 上条 = 整本段进度 done/total；下条 = 当前章进度（update 早已算好）。
+    // DecoratedCustomViewStyle 只借系统装饰放标题与停止按钮，内容区完全自绘。
+    val rv = RemoteViews(c.packageName, com.tingben.app.R.layout.notif_two_bars)
+    val max = total.coerceAtLeast(1)
+    rv.setProgressBar(com.tingben.app.R.id.bar_book, max,
+        done.coerceIn(0, max), false)
+    rv.setProgressBar(com.tingben.app.R.id.bar_chapter, 100,
+        (chapterPct.coerceIn(0f, 1f) * 100f).toInt(), false)
     val b = Notification.Builder(c, "tingben_produce")
         .setContentTitle(title)
-        .setContentText(text)
         .setSmallIcon(com.tingben.app.R.mipmap.ic_launcher)
         .setOngoing(!final)
         .setOnlyAlertOnce(true)
         .setCategory(Notification.CATEGORY_PROGRESS)
+        .setStyle(Notification.DecoratedCustomViewStyle())
+        .setCustomContentView(rv)
+        .setCustomBigContentView(rv)
         // R176 · 原来 VISIBILITY_PUBLIC + 《书名》+ 进度文案，锁屏上谁都看得见
         // 你在做什么书；与「纯离线、allowBackup=false」的隐私口径冲突。
         // 改为 PRIVATE，并给一个不含书名/正文的公共版供锁屏显示。
@@ -323,7 +341,6 @@ private fun buildNotification(
                 .setSmallIcon(com.tingben.app.R.mipmap.ic_launcher)
                 .build())
         .setContentIntent(open)
-    if (total > 0) b.setProgress(total, done.coerceIn(0, total), false)
     if (!final) {
         val cancel = PendingIntent.getService(
             c, 1, ProduceService.cancelIntent(c),

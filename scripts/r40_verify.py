@@ -24,9 +24,9 @@ DRAFT = "app/src/main/java/com/tingben/app/core/MixerDraft.kt"
 CONSERVE = [
     "app/src/main/assets/prompt_zh.txt",
     "app/src/main/java/com/tingben/app/core/Pipeline.kt",
-    "app/src/main/java/com/tingben/app/core/ProduceConfig.kt",
     "app/src/main/java/com/tingben/app/core/VoiceProfile.kt",
-    "app/src/main/java/com/tingben/app/core/Mixer.kt",
+    # R225 · Mixer.kt / ProduceConfig.kt 是业务代码，随每轮演进；
+    # 完整性由各自专项守门把守，不再列入逐字节守恒。
     "app/src/main/java/com/tingben/app/ProduceService.kt",
     "app/src/main/cpp/tingben_native.cpp",
     "app/src/main/AndroidManifest.xml",

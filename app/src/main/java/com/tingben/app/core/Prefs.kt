@@ -79,6 +79,9 @@ object Prefs {
     private const val KEY_AUTO_RESUME = "autoResumeOnStart"
     // R161 · 可选悬浮进度控件，默认关。它不是保活手段，只让进度看得见。
     private const val KEY_OVERLAY_PROGRESS = "overlayProgress"
+    // R231 · 拼接偏好：按章自动拼成品 / 接缝淡入淡出时长
+    private const val KEY_MERGE_AUTO = "mergeAutoChapter"
+    private const val KEY_MERGE_DECLICK = "mergeDeclickMs"
 
     const val DEFAULT_TRIAL_TEXT = "雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。"
 
@@ -98,6 +101,15 @@ object Prefs {
     fun overlayProgress(c: Context) = sp(c).getBoolean(KEY_OVERLAY_PROGRESS, false)
     fun setOverlayProgress(c: Context, v: Boolean) =
         sp(c).edit().putBoolean(KEY_OVERLAY_PROGRESS, v).apply()
+
+    // R231 · 默认开：每章小块齐了就单独出一份这一章的音频。
+    // 存 Prefs 而非 ProduceConfig —— 改它不该让已做好的段换套归档。
+    fun autoMergeChapter(c: Context) = sp(c).getBoolean(KEY_MERGE_AUTO, true)
+    fun setAutoMergeChapter(c: Context, v: Boolean) =
+        sp(c).edit().putBoolean(KEY_MERGE_AUTO, v).apply()
+    fun mergeDeclickMs(c: Context) = sp(c).getInt(KEY_MERGE_DECLICK, 30).coerceIn(0, 60)
+    fun setMergeDeclickMs(c: Context, v: Int) =
+        sp(c).edit().putInt(KEY_MERGE_DECLICK, v.coerceIn(0, 60)).apply()
 
     fun nCtx(c: Context) = sp(c).getInt(KEY_NCTX, 4096)
     fun setNCtx(c: Context, v: Int) = sp(c).edit().putInt(KEY_NCTX, v).apply()

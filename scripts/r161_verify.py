@@ -47,7 +47,9 @@ ANCHORS = {
         "Producer.onServiceTimeout(applicationContext, fgsType)",
         "UiErrors.report(why)",
         "stopSelf()",
-        "buildNotification(this, lastTitle, lastText,\n                    lastDone, lastTotal, true)",
+        # R239 · R237 把通知改双进度条后删了 text 形参、加了 chapterPct，
+        # 这条还绑着拆分前的旧调用形态（恒红）。按现状迁移，判据不放宽。
+        "buildNotification(this, lastTitle,\n                    lastDone, lastTotal, lastChapterPct, true)",
         "return START_NOT_STICKY",
     ],
     "pipeline": [
@@ -173,7 +175,9 @@ def selftest():
          "Producer.onServiceTimeout(applicationContext, fgsType)",
          "Producer.stop()"),
         ("stopSelf 被摘", "service", "        stopSelf()\n", ""),
-        ("超时通知不收尾", "service", "lastDone, lastTotal, true", "lastDone, lastTotal, false"),
+        # R239 · 注入锚点也按 R237 现行形态迁移，否则替换打不到、恒不红（漏放）
+        ("超时通知不收尾", "service", "lastDone, lastTotal, lastChapterPct, true",
+         "lastDone, lastTotal, lastChapterPct, false"),
         ("Producer 出口被摘", "pipeline", "fun onServiceTimeout(c: Context, fgsType: Int)", ""),
         ("超时写成崩溃中断", "pipeline",
          'phase = "stopped", stage = "已达时长上限"',

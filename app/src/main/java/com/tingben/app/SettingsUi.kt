@@ -77,16 +77,12 @@ internal fun OverlayProgressRow(c: Context) {
         else Toast.makeText(c, "允许后回来，制作时就能看到悬浮进度",
                 Toast.LENGTH_LONG).show()
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("悬浮进度", fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold, color = palette.text)
-            Spacer(Modifier.height(2.dp))
-            Text(if (!on) "关闭" else if (!permOk) "还需允许「显示在其他应用上层」"
-                 else "制作时显示 · 停止即收起",
-                fontSize = 11.sp, color = if (on && !permOk) Warn else Sub)
-        }
-        Spacer(Modifier.width(8.dp))
+    // R239 · 统一行：缺「显示在其他应用上层」权限时整行染警示色，
+    // 不再只是副标题一小截灰字里藏着一句提示。
+    SettingLine("浮", "悬浮进度",
+        if (!on) "关闭" else if (!permOk) "还需允许「显示在其他应用上层」"
+        else "打开即显示预览 · 制作时自动更新 · 停止即收起",
+        danger = on && !permOk) {
         if (on && !permOk) {
             TextButton(onClick = { askPermission() }) {
                 Text("去允许 ›", fontSize = 12.sp, color = Primary)
@@ -97,6 +93,10 @@ internal fun OverlayProgressRow(c: Context) {
             Prefs.setOverlayProgress(c, it)
             if (!it) OverlayProgress.hide(c)
             else if (!permOk) askPermission()
+            else OverlayProgress.update(c, "", "预览", 0, 0, -1f)
+            // R230 · 真修「打开开关根本不理」：以前只有制作中 update 才创建浮窗，
+            // 开关打开后当前没在制作就毫无反应。现在权限齐了立刻挂一个 0% 单球预览，
+            // 制作开始时由 ProduceService.update 原地更新，停止/完成照旧 hide。
             EventLog.ui("OVERLAY_SETTING", "on=$it · perm=$permOk")
         })
     }
@@ -106,11 +106,7 @@ internal fun OverlayProgressRow(c: Context) {
 @Composable
 internal fun AutoResumeRow(c: Context) {
     var on by remember { mutableStateOf(Prefs.autoResumeOnStart(c)) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("打开软件自动续跑", fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold, color = palette.text,
-            modifier = Modifier.weight(1f))
-        Spacer(Modifier.width(8.dp))
+    SettingLine("续", "打开软件自动续跑", "回到软件时接着上次没做完的") {
         Switch(checked = on, onCheckedChange = {
             on = it
             Prefs.setAutoResumeOnStart(c, it)
@@ -122,13 +118,7 @@ internal fun AutoResumeRow(c: Context) {
 /** R171 · 「应用详情」是入口不是权限，原来复用 PermRow 会显示「已开启 · 查看」。 */
 @Composable
 internal fun PermEntryRow(title: String, hint: String, go: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(2.dp))
-            Text(hint, fontSize = 11.sp, color = Sub)
-        }
-        Spacer(Modifier.width(8.dp))
+    SettingLine(title.take(1), title, hint) {
         Button(onClick = go,
             modifier = Modifier.height(34.dp),
             shape = RoundedCornerShape(50),
@@ -136,7 +126,48 @@ internal fun PermEntryRow(title: String, hint: String, go: () -> Unit) {
             Text("打开 ›", fontSize = 12.sp)
         }
     }
-    Spacer(Modifier.height(8.dp))
+}
+
+/**
+ * R238 · 设置页统一行：借鉴 Material 3 Preference 的「前导图标 / 主标题 /
+ * 副标题 / 尾部控件」层级，用项目调色板自绘，不引图标库、不加依赖。
+ * 以前每行都手搓一遍 Column(weight) + Text + Spacer(2.dp) + 小字，
+ * 行高与左右对齐全靠运气；现在所有行等高、副标题可省、危险项单独色。
+ */
+@Composable
+internal fun SettingLine(
+    mark: String,
+    title: String,
+    hint: String = "",
+    danger: Boolean = false,
+    trailing: @Composable RowScope.() -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(32.dp)
+                .background(if (danger) Warn.copy(alpha = 0.14f) else PrimarySoft,
+                    RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(mark, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                color = if (danger) Warn else Primary)
+        }
+        Spacer(Modifier.width(11.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                color = if (danger) Warn else palette.text)
+            if (hint.isNotEmpty()) {
+                Spacer(Modifier.height(2.dp))
+                Text(hint, fontSize = 11.sp, color = Sub, maxLines = 2,
+                    overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) { trailing() }
+    }
 }
 
 @Composable
@@ -187,13 +218,7 @@ internal fun SettingsSection(
 @Composable
 internal fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Unit) {
     val goodFg = if (appThemeDark) Color(0xFF0E1117) else Color(0xFFFFFFFF)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(2.dp))
-            Text(hint, fontSize = 11.sp, color = Sub)
-        }
-        Spacer(Modifier.width(8.dp))
+    SettingLine(title.take(1), title, hint) {
         Button(onClick = go,
             modifier = Modifier.height(34.dp),
             shape = RoundedCornerShape(50),
@@ -204,7 +229,6 @@ internal fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Un
             Text(if (granted) "已开启 · 查看" else "去开启", fontSize = 12.sp)
         }
     }
-    Spacer(Modifier.height(8.dp))
 }
 
 @Composable
@@ -300,16 +324,17 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                      else "还差：" + missing.joinToString("、"),
                     fontSize = 12.sp, color = Sub)
                 Spacer(Modifier.height(6.dp))
-                Text("软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME +
-                     " · 本机 Android " + android.os.Build.VERSION.RELEASE +
-                     " / " + (android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: ""),
+                // R238 · 设备型号 / ABI 是诊断日志的内容（r141 仍在那里守），
+                // 摆到设置首页只是调试噪声；这里只留软件版本。
+                Text("软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME,
                     fontSize = 11.sp, color = Sub)
             }
         }
 
         SettingsSection("外观与显示", "软件", collapsible = false) {
-            Text("主题", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(7.dp))
+            // R239 · 主题是三段选择器，不是「一行 + 尾部控件」；但标题行也走
+            // SettingLine 的徽标槽，和下面「悬浮进度」左右对齐，trailing 留空。
+            SettingLine("主", "主题", "外观基调") { }
             Row(Modifier.fillMaxWidth()
                 .background(PrimarySoft, RoundedCornerShape(10.dp))
                 .padding(3.dp)) {
@@ -330,30 +355,19 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
             OverlayProgressRow(c)
         }
 
-        SettingsSection("本机数据", "本机", collapsible = false) {
-            // R171 · 开发日志不是「本机数据」，移到默认收起的「开发者工具」。
-            ClearSegmentsRow(c)
-        }
         // R171 · 合并「启动行为」与「通知与权限」：原来一个开关独占一张卡，
         // 另一张卡只有一行，都是把设置页拉得又长又碎的根因。
         SettingsSection("运行与通知", "系统", collapsible = false) {
             AutoResumeRow(c)
-            Spacer(Modifier.height(8.dp))
             // R165 · 原来写死「去开启」，权限已经给了还是这句。按真实状态复检，
             // 回前台（permTick）就刷新；已给换绿底，和下面两行权限同一口径。
             val notifOk = remember(permTick) { NotifPerm.granted(c) }
             val goodFg = if (appThemeDark) Color(0xFF0E1117) else Color(0xFFFFFFFF)
-            Row(Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("通知权限", fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold)
-                }
-                Spacer(Modifier.width(8.dp))
+            SettingLine("铃", "通知权限",
+                if (notifOk) "已允许，制作与播放进度会显示在通知栏" else "还没允许，点右边去开启") {
                 Button(onClick = {
                         try {
                             val i = android.content.Intent(
@@ -378,7 +392,6 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             // 现在系统类归到这一张，少一段空白、少一个重复分组。
             // R158b · 用户明确「教程不要塞进应用里」：长说明、图文步骤、
             // 箭头流程全部撤掉，只留按钮 + 状态。说明放沙盒方案文档，不进 APK。
-            Spacer(Modifier.height(10.dp))
             PermRow("忽略电池优化", batOk, "后台限制") {
                 if (!KeepAlive.requestIgnoreBattery(c))
                     Toast.makeText(c, "打不开设置页，请手动到应用详情里找",
@@ -440,19 +453,12 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 }
             }
         }
-        SettingsSection("成品文件", "本机", collapsible = false) {
-            // R156 · 用户目标方案：「音频管理没必要了，设置里加个入口指向音频目录，
-            // 点一下用系统文件管理器进去」。查证：成品在 filesDir/audio（App 私有），
-            // 没有存储权限也没有 DocumentsProvider，文件管理器进不去。
-            // 所以给的是「导出到你自己选的目录」，不是「打开私有目录」。
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("导出位置", fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(2.dp))
-                    Text(expTreeLabel, fontSize = 11.sp, color = Sub)
-                }
-                Spacer(Modifier.width(8.dp))
+        // R238 · 「本机数据」只放一行、「成品文件」又一张卡，两张都标「本机」，
+        // 正是 R174 修过的同类碎片。合并成一张，行全部走 SettingLine 统一层级。
+        SettingsSection("文件与数据", "本机", collapsible = false) {
+            ClearSegmentsRow(c)
+            Spacer(Modifier.height(2.dp))
+            SettingLine("导", "导出位置", expTreeLabel) {
                 Button(onClick = {
                         try { treeLauncher.launch(AudioExport.treeUri(c)) }
                         catch (_: Throwable) {
@@ -465,13 +471,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Text("选择", fontSize = 12.sp)
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("已做好 $expCount 个整章成品", fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold)
-                }
-                Spacer(Modifier.width(8.dp))
+            SettingLine("成", "已做好 $expCount 个整章成品", "平铺导出到你选的文件夹") {
                 Button(enabled = expCount > 0, onClick = {
                         val tree = AudioExport.treeUri(c)
                         if (tree == null) {

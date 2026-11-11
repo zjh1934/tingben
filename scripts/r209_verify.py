@@ -19,7 +19,11 @@ SCRIPTS = ROOT / "scripts"
 SELF = SCRIPTS / "r209_verify.py"
 
 def files():
+    import sys
+    sys.path.insert(0, str(SCRIPTS))
+    import ui_sources
     return {
+        "merged": ui_sources.read(ROOT),
         "hub": (APP / "ChapterHub.kt").read_text(encoding="utf-8", errors="replace"),
         "ui": (APP / "core/UiErrors.kt").read_text(encoding="utf-8", errors="replace"),
         "plan": (APP / "core/ChapterPlan.kt").read_text(encoding="utf-8", errors="replace"),
@@ -33,18 +37,21 @@ def files():
 def check(f):
     e = []
     # A · 收尾窗口内必须给用户反馈，不许静默调 onResumeTask
-    if "Producer.isBusyForBook(book.id)" not in f["hub"]:
+    # R226 · 收尾判断随三按钮上移 App 层，统一在合并视图里按符号定位
+    if "Producer.isBusyForBook(" not in f["merged"]:
         e.append("续跑按钮没收尾窗口判断")
-    if "HUB_RESUME_BLOCKED" not in f["hub"]:
+    if "HUB_RESUME_BLOCKED" not in f["merged"]:
         e.append("被拦时没记账")
-    if "稍等再继续" not in f["hub"]:
-        e.append("被拦时没给用户中文反馈")
     if re.search(r'if \(busy\) return', f["producer"]) is None:
         e.append("Producer.start 的静默早退没了（前置判断才成立）")
     # A 的顺序：判断必须在 onResumeTask() 之前
-    i, j = f["hub"].find("Producer.isBusyForBook(book.id)"), f["hub"].find("onResumeTask()")
+    k = f["merged"].find("fun hubResume()")
+    block = f["merged"][k:k + 900] if k >= 0 else ""
+    i, j = block.find("Producer.isBusyForBook("), block.find("onResumeTask()")
     if i < 0 or j < 0 or i > j:
         e.append("收尾判断没排在续跑之前")
+    if "稍等再继续" not in block:
+        e.append("被拦时没给用户中文反馈")
     # B · UI 提示不是崩溃，但全量错误汇总仍捞得到
     if "EventLog.Kind.AUDIT" not in f["ui"]:
         e.append("UiErrors 没改成 AUDIT 类")
@@ -71,9 +78,11 @@ def selftest():
     f = files()
     assert not check(f), "基线自己就红了"
     cuts = [
-        ("收尾判断被摘", "hub", "Producer.isBusyForBook(book.id)", "true"),
-        ("被拦不记账", "hub", "HUB_RESUME_BLOCKED", "HUB_RESUME"),
-        ("被拦不给反馈", "hub", "稍等再继续", ""),
+        ("收尾判断被摘", "merged", "bookId?.let { Producer.isBusyForBook(it) }", "true"),
+        ("被拦不记账", "merged", "HUB_RESUME_BLOCKED", "HUB_RESUME"),
+        ("被拦不给反馈", "merged",
+         '                Toast.makeText(ctx, "已点停止，正在收尾这一段，稍等再继续"',
+         '                Toast.makeText(ctx, "已点停止，正在收尾这一段"'),
         ("UI 错误又记成崩溃", "ui", "EventLog.Kind.AUDIT", "EventLog.Kind.CRASH"),
         ("UI 错误丢了 ERROR 级", "ui", "level = EventLog.Level.ERROR", ""),
         ("错误汇总不按 ERROR 捞", "log", '" | ERROR | "', '" | NOPE | "'),

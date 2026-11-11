@@ -34,6 +34,7 @@ def files():
 def check(f):
     e = []
     hb, sp, cfg, pr, rs = f["hub"], f["split"], f["cfg"], f["producer"], f["resume"]
+    mg = f["merged"]
     # ① 细切与代际防串
     for k in ["const val TARGET_CHARS = 110", "const val SOFT_CAP = 260",
               "const val SPLIT_EPOCH = 3"]:
@@ -63,14 +64,15 @@ def check(f):
         if k in hb: e.append("废话回潮: " + k[:44])
     if hb.count("trackColor = HubLine") < 2:
         e.append("两条进度条底色不全")
-    # ③ 顶栏三按钮
-    for k in ["horizontalArrangement = Arrangement.End",
-              'Text("停止", fontSize = 12.sp, color = HubWarn)',
-              'Text("继续", fontSize = 12.sp, color = HubPrimary)',
-              'Text("任务", fontSize = 12.sp, color = HubPrimary)',
-              'Text("⚙", fontSize = 16.sp, color = HubPrimary)',
-              "fun hubStop()", "fun hubResume()"]:
-        if k not in hb: e.append("顶栏缺: " + k[:56])
+    # ③ R226 · 三按钮上移系统顶栏，与书名同一排；按符号定位、不绑颜色常量
+    for k in ["trailing = when (screen)",
+              'TextButton(onClick = { hubStop() }',
+              'TextButton(onClick = { hubResume() }',
+              'hubTasksTick++',
+              'IconButton(onClick = { nav.push(Screen.PRODUCE) }',
+              "fun hubStop()", "fun hubResume()",
+              "tasksRequest = hubTasksTick"]:
+        if k not in mg: e.append("顶栏缺: " + k[:56])
     # ④ 空章不展开 / 左侧勾 / 零留白
     for k in ["val generated = segsHere.any { it.hasAudio }",
               "if (generated || making) {",
@@ -102,9 +104,9 @@ def selftest():
         ("列表没接 state", "hub", "state = chapterListState", ""),
         ("进度条底色被摘", "hub", "trackColor = HubLine", ""),
         ("条上不写已完成", "hub", '"已完成 ${(bookPct * 100).toInt()}%"', ""),
-        ("废话回潮", "hub", "fun hubStop()", 'Text("可播 3/10 章")'),
-        ("顶栏按钮不齐", "hub", "horizontalArrangement = Arrangement.End", ""),
-        ("停止按钮被摘", "hub", 'Text("停止", fontSize = 12.sp, color = HubWarn)', ""),
+        ("废话回潮", "merged", "fun hubStop()", 'Text("可播 3/10 章")'),
+        ("顶栏按钮不齐", "merged", "trailing = when (screen)", ""),
+        ("停止按钮被摘", "merged", 'TextButton(onClick = { hubStop() }', ""),
         ("空章又弹块", "hub", "if (generated || making) {", "if (true) {"),
         ("左侧勾被摘", "hub", "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }", ""),
         ("点勾不进多选", "hub", "multiMode = next.isNotEmpty()", ""),

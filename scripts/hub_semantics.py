@@ -40,7 +40,6 @@ HUB_POS = [
     "BackHandler(enabled = segMulti) { exitSegMulti() }",
     "if (multiMode) {",
     # R171 · 任务看板就地看，不切独立任务页
-    'EventLog.ui("HUB_TASKS"',
     "TaskBoardDialog(",
     "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
     # 勾选框只在多选态：ChapterRow 里 if (multi) 分支
@@ -74,12 +73,9 @@ HUB_POS = [
     "confirmSegDel?.let",
     "AudioTree.forget(c,",
     "AudioOps.deleteAll(files)",
-    # 顶部：双进度 + 停止/继续 + 心跳
+    # 顶部：双进度 + 心跳（R226 · 停止/继续已上移系统顶栏，由 MAIN_POS 守）
     "LinearProgressIndicator(progress = { bookPct }",
     "LinearProgressIndicator(progress = { chapterPctNow }",
-    'EventLog.ui("HUB_STOP", "book=${book.id}")',
-    'EventLog.ui("HUB_RESUME", "book=${book.id}")',
-    "fun hubStop()",
     # 可播汇总 / 顺序播放 / 队列就地管理
     "\"按顺序播放\"",
     "AudioLibrary.playableItems(c, book.id)",
@@ -123,6 +119,17 @@ MAIN_POS = [
     "fun openBook(id: String?)",
     "nav.push(Screen.CHAPTERS)",
     'EventLog.ui("OPEN_BOOK"',
+    # R226 · 三枚操作上移系统顶栏，与书名同一排：判据按符号、不绑颜色常量
+    "trailing = when (screen)",
+    'Text("停止", fontSize = 12.sp',
+    'Text("继续", fontSize = 12.sp',
+    'Text("任务", fontSize = 12.sp',
+    'Text("⚙", fontSize = 16.sp',
+    'EventLog.ui("HUB_STOP"',
+    'EventLog.ui("HUB_RESUME"',
+    'EventLog.ui("HUB_TASKS"',
+    "fun hubStop()", "fun hubResume()",
+    "tasksRequest = hubTasksTick",
 ]
 MAIN_BAN = ["openBookCol", "hubCol", "initialCol ="]
 

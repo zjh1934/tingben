@@ -35,7 +35,6 @@ HUB_MUST = [
     "BackHandler(enabled = showTasks) { showTasks = false }",
     "if (multiMode) {",
     # 任务看板就地：与独立任务页同源，不另造状态口径
-    'EventLog.ui("HUB_TASKS"',
     "TaskBoardDialog(",
     "TaskResume.list(c)",
     "TaskResume.realProgress(c, it)",
@@ -56,6 +55,8 @@ HUB_BAN = [
 ]
 
 MAIN_MUST = [
+    # R226 · 顶栏「任务」入口上移 App 层
+    'EventLog.ui("HUB_TASKS"',
     'placeholder = { Text("粘贴或输入要念的正文", fontSize = 12.sp) }',
     'SettingsSection("开发者工具", "排查", open = devOpen,',
     "var devOpen by remember { mutableStateOf(false) }",
@@ -74,8 +75,9 @@ MAIN_BAN = [
     'SettingsSection("通知与权限"',
 ]
 
-MULTI_MUST = ['Text("取消"', 'EventLog.ui("MULTI_CANCEL_BAR"',
-              "IconClose(palette.sub"]
+# R224 · 取消从「文字 + 小图标」换成有底色的 ActionChip
+MULTI_MUST = ['ActionChip("取消"', 'EventLog.ui("MULTI_CANCEL_BAR"',
+              "internal fun ActionChip("]
 
 
 def sources():
@@ -119,7 +121,7 @@ def selftest():
             "        if (multiMode) {", "        if (multiMode && selected.isNotEmpty()) {")),
         ("任务看板被摘", "hub", lambda t: t.replace("TaskBoardDialog(", "NoBoard(")),
         ("看板不走同源数据", "hub", lambda t: t.replace("TaskResume.list(c)", "emptyList()")),
-        ("取消文字被摘", "multi", lambda t: t.replace('Text("取消"', 'Text("×"')),
+        ("取消按钮被摘", "multi", lambda t: t.replace('ActionChip("取消"', 'Text("×"')),
         ("首页废话回潮", "main", lambda t: t.replace(
             "private enum class Screen {", 'Text("建好的书在左上角 ☰ 里", fontSize = 11.sp)\nprivate enum class Screen {')),
         ("开发者工具默认展开", "main", lambda t: t.replace(

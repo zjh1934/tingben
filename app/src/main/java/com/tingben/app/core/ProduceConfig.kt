@@ -1,5 +1,6 @@
 package com.tingben.app.core
 
+import com.tingben.app.diag.EventLog
 import org.json.JSONObject
 
 // R221 · 三个枚举停用：不再拼进 instruct。留着只为读旧任务 JSON /
@@ -44,6 +45,10 @@ data class ProduceConfig(
     // R221 · 日志里也不再显示已停用的三档
     fun summary(): String = "段间静音 ${gapMs}ms · 失败重做 $gateRetries 次" +
             (if (extraInstruct.isBlank()) "" else " · 附加语气：${extraInstruct.trim()}")
+
+    /** R225 · 日志专用：自填附加语气只留长度与短哈希，原文不落盘。 */
+    fun summarySafe(): String = "段间静音 ${gapMs}ms · 失败重做 $gateRetries 次" +
+            " · 附加语气=${EventLog.safe(extraInstruct)}"
 
     fun toJson(): JSONObject = JSONObject()
         .put("schema", SCHEMA)

@@ -61,7 +61,8 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'LazyColumn(Modifier.fillMaxSize(),' not in hub or 'pageCount = { 3 }' in hub:
         e.append('目录页不是单列 / 三列分页回潮')
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
-    for s in ['Text("合成音频"', 'Text("调音 ›"', 'onMixer: () -> Unit']:
+    # R224 · 勾选动作改成有底色的 ActionChip，不再是一排平铺的字
+    for s in ['ActionChip("合成音频"', 'ActionChip("调音 ›"', 'onMixer: () -> Unit']:
         if s not in hub: e.append('目录页缺: ' + s)
     # R195 · 四步进度条只在已删的独立进度页里；G2b 后进度做进目录页
     # （st.done/total + 心跳），这条死代码专属守恒项退役。

@@ -22,10 +22,13 @@
 import pathlib
 import re
 import sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import ui_sources
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
+    "main": ui_sources.source(APP),
     "hub": APP / "ChapterHub.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts" / "r135_verify.py",
@@ -33,6 +36,11 @@ FILES = {
 }
 
 POS = {
+    # R226 · 停止/继续已上移系统顶栏，按符号在合并视图里守
+    "main": [
+        'EventLog.ui("HUB_STOP"', 'EventLog.ui("HUB_RESUME"',
+        "Producer.stop()", "onResumeTask()",
+    ],
     "hub": [
         "var expandedChapter by remember(book.id)",
         "var hubSegs by remember(book.id)",
@@ -45,8 +53,6 @@ POS = {
         "val bookPct =", "val chPct =",
         "LinearProgressIndicator(progress = { bookPct }",
         "LinearProgressIndicator(progress = { chapterPctNow }",
-        'EventLog.ui("HUB_STOP"', 'EventLog.ui("HUB_RESUME"',
-        "Producer.stop()", "onResumeTask()",
         "整体 ${(bookPct * 100).toInt()}%",
         "onRead: () -> Unit,",
         "row: List<SegRow>, pq: PlaybackState,",
@@ -193,9 +199,9 @@ def selftest():
         ("试听状态被摘", "hub", "val pqSeg by PlayQueue.previewState.collectAsState()", ""),
         ("整本进度条被摘", "hub", "LinearProgressIndicator(progress = { bookPct }", ""),
         ("章节进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
-        ("停止按钮被摘", "hub", 'EventLog.ui("HUB_STOP"', ""),
-        ("停止动作被摘", "hub", "Producer.stop()", ""),
-        ("继续按钮被摘", "hub", 'EventLog.ui("HUB_RESUME"', ""),
+        ("停止按钮被摘", "main", 'EventLog.ui("HUB_STOP"', ""),
+        ("停止动作被摘", "main", "Producer.stop()", ""),
+        ("继续按钮被摘", "main", 'EventLog.ui("HUB_RESUME"', ""),
         ("点章展开被摘", "hub", "onRead = { openReader(r.index) }", "onTap = { onRead(r.index) }"),
         ("阅读入口被摘", "hub", "IconButton(onClick = onListen", ""),
         ("展开格组件被摘", "hub", "private fun ChapterSegGrid(", ""),

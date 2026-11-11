@@ -1,6 +1,7 @@
 package com.tingben.app.core
 
 import android.content.Context
+import android.net.Uri
 import com.tingben.app.diag.EventLog
 import java.io.File
 import java.nio.ByteBuffer
@@ -13,6 +14,17 @@ object VoiceRef {
 
     fun file(c: Context): File = File(c.filesDir, NAME)
     fun exists(c: Context): Boolean = file(c).isFile && file(c).length() > 44
+
+    /**
+     * R234 · 从系统文件选择器进来的任意格式（mp3 / m4a / aac / ogg / wav）
+     * 先过平台内置解码底座，再复用 save() 的全部校验与原子落盘。
+     * startMs / endMs 留给波形裁剪 UI 拖选；这一批先全段导入。
+     */
+    fun saveFromUri(c: Context, uri: Uri, startMs: Long = 0, endMs: Long = -1): DecodedAudio {
+        val d = AudioDecode.decode(c, uri, startMs, endMs)
+        save(c, d.wav)
+        return d
+    }
 
     fun save(c: Context, bytes: ByteArray) {
         if (bytes.size < 44) throw IllegalStateException("这个文件太短，不像一段 WAV 录音")

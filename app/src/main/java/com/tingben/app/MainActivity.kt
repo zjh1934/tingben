@@ -175,8 +175,6 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var miniBook by rememberSaveable { mutableStateOf<String?>(null) }
     var lastSelection by rememberSaveable { mutableStateOf<Set<Int>?>(null) }
     var refresh by rememberSaveable { mutableStateOf(0) }
-    // R217 · 悬浮窗开关状态提升到 App 层，首页与设置页共用同一份真值
-    var overlayOn by remember { mutableStateOf(Prefs.overlayProgress(ctx)) }
     // R180 · 新装用户打开软件第一眼就该知道「还差模型」，而不是等点合成才撞墙。
     // 只给状态 + 一个能按的入口，不写教程（用户硬口径）；模型齐了整行自动消失。
     val modelMissing = remember(refresh) { ModelStore.missing(ctx).size }
@@ -301,7 +299,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             "book=${p.task.title} action=${p.action} auto=$auto phase=${p.task.phase}")
         if (auto && p.action == Producer.ResumeAction.AUTO) {
             resumeDecided = true
-            EventLog.ui("RESUME_AUTO", "book=${p.task.title}")
+            EventLog.ui("RESUME_AUTO", "id=${p.task.bookId.take(8)} · title=${EventLog.safe(p.task.title)}")
             val hint = Producer.autoResume(ctx)
             if (hint != null) Toast.makeText(ctx, hint, Toast.LENGTH_LONG).show()
         } else {
@@ -553,14 +551,57 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val chrome = chromeOf(screen)
     val shownChrome = if (screen == Screen.CHAPTERS)
         chrome.copy(title = chapterBookTitle) else chrome
+    // R226 · 目录页三枚操作上移到系统顶栏，与书名同一排右侧；
+    // 状态在 App 层按同一份 Producer/TaskResume 真值算，ChapterHub 不再单独占一排。
+    val hubProd by Producer.state.collectAsState()
+    val hubTask = remember(refresh, hubProd.running, hubProd.stage) { TaskResume.active(ctx) }
+    val hubRunning = hubProd.running && hubTask?.bookId == bookId
+    val hubStalled = !hubProd.running && hubTask?.bookId == bookId &&
+        hubProd.stage in listOf("没完成", "已停止", "出错了")
+    var hubTasksTick by rememberSaveable { mutableStateOf(0) }
+    var lastHubTapMs by remember { mutableStateOf(0L) }
+    fun hubStop() {
+        val now = System.currentTimeMillis()
+        if (now - lastHubTapMs >= 800L) {
+            lastHubTapMs = now
+            EventLog.ui("HUB_STOP", "id=${bookId?.take(8)}")
+            Producer.stop()
+        }
+    }
+    fun onResumeTask() {
+        bookId?.let { id -> TaskResume.byBook(ctx, id)?.let { resumeTask(it) } }
+    }
+    fun hubResume() {
+        val now = System.currentTimeMillis()
+        if (now - lastHubTapMs >= 800L) {
+            lastHubTapMs = now
+            if (bookId?.let { Producer.isBusyForBook(it) } == true) {
+                EventLog.ui("HUB_RESUME_BLOCKED", "id=${bookId?.take(8)} reason=收尾中")
+                Toast.makeText(ctx, "已点停止，正在收尾这一段，稍等再继续",
+                    Toast.LENGTH_SHORT).show()
+            } else {
+                EventLog.ui("HUB_RESUME", "id=${bookId?.take(8)}")
+                onResumeTask()
+            }
+        }
+    }
+    // R224 · 左滑开书架抽屉只在软件主页生效；进到书里/设置页不再被边缘手势误触
     DismissibleNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = true,
+        gesturesEnabled = screen == Screen.LIBRARY,
         drawerContent = {
             AppDrawerSheet(
                 title = "我的书",
                 onImport = {
                     openBookPicker()
+                    scope.launch { drawerState.close() }
+                },
+                // R230 · 设置从主页右上角齿轮收进抽屉左下角
+                onSettings = {
+                    EventLog.ui("DRAWER_SETTINGS", "open")
+                    modelsFrom = Screen.LIBRARY
+                    nav.push(Screen.SETTINGS)
+                    refresh++
                     scope.launch { drawerState.close() }
                 },
                 surface = Card,
@@ -585,6 +626,12 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     ) {
         Box(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
         Column(Modifier.fillMaxSize()) {
+            // R230 · 首页两枚入口（调音常驻、任务有活才亮）与目录页三枚
+            // 共用系统顶栏书名右侧同一排；主页右上角不再有 ＋/齿轮/悬浮开关。
+            val homeHasTask = remember(refresh, bookImporting) {
+                (TaskResume.active(ctx)?.takeIf { it.phase != "done" } != null) ||
+                    TaskResume.queue(ctx).isNotEmpty()
+            }
         AppTopBar(
             spec = shownChrome,
             onMenu = {
@@ -600,7 +647,52 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             },
             surface = Card,
             primary = Primary,
-            onBack = if (chrome.canBack) backAction else null
+            onBack = if (chrome.canBack) backAction else null,
+            trailing = when (screen) {
+                Screen.LIBRARY -> {
+                    {
+                        TextButton(onClick = { chapterMixerOpen = true
+                            EventLog.ui("OVERLAY_MIXER", "open:home") }) {
+                            Text("调音", fontSize = 12.sp, color = Primary)
+                        }
+                        TextButton(onClick = {
+                            // 首页没「当前书」：有任务就打开那本书并就地展开看板
+                            TaskResume.active(ctx)?.bookId?.let {
+                                openBook(it); hubOpenTasks = true
+                            }
+                        }, enabled = homeHasTask) {
+                            Text("任务", fontSize = 12.sp,
+                                color = if (homeHasTask) Primary else Sub)
+                        }
+                    }
+                }
+                Screen.CHAPTERS -> {
+                {
+                    if (hubRunning) {
+                        TextButton(onClick = { hubStop() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                            Text("停止", fontSize = 12.sp, color = Warn)
+                        }
+                    } else if (hubStalled) {
+                        TextButton(onClick = { hubResume() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                            Text("继续", fontSize = 12.sp, color = Primary)
+                        }
+                    }
+                    TextButton(onClick = {
+                        EventLog.ui("HUB_TASKS", "id=${bookId?.take(8)}")
+                        hubTasksTick++
+                    }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                        Text("任务", fontSize = 12.sp, color = Primary)
+                    }
+                    IconButton(onClick = { nav.push(Screen.PRODUCE) },
+                        modifier = Modifier.size(34.dp)) {
+                        Text("⚙", fontSize = 16.sp, color = Primary)
+                    }
+                }
+                }
+                else -> { {} }
+            }
         )
         Box(Modifier.weight(1f)) {
             when (screen) {
@@ -611,36 +703,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     asHome = true,
                     importingBook = bookImporting,
                     modelMissing = modelMissing,
-                    onModels = { modelsFrom = Screen.LIBRARY; nav.push(Screen.MODELS) },
-                    onMixer = { chapterMixerOpen = true
-                        EventLog.ui("OVERLAY_MIXER", "open:home") },
-                    onTasks = {
-                        // 首页没「当前书」：有任务就打开那本书并就地展开看板
-                        TaskResume.active(ctx)?.bookId?.let {
-                            openBook(it); hubOpenTasks = true
-                        }
-                    },
-                    hasTask = remember(refresh, bookImporting) {
-                        (TaskResume.active(ctx)?.takeIf { it.phase != "done" } != null) ||
-                            TaskResume.queue(ctx).isNotEmpty()
-                    },
-                    overlayOn = overlayOn,
-                    onOverlayToggle = {
-                        val next = !overlayOn
-                        Prefs.setOverlayProgress(ctx, next)
-                        overlayOn = next
-                        if (!next) OverlayProgress.hide(ctx)
-                        else if (!KeepAlive.overlayGranted(ctx)) {
-                            if (!KeepAlive.requestOverlay(ctx))
-                                Toast.makeText(ctx,
-                                    "打不开设置页，请到应用详情里开「显示在其他应用上层」",
-                                    Toast.LENGTH_LONG).show()
-                            else Toast.makeText(ctx,
-                                "允许后回来，制作时就能看到悬浮进度",
-                                Toast.LENGTH_LONG).show()
-                        }
-                        EventLog.ui("OVERLAY_SETTING", "on=$next · from=home")
-                    })
+                    onModels = { modelsFrom = Screen.LIBRARY; nav.push(Screen.MODELS) })
                 Screen.CHAPTERS -> {
                     ChapterHubScreen(ctx, bookId, refresh,
                         onBack = { nav.pop() },
@@ -659,6 +722,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         },
                         openTasksOnStart = hubOpenTasks,
                         resplitRequest = resplitTick,
+                        tasksRequest = hubTasksTick,
                         onOpenModels = {
                             modelsFrom = Screen.CHAPTERS
                             nav.push(Screen.MODELS)
@@ -744,14 +808,14 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     }
                 },
                 onView = {
-                    EventLog.ui("RESUME_ASK_VIEW", "book=${p.task.title}")
+                    EventLog.ui("RESUME_ASK_VIEW", "id=${p.task.bookId.take(8)}")
                     resumeAsk = null
                     resumeDecided = true
                     screen = Screen.TASKS
                     nav.clear()
                 },
                 onLater = {
-                    EventLog.ui("RESUME_ASK_LATER", "book=${p.task.title}")
+                    EventLog.ui("RESUME_ASK_LATER", "id=${p.task.bookId.take(8)}")
                     resumeAsk = null
                     resumeDecided = true
                 }

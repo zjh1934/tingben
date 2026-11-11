@@ -9,6 +9,7 @@ import com.tingben.app.core.PlayQueue
 import com.tingben.app.core.Prefs
 import com.tingben.app.core.Producer
 import com.tingben.app.core.TaskResume
+import com.tingben.app.core.sha
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
@@ -37,6 +38,14 @@ object EventLog {
     /** UI 交互专用入口：页面/浮层/勾选/播放器这类「用户做了什么」。 */
     fun ui(action: String, detail: String = "", fields: Map<String, String> = emptyMap()) =
         log(Kind.UI, action, detail, fields = fields)
+
+    /**
+     * R225 · 用户内容不进日志：书名、音色描述、书正文、自填附加语气都只留
+     * 「长度 + 短哈希」。排查要的是「哪本书、多长、哪次改动、有没有变」，
+     * 不是原文；短哈希能跨会话比对同一份内容，又不还原出文字。
+     */
+    fun safe(s: String?): String =
+        if (s.isNullOrEmpty()) "空" else "len=${s.length} h=${sha(s).take(8)}"
     private const val RING_MAX = 200
 
     fun lastEngine(): Pair<String, String> = lastEngineAction to lastEngineDetail
@@ -185,7 +194,7 @@ object EventLog {
      * exportSummary：环境 + 快照 + 最近 120 行事件，给「一键复制」用，
      * 控制体积，避免大文本把剪贴板塞爆。
      *
-     * 隐私：TTS_INPUT / BOOK_IMPORT 等事件带书名与正文片段，文本头部明确提示。
+     * 隐私（R225）：书名/正文/音色描述原文一律不落盘，只留长度与短哈希。
      * 软件无 INTERNET 权限，日志不会自己离开设备。
      */
     private fun envBlock(c: Context): String {
@@ -209,7 +218,7 @@ object EventLog {
             append("- 书架: `${safe { BookStore.list(c).size }}` 本\n")
             append("- 当前任务: `${safe {
                 val t = TaskResume.active(c)
-                if (t == null) "无" else "${t.title} · ${t.phase} · ${t.done}/${t.total} · 规则 ${t.splitRule}"
+                if (t == null) "无" else "${safe(t.title)} · ${t.phase} · ${t.done}/${t.total} · 规则 ${t.splitRule}"
             }}`\n")
             append("- 队列: `${safe { TaskResume.queueSize(c) }}` 项 · 暂停=`${safe { TaskResume.queuePaused(c) }}`\n")
             append("- 成品音频: `${safe { AudioLibrary.list(c).size }}` 条\n")
@@ -235,7 +244,7 @@ object EventLog {
     private fun header(): String =
         "# 听本 · 开发诊断日志\n\n" +
             "> 这份日志是**给开发者排查用的**，不是给使用者看的。\n" +
-            "> 可能含书名与正文片段，贴出去前自行确认；软件无 INTERNET 权限，日志不会自己离开设备。\n\n"
+            "> R225 起日志不含书名/正文/音色描述原文（只留长度与短哈希）；软件无 INTERNET 权限，日志不会自己离开设备。\n\n"
 
     /**
      * R161 · API 30+ 的 ApplicationExitInfo：进程上次是被谁干掉的。
@@ -321,7 +330,7 @@ object EventLog {
     /** 一键复制用：关键状态 + 最近事件，控制体积。 */
     fun exportSummary(c: Context): String = buildString {
         append("# 听本 · 诊断摘要\n\n")
-        append("> 给开发者排查用，可能含书名与正文片段。完整日志在设置页导出 .md。\n\n")
+        append("> 给开发者排查用，不含书名/正文/音色描述原文（R225 起只留长度与短哈希）。完整日志在设置页导出 .md。\n\n")
         append("## 环境\n\n").append(envBlock(c)).append("\n")
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")
         append("## 进程退出原因（系统记录）\n\n").append(exitReasonsBlock(c)).append("\n")

@@ -60,12 +60,9 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                             importingBook: Boolean = false,
                             modelMissing: Int = 0,
                             onModels: () -> Unit = {},
-                            onMixer: () -> Unit = {},
-                            onTasks: () -> Unit = {},
-                            hasTask: Boolean = false,
-                            // R217 · 悬浮窗开关摆到首页右上角，不用翻设置页
-                            overlayOn: Boolean = false,
-                            onOverlayToggle: () -> Unit = {}) {
+                            // R230 · 调音/任务上移系统顶栏、悬浮开关收回设置页，
+                            // 首页内容区不再单独占一排按钮。
+                           ) {
     val clipboard = LocalClipboardManager.current
     val inputScope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
@@ -94,24 +91,6 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                     color = Warn, modifier = Modifier.weight(1f))
                 TextButton(onClick = onModels) {
                     Text("去导入 ›", fontSize = 12.sp, color = Primary)
-                }
-            }
-        }
-        // R214 · 首页右上角两枚入口：调音常驻，任务有活才亮、没活置灰点不进。
-        if (asHome) {
-            Row(Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onMixer) {
-                    Text("调音", fontSize = 12.sp, color = Primary)
-                }
-                TextButton(onClick = onTasks, enabled = hasTask) {
-                    Text("任务", fontSize = 12.sp,
-                        color = if (hasTask) Primary else Sub)
-                }
-                TextButton(onClick = onOverlayToggle) {
-                    Text(if (overlayOn) "悬浮·开" else "悬浮·关", fontSize = 12.sp,
-                        color = if (overlayOn) Primary else Sub)
                 }
             }
         }

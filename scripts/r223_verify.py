@@ -116,7 +116,9 @@ def selftest():
     ]
     bad = 0
     for name, key, needle, repl in cuts:
-        g = dict(f); g[key] = f[key].replace(needle, repl, 1)
+        # R242 · Producer 里真源串出现 2 处，只换第一处会恒不红（漏放）；
+        # 全部注入改全量替换，纯内存，源文件零写入。
+        g = dict(f); g[key] = f[key].replace(needle, repl)
         if check(g): print("  反向注入 %-22s 拦下" % name)
         else: print("  反向注入漏放:", name); bad += 1
     print("反向注入 %d/%d 全拦下" % (len(cuts) - bad, len(cuts)))

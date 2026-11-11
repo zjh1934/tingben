@@ -33,7 +33,8 @@ POS = {
         "onSelectAll: () -> Unit",
         "onCancel: () -> Unit",
         "horizontalScroll(rememberScrollState())",
-        "IconClose(palette.sub",
+        "internal fun ActionChip(",
+        'ActionChip("取消"',
     ],
     "hub": [
         # 第一列：长按也能勾选，底部换成统一条
@@ -82,6 +83,9 @@ def load():
                        for k, p in FILES.items()}
 
 
+BAN_MULTI = ['TextButton(onClick = onMixer)', 'TextButton(onClick = onCancel)',
+             'Text("合成音频", fontSize = 12.sp, color = HubPrimary)']
+
 def check(f):
     e = []
     for key, needles in POS.items():
@@ -92,6 +96,9 @@ def check(f):
         for s in needles:
             if s in f[key]:
                 e.append("旧形态残留[%s]: %s" % (key, s[:66]))
+    for k in BAN_MULTI:
+        if k in f["multi"] or k in f["hub"]:
+            e.append("R224 回潮：多选动作又变回平铺文字 " + k[:40])
     return e
 
 

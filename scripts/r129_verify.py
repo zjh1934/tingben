@@ -49,7 +49,7 @@ POS = {
         "val q = pumpQueue(c.applicationContext)",
     ],
     "hub": [
-        "Producer.enqueueOrStart(c, book, selected, null, ProduceConfig())",
+        "Producer.enqueueOrStart(c, book, selected, null, Prefs.defaultPerf(c))",
     ],
     "main": [
         'item(key = "tasks_queue")',
@@ -99,7 +99,7 @@ def selftest():
         "停止不暂停队列": ("pipe", "QUEUE_PAUSE"),
         "开软件不优先跑队列": ("pipe", "val q = pumpQueue(c.applicationContext)"),
         "恢复队列入口被摘": ("pipe", "fun resumeQueue(c: Context): String?"),
-        "目录页改回拒绝": ("hub", "Producer.enqueueOrStart(c, book, selected, null, ProduceConfig())"),
+        "目录页改回拒绝": ("hub", "Producer.enqueueOrStart(c, book, selected, null, Prefs.defaultPerf(c))"),
         "任务页队列卡被摘": ("main", 'item(key = "tasks_queue")'),
         "r114 回到每例复制整树": ("r114", "基准树只建一次"),
         "r114 不还原文件": ("r114", "f.write_text(s, encoding='utf-8')"),

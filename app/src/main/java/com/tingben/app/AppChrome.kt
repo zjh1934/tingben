@@ -119,6 +119,8 @@ internal fun AppTopBar(
     surface: Color,
     primary: Color,
     onBack: (() -> Unit)? = null,
+    // R226 · 二级页可把操作挂到书名同一排的右侧，不再单独占一行。
+    trailing: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
         Modifier.fillMaxWidth().background(surface).padding(horizontal = 14.dp, vertical = 8.dp),
@@ -155,22 +157,22 @@ internal fun AppTopBar(
                 Text("＋", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             }
         }
+        trailing()
     }
 }
 
 /**
- * R162 · 抽屉壳：标题 + 一个导入按钮 + 调用方给的书列表。
- * 功能导航项（任务 / 调音台 / 模型 / 输入朗读 / 设置）全部撤掉：
- *   · 设置与导入在右上角齿轮 / ＋
- *   · 模型收进设置页那张卡
- *   · 调音台只在合成前弹层
- *   · 任务能力在书里第二列与开软件弹窗
- *   · 输入朗读就是主页本身
+ * R230 · 抽屉壳按常见侧滑抽屉重排：
+ *   · 顶部标题单独一行，「导入」独占一整排（主页右上角 ＋ 撤掉后这里是常驻入口）
+ *   · 中间是书列表
+ *   · 左下角一枚设置（主页右上角齿轮撤掉后收在这里）
+ * 模型 / 调音台 / 任务 / 输入朗读仍各归其位，不再往抽屉塞功能菜单。
  */
 @Composable
 internal fun AppDrawerSheet(
     title: String,
     onImport: () -> Unit,
+    onSettings: () -> Unit,
     surface: Color,
     primary: Color,
     sub: Color,
@@ -181,17 +183,25 @@ internal fun AppDrawerSheet(
         drawerContainerColor = surface
     ) {
         Column(Modifier.fillMaxSize().padding(vertical = 12.dp)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                color = primary,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp))
+            // R230 · 导入独占一排，不再跟标题挤同一行
+            Button(
+                onClick = onImport,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                    color = primary, modifier = Modifier.weight(1f))
-                TextButton(onClick = onImport) {
-                    Text("＋ 导入", fontSize = 12.sp, color = primary)
-                }
+                Text("＋ 导入一本书", fontSize = 13.sp)
             }
             Box(Modifier.weight(1f)) { content() }
+            // R230 · 设置入口收进抽屉左下角
+            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onSettings) {
+                    Text("⚙ 设置", fontSize = 13.sp, color = primary)
+                }
+            }
         }
     }
 }

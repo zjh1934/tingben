@@ -74,6 +74,9 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
     var cacheInfo by remember(id, refresh) {
         mutableStateOf(VoiceCache.Summary(0, 0, 0, 0L))
     }
+    // R231 · 拼接设置是全局偏好，存 Prefs；用 state 让选项点了立刻亮
+    var autoMerge by remember { mutableStateOf(Prefs.autoMergeChapter(c)) }
+    var declickMs by remember { mutableStateOf(Prefs.mergeDeclickMs(c)) }
 
     // R139 · 组合期不再同步读整本 + 切块（原来 64MB 文本会卡主线程甚至 ANR）。
     // 与目录页同一套口径：IO 线程读落盘章节表，加载中给进度圈，出错给中文原因。
@@ -187,10 +190,29 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
             TextButton(onClick = { cfg = Prefs.defaultPerf(c) }) { Text("恢复默认", fontSize = 12.sp) }
         }
 
+        // R231 · ③ 拼接设置：制作选项卡原来只有段间静音 / 失败重做两项，
+        // 拼成这一章的开关与接缝处理没处设。借鉴同行的「不二次编码 +
+        // 接缝淡入淡出」口径，补成可选项，不进 prompt、不改音色指纹。
+        ExpandGroup("③ 拼成这一章", "每章的小块齐了，单独接成这一章的音频") {
+            OptionRow("自动拼成整章", "小耳机直接播这一章的成品",
+                listOf(true to "开", false to "关"), autoMerge) {
+                autoMerge = it
+                Prefs.setAutoMergeChapter(c, it)
+            }
+            OptionRow("接缝处理", "相邻小块的接缝，淡入淡出压掉咔哒声",
+                listOf(0 to "直接接", 15 to "轻", 30 to "标准"), declickMs) {
+                declickMs = it
+                Prefs.setMergeDeclickMs(c, it)
+            }
+        }
+
         Spacer(Modifier.height(10.dp))
 
         Button(
             onClick = {
+                // R235 · 制作设置页改完要落盘：原来只在本次 start 生效，
+                // 下次从目录页启动又回到写死默认值，段间静音/附加语气全丢。
+                Prefs.setDefaultPerf(c, cfg)
                 val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
                 onStarted(sel)
                 Producer.start(c, book, sel, directRead = true, config = cfg)

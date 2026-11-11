@@ -36,7 +36,6 @@ POS = {
         'item(key = "empty") {',
         'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
         'val lastRead = lastReads[b.id]',
-        '上次读到 第 ${lastRead + 1} 章',
     ],
     "reading": [
         'private fun decode(v: Any?): Pos?',
@@ -97,6 +96,9 @@ def check(f):
             e.append("阅读位置没走批量读 allLast")
     if "lastReads = books.associate" in lb:
         e.append("阅读位置回到组合期同步读")
+    # R230 · 「上次读到 第 N 章」是废话，撤掉后不许回潮；进度条保留。
+    if '上次读到 第 ${lastRead + 1} 章' in library_body(f["main"]):
+        e.append("R230 回潮：书架又写「上次读到 第 N 章」")
     for k, needles in POS.items():
         for s in needles:
             if s not in f[k]:

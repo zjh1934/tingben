@@ -56,9 +56,10 @@ MAIN_BAN = [
 HUB = [
     "openTasksOnStart: Boolean = false",
     "mutableStateOf(openTasksOnStart)",
-    "var lastHubTapMs by remember { mutableStateOf(0L) }",
-    "now - lastHubTapMs >= 800L",
 ]
+# R226 · 节流随三按钮上移 App 层
+MAIN += ["var lastHubTapMs by remember { mutableStateOf(0L) }",
+         "now - lastHubTapMs >= 800L"]
 CHROME = [
     "import androidx.compose.foundation.clickable",
     ".clickable { onRefresh() }",
@@ -84,13 +85,12 @@ def checks(f):
     for s in MAIN_BAN:
         if s in f["main"]:
             e.append("旧形态回潮: " + s[:56])
-    if f["main"].count("now - lastHubTapMs") != 0:
-        pass  # 节流在 hub 里，这里只确认没有误写进 main
+    if f["main"].count("now - lastHubTapMs") != 2:
+        e.append("顶栏两处节流不齐")
     for s in HUB:
         if s not in f["hub"]:
             e.append("目录页能力缺失: " + s[:60])
-    if f["hub"].count("now - lastHubTapMs >= 800L") != 2:
-        e.append("停止/继续两处节流不齐")
+
     for s in CHROME:
         if s not in f["chrome"]:
             e.append("刷新条能力缺失: " + s[:60])
@@ -128,22 +128,10 @@ def selftest():
          lambda t: t.replace('mutableStateOf(openTasksOnStart)', 'mutableStateOf(false)')),
         ("签名不加参数", "hub",
          lambda t: t.replace('    openTasksOnStart: Boolean = false', '')),
-        ("停止按钮不节流", "hub",
-         lambda t: t.replace('''        if (now - lastHubTapMs >= 800L) {
-            lastHubTapMs = now
-            EventLog.ui("HUB_STOP", "book=${book.id}")
-            Producer.stop()
-        }''',
-                             '''        EventLog.ui("HUB_STOP", "book=${book.id}")
-        Producer.stop()''')),
-        ("继续按钮不节流", "hub",
-         # R209 · 续跑按钮加了收尾窗口前置判断，旧整块锚点已失效。
-         # 改成只把这一处的节流条件改坏（if(true)），判据「两处节流不齐」仍拦得住。
-         lambda t: t.replace('''        if (now - lastHubTapMs >= 800L) {
-            lastHubTapMs = now
-            if (Producer.isBusyForBook(book.id))''',
-                             '''        if (true) {
-            if (Producer.isBusyForBook(book.id))''', 1)),
+        ("停止按钮不节流", "main",
+         lambda t: t.replace("if (now - lastHubTapMs >= 800L) {", "if (true) {", 1)),
+        ("继续按钮不节流", "main",
+         lambda t: t.replace("if (now - lastHubTapMs >= 800L) {", "if (true) {", 1)),
         ("README 版本回退", "readme",
          lambda t: t.replace('**当前版本 `%s`**' % version(),
                              '**当前版本 `0.0.1`**')),

@@ -131,7 +131,8 @@ object Producer {
             val book = BookStore.list(c).find { it.id == t.bookId }
             if (book == null) {
                 TaskResume.dequeue(c, t.bookId)
-                EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_SKIP", "书没了 book=${t.title}")
+                EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_SKIP",
+                    "书没了 id=${t.bookId.take(8)} · title=${EventLog.safe(t.title)}")
                 continue
             }
             val why = TaskResume.autoResumeBlockReason(c, t.copy(phase = "interrupted"))
@@ -343,7 +344,7 @@ object Producer {
             "直接朗读" +
                 " · think=" + thinkOn +
                 " · " + (onlyChapters?.let { "选中 ${it.size} 章" } ?: "整本") +
-                " · 本次预设=" + config.summary())
+                " · 本次预设=" + config.summarySafe())
         ProduceService.activityOf(c)?.let { act ->
             if (android.os.Build.VERSION.SDK_INT >= 33 &&
                 act.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
@@ -548,7 +549,7 @@ object Producer {
             File(work, "split_stamp.txt").writeText(TextSplitter.SPLIT_EPOCH.toString())
         } catch (_: Throwable) { }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_CONFIG",
-            "chunks=${chunks.size} · 预设=" + config.summary())
+            "chunks=${chunks.size} · 预设=" + config.summarySafe())
         EventLog.resetEngine()
 
         val gateFails = 0
@@ -621,7 +622,7 @@ object Producer {
             "${SynthInput.label(c)} · 指纹=$voiceStamp · seed=${knobs.seed}" +
                 " · temp=${knobs.temperature} · lang=chinese")
         EventLog.log(EventLog.Kind.PIPELINE, "PRESET_APPLIED",
-            config.summary() + " · 指纹=" + presetStamp)
+            config.summarySafe() + " · 指纹=" + presetStamp)
 
         val ttsHandle = try {
             NativeEngine.ttsLoadGated(tk!!.absolutePath, tok!!.absolutePath, null)
@@ -643,12 +644,15 @@ object Producer {
 
         val nonVerbalOn = Prefs.nonVerbal(c)
         var strippedTotal = 0
-        val toSpeak = annotated.map { ann ->
+        // R235 · 开跑前只做统计与日志，不再把整本的 instruct 一次性拼好。
+        // 身份层 / 风格层 / 拟声 / 采样参数都挪到逐段循环里现读现算：
+        // 制作过程中在调音台改了设置，下一段就按新配置念，不必整本停了重来。
+        annotated.forEach { ann ->
             val base = if (nonVerbalOn) NonVerbal.apply(ann) else ann
             val built = VoiceProfile.buildWithReport(globalVoice, config.styleInstruct(), base.instruct)
             strippedTotal += built.second
-            Ann(base.text, base.speaker, built.first)
         }
+        val toSpeak = annotated
         EventLog.log(EventLog.Kind.ENGINE, "VOICE_IDENTITY",
             "身份层=${if (globalVoice.isBlank()) "默认锚点" else "自定义"} · " +
                     "版本=$INSTRUCT_TEMPLATE_VERSION · " +
@@ -673,12 +677,22 @@ object Producer {
         var cursorBytes = 0L
         val perChapterTotal = segChapter.groupingBy { it }.eachCount()
         val perChapterDone = mutableMapOf<Int, Int>()
+        // R233 · 一次读入「用户删掉的段」，循环与拼章共用，不逐段读盘
+        val dropSnap = SegDrops.snapshot(c, book.id)
+        val dropText = { i: Int -> annotated[i].text.take(200) }
+        val dropWav = { i: Int -> String.format("direct_%04d.wav", i) }
+        // R235 · 开跑时先读一次「段级重做」标记，空间预算把这些段算进待合成
+        val redoAtStart = SegPlan.pending(work)
         val pending = (0 until toSpeak.size).count { i ->
-            val f = File(work, String.format("direct_%04d.wav", i))
+            val wavName = dropWav(i)
+            // 删掉的段不算待合成，空间预算与进度分母都不虚高
+            if (SegDrops.matches(dropSnap, wavName, dropText(i))) return@count false
+            val f = File(work, wavName)
             if (f.exists() && f.length() > 44) return@count false
             val ci = segChapter.getOrElse(i) { -1 }
             val covered = ci >= 0 && doneChapterFiles[ci]
                 ?.let { it.isFile && it.length() > 44 } == true
+            if ("seg:$i" in redoAtStart) return@count true
             !covered
         }
         val sample = (0 until toSpeak.size).mapNotNull { i ->
@@ -717,21 +731,54 @@ object Producer {
         // 要不要整本做。只统计真正合成的新段，跳过的旧段不算进均值。
         var segCostSum = 0L
         var segCostCount = 0
+        // R235 · 每段实时读一次 Prefs。音色分套（voiceStamp / cacheKey /
+        // VoiceCache.switchTo）仍锁在开跑时那一次，绝不因运行中改设置换套、
+        // 不删已做好的段、不把进度归零 —— R220 硬口径不破。
+        data class LiveSeg(val text: String, val speaker: String,
+                           val params: SynthInput.Params, val knobs: TtsKnobs)
+        fun liveSeg(i: Int): LiveSeg {
+            val raw = annotated[i]
+            val perf = Prefs.defaultPerf(c)
+            val voice = Prefs.voiceDescription(c)
+            val base = if (Prefs.nonVerbal(c)) NonVerbal.apply(raw) else raw
+            val style = perf.styleInstruct()
+            val built = VoiceProfile.buildWithReport(voice, style, base.instruct)
+            return LiveSeg(base.text, base.speaker,
+                SynthInput.params(c, built.first, style), Prefs.ttsKnobs(c))
+        }
+        // 缓存上一份实时参数：重做 / 重试同一段时不重复读盘
+        var lastLive: LiveSeg? = null
         try {
             for ((i, a) in toSpeak.withIndex()) {
+                val live = liveSeg(i)
                 if (newlyWritten >= budgetSegs) { spaceStopped = true; break }
                 if (cancelRequested) {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
                     return
                 }
                 val segStart = wavs.size
-                val wav = File(work, String.format("direct_%04d.wav", i))
+                val wavName = dropWav(i)
+                val wav = File(work, wavName)
+                // R233 · 手工删掉的段：不合成、不复用、也不进整本/整章拼接。
+                // 进度仍往前走，避免「做了半天数字不动」的错觉。
+                if (SegDrops.matches(dropSnap, wavName, dropText(i))) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "TTS_SKIP",
+                        "段 ${i + 1}/${toSpeak.size} 已手工删除，不参与合成与拼接",
+                        level = EventLog.Level.TRACE,
+                        fields = mapOf("seg" to (i + 1).toString(), "src" to "dropped"))
+                    emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
+                        "已生成 ${i + 1}/${annotated.size} 段声音",
+                        chapterProgress = _state.value.chapterProgress)
+                    continue
+                }
                 val ci = segChapter.getOrElse(i) { -1 }
                 val doneWav = if (ci >= 0) doneChapterFiles[ci] else null
                 val covered = doneWav != null && doneWav.isFile && doneWav.length() > 44 &&
                     !(wav.exists() && wav.length() > 44)
                 val already = wav.exists() && wav.length() > 44
-                val skip = covered || already
+                // R235 · 运行中也可能刚标记重做，逐段重读 redo.json
+                val redoSeg = "seg:$i" in SegPlan.pending(work)
+                val skip = (covered || already) && !redoSeg
                 // R157 · 第二份真机日志：每次「继续制作」都从 TTS_INPUT 段 1/88 打起，
                 // 看起来像从头重算，实际前 9 段走的是下面这个「已有音频」跳过分支。
                 // 把日志和前台通知挪到真正要合成的段上；跳过段只记一条精简 SKIP。
@@ -745,17 +792,18 @@ object Producer {
                 } else {
                     ProduceService.touch(c.applicationContext,
                         "合成段 ${i + 1}/${toSpeak.size}")
-                    val v = SynthInput.params(c, a.instruct, config.styleInstruct())
+                    val v = live.params
+                    lastLive = live
                     EventLog.log(EventLog.Kind.ENGINE, "TTS_INPUT",
-                        "段 ${i + 1}/${toSpeak.size} [${a.speaker}] " +
-                            a.text.take(50).replace('\n', '⏎') + " → " + (v.instruct ?: "（无指令）"),
+                        "段 ${i + 1}/${toSpeak.size} [${live.speaker}] " +
+                            live.text.take(50).replace('\n', '⏎') + " → " + (v.instruct ?: "（无指令）"),
                         level = EventLog.Level.TRACE,
-                        fields = mapOf("seg" to (i + 1).toString(), "speaker" to a.speaker,
-                            "textChars" to a.text.length.toString(),
+                        fields = mapOf("seg" to (i + 1).toString(), "speaker" to live.speaker,
+                            "textChars" to live.text.length.toString(),
                             "instructChars" to (v.instruct?.length ?: 0).toString(),
                             "lang" to "chinese", "mode" to ModelStore.currentMode(c).id,
                             "speakerParam" to (v.speaker ?: "null")))
-                    // 参数只给真正合成的那一段用
+                    // R235 · 参数只给真正合成的那一段用；运行中改设置下一段即生效
                     lastParams = v
                 }
                 if (skip) {
@@ -782,11 +830,11 @@ object Producer {
                             _state.value = halted(i, annotated.size, gateFails + synthFails)
                             return
                         }
-                        val v = lastParams
-                            ?: SynthInput.params(c, a.instruct, config.styleInstruct())
+                        val v = lastParams ?: live.params
+                        val cur = lastLive ?: live
                         val code = try {
-                            NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, "chinese",
-                                wav.absolutePath, knobs)
+                            NativeEngine.ttsSynthesize(ttsHandle, cur.text, v.instruct, v.speaker, "chinese",
+                                wav.absolutePath, cur.knobs)
                         } catch (t: Throwable) {
                             EventLog.log(EventLog.Kind.ENGINE, "TTS_ERROR", t.message ?: "")
                             -99
@@ -904,6 +952,37 @@ object Producer {
             current = done
             TaskResume.save(c, done)
             _resume.value = done
+        }
+        // R231 · 拼的是「这一章」，不是把整本重新拼一遍：整本成品之外，
+        // 每章的小块齐了就单独出一份这一章的音频，目录页小耳机直接播。
+        // 借鉴同行「短段合并成章」；只增不删，整本与续跑链路零改动。
+        // R242 · c = appCtx 是 Context?；R231 块原先落在 if(c != null && t != null) 之外，
+        // 三处调用真编译报 Argument type mismatch。条件加非空守卫，局部 val 在 then 块内 smart cast。
+        if (c != null && Prefs.autoMergeChapter(c)) {
+            val declick = Prefs.mergeDeclickMs(c)
+            val byCh = LinkedHashMap<Int, MutableList<File>>()
+            for (i in 0 until toSpeak.size) {
+                val wavName = dropWav(i)
+                // R233 · 用户删掉的段本来就不该拼进来，也不算「缺块」
+                if (SegDrops.matches(dropSnap, wavName, dropText(i))) continue
+                val ci = segChapter.getOrElse(i) { -1 }
+                if (ci < 0) continue
+                byCh.getOrPut(ci) { mutableListOf() }
+                    .add(File(work, wavName))
+            }
+            var made = 0
+            var skipped = 0
+            for ((ci, parts) in byCh) {
+                // 真少一块就先不拼这一章；手工删的段已在收集时排除
+                if (parts.isEmpty() || parts.any { !it.isFile || it.length() <= 44L }) {
+                    skipped++; continue
+                }
+                if (AudioOps.mergeChapterAuto(c, book.id, book.title, ci, parts,
+                        gapMs = config.gapMs, declickMs = declick).ok) made++
+                else skipped++
+            }
+            EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_AUTO",
+                "拼好 $made 章 / 跳过 $skipped 章 · 接缝 ${declick}ms")
         }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_DONE", "${outFile.length()} 字节")
     }

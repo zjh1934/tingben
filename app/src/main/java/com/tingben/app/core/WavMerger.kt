@@ -54,6 +54,55 @@ object WavMerger {
         }
     } catch (_: Throwable) { null }
 
+    /**
+     * R231 · 借鉴同行（Merge Audio / MediaExtractor+MediaMuxer 无损拼接 / android_audio_mixer）：
+     * 拼接前先把每段的采样率、声道、位深读出来对齐，不一致就不拼。
+     * 我们的段全部由同一引擎产出，恒为 24000Hz / 单声道 / 16bit；
+     * 任何一段偏离都说明混进了别的来源，硬接会变调或炸音，宁可失败留着小块。
+     * 返回 Triple(rate, channels, bits)，读不出返回 null。
+     */
+    private fun fmtOf(f: File): Triple<Int, Int, Int>? = try {
+        java.io.RandomAccessFile(f, "r").use { raf ->
+            val h = ByteArray(12)
+            raf.readFully(h)
+            if (String(h, 0, 4, Charsets.US_ASCII) != "RIFF" ||
+                String(h, 8, 4, Charsets.US_ASCII) != "WAVE") null
+            else {
+                val fileLen = raf.length()
+                var pos = 12L
+                var found: Triple<Int, Int, Int>? = null
+                while (found == null && pos + 8 <= fileLen) {
+                    raf.seek(pos)
+                    val ch = ByteArray(8)
+                    raf.readFully(ch)
+                    val id = String(ch, 0, 4, Charsets.US_ASCII)
+                    val sz = (ch[4].toLong() and 0xffL) or
+                            ((ch[5].toLong() and 0xffL) shl 8) or
+                            ((ch[6].toLong() and 0xffL) shl 16) or
+                            ((ch[7].toLong() and 0xffL) shl 24)
+                    val payload = pos + 8
+                    if (payload + sz > fileLen) break
+                    if (id == "fmt " && sz >= 16) {
+                        val b = ByteArray(16)
+                        raf.seek(payload); raf.readFully(b)
+                        fun s16(o: Int) = (b[o].toInt() and 0xff) or ((b[o + 1].toInt() and 0xff) shl 8)
+                        fun i32(o: Int) = (b[o].toLong() and 0xffL) or
+                            ((b[o + 1].toLong() and 0xffL) shl 8) or
+                            ((b[o + 2].toLong() and 0xffL) shl 16) or
+                            ((b[o + 3].toLong() and 0xffL) shl 24)
+                        found = Triple(i32(4).toInt(), s16(2), s16(14))
+                    } else {
+                        val pad = if (sz % 2L == 1L) 1L else 0L
+                        val next = payload + sz + pad
+                        if (next <= pos) break
+                        pos = next
+                    }
+                }
+                found
+            }
+        }
+    } catch (_: Throwable) { null }
+
     private fun header(dataLen: Int): ByteArray {
         val rate = 24000; val ch = 1; val bits = 16
         val byteRate = rate * ch * bits / 8
@@ -139,10 +188,23 @@ object WavMerger {
             if (parts.isEmpty()) { part.delete(); return false }
             // ① 只扫头算总长；任何一段坏了就整体失败（等价于旧 chunks.size != parts.size）
             val spans = ArrayList<Pair<Long, Long>>(parts.size)
+            val fmts = ArrayList<Triple<Int, Int, Int>>(parts.size)
             for (p in parts) {
                 val sp = dataSpan(p)
-                if (sp == null || sp.second <= 0) { part.delete(); return false }
-                spans.add(sp)
+                val fm = fmtOf(p)
+                if (sp == null || sp.second <= 0 || fm == null) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "MERGE_FMT_UNREADABLE",
+                        "有段读不出 WAV 头，整章不拼，小块都留着")
+                    part.delete(); return false
+                }
+                spans.add(sp); fmts.add(fm)
+            }
+            // R231 · 格式必须彼此一致、且等于引擎输出；否则接缝会变调/炸音
+            val want = Triple(24000, 1, 16)
+            if (fmts.any { it != want }) {
+                EventLog.log(EventLog.Kind.PIPELINE, "MERGE_FMT_MISMATCH",
+                    "段格式不一致（rate/ch/bits），按同行无损拼接前提拒绝，小块都留着")
+                part.delete(); return false
             }
             val gapBytes = ((gapMs.coerceIn(0, 5000) * 48) / 2) * 2
             var total = 0L

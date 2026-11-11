@@ -37,6 +37,8 @@ FILES = {
 
 POS = {
     "main": [
+        # R226 · 停止按钮上移系统顶栏，颜色常量不再写死 HubWarn
+        'Text("停止", fontSize = 12.sp',
         "// I1 · 用户实证「试听文本和试听两个按钮在采样参数上面」。",
         "Box(Modifier.size(40.dp)",
         '.clickable { onValue(spec.def) },',
@@ -57,7 +59,6 @@ POS = {
         "ChapterPlan.resolve(c, b, text)",
         "front?.let { fi ->",
         '"书前 ${fi.chars} 字已跳过"',
-        'Text("停止", fontSize = 12.sp, color = HubWarn)',
         "IconPlayPause(st.isPlaying, palette.onPrimary",
         "color = segNumberColor(playing, playable, multi, isChecked))",
         # J1 看图修复：未生成格子不再是 18% 透明
@@ -347,8 +348,8 @@ def selftest():
          "grey = Color(0xFF6B7280)"),
         ("硬编码白字回潮", "main", 'Text("卸载模型", fontSize = 12.sp, color = palette.onWarn)',
          'Text("卸载模型", fontSize = 12.sp, color = Color.White)'),
-        ("停止按钮白字回潮", "hub",
-         'Text("停止", fontSize = 12.sp, color = HubWarn)',
+        ("停止按钮白字回潮", "main",
+         'Text("停止", fontSize = 12.sp',
          'Text("停止", fontSize = 12.sp, color = Color.White)'),
         ("FrontInfo 被摘", "plan",
          "data class FrontInfo(val chars: Int, val noisy: Boolean)", ""),

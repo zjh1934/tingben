@@ -94,10 +94,13 @@ def check(f):
     n_entry = f["hub"].count('"制作设置 ›"')
     if n_entry != 1:
         e.append("勾选态制作设置文字入口应为 1 枚，实为 %d" % n_entry)
-    if 'Text("⚙", fontSize = 16.sp, color = HubPrimary)' not in f["hub"]:
+    # R226 · 常态齿轮上移系统顶栏（合并视图），勾选态仍留 hub
+    if 'Text("⚙", fontSize = 16.sp' not in f["main"]:
         e.append("常态顶栏齿轮入口被摘")
-    if f["hub"].count("onProduceSetup(book.id)") != 2:
-        e.append("两枚入口没都把 book.id 传出去")
+    if "nav.push(Screen.PRODUCE)" not in f["main"]:
+        e.append("顶栏齿轮没跳制作设置")
+    if f["hub"].count("onProduceSetup(book.id)") != 1:
+        e.append("勾选态制作设置入口丢了")
     o = orphans(f["main"])
     if o:
         e += o
@@ -108,15 +111,10 @@ def selftest():
     f = load()
     assert not check(f), "基线自己就红了，先修基线"
     cuts = [
-        ("常态齿轮入口整块被摘", "hub",
-         '                IconButton(onClick = { onProduceSetup(book.id) },\n'
-         '                    modifier = Modifier.size(34.dp)) {\n'
-         '                    Text("⚙", fontSize = 16.sp, color = HubPrimary)\n'
-         '                }', ''),
+        ("常态齿轮入口整块被摘", "main",
+         'Text("⚙", fontSize = 16.sp', ''),
         ("勾选态入口被摘", "hub",
-         '                    TextButton(onClick = { onProduceSetup(book.id) }) {\n'
-         '                        Text("制作设置 ›", fontSize = 12.sp, color = HubPrimary)\n'
-         '                    }',
+         'ActionChip("制作设置 ›", onClick = { onProduceSetup(book.id) })',
          ''),
         ("只剩一枚入口", "hub", '"制作设置 ›"', '"制作设置"'),
         ("两枚都没传 book.id", "hub", 'onProduceSetup(book.id)', 'onProduceSetup("")'),

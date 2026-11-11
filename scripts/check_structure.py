@@ -396,12 +396,18 @@ for banned in ["compose.animation", "material-icons-extended", "accompanist"]:
     if banned in bld: errs.append("R36 回退：为折叠动画引了新依赖 " + banned)
 
 for sym in ["DismissibleNavigationDrawer(", "drawerState = drawerState",
-            "gesturesEnabled = true", "drawerContent = {",
+            "drawerContent = {",
             "AppDrawerSheet(", "rememberDrawerState(DrawerValue.Closed)",
             "BackHandler(enabled = drawerState.isOpen)",
             "scope.launch { drawerState.close() }",
             ".navigationBarsPadding()"]:
     if sym not in main_src: errs.append("R46/R51 缺 V1 抽屉符号: " + sym)
+# R224 · 左滑开抽屉只在主页生效：不再写死 gesturesEnabled = true，
+# 反守「任何页面都能滑」回潮。
+if "gesturesEnabled = screen == Screen.LIBRARY" not in main_src:
+    errs.append("R224 回退：抽屉左滑没限定主页")
+if "gesturesEnabled = true" in main_src:
+    errs.append("R224 回退：抽屉左滑又对全局页面开放")
 if "ModalNavigationDrawer(" in main_src:
     errs.append("R51 回退：又用回覆盖式 ModalNavigationDrawer(")
 if not nav.back_order_ok(main_src):
@@ -525,7 +531,9 @@ def r166_errs(lg, sv, pi):
         if dup in sv or dup in pi:
             e.append("R166 回潮：日志冗余字段 " + dup[:42])
     # 增量字段必须还在，别把「去冗余」做成「删日志」
-    for keep in ('"textChars" to a.text.length.toString()', '"speakerParam" to (v.speaker'):
+    # R235 · 逐段实时参数后文本取自 live.text（不再预拼 toSpeak），
+    # 字段本身 textChars 仍是增量信息，判据按符号迁移、一个字没放宽。
+    for keep in ('"textChars" to live.text.length.toString()', '"speakerParam" to (v.speaker'):
         if keep not in pi:
             e.append("R166 误删：有增量信息的字段没了 " + keep[:34])
     return e

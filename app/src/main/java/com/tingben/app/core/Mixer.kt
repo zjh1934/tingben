@@ -159,7 +159,8 @@ object Mixer {
             append(" subTopK=").append(k.subTopK)
             append(" subTopP=").append(k.subTopP)
             append(" · hash=").append(k.hash())
-            append(" · voice=").append(Prefs.voiceDescription(c).ifBlank { DEFAULT_IDENTITY })
+            // R225 · 音色描述是用户填的，只留长度与短哈希
+            append(" · voice=").append(EventLog.safe(Prefs.voiceDescription(c)))
             append(" · voiceStamp=").append(Prefs.voiceStamp(c))
             if (extra.isNotBlank()) append(" · ").append(extra)
         }

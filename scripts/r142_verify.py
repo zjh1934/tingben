@@ -176,8 +176,14 @@ def logic_cases(f):
         bad.append("现行文档把归档列进了只读真值源")
     # R143 · 防复发：验证脚本不许再依赖仓库外的沙盒文件（本地绿 / CI 红）
     me = pathlib.Path(__file__).name
+    # R242 · preflight.py 是发版前置工具：正向只在沙盒手动跑（读仓库外工具/凭据），
+    # CI 仅挂 --selftest（纯内存、不访问任何仓库外路径），不属于「CI 里会红的依赖」。
+    # 补一条反向硬判据：CI 若挂了 preflight 正向，仍然当场红，判据不放宽。
     outside = [q.name for q in (ROOT / "scripts").glob("*.py")
-               if q.name != me and "ROOT.parent" in q.read_text(encoding="utf-8", errors="replace")]
+               if q.name != me and q.name != "preflight.py"
+               and "ROOT.parent" in q.read_text(encoding="utf-8", errors="replace")]
+    if re.search(r"run: python3 scripts/preflight\.py\s*$", f["ci"], re.M):
+        bad.append("CI 挂了 preflight 正向（会读仓库外路径）")
     if outside:
         bad.append("验证脚本依赖仓库外路径: " + ", ".join(outside[:3]))
     # ⑤ 日志必须是全量 + 可复制，不是截断的诊断 txt

@@ -3,10 +3,9 @@
 """R217 · 用户真机反馈两件的守门。
 
 口径：
-  · 「悬浮窗的开关好像没有做」——开关本来在设置页「外观与显示」末尾、默认关，
-    打开后没系统 overlay 权限会静默不显示。落地为：首页右上角第三枚「悬浮」
-    一键开关，打开时无权限直接拉授权页 + 中文提示；设置页同一行显示权限状态
-    与「去允许」出口；开关状态由 App 层 state 统一持有。
+  · R230 · 悬浮开关收回设置页，首页不再放；并真修「打开开关根本不理」：
+    以前只有制作中 update 才创建浮窗，开关打开而当前没制作就毫无反应。
+    现在权限齐了立刻挂一个 0% 单球预览，制作时原地更新、停止/完成照旧 hide。
   · 球上「不应该是 1 和 2」，应写百分之几（0% 写 0、90% 写 90）。数字主体
     保持 0~100 纯数值，右侧补小号 % 标明单位，绝不露段号 / 书名 / 解释。
   · 连带修真 bug：下球原取所有章进度 value 最大值，做到第 2 章还停在第 1 章
@@ -69,22 +68,15 @@ def check(f):
               "if (!it) OverlayProgress.hide(c)",
               '"OVERLAY_SETTING", "on=$it · perm=$permOk"']:
         if k not in st: e.append("设置页开关缺: " + k[:56])
-    # ④ 首页第三枚开关
-    for k in ["overlayOn: Boolean = false", "onOverlayToggle: () -> Unit = {}",
-              'Text(if (overlayOn) "悬浮·开" else "悬浮·关"',
-              "TextButton(onClick = onOverlayToggle)",
-              "color = if (overlayOn) Primary else Sub"]:
-        if k not in it: e.append("首页开关缺: " + k[:56])
-    # ⑤ App 层接线：state、切换、无权限拉起授权
-    for k in ["var overlayOn by remember { mutableStateOf(Prefs.overlayProgress(ctx)) }",
-              "overlayOn = overlayOn,", "onOverlayToggle = {",
-              "Prefs.setOverlayProgress(ctx, next)", "overlayOn = next",
-              "if (!next) OverlayProgress.hide(ctx)",
-              "else if (!KeepAlive.overlayGranted(ctx))",
-              "KeepAlive.requestOverlay(ctx)",
-              '"允许后回来，制作时就能看到悬浮进度"',
-              '"OVERLAY_SETTING", "on=$next · from=home"']:
-        if k not in mg: e.append("主界面接线缺: " + k[:56])
+    # ④ R230 · 首页与 App 层都不得再留一份悬浮开关（两页不同步是旧 bug 根因）
+    for banned in ["overlayOn", "onOverlayToggle", "悬浮·开", "悬浮·关", "from=home"]:
+        if banned in it: e.append("首页又长出悬浮开关: " + banned)
+        if banned in mg: e.append("App 层又存一份悬浮开关: " + banned)
+    # ⑤ R230 · 开关留在设置页，且打开即预览（点了不理的根因修复）
+    for k in ['OverlayProgress.update(c, "", "预览", 0, 0, -1f)',
+              "打开即显示预览", 'if (!it) OverlayProgress.hide(c)',
+              'else if (!permOk) askPermission()']:
+        if k not in st: e.append("设置页开关缺: " + k[:56])
     # ⑥ 登记
     if "python3 scripts/r217_verify.py --selftest" not in f["ci"]:
         e.append("CI 漏挂 r217")
@@ -118,14 +110,15 @@ def selftest():
         ("去允许出口被摘", "settings", '"去允许 ›"', ""),
         ("打开无权限又静默", "settings", "else if (!permOk) askPermission()", ""),
         ("关时不收浮窗", "settings", "if (!it) OverlayProgress.hide(c)", ""),
-        ("首页开关参数被摘", "input", "overlayOn: Boolean = false", ""),
-        ("首页开关按钮被摘", "input", "TextButton(onClick = onOverlayToggle)", ""),
-        ("首页开关不显状态", "input", 'if (overlayOn) "悬浮·开" else "悬浮·关"', '"悬浮"'),
-        ("App 层 state 被摘", "merged",
-         "var overlayOn by remember { mutableStateOf(Prefs.overlayProgress(ctx)) }", ""),
-        ("切换不落盘", "merged", "Prefs.setOverlayProgress(ctx, next)", ""),
-        ("无权限不引导", "merged", "KeepAlive.requestOverlay(ctx)", ""),
-        ("首页开关不接线", "merged", "overlayOn = overlayOn,", ""),
+        ("打开即预览被摘", "settings",
+         'else OverlayProgress.update(c, "", "预览", 0, 0, -1f)', ""),
+        ("无权限也硬挂浮窗", "settings",
+         "else if (!permOk) askPermission()", "else if (false) { }"),
+        ("设置页文案回旧口径", "settings", "打开即显示预览", "制作时显示"),
+        ("首页又长出开关", "merged", "fun onResumeTask() {",
+         'fun onResumeTask() { Text("悬浮·关")'),
+        ("App 层又存一份状态", "merged", "fun onResumeTask() {",
+         "fun onResumeTask() { var overlayOn by remember { mutableStateOf(false) }"),
         ("CI 漏挂", "ci", "python3 scripts/r217_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r217_verify.py"', ""),
     ]

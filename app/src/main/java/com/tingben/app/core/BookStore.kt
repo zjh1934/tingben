@@ -131,7 +131,8 @@ object BookStore {
             it.title == title && (it.sha == sha || (it.sha.isEmpty() && it.chars == text.length))
         }
         if (old != null) {
-            EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_DUP", "$title 已在书架，不重复添加")
+            EventLog.log(EventLog.Kind.MODEL, "BOOK_IMPORT_DUP",
+                "id=${old.id.take(8)} · title=${EventLog.safe(title)} · 不重复添加")
             return old
         }
         val id = UUID.randomUUID().toString()
@@ -144,7 +145,8 @@ object BookStore {
             f.delete()
             throw IllegalStateException("书架索引没写进磁盘，已取消导入，旧书没动")
         }
-        EventLog.log(EventLog.Kind.MODEL, "BOOK_ADD", title)
+        EventLog.log(EventLog.Kind.MODEL, "BOOK_ADD",
+            "id=${b.id.take(8)} · title=${EventLog.safe(title)} · chars=${text.length} · origin=$origin")
         return b
     }
 

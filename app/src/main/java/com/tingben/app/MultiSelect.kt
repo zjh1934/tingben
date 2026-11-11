@@ -1,6 +1,8 @@
 package com.tingben.app
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -11,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -24,6 +27,32 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+/**
+ * R224 · 多选动作按钮：有底色、圆角、可按压，不再是一排平铺的字。
+ * 之前底部条里全是 TextButton，看着像「弹出一排字」，用户分不出哪些能点。
+ */
+@Composable
+internal fun ActionChip(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    danger: Boolean = false
+) {
+    val tint = if (danger) palette.warn else palette.primary
+    Box(
+        modifier.padding(end = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (danger) palette.warn.copy(alpha = 0.13f)
+                        else palette.primarySoft)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+            color = tint, maxLines = 1)
+    }
+}
 
 /**
  * R134 · 统一多选态。
@@ -98,12 +127,10 @@ internal fun MultiSelectBar(
             verticalAlignment = Alignment.CenterVertically) {
             Text("已选 $count", fontSize = 12.sp, fontWeight = FontWeight.Bold,
                 color = palette.primary, modifier = Modifier.padding(start = 8.dp))
-            TextButton(onClick = {
+            ActionChip(allLabel, onClick = {
                 onSelectAll()
                 EventLog.ui("MULTI_ALL_BAR", allLabel)
-            }) {
-                Text(allLabel, fontSize = 12.sp, color = palette.primary)
-            }
+            })
             // 动作可能多，横滑兜底，不挤压计数与取消
             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -111,16 +138,10 @@ internal fun MultiSelectBar(
             }
             // R171 · 原来只有一个灰色 ×，用户「不知道这个勾选态怎么取消」。
             // 换成看得见的「取消」文字，图标留作辅助，事件名不动。
-            TextButton(onClick = {
+            ActionChip("取消", onClick = {
                 onCancel()
                 EventLog.ui("MULTI_CANCEL_BAR", "")
-            }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconClose(palette.sub, Modifier.size(16.dp))
-                    Spacer(Modifier.width(3.dp))
-                    Text("取消", fontSize = 12.sp, color = palette.sub)
-                }
-            }
+            }, modifier = Modifier.padding(start = 2.dp))
         }
     }
 }
