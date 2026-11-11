@@ -88,13 +88,12 @@ def _api(path, timeout=10):
 
 
 def _net_ok():
-    try:
-        r = urllib.request.Request("https://api.github.com",
-                                   headers={"User-Agent": "tingben-preflight"})
-        with urllib.request.urlopen(r, timeout=8) as x:
-            return x.status == 200
-    except Exception:
-        return False
+    # R242 · 根路径探活偶发 8 秒超时会误报 BLOCK（线上 Release 其实已查得到）。
+    # 改成与 _remote_ok 同源的带令牌仓库请求，并允许一次重试；两者口径对齐。
+    for _ in range(2):
+        if _api("/repos/zjh1934/tingben") is not None:
+            return True
+    return False
 
 
 def _remote_ok():
@@ -103,12 +102,20 @@ def _remote_ok():
 
 
 def _clean_ok():
-    try:
-        out = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
-                             capture_output=True, text=True, timeout=8)
-        return not out.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return False
+    # R246 · 单次 8 秒超时在机器忙时会把「干净」误判成脏（实测过一次），
+    # 与 R242 修 _net_ok 的抖动同源。给两次机会；只有两次都明确跑完且
+    # porcelain 为空才算干净，任一异常仍当缺项，不放宽判定。
+    for _ in range(2):
+        try:
+            out = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
+                                 capture_output=True, text=True, timeout=20)
+            if out.returncode == 0 and not out.stdout.strip():
+                return True
+            if out.returncode == 0 and out.stdout.strip():
+                return False       # 真脏，重试也没用
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return False
 
 
 COLLECTORS = {
@@ -176,6 +183,8 @@ def self_guard(src, ci):
         e.append("禁贴直链的话术被摘")
     if "python3 scripts/preflight.py --selftest" not in ci:
         e.append("CI 漏挂 preflight --selftest")
+    if "for _ in range(2):" not in src or "timeout=20" not in src:
+        e.append("工作区探针瞬时抖动重试被摘（会误报 BLOCK 卡住发版）")
     return e
 
 

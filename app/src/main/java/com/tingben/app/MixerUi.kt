@@ -414,9 +414,9 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
     refClip?.let { d ->
         RefClipDialog(
             data = d,
-            onCancel = { refClip = null },
+            onCancel = { PlayQueue.stopPreview(); refClip = null },
             onTrial = { s, e -> trialRefClip(d, s, e) },
-            onUse = { s, e -> applyRefClip(d, s, e) }
+            onUse = { s, e -> PlayQueue.stopPreview(); applyRefClip(d, s, e) }
         )
     }
 
@@ -695,6 +695,8 @@ internal fun RefClipDialog(
     onUse: (Long, Long) -> Unit
 ) {
     val totalMs = data.durationMs.coerceAtLeast(1L)
+    // R243 · 关窗还在放的真 bug：试听状态可见，按钮随播放态切换
+    val pv by PlayQueue.previewState.collectAsState()
     var startFrac by remember(data) { mutableStateOf(0f) }
     var endFrac by remember(data) {
         mutableStateOf(minOf(1f, 10_000f / totalMs))
@@ -767,9 +769,11 @@ internal fun RefClipDialog(
         dismissButton = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = {
-                    onTrial((totalMs * startFrac).toLong(),
+                    if (pv.isPlaying) PlayQueue.stopPreview()
+                    else onTrial((totalMs * startFrac).toLong(),
                         (totalMs * endFrac).toLong())
-                }) { Text("试听选中", fontSize = 13.sp, color = Primary) }
+                }) { Text(if (pv.isPlaying) "停止试听" else "试听选中",
+                    fontSize = 13.sp, color = Primary) }
                 TextButton(onClick = onCancel) { Text("取消", fontSize = 13.sp) }
             }
         }

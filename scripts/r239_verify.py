@@ -94,6 +94,23 @@ def check(f):
     # ⑦ 索引硬口径仍在
     if "索引/地图接得上（R238）" not in f["agents"]: e.append("AGENTS 索引硬口径被摘")
     if "--refresh" not in f["board"]: e.append("AGENTS 索引口径被摘")
+    # ⑨ R245 设置页重设计：M3 分组层级 / 徽标框退场 / 状态卡中性 / 低频后置
+    for k in ["internal fun SettingsSection(",
+              "Box(Modifier.size(width = 3.dp, height = 15.dp)",
+              "color = Primary, modifier = Modifier.weight(1f)",
+              '.semantics { contentDescription = "$title · $badge" }',
+              ".border(1.dp,",
+              "只记诊断信号，不记书名与正文"]:
+        if k not in s: e.append("分组重画缺: " + k[:52])
+    for banned in ["Box(Modifier.background(PrimarySoft, RoundedCornerShape(6.dp))",
+                   'Text(badge, fontSize = 10.sp',
+                   "containerColor = if (missing.isEmpty()) PrimarySoft else Warn.copy",
+                   "日志可能含书名和正文片段"]:
+        if banned in s: e.append("旧形态回潮: " + banned[:52])
+    i_dev = s.find('SettingsSection("开发者工具"')
+    i_file = s.find('SettingsSection("文件与数据"')
+    if i_dev < 0 or i_file < 0 or i_dev < i_file:
+        e.append("低频排查项没排在文件与数据之后")
     # ⑧ 登记
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r239_verify.py --selftest"),
                               ("清单", f["r135"], '"r239_verify.py"'),
@@ -131,6 +148,14 @@ def selftest():
          '"lastDone, lastTotal, true"'),
         ("AGENTS 索引口径被摘", "agents", "索引/地图接得上（R238）", ""),
         ("AGENTS 索引口径被摘（board）", "board", "--refresh", ""),
+        ("分组竖条被摘", "settings",
+         "Box(Modifier.size(width = 3.dp, height = 15.dp)", ""),
+        ("彩色徽标框回潮", "settings",
+         "Box(Modifier.size(width = 3.dp, height = 15.dp)",
+         "Box(Modifier.background(PrimarySoft, RoundedCornerShape(6.dp))"),
+        ("状态卡整块染色回潮", "settings", ".border(1.dp,",
+         "containerColor = if (missing.isEmpty()) PrimarySoft else Warn.copy"),
+        ("脱敏口径被摘", "settings", "只记诊断信号，不记书名与正文", ""),
         ("CI 漏挂", "ci", "python3 scripts/r239_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r239_verify.py"', ""),
     ]

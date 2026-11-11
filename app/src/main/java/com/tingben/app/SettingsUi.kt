@@ -31,6 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -170,17 +172,21 @@ internal fun SettingLine(
     }
 }
 
+/**
+ * R245 · 设置页分组重画：借鉴 Material 3 Preference / AOSP Settings 的分组层级
+ * ——分组标题用主色小字 + 一根代码画的竖条做锚，卡片留白统一，低频项后置。
+ * 旧形态是「彩色小徽标框 + 粗黑大标题」，四张卡各挂「软件/系统/排查/本机」，
+ * 纯装饰还把标题行挤满。badge **不再渲染**，只进 semantics 供读屏分组；
+ * 调用签名一字不动（r156/r171/r174/r238/r239/r73/r152 都按它定位）。
+ */
 @Composable
 internal fun SettingsSection(
     title: String, badge: String, open: Boolean = true, onToggle: (Boolean) -> Unit = {},
     collapsible: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // H3 · 用户实证「设置页排版很难看，乍一看不像人用的」：
-    // 原来是「一条分隔线 + 一行裸标题 + 贴在一起的行」，没有边界感。
-    // 改成一块一块的卡片，小徽标标归属，标题与内容拉开距离。
     Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = palette.card),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -189,23 +195,22 @@ internal fun SettingsSection(
             .padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(
                 Modifier.fillMaxWidth()
-                    .let { if (collapsible) it.clickable { onToggle(!open) } else it },
+                    .let { if (collapsible) it.clickable { onToggle(!open) } else it }
+                    .semantics { contentDescription = "$title · $badge" },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.background(PrimarySoft, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 7.dp, vertical = 2.dp)) {
-                    Text(badge, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                        color = Primary)
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                    modifier = Modifier.weight(1f))
+                // 代码画的主色竖条，替代原来的彩色徽标框
+                Box(Modifier.size(width = 3.dp, height = 15.dp)
+                    .background(Primary, RoundedCornerShape(2.dp)))
+                Spacer(Modifier.width(9.dp))
+                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                    color = Primary, modifier = Modifier.weight(1f))
                 if (collapsible) {
                     Text(if (open) "收起 ⌃" else "展开 ›", fontSize = 12.sp, color = Sub)
                 }
             }
             if (!collapsible || open) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 content()
             }
         }
@@ -299,15 +304,24 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .padding(horizontal = 14.dp, vertical = 12.dp)) {
+        // R245 · 状态卡不再是页面上一大块色斑：中性底 + 一圈淡边框 + 一枚
+        // 状态圆点，和下面分组卡同一套材质，缺模型时边框转警示色。
         Card(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                .border(1.dp,
+                    if (missing.isEmpty()) Primary.copy(alpha = 0.30f)
+                    else Warn.copy(alpha = 0.45f),
+                    RoundedCornerShape(16.dp)),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (missing.isEmpty()) PrimarySoft else Warn.copy(alpha = 0.12f)),
+            colors = CardDefaults.cardColors(containerColor = palette.card),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(9.dp)
+                        .background(if (missing.isEmpty()) Good else Warn,
+                            RoundedCornerShape(50)))
+                    Spacer(Modifier.width(9.dp))
                     Text(if (missing.isEmpty()) "模型已就绪" else "模型还没齐",
                         fontSize = 15.sp, fontWeight = FontWeight.Bold,
                         color = if (missing.isEmpty()) Primary else Warn,
@@ -407,52 +421,6 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Toast.makeText(c, "这台机器打不开应用详情", Toast.LENGTH_SHORT).show()
             }
         }
-        SettingsSection("开发者工具", "排查", open = devOpen,
-                        onToggle = { devOpen = it }) {
-            // R142 · 日志定位：给开发者排查用，不是给使用者看的。
-            Text("开发日志", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(3.dp))
-            Text("日志可能含书名和正文片段", fontSize = 11.sp, color = Sub)
-            Spacer(Modifier.height(8.dp))
-            // R165 · 用户实证「一键复制 / 导出 md 也应该是按钮，要有圆角矩形的底」：
-            // 原来只是两枚裸文字按钮，看着不像能按。两枚等宽，次/主靠底色区分。
-            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    EventLog.ui("DIAG_COPY", "summary")
-                    exportScope.launch {
-                        val txt = withContext(Dispatchers.IO) { EventLog.exportSummary(c) }
-                        diagClipboard.setText(AnnotatedString(txt))
-                        Toast.makeText(c, "诊断摘要已复制，直接贴给开发者",
-                            Toast.LENGTH_SHORT).show()
-                    }
-                },
-                    modifier = Modifier.weight(1f).height(38.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimarySoft, contentColor = Primary),
-                    contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Text("一键复制摘要", fontSize = 12.sp)
-                }
-                Button(onClick = {
-                    EventLog.ui("DIAG_EXPORT", "markdown")
-                    val name = "tingben_diag_" +
-                        java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
-                            .format(java.util.Date()) + ".md"
-                    try { exportLauncher.launch(name) }
-                    catch (t: Throwable) {
-                        UiErrors.storage("打不开系统保存界面，没法导出日志", t)
-                    }
-                },
-                    modifier = Modifier.weight(1f).height(38.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Primary, contentColor = palette.onPrimary),
-                    contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Text("导出完整 .md", fontSize = 12.sp)
-                }
-            }
-        }
         // R238 · 「本机数据」只放一行、「成品文件」又一张卡，两张都标「本机」，
         // 正是 R174 修过的同类碎片。合并成一张，行全部走 SettingLine 统一层级。
         SettingsSection("文件与数据", "本机", collapsible = false) {
@@ -501,6 +469,53 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 }
             }
         }
+        SettingsSection("开发者工具", "排查", open = devOpen,
+                        onToggle = { devOpen = it }) {
+            // R142 · 日志定位：给开发者排查用，不是给使用者看的。
+            Text("开发日志", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(3.dp))
+            // R225 脱敏之后日志只留长度/哈希/id，这句旧提示会误导人以为有隐私风险
+            Text("只记诊断信号，不记书名与正文", fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
+            // R165 · 用户实证「一键复制 / 导出 md 也应该是按钮，要有圆角矩形的底」：
+            // 原来只是两枚裸文字按钮，看着不像能按。两枚等宽，次/主靠底色区分。
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    EventLog.ui("DIAG_COPY", "summary")
+                    exportScope.launch {
+                        val txt = withContext(Dispatchers.IO) { EventLog.exportSummary(c) }
+                        diagClipboard.setText(AnnotatedString(txt))
+                        Toast.makeText(c, "诊断摘要已复制，直接贴给开发者",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                },
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimarySoft, contentColor = Primary),
+                    contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("一键复制摘要", fontSize = 12.sp)
+                }
+                Button(onClick = {
+                    EventLog.ui("DIAG_EXPORT", "markdown")
+                    val name = "tingben_diag_" +
+                        java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                            .format(java.util.Date()) + ".md"
+                    try { exportLauncher.launch(name) }
+                    catch (t: Throwable) {
+                        UiErrors.storage("打不开系统保存界面，没法导出日志", t)
+                    }
+                },
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Primary, contentColor = palette.onPrimary),
+                    contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("导出完整 .md", fontSize = 12.sp)
+                }
+            }
+        }
+
     }
 }
-

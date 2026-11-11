@@ -9,34 +9,40 @@ SRC = ui_sources.source(ROOT)
 CONTRACT = ROOT / "docs/00_现行契约.md"
 CI = ROOT / ".github/workflows/ci.yml"
 
+# R246 · 按现状迁移：R215 首页不建书、R230 撤「上次读到」/改长按菜单、
+# R245 设置页统一行之后，11.sp/10.sp 是合法字号，不再当「旧形态」禁。
 POS = [
-    'Text("还没有书"',
-    '导入本地 TXT / EPUB',
-    'Text("导入一本书", fontSize = 15.sp)',
-    '粘贴文字建书 ›',
-    'Text("去准备 ›"',
-    'Modifier.fillMaxWidth().clickable { onModels() }',
+    'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
+    'var menuBook by remember { mutableStateOf<String?>(null) }',
+    'Text("置顶或删除", fontSize = 12.sp, color = Sub)',
+    'else "听这段"',                       # R215 首页粘一段即听，不建书
+    'Text("再选一次文件 ›", fontSize = 12.sp, color = Primary)',
+    'onLongPress = { menuBook = b.id }',   # R230 长按书名弹置顶/删除
     'var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }',
     'ReadingState.allLast(c)',
     'items(books, key = { it.id })',
-    '上次读到 第 ${lastRead + 1} 章',
     'Text("共 ${books.size} 本"',
-    '.clickable { onOpen(b.id) }',
+    'onTap = { onOpen(b.id) }',            # R230 点书名开书、长按弹菜单
+    'BookStore.pinned(c)',
     'Text("删除"',
 ]
 BAN = [
-    'fontSize = 11.sp',
-    'fontSize = 10.sp',
     'FilledTonalButton(onClick = onModels, Modifier.fillMaxWidth()) { Text("去准备") }',
     'Text("粘贴文字", fontSize = 12.5.sp, fontWeight = FontWeight.Bold',
     'Text("书架还是空的"',
     'IconButton(onClick = { onOpen(b.id) })',
     'IconButton(onClick = { confirmDelete = b.id })',
     'Text("✕", fontSize = 16.sp',
+    # R215 · 首页退回「粘贴建书」是功能回潮，不许出现
+    'BookStore.add(c, "粘贴的文字", pasteText)',
+    # R230 · 「上次读到 第 N 章」是撤掉的废话
+    '上次读到 第 ${lastRead + 1} 章',
 ]
 KEEP = [
-    'RefreshStrip(', 'BookStore.list(c)', 'ModelStore.ready(c)', 'ModelStore.missing(c)',
-    'BookStore.add(c, "粘贴的文字", pasteText)', 'BookStore.delete(c, id)',
+    'RefreshStrip(', 'BookStore.list(c)', 'ModelStore.missing(c)',
+    'ClipSynth.synthesize',                # R215 首页合成真源
+    'InputReadScreen(',                    # R215 首页真源（不再建书）
+    'BookStore.delete(c, id)',
     'AlertDialog(', 'onImportBook', 'onOpen(b.id)', 'onChanged()',
 ]
 

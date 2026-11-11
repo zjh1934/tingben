@@ -591,7 +591,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         gesturesEnabled = screen == Screen.LIBRARY,
         drawerContent = {
             AppDrawerSheet(
-                title = "我的书",
+                title = "",
                 onImport = {
                     openBookPicker()
                     scope.launch { drawerState.close() }
@@ -651,40 +651,30 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             trailing = when (screen) {
                 Screen.LIBRARY -> {
                     {
-                        TextButton(onClick = { chapterMixerOpen = true
+                        IconButton(onClick = { chapterMixerOpen = true
                             EventLog.ui("OVERLAY_MIXER", "open:home") }) {
-                            Text("调音", fontSize = 12.sp, color = Primary)
+                            MixerIcon(Primary)
                         }
-                        TextButton(onClick = {
-                            // 首页没「当前书」：有任务就打开那本书并就地展开看板
-                            TaskResume.active(ctx)?.bookId?.let {
-                                openBook(it); hubOpenTasks = true
-                            }
+                        IconButton(onClick = {
+                            // R243 · 主页任务通向全局任务页，不是目录页就地看板
+                            EventLog.ui("HOME_TASKS", "open:global")
+                            nav.push(Screen.TASKS)
                         }, enabled = homeHasTask) {
-                            Text("任务", fontSize = 12.sp,
-                                color = if (homeHasTask) Primary else Sub)
+                            TasksIcon(if (homeHasTask) Primary else Sub)
                         }
                     }
                 }
                 Screen.CHAPTERS -> {
                 {
                     if (hubRunning) {
-                        TextButton(onClick = { hubStop() },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                            Text("停止", fontSize = 12.sp, color = Warn)
-                        }
+                        IconButton(onClick = { hubStop() }) { StopIcon(Warn) }
                     } else if (hubStalled) {
-                        TextButton(onClick = { hubResume() },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                            Text("继续", fontSize = 12.sp, color = Primary)
-                        }
+                        IconButton(onClick = { hubResume() }) { PlayIcon(Primary) }
                     }
-                    TextButton(onClick = {
+                    IconButton(onClick = {
                         EventLog.ui("HUB_TASKS", "id=${bookId?.take(8)}")
                         hubTasksTick++
-                    }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                        Text("任务", fontSize = 12.sp, color = Primary)
-                    }
+                    }) { TasksIcon(Primary) }
                     IconButton(onClick = { nav.push(Screen.PRODUCE) },
                         modifier = Modifier.size(34.dp)) {
                         Text("⚙", fontSize = 16.sp, color = Primary)

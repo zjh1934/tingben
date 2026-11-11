@@ -29,7 +29,7 @@ def check(f):
               'val modeStamp = TaskResume.expectedModeStamp(c)']:
         if s not in p: e.append("主链缺: " + s)
     if 'val modeStamp = sha(listOf(' in p: e.append("run 仍在自己算指纹（两处会漂移）")
-    if '换过模式或音色输入' not in r: e.append("作废原因文案缺")
+    if '换过模式/音色输入' not in r: e.append("作废原因文案缺")
     for s in ['const val MAX_BYTES = 64 * 1024 * 1024',
               'const val MAX_TXT_BYTES = 24 * 1024 * 1024',
               'MAX_TXT_BYTES.toLong()',

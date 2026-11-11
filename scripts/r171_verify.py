@@ -41,11 +41,16 @@ HUB_MUST = [
     "TaskResume.invalidationReason(c, it)",
     "TaskResume.remove(c, t.bookId)",
     "TaskResume.dequeue(c, t.bookId)",
-    "Producer.resumeQueue(c)",
+    # R243 · 「继续队列」按钮三处全砍，底层 resumeQueue 仍在 Producer。
+    # 这里改判「队列数据同源」，按钮回潮由 HUB_BAN 拦，不放宽能力判据。
+    "TaskResume.queue(c)",
     "Producer.start(c, b, t.only, true, t.think, t.config)",
 ]
 
 HUB_BAN = [
+    # R243 · 费解的「继续队列」按钮不许回潮
+    'Text("继续队列"',
+    "Producer.resumeQueue(c)",
     "MoreDots(HubPrimary)",
     "private fun MoreDots(",
     "onMore = { enterMulti(r.index) })",

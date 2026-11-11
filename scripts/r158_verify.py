@@ -72,7 +72,7 @@ POS = {
         "R158b · 用户明确「教程不要塞进应用里」",
         "R158b · 种子语义不进 UI",
         "Lifecycle.Event.ON_RESUME) permTick++",
-        "日志可能含书名和正文片段",
+        "只记诊断信号，不记书名与正文",
     ],
     "ka": [
         "object KeepAlive",
@@ -118,7 +118,7 @@ TUTORIAL = ["复制地址 →", "按章切分 →", "设置 →", "逐段送模�
             "一次可勾选", "图文步骤"]
 # R193 · 「这本书正在制作或收尾时先等它停稳」是何时能操作的后果告知，
 # 与「章号会变」同类，不是教程文案。按内容前缀放行，不放宽整条长文案检查。
-ALLOWED_LONG = ("只删", "章号会变", "日志可能含", "这本书正在制作或收尾")
+ALLOWED_LONG = ("只删", "章号会变", "只记诊断信号", "这本书正在制作或收尾")
 
 BAN = {
     "main": [
@@ -291,7 +291,7 @@ def selftest():
           'SettingsSection("运行与通知", "系统", collapsible = false) { }\n        SettingsSection("后台运行与权限", "系统", collapsible = false)'),
          ("合并口径被摘", "main",
           "R174 · 自审发现：设置页原来有两张都标「系统」的卡", ""),
-        ("教程长说明回潮", "main", '"日志可能含书名和正文片段"',
+        ("教程长说明回潮", "main", '"只记诊断信号，不记书名与正文"',
          'Text("设置 → 应用设置 → 应用管理 → 找到听本，先补齐上面那一份")'),
         ("KeepAlive 对象被摘", "ka", "object KeepAlive", ""),
         ("电池标准 Intent 被摘", "ka", "ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", ""),

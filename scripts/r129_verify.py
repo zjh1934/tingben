@@ -55,8 +55,9 @@ POS = {
         'item(key = "tasks_queue")',
         "TaskResume.queue(c)",
         "Producer.queueState(c)",
-        "Producer.resumeQueue(c)",
-        "继续队列 ›",
+        # R243 · 按钮砍掉，只留暂停提示；恢复走自动续跑，底层 resumeQueue 仍在 pipe
+        "队列已暂停",
+        "nav.push(Screen.TASKS)",
     ],
     "ci": ["python3 scripts/r129_verify.py --selftest"],
     "r114": ["基准树只建一次", "f.write_text(s, encoding='utf-8')"],
@@ -66,6 +67,11 @@ BAN = {
     "hub": [
         "还有一本在制作，等它做完或先停止，一次只跑一本",
         "Producer.start(c, book, selected, directRead = true, config = ProduceConfig())",
+    ],
+    "main": [
+        "继续队列 ›",
+        'Text("继续队列"',
+        'title = "我的书"',
     ],
 }
 
@@ -103,6 +109,7 @@ def selftest():
         "任务页队列卡被摘": ("main", 'item(key = "tasks_queue")'),
         "r114 回到每例复制整树": ("r114", "基准树只建一次"),
         "r114 不还原文件": ("r114", "f.write_text(s, encoding='utf-8')"),
+        "主页任务回目录页": ("main", "nav.push(Screen.TASKS)"),
     }
     bad = 0
     for name, (k, needle) in cuts.items():

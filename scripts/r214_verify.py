@@ -58,9 +58,10 @@ def check(f):
     #    调音/任务入口上移系统顶栏，按符号在合并视图里守。
     for k in ["fillMaxHeight(0.36f)", "Alignment.BottomEnd"]:
         if k not in it: e.append("首页缺: " + k[:52])
-    for k in ['Text("调音"', 'Text("任务"',
+    # R244 · 按图标符号定位，不绑字按钮文案
+    for k in ['MixerIcon(', 'TasksIcon(',
               "enabled = homeHasTask",
-              "color = if (homeHasTask) Primary else Sub",
+              "TasksIcon(if (homeHasTask) Primary else Sub)",  # R244 · 置灰改走图标 tint
               "val homeHasTask = remember(refresh, bookImporting)"]:
         if k not in mg: e.append("顶栏入口缺: " + k[:52])
     if "Modifier.fillMaxWidth().weight(1f)" in it:

@@ -3,7 +3,7 @@
 
 四件落地：
   E1 设置页导出诊断日志（崩溃栈 + 环形缓冲 + 事件/详细日志 + 设备版本），
-     走系统文件选择器、IO 线程、显式隐私提示
+     走系统文件选择器、IO 线程、脱敏口径说明（R225 后日志原文零落盘）
   E2 r40/r46 的 git HEAD 逐字节对拍降级为语义守恒（TINGBEN_STRICT=1 才做），
      去掉「每改一行必须先本地 commit 才绿」；r135 轻量清单换成现行 5 项
   E3 CI 里 17 个旧页壳脚本（每个都跑同一个 check()）收敛成 1 项统一守门，
@@ -50,7 +50,7 @@ POS = {
         "withContext(Dispatchers.IO)", "diagClipboard.setText(AnnotatedString(txt))",
         "exportLauncher.launch(name)", '"开发日志"',
         '"一键复制摘要"', '"导出完整 .md"',
-        "可能含书名和正文片段",
+        "只记诊断信号，不记书名与正文",
         "UiErrors.storage(\"诊断日志没导出来",
     ],
     "r40": [
@@ -163,8 +163,10 @@ def logic_cases(f):
     m = re.search(r'val exportLauncher = rememberLauncherForActivityResult\(([\s\S]*?)\n    \}\n', f["main"])
     if not m or "withContext(Dispatchers.IO)" not in m.group(1):
         bad.append("日志导出没切 IO 线程")
-    if "可能含书名和正文片段" not in f["main"]:
-        bad.append("导出入口没有隐私提示")
+    if "只记诊断信号，不记书名与正文" not in f["main"]:
+        bad.append("导出入口缺脱敏口径说明")
+    if "日志可能含书名和正文片段" in f["main"]:
+        bad.append("旧隐私提示回潮（R225 之后日志原文零落盘）")
     print("逻辑用例 %s" % ("通过" if not bad else "有失败"))
     return bad
 
@@ -192,6 +194,7 @@ def selftest():
         ("导出汇总被摘", "eventlog", "fun exportBundle(c: Context): String", ""),
         ("崩溃栈没进导出", "eventlog", "崩溃前事件（环形缓冲）", ""),
         ("导出隐私提示被摘", "eventlog", "给开发者排查用的", ""),
+        ("脱敏口径被摘", "main", "只记诊断信号，不记书名与正文", ""),
         ("设置页导出入口被摘", "main", '"一键复制摘要"', ""),
         ("文件选择器被摘", "main",
          'ActivityResultContracts.CreateDocument("text/markdown")', ""),

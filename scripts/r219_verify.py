@@ -66,8 +66,8 @@ def check(f):
         e.append("两条进度条底色不全")
     # ③ R226 · 三按钮上移系统顶栏，与书名同一排；按符号定位、不绑颜色常量
     for k in ["trailing = when (screen)",
-              'TextButton(onClick = { hubStop() }',
-              'TextButton(onClick = { hubResume() }',
+              'IconButton(onClick = { hubStop() }',
+              'IconButton(onClick = { hubResume() }',
               'hubTasksTick++',
               'IconButton(onClick = { nav.push(Screen.PRODUCE) }',
               "fun hubStop()", "fun hubResume()",
@@ -106,7 +106,7 @@ def selftest():
         ("条上不写已完成", "hub", '"已完成 ${(bookPct * 100).toInt()}%"', ""),
         ("废话回潮", "merged", "fun hubStop()", 'Text("可播 3/10 章")'),
         ("顶栏按钮不齐", "merged", "trailing = when (screen)", ""),
-        ("停止按钮被摘", "merged", 'TextButton(onClick = { hubStop() }', ""),
+        ("停止按钮被摘", "merged", 'IconButton(onClick = { hubStop() }', ""),
         ("空章又弹块", "hub", "if (generated || making) {", "if (true) {"),
         ("左侧勾被摘", "hub", "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }", ""),
         ("点勾不进多选", "hub", "multiMode = next.isNotEmpty()", ""),

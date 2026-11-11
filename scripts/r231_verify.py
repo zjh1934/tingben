@@ -21,6 +21,7 @@ def files():
         "ops": rd(CORE / "AudioOps.kt"),
         "producer": rd(CORE / "Producer.kt"),
         "ui": rd(APP / "ProduceUi.kt"),
+        "hub": rd(APP / "ChapterHub.kt"),
         "agents": rd(ROOT / "AGENTS.md"),
         "ci": rd(ROOT / ".github/workflows/ci.yml"),
         "r135": rd(ROOT / "scripts/r135_verify.py"),
@@ -67,17 +68,24 @@ def check(f):
     if 'if (c != null && Prefs.autoMergeChapter(c)) {' not in f["producer"]:
         e.append("R231 块丢了 c 非空守卫（真编译会报 Context? 不匹配）")
     for k in ['if (c != null && Prefs.autoMergeChapter(c)) {',
-              'val declick = Prefs.mergeDeclickMs(c)',
               'val byCh = LinkedHashMap<Int, MutableList<File>>()',
-              "AudioOps.mergeChapterAuto(c, book.id, book.title, ci, parts,",
-              "gapMs = config.gapMs, declickMs = declick",
-              "CHAPTER_MERGE_AUTO",
+              "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,",
+              "gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c)",
               "WavMerger.merge(wavs, outFile, config.gapMs)"]:
         if k not in pr: e.append("制作收尾缺: " + k[:56])
-    # R225 脱敏：日志行里不许出现书名；传参给 register 的 book.title 不算日志
-    log_line = next((l for l in pr.splitlines() if '"CHAPTER_MERGE_AUTO"' in l), "")
-    if "拼好 $made 章" not in pr or not log_line or "book.title" in log_line or "bookTitle" in log_line:
-        e.append("自动拼章日志缺或带书名原文")
+    # R243 · 回溯补齐：装新版前已合成的小段也要长出章节成品
+    for k in ["AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,",
+              "if (made > 0) localTick++"]:
+        if k not in f["hub"]: e.append("目录页回溯补齐缺: " + k[:56])
+    # 唯一真源：audioFor 去重 + 缺块章跳过，防每次续跑重复登记
+    for k in ["if (AudioLibrary.audioFor(c, bookId, ci) != null)",
+              "parts.any { !it.isFile || it.length() <= 44L }",
+              '"CHAPTER_MERGE_ENSURE"']:
+        if k not in op: e.append("章节补拼真源缺: " + k[:56])
+    # R225 脱敏：补拼日志行里不许出现书名
+    log_line = next((l for l in op.splitlines() if '"CHAPTER_MERGE_ENSURE"' in l), "")
+    if "补拼 $made 章" not in op or not log_line or "book.title" in log_line or "bookTitle" in log_line:
+        e.append("补拼日志缺或带书名原文")
     # ⑤ 制作选项卡补 ③ 拼接设置
     for k in ['var autoMerge by remember { mutableStateOf(Prefs.autoMergeChapter(c)) }',
               'var declickMs by remember { mutableStateOf(Prefs.mergeDeclickMs(c)) }',
@@ -117,11 +125,15 @@ def selftest():
          "AudioTree.forget(c, parts.map { it.absolutePath })\n        EventLog.log(EventLog.Kind.PIPELINE, \"CHAPTER_MERGE_ONE\""),
         ("开关被摘", "producer", "if (c != null && Prefs.autoMergeChapter(c)) {", "if (false) {"),
         ("按章拼调用被摘", "producer",
-         "AudioOps.mergeChapterAuto(c, book.id, book.title, ci, parts,", ""),
+         "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,", ""),
+        ("回溯补齐被摘", "hub",
+         "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,", ""),
+        ("补拼去重被摘", "ops",
+         "if (AudioLibrary.audioFor(c, bookId, ci) != null)", ""),
         ("整本成品被摘", "producer",
          "WavMerger.merge(wavs, outFile, config.gapMs)", ""),
         ("接缝配置没透传", "producer",
-         "gapMs = config.gapMs, declickMs = declick", "gapMs = 0, declickMs = 0"),
+         "gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c)", "gapMs = 0, declickMs = 0"),
         ("③ 分组被摘", "ui", 'ExpandGroup("③ 拼成这一章"', ""),
         ("自动拼选项被摘", "ui", 'OptionRow("自动拼成整章"', ""),
         ("接缝选项被摘", "ui", 'OptionRow("接缝处理"', ""),
@@ -132,7 +144,8 @@ def selftest():
     ]
     bad = 0
     for name, key, needle, repl in cuts:
-        g = dict(f); g[key] = f[key].replace(needle, repl, 1)
+        # R243 · 全量替换，避免自指锚点留一份导致注入恒不红
+        g = dict(f); g[key] = f[key].replace(needle, repl)
         if check(g): print("  反向注入 %-22s 拦下" % name)
         else: print("  反向注入漏放:", name); bad += 1
     print("反向注入 %d/%d 全拦下" % (len(cuts) - bad, len(cuts)))

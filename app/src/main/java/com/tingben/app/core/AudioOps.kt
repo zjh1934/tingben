@@ -95,6 +95,31 @@ object AudioOps {
         return Result(true, dst, kept = parts.size)
     }
 
+    /**
+     * R243 · 章节成品补齐：制作收尾与目录页回溯共用这一处，别再各写一套。
+     * 旧行为只在整本跑完那一刻拼一次，装新版前已合成好的小段永远长不出
+     * 章节成品；这里按章补，audioFor 已有的跳过，避免每次续跑重复登记一份。
+     * 缺块章跳过（用户删掉的段由调用方排除，不在这里猜）。
+     */
+    fun ensureChapterAudios(c: Context, bookId: String, bookTitle: String,
+                            byChapter: Map<Int, List<File>>,
+                            gapMs: Int = 0, declickMs: Int = 30): Pair<Int, Int> {
+        if (!Prefs.autoMergeChapter(c)) return 0 to 0
+        var made = 0
+        var skipped = 0
+        for ((ci, parts) in byChapter) {
+            if (AudioLibrary.audioFor(c, bookId, ci) != null) { skipped++; continue }
+            if (parts.isEmpty() || parts.any { !it.isFile || it.length() <= 44L }) {
+                skipped++; continue
+            }
+            if (mergeChapterAuto(c, bookId, bookTitle, ci, parts,
+                    gapMs = gapMs, declickMs = declickMs).ok) made++ else skipped++
+        }
+        EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_ENSURE",
+            "补拼 $made 章 / 跳过 $skipped 章")
+        return made to skipped
+    }
+
     fun mergedTemp(c: Context, parts: List<File>): Result {
         if (parts.isEmpty()) return Result(false, reason = "这里还没有音频小块")
         val out = File(c.cacheDir, "audio_copy_${System.currentTimeMillis()}.wav")

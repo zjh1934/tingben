@@ -62,8 +62,8 @@ def check(f):
               "VoiceRef.save(c, AudioDecode.clipWav(d.wav, startMs, endMs))",
               "refClip?.let { d ->",
               "RefClipDialog(",
-              "onCancel = { refClip = null }",
-              "onUse = { s, e -> applyRefClip(d, s, e) }",
+              "onCancel = { PlayQueue.stopPreview(); refClip = null }",
+              "onUse = { s, e -> PlayQueue.stopPreview(); applyRefClip(d, s, e) }",
               "internal fun RefClipDialog(",
               "Text(\"导入并裁剪 ›\""]:
         if k not in m: e.append("导入链路缺: " + k[:60])

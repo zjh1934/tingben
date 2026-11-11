@@ -285,6 +285,24 @@ internal fun ChapterHubScreen(
         }
         hubSegs = all
         hubSegChapters = map
+        // R243 · 回溯补齐：装新版前已合成好的小段不会自己长出章节成品。
+        // 只把「该章所有未删段都有 wav」的章交出去；缺一块就整章不拼。
+        val made = withContext(Dispatchers.IO) {
+            val drops = SegDrops.snapshot(c, book.id)
+            val byCh = LinkedHashMap<Int, MutableList<File>>()
+            for (sg in all) {
+                val ch = map?.get(sg.index) ?: continue
+                if (ch < 0) continue
+                if (SegDrops.matches(drops, sg.wavName, sg.text.take(200))) continue
+                byCh.getOrPut(ch) { mutableListOf() }
+                    .add(sg.wav ?: File(c.filesDir, "work/${book.id}/${sg.wavName}"))
+            }
+            AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,
+                gapMs = Prefs.defaultPerf(c).gapMs,
+                declickMs = Prefs.mergeDeclickMs(c)).first
+        }
+        // 拼出成品才刷一次磁盘快照，让小耳机当页就亮；无成品不空转。
+        if (made > 0) localTick++
     }
     val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters) {
         val ch = expandedChapter
@@ -791,12 +809,9 @@ internal fun ChapterHubScreen(
                         }
                     }
                 },
-                confirmButton = {
-                    TextButton(onClick = {
-                        Producer.resumeQueue(c)
-                        showQueue = false
-                    }) { Text("继续队列", color = HubPrimary) }
-                },
+                // R243 · 「继续队列」砍掉：队列恢复由自动续跑/重新制作接管，
+                // 这枚按钮看不懂，留着反而像卡住要手动点。底层能力保留。
+                confirmButton = { },
                 dismissButton = {
                     TextButton(onClick = { showQueue = false }) { Text("关闭") }
                 }
@@ -1400,16 +1415,9 @@ private fun TaskBoardDialog(
             }
         )
     } else {
-        val resumeQueueButton: (@Composable () -> Unit)? = if (qPaused) {
-            {
-                TextButton(onClick = {
-                    Producer.resumeQueue(c)
-                    tick++
-                    onChanged()
-                    onDismiss()
-                }) { Text("继续队列 ›", fontSize = 13.sp, color = HubPrimary) }
-            }
-        } else null
+        // R243 · 同 showQueue 弹窗口径：任务弹窗不再给「继续队列」按钮，
+        // 「队列已暂停」提示仍在，底层 Producer.resumeQueue 不动。
+        val resumeQueueButton: (@Composable () -> Unit)? = null
         AlertDialog(
         onDismissRequest = onDismiss,
         title = {

@@ -953,13 +953,9 @@ object Producer {
             TaskResume.save(c, done)
             _resume.value = done
         }
-        // R231 · 拼的是「这一章」，不是把整本重新拼一遍：整本成品之外，
-        // 每章的小块齐了就单独出一份这一章的音频，目录页小耳机直接播。
-        // 借鉴同行「短段合并成章」；只增不删，整本与续跑链路零改动。
-        // R242 · c = appCtx 是 Context?；R231 块原先落在 if(c != null && t != null) 之外，
-        // 三处调用真编译报 Argument type mismatch。条件加非空守卫，局部 val 在 then 块内 smart cast。
+        // R231 / R243 · 拼的是「这一章」，不是把整本重新拼一遍；收尾统一走
+        // AudioOps.ensureChapterAudios，目录页打开书时也会调它做回溯补齐。
         if (c != null && Prefs.autoMergeChapter(c)) {
-            val declick = Prefs.mergeDeclickMs(c)
             val byCh = LinkedHashMap<Int, MutableList<File>>()
             for (i in 0 until toSpeak.size) {
                 val wavName = dropWav(i)
@@ -970,19 +966,8 @@ object Producer {
                 byCh.getOrPut(ci) { mutableListOf() }
                     .add(File(work, wavName))
             }
-            var made = 0
-            var skipped = 0
-            for ((ci, parts) in byCh) {
-                // 真少一块就先不拼这一章；手工删的段已在收集时排除
-                if (parts.isEmpty() || parts.any { !it.isFile || it.length() <= 44L }) {
-                    skipped++; continue
-                }
-                if (AudioOps.mergeChapterAuto(c, book.id, book.title, ci, parts,
-                        gapMs = config.gapMs, declickMs = declick).ok) made++
-                else skipped++
-            }
-            EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_AUTO",
-                "拼好 $made 章 / 跳过 $skipped 章 · 接缝 ${declick}ms")
+            AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,
+                gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c))
         }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_DONE", "${outFile.length()} 字节")
     }

@@ -50,8 +50,9 @@ def check(f):
         e.append("主页右上角 ＋/齿轮 回潮")
     if "trailing = when (screen)" not in mn:
         e.append("顶栏 trailing 没按 screen 分发")
-    for k in ["Screen.LIBRARY -> {", 'Text("调音", fontSize = 12.sp',
-              'Text("任务", fontSize = 12.sp', "enabled = homeHasTask",
+    # R244 · 顶栏改自绘图标，判据按符号不再绑字按钮
+    for k in ["Screen.LIBRARY -> {", 'MixerIcon(Primary)',
+              'TasksIcon(', "enabled = homeHasTask",
               "val homeHasTask = remember(refresh, bookImporting)"]:
         if k not in mn: e.append("顶栏首页两枚缺: " + k[:52])
     # ④ 首页内容区零常驻按钮排、零悬浮开关
@@ -101,7 +102,7 @@ def selftest():
         ("主页加号回潮", "shell", "Screen.LIBRARY  -> ChromeSpec(\"\", TAB_LIBRARY)",
          'Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY,\n        showImport = true)'),
         ("顶栏首页分支被摘", "main", "Screen.LIBRARY -> {", ""),
-        ("调音入口被摘", "main", 'Text("调音", fontSize = 12.sp', ""),
+        ("调音入口被摘", "main", 'MixerIcon(Primary)', ""),
         ("任务不置灰", "main", "enabled = homeHasTask", "enabled = true"),
         ("首页又长悬浮开关", "input", "val clipboard = LocalClipboardManager.current",
          'val clipboard = LocalClipboardManager.current\n    Text("悬浮·关")'),

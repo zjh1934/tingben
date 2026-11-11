@@ -1,6 +1,8 @@
 package com.tingben.app
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -15,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -22,6 +26,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -111,6 +116,7 @@ private fun GearIcon(tint: Color) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun AppTopBar(
     spec: ChromeSpec,
     onMenu: () -> Unit,
@@ -135,12 +141,16 @@ internal fun AppTopBar(
         }
         // R164 · 首页不显示品牌名（「听本」是画蛇添足），二级页仍显示页面名。
         if (spec.title.isNotEmpty()) {
+            // R243 · 书名太长向左滚动，不换行把顶栏撑宽 / 不压掉右侧按钮
             Text(
                 spec.title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = primary,
-                modifier = Modifier.weight(1f)
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).basicMarquee()
             )
         } else {
             Spacer(Modifier.weight(1f))
@@ -168,6 +178,75 @@ internal fun AppTopBar(
  *   · 左下角一枚设置（主页右上角齿轮撤掉后收在这里）
  * 模型 / 调音台 / 任务 / 输入朗读仍各归其位，不再往抽屉塞功能菜单。
  */
+/**
+ * R244 · 顶栏字按钮改代码自绘图标：混音推子 / 任务清单 / 停止 / 播放。
+ * 用户口径「几竖加几竖里面有几个点」「三角和两竖」；全部 Canvas 画、不引图标库，
+ * 深浅主题随调用方传的 tint。界面上不再出现文字，无障碍文案走 semantics。
+ * internal 是因为 MainActivity 的顶栏要跨文件调用；本文件不参与 ui_sources 合并视图。
+ */
+@Composable
+internal fun MixerIcon(tint: Color, label: String = "调音",
+                       modifier: Modifier = Modifier.size(18.dp)) {
+    Canvas(modifier.semantics { contentDescription = label }) {
+        val w = size.width; val h = size.height
+        val sw = 2.dp.toPx()
+        for (i in 0..2) {
+            val x = w * (0.20f + 0.30f * i)
+            // R246 · drawLine 没有 (Color, Offset, Offset, Stroke) 重载，
+            // 真编译报 None of the following candidates is applicable
+            drawLine(tint, Offset(x, h * 0.08f), Offset(x, h * 0.92f),
+                strokeWidth = sw, cap = StrokeCap.Round)
+        }
+        // 三根推子上各一枚滑块，高度错开才像调音台
+        val ys = listOf(0.32f, 0.62f, 0.44f)
+        for (i in 0..2) {
+            drawCircle(tint, radius = w * 0.11f,
+                center = Offset(w * (0.20f + 0.30f * i), h * ys[i]))
+        }
+    }
+}
+
+@Composable
+internal fun TasksIcon(tint: Color, label: String = "任务",
+                       modifier: Modifier = Modifier.size(18.dp)) {
+    Canvas(modifier.semantics { contentDescription = label }) {
+        val w = size.width; val h = size.height
+        val sw = 2.dp.toPx()
+        for (i in 0..2) {
+            val y = h * (0.22f + 0.28f * i)
+            drawCircle(tint, radius = w * 0.055f, center = Offset(w * 0.16f, y))
+            drawLine(tint, Offset(w * 0.34f, y), Offset(w * 0.88f, y),
+                strokeWidth = sw, cap = StrokeCap.Round)
+        }
+    }
+}
+
+@Composable
+internal fun StopIcon(tint: Color, label: String = "停止",
+                      modifier: Modifier = Modifier.size(18.dp)) {
+    Canvas(modifier.semantics { contentDescription = label }) {
+        val w = size.width; val h = size.height
+        val sq = Path().apply {
+            moveTo(w * 0.26f, h * 0.26f); lineTo(w * 0.74f, h * 0.26f)
+            lineTo(w * 0.74f, h * 0.74f); lineTo(w * 0.26f, h * 0.74f); close()
+        }
+        drawPath(sq, color = tint)
+    }
+}
+
+@Composable
+internal fun PlayIcon(tint: Color, label: String = "继续",
+                      modifier: Modifier = Modifier.size(18.dp)) {
+    Canvas(modifier.semantics { contentDescription = label }) {
+        val w = size.width; val h = size.height
+        val tri = Path().apply {
+            moveTo(w * 0.28f, h * 0.14f); lineTo(w * 0.86f, h * 0.50f)
+            lineTo(w * 0.28f, h * 0.86f); close()
+        }
+        drawPath(tri, color = tint)
+    }
+}
+
 @Composable
 internal fun AppDrawerSheet(
     title: String,
@@ -183,9 +262,12 @@ internal fun AppDrawerSheet(
         drawerContainerColor = surface
     ) {
         Column(Modifier.fillMaxSize().padding(vertical = 12.dp)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                color = primary,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp))
+            // R243 · 抽屉顶上「我的书」是废话，标题为空就整行不渲染
+            if (title.isNotEmpty()) {
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                    color = primary,
+                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp))
+            }
             // R230 · 导入独占一排，不再跟标题挤同一行
             Button(
                 onClick = onImport,

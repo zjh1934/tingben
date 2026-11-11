@@ -81,7 +81,9 @@ HUB_POS = [
     "AudioLibrary.playableItems(c, book.id)",
     "TaskResume.queue(c)",
     "TaskResume.dequeue(c, t.bookId)",
-    "Producer.resumeQueue(c)",
+    # R243 · 「继续队列」按钮砍掉，底层能力仍在 Producer；这里判同源数据，
+    # 按钮回潮由 HUB_BAN 拦，不放宽能力判据。
+    "TaskResume.realProgress(c, it)",
     # R169 · 章名深浅两色统一 palette.text：浅色下 HubGrey 只有 1.74:1，
     # 真机截图里 103 章整列看不见；「有没有做好」交给右侧耳机图标颜色。
     "color = palette.text,",
@@ -97,6 +99,9 @@ HUB_POS = [
 
 # ── 三列 / 分页 / 列跳转零回潮 ───────────────────────────────────────
 HUB_BAN = [
+    # R243 · 费解的「继续队列」按钮不许回潮
+    'Text("继续队列 ›"',
+    "Producer.resumeQueue(c)",
     "HorizontalPager(",
     "HubTitles",
     "private fun SynColumn(",
@@ -121,9 +126,9 @@ MAIN_POS = [
     'EventLog.ui("OPEN_BOOK"',
     # R226 · 三枚操作上移系统顶栏，与书名同一排：判据按符号、不绑颜色常量
     "trailing = when (screen)",
-    'Text("停止", fontSize = 12.sp',
-    'Text("继续", fontSize = 12.sp',
-    'Text("任务", fontSize = 12.sp',
+    'StopIcon(',
+    'PlayIcon(',
+    'TasksIcon(',
     'Text("⚙", fontSize = 16.sp',
     'EventLog.ui("HUB_STOP"',
     'EventLog.ui("HUB_RESUME"',

@@ -38,8 +38,10 @@ def check(root):
     ck('val stalled: Boolean = false' in hub, 'F-20 缺终态字段')
     ck('st.stage in listOf("没完成", "已停止", "出错了")' in hub, 'F-20 缺终态派生')
     ck('stalled = stalled' in hub, 'F-20 终态没传进每章')
-    ck('"没做完 · 已做好的都留着"' in hub, 'F-20 停滞态文案丢了')
-    ck('"这本书做好了"' in hub, 'F-20 完成态文案缺')
+    # R246 · 停滞态改按现行状态派生判（旧文案随界面精简撤掉）
+    ck('t.phase == "stopped" -> "已停止"' in hub, 'F-20 停滞态文案丢了')
+    # 完成态 = 小耳机可点（audio/playable 任一有值），不再靠一句提示文案
+    ck('enabled = r.audio != null || r.playable' in hub, 'F-20 完成态文案缺')
 
     ck('fun bucket(only: Set<Int>?)' in pipe, 'F-13 分桶仍带旧三态参数')
     ck('"v11/direct/"' in pipe, 'F-13 分桶路径变了，旧 WAV 会找不到')

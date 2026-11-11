@@ -25,8 +25,8 @@ def files():
 
 # 三枚按钮必须出现在系统顶栏（合并视图），且不再单独占内容区一排
 TOP = ["trailing = when (screen)",
-       'TextButton(onClick = { hubStop() }',
-       'TextButton(onClick = { hubResume() }',
+       'IconButton(onClick = { hubStop() }',
+       'IconButton(onClick = { hubResume() }',
        "hubTasksTick++",
        'IconButton(onClick = { nav.push(Screen.PRODUCE) }']
 # 书名仍在系统顶栏，不能被搬下来
@@ -45,6 +45,15 @@ def check(f):
         if k not in mn: e.append("顶栏缺: " + k[:54])
     for k in TITLE:
         if k not in mn: e.append("书名没留在系统顶栏: " + k[:50])
+    # R244 · 顶栏改代码自绘图标，界面不再出现字按钮；图标真源在 AppChrome.kt
+    for k in ["internal fun MixerIcon(", "internal fun TasksIcon(",
+              "internal fun StopIcon(", "internal fun PlayIcon("]:
+        if k not in ch: e.append("自绘图标缺: " + k[:44])
+    for k in ["MixerIcon(Primary)", "TasksIcon(Primary)", "StopIcon(Warn)", "PlayIcon(Primary)"]:
+        if k not in mn: e.append("顶栏没接图标: " + k[:44])
+    for banned in ['Text("调音", fontSize = 12.sp', 'Text("任务", fontSize = 12.sp',
+                   'Text("停止", fontSize = 12.sp, color = Warn)']:
+        if banned in mn: e.append("字按钮回潮: " + banned[:44])
     # ③ ChapterHub 不再单独占一排（旧右对齐行整块撤掉）
     for k in ['Text("停止", fontSize = 12.sp, color = HubWarn)',
               'Text("任务", fontSize = 12.sp, color = HubPrimary)',
@@ -91,9 +100,10 @@ def selftest():
     cuts = [
         ("槽被删", "chrome", "trailing: @Composable RowScope.() -> Unit = {}", ""),
         ("槽没调用", "chrome", "        trailing()\n", ""),
+        ("图标被摘", "chrome", "internal fun MixerIcon(", ""),
         ("整条 trailing 被摘", "main", "trailing = when (screen)", "trailing = {}"),
-        ("停止按钮被摘", "main", "TextButton(onClick = { hubStop() }", ""),
-        ("继续按钮被摘", "main", "TextButton(onClick = { hubResume() }", ""),
+        ("停止按钮被摘", "main", "IconButton(onClick = { hubStop() }", ""),
+        ("继续按钮被摘", "main", "IconButton(onClick = { hubResume() }", ""),
         ("任务计数被摘", "main", "hubTasksTick++", ""),
         ("齿轮被摘", "main", "IconButton(onClick = { nav.push(Screen.PRODUCE) }", ""),
         ("书名被搬下顶栏", "main", "chrome.copy(title = chapterBookTitle)", 'chrome.copy(title = "")'),

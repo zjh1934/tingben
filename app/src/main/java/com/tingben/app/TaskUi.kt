@@ -101,10 +101,8 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                     }
                     if (qState.second) {
                         Spacer(Modifier.height(4.dp))
+                        // R243 · 按钮砍掉，只留状态提示；恢复走自动续跑
                         Text("队列已暂停", fontSize = 12.sp, color = Warn)
-                        TextButton(onClick = { Producer.resumeQueue(c) }) {
-                            Text("继续队列 ›", fontSize = 12.sp)
-                        }
                     }
                 }
             }

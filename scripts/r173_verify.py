@@ -27,6 +27,8 @@ FILES = {
     "resume": SRC / "core/TaskResume.kt",
     "hub": SRC / "ChapterHub.kt",
     "main": ui_sources.source(SRC),
+    # R246 · AppChrome.kt 不在合并视图，rc #208 的两处真编译错正好出在这
+    "chrome": SRC / "AppChrome.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
@@ -261,6 +263,17 @@ def struct_errors(f):
     if "val keptEpoch = load(c, book.id)?.epoch ?: 0" not in f["plan"]:
         e.append("章节表重建没保留代数（epoch 会悄悄退回 0）")
 
+    # ⑤ R246 · rc #208 真编译错静态化：静态守门全绿、Gradle 才报的错
+    ch = f["chrome"]
+    if "@Composable\ninternal fun AppDrawerSheet(" not in ch:
+        e.append("AppDrawerSheet 丢了 @Composable（注解串位会报 annotation is not repeatable）")
+    if "@Composable\n/**" in ch:
+        e.append("有 @Composable 孤立在 KDoc 之前（会串到下一个函数上）")
+    if "val s = Stroke(" in ch:
+        e.append("自绘图标又用 Stroke 对象当 drawLine 末参（没有该重载）")
+    if ch.count("strokeWidth = sw, cap = StrokeCap.Round") != 2:
+        e.append("两处 drawLine 没用 strokeWidth + cap 具名参数")
+
     if "python3 scripts/r173_verify.py --selftest" not in f["ci"]:
         e.append("CI 未挂 r173_verify --selftest")
     return e
@@ -290,6 +303,15 @@ def selftest():
          lambda t: t.replace("import com.tingben.app.diag.EventLog\n", "")),
         ("CI 漏挂", "ci",
          lambda t: t.replace("python3 scripts/r173_verify.py --selftest", "")),
+        # R246 · rc #208 真编译错防回潮
+        ("抽屉丢 @Composable", "chrome",
+         lambda t: t.replace("@Composable\ninternal fun AppDrawerSheet(",
+                             "internal fun AppDrawerSheet(")),
+        ("注解串到 KDoc 前", "chrome",
+         lambda t: t.replace("/**\n * R244", "@Composable\n/**\n * R244", 1)),
+        ("drawLine 又传 Stroke 对象", "chrome",
+         lambda t: t.replace("val sw = 2.dp.toPx()",
+                             "val s = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)", 1)),
     ]
     bad = 0
     for name, key, mut in cases:
@@ -313,4 +335,4 @@ if __name__ == "__main__":
         for x in e:
             print("  ✗", x)
         sys.exit(1)
-    print("R173 Kotlin 结构守门：6 个改动文件括号配平 / 构造实参 / 命名参数 / 字段成对 / import：PASS")
+    print("R173 Kotlin 结构守门：7 个文件括号配平 / 构造实参 / 命名参数 / 字段成对 / import：PASS")

@@ -35,7 +35,7 @@ ANCHORS = {
     "main": [
         "DismissibleNavigationDrawer(",
         "AppDrawerSheet(",
-        'title = "我的书"',
+        'title = ""',
         "onSettings = {",
         "TOP_SETTINGS",
         "compact = true",
@@ -58,6 +58,7 @@ ANCHORS = {
 # R165 · 撤销的形态与误标级别，不许回潮。
 BANNED = {
     "main": [
+        'title = "我的书"',
         'Text("去书架 ›"',
         'EventLog.Kind.CRASH, "MIXER_TRIAL_FAIL"',
     ],
@@ -75,7 +76,7 @@ def nav_ids_present(chrome: str) -> bool:
 
 
 def drawer_is_booklist(main: str, chrome: str) -> bool:
-    return ('title = "我的书"' in main and "compact = true" in main
+    return ('title = ""' in main and "compact = true" in main
             and "internal fun AppDrawerSheet(" in chrome
             and not old_menu_items(chrome))
 

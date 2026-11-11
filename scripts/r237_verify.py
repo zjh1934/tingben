@@ -74,7 +74,10 @@ def check(f):
               "onTrial = { s, e -> trialRefClip(d, s, e) }",
               "onTrial: (Long, Long) -> Unit,",
               "internal fun RefClipDialog(",
-              'Text("试听选中"',
+              'if (pv.isPlaying) PlayQueue.stopPreview()',
+              '"停止试听"',
+              '"试听选中"',
+              "onCancel = { PlayQueue.stopPreview(); refClip = null }",
               "onTrial((totalMs * startFrac).toLong(),"]:
         if k not in m: e.append("裁剪试听缺: " + k[:56])
     # preview 通道不占通知：仍走 "trial"，不许塞进主队列
@@ -112,7 +115,8 @@ def selftest():
         ("试听占主队列", "mixer", 'id = "trial:ref_clip")), "trial")', 'id = "trial:ref_clip")), "book")'),
         ("试听没起播", "mixer", 'PlayQueue.playFrom(0, id = "trial")', ""),
         ("弹层没接试听", "mixer", "onTrial = { s, e -> trialRefClip(d, s, e) }", ""),
-        ("试听按钮被摘", "mixer", 'Text("试听选中"', ""),
+        ("试听按钮被摘", "mixer", 'if (pv.isPlaying) PlayQueue.stopPreview()', ""),
+        ("关窗不停播", "mixer", "PlayQueue.stopPreview(); refClip = null", "refClip = null"),
         ("试听不传区间", "mixer", "onTrial((totalMs * startFrac).toLong(),", "onTrial(0L,"),
         ("弹层改 private", "mixer", "internal fun RefClipDialog(", "private fun RefClipDialog("),
         ("CI 漏挂", "ci", "python3 scripts/r237_verify.py --selftest", ""),
