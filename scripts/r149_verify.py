@@ -94,9 +94,9 @@ POS = {
         "只删《${t.title}》这条任务记录",
         "onAudio = { id -> openBook(id)",
         'EventLog.ui("TASK_RESUME"',
-        'EventLog.ui("TASK_PLAY"',
+        'EventLog.ui("TASK_PLAY_AUDIO", "kind=${a.source}")',
         '"打开这本书 ›"',
-        '"听成品 ›"',
+        '"播放 ›"',
     ],
     "prefs": [
         "KEY_AUTO_RESUME",
@@ -296,8 +296,9 @@ def selftest():
         ("二次确认被摘", "main", "confirmDelete?.let { t ->", ""),
         ("onAudio 又用全局 id", "main", "onAudio = { id -> openBook(id)",
          "onAudio = { openBookCol(taskBookId, 2)"),
-        ("过时音频页文案回潮", "main", '"听成品 ›"', '"去「我的音频」试听 ›"'),
+        ("过时音频页文案回潮", "main", '"播放 ›"', '"去「我的音频」试听 ›"'),
         ("CI 漏挂 r149", "ci", "python3 scripts/r149_verify.py --selftest", ""),
+        ("任务页音频播放日志被摘", "main", 'EventLog.ui("TASK_PLAY_AUDIO"', ""),
         ("现行清单漏 r149", "r135", '"r149_verify.py"', ""),
     ]
     bad = 0

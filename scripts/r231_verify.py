@@ -58,10 +58,18 @@ def check(f):
     body = auto_body(op)
     if not body: e.append("mergeChapterAuto 定位不到")
     else:
-        for k in ["WavMerger.merge(parts = parts, out = dst, gapMs = gapMs, declickMs = declickMs)",
+        for k in ["val enc = encodeChapter(",
                   "only = setOf(chapter),",
                   "CHAPTER_MERGE_ONE"]:
             if k not in body: e.append("按章拼缺: " + k[:56])
+    # R308 · 拼完自动转 M4A：判据按现状迁移、一条不放宽。
+    # 拼接/转码阶段、流式转码、平台校验、校验通过才删内部 WAV，全要守。
+    for k in ["WavMerger.merge(parts = parts, out = wav, gapMs = gapMs, declickMs = declickMs)",
+              "fun encodeChapter(", 'setBusy(bookId, chapter, "正在拼接中")',
+              'setBusy(bookId, chapter, "正在转码中")',
+              "toM4a(c, wav, m4a)", "validateM4a(out)",
+              "if (enc.converted) enc.wav.delete()"]:
+        if k not in op: e.append("R308 转码链路缺: " + k[:56])
         # R255 · 用户改口径：整章拼好就清中间小块。约束不是放宽而是换严：
         # 必须「先写 chapter_done 再删小块」（否则续跑会把整章重做一遍），
         # 且 markDone 失败要有保留小块的兜底。顺序由下面的下标比较守住。
@@ -199,11 +207,15 @@ def selftest():
         ("格式不一致仍硬拼", "wav", "if (fmts.any { it != want })", "if (false)"),
         ("读不出头仍硬拼", "wav", "MERGE_FMT_UNREADABLE", "MERGE_FMT_OK"),
         ("按章拼函数调用被摘", "ops",
-         "WavMerger.merge(parts = parts, out = dst, gapMs = gapMs, declickMs = declickMs)", ""),
+         "WavMerger.merge(parts = parts, out = wav, gapMs = gapMs, declickMs = declickMs)", ""),
+        ("自动转码被摘", "ops", "toM4a(c, wav, m4a)", ""),
+        ("转码校验被摘", "ops", "validateM4a(out)", "true"),
+        ("校验后删 WAV 被摘", "ops", "if (enc.converted) enc.wav.delete()", ""),
+        ("拼接阶段蒙层被摘", "ops", 'setBusy(bookId, chapter, "正在拼接中")', ""),
         ("按章拼没登记", "ops", "only = setOf(chapter),", ""),
         # R255 · 旧注入往函数里塞 forget 看是否变红；现在 forget 本就在，
         # 换成摘掉「先写章状态」与「失败保留」两处真约束。
-        ("清小块没写章状态", "ops", "AudioTree.markDone(it, chapter, dst)", ""),
+        ("清小块没写章状态", "ops", "AudioTree.markDone(it, chapter, enc.file)", ""),
         ("章状态失败没兜底", "ops", "if (!marked) {", "if (false) {"),
         ("收尾不强制拼章", "producer", "force = true)", "force = false)"),
         ("按章拼调用被摘", "producer",

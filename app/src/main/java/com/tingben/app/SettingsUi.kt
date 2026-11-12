@@ -299,6 +299,18 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
     }
+    // R308 · M4A 成品用 audio/mp4 打开系统保存界面，别把压缩音频当 WAV 写出去。
+    val saveOneM4a = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/mp4")) { uri ->
+        val src = pendingSave
+        pendingSave = null
+        if (uri != null && src != null) {
+            expScope.launch {
+                val ok = withContext(Dispatchers.IO) { AudioOps.copyTo(c, src, uri) }
+                Toast.makeText(c, if (ok) "已另存" else "另存失败", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     val treeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -586,8 +598,11 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             LocalFilesDialog(root, browseLabel, bookTitles,
                 onSave = { f ->
                     pendingSave = f
-                    try { saveOne.launch(f.name) }
-                    catch (_: Throwable) { pendingSave = null }
+                    try {
+                        if (f.name.endsWith(".m4a", ignoreCase = true))
+                            saveOneM4a.launch(f.name)
+                        else saveOne.launch(f.name)
+                    } catch (_: Throwable) { pendingSave = null }
                 },
                 onDismiss = { browseRoot = null })
         }
@@ -604,7 +619,9 @@ internal fun browseGroups(root: File, bookTitles: Map<String, String>): List<Pai
     val byGroup = linkedMapOf<String, MutableList<File>>()
     try {
         root.walkTopDown().forEach { f ->
-            if (!f.isFile || !f.name.endsWith(".wav", ignoreCase = true)) return@forEach
+            // R308 · 章成品已改成 M4A，只列 WAV 会让「我的音频」空掉。
+            if (!f.isFile || !(f.name.endsWith(".wav", ignoreCase = true) ||
+                    f.name.endsWith(".m4a", ignoreCase = true))) return@forEach
             val rel = f.absolutePath.removePrefix(prefix)
             val top = rel.substringBefore(File.separatorChar, "")
             val group = when {
@@ -634,7 +651,7 @@ internal fun LocalFilesDialog(root: File, label: String,
             Column(Modifier.padding(14.dp)) {
                 Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(3.dp))
-                Text("${groups.size} 组 · $total 个 WAV · 点一个另存到你自己挑的位置",
+                Text("${groups.size} 组 · $total 个音频 · 点一个另存",
                     fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.height(10.dp))
                 if (groups.isEmpty()) {

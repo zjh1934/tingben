@@ -56,6 +56,21 @@ import java.io.File
 // @ui-part: TaskUi
 
 /**
+ * R308 · 任务页的一条 = 一份「合成出来的音频」，不是「一整本书」。
+ * 章节音频来自 audio/ 的章成品，首页片段来自 clips/；clipId 非空表示片段，
+ * 删除走各自的登记层，绝不互相牵连。
+ */
+internal data class AudioRow(
+    val key: String,
+    val name: String,
+    val source: String,
+    val file: File,
+    val createdAt: Long,
+    val bytes: Long,
+    val clipId: String? = null
+)
+
+/**
  * R287 · 任务页改成「合成中 / 队列中 / 已完成」三状态，参照音乐下载管理页的信息架构。
  *
  * 自己拍的取舍：
@@ -88,6 +103,9 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
     var warnMap by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
     var books by remember { mutableStateOf<Set<String>>(emptySet()) }
     var qPaused by remember { mutableStateOf(false) }
+    // R308 · 「已完成」按音频成品列：一章音频一条、首页粘贴合成的一段一条。
+    var audioRows by remember { mutableStateOf(emptyList<AudioRow>()) }
+    var confirmAudio by remember { mutableStateOf<AudioRow?>(null) }
     LaunchedEffect(refresh, loadTick) {
         withContext(Dispatchers.IO) {
             val ts = TaskResume.list(c)
@@ -97,6 +115,19 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                 if (st.running) 0 else TaskResume.realProgress(c, it) }
             val wm = ts.associate { it.bookId to TaskResume.invalidationReason(c, it) }
             val qp = Producer.queueState(c).second
+            val chapterRows = AudioLibrary.list(c).filter {
+                it.chaptersKnown && !AudioLibrary.isWholeBook(it) &&
+                    it.file.isFile && it.file.length() > 44L
+            }.map { a ->
+                AudioRow("ch:" + a.file.absolutePath,
+                    "${a.scope} · ${a.title}", "章节音频",
+                    a.file, a.createdAt, a.bytes)
+            }
+            val clipRows = ClipLibrary.list(c).filter { it.isDone }.map { t ->
+                AudioRow("clip:" + t.id, t.name, "首页片段",
+                    t.audio, t.createdAt, t.audio.length(), t.id)
+            }
+            val rows = (chapterRows + clipRows).sortedByDescending { it.createdAt }
             withContext(Dispatchers.Main) {
                 tasks = ts
                 queued = qs
@@ -104,6 +135,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                 realMap = rm
                 warnMap = wm
                 qPaused = qp
+                audioRows = rows
             }
         }
     }
@@ -129,7 +161,8 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val labels = listOf("合成中", "队列中", "已完成")
-            val counts = listOf(if (runningTask != null) 1 else 0, pending.size, done.size)
+            val counts = listOf(if (runningTask != null) 1 else 0,
+                pending.size, audioRows.size)
             labels.forEachIndexed { i, label ->
                 val on = tab == i
                 Box(Modifier.weight(1f).height(38.dp)
@@ -164,8 +197,12 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                             CardBox {
                                 SectionLabel("合成中")
                                 Spacer(Modifier.height(8.dp))
-                                Text(t.title, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Text("${modeText(t.modeId)} · ${scopeText(t)}",
+                                // R308 · 这里管的是「正在合成的这一章音频」，
+                                // 不是整本书；书名退到副标题，章号才是主体。
+                                val curCh = st.chapterProgress.keys.maxOrNull()?.let { it + 1 }
+                                Text(curCh?.let { "第 $curCh 章音频" } ?: "章节音频",
+                                    fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("${t.title} · ${modeText(t.modeId)} · ${scopeText(t)}",
                                     fontSize = 12.sp, color = Sub)
                                 Spacer(Modifier.height(10.dp))
                                 LinearProgressIndicator(
@@ -285,43 +322,42 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                         }
                     }
                 }
-                // ③ 已完成：成品能听、能开、能删任务记录
+                // ③ 已完成：一条 = 一份音频（一章音频 / 首页粘贴合成的一段），
+                // R308 · 不再按「整本书」列任务记录，贴回软件真正管的东西。
                 2 -> {
-                    if (done.isEmpty()) {
-                        item(key = "done_empty") { EmptyHint("还没有做完的书") }
+                    if (audioRows.isEmpty()) {
+                        item(key = "done_empty") { EmptyHint("还没有做好的音频") }
                     }
-                    items(done, key = { it.bookId }) { t ->
+                    items(audioRows, key = { it.key }) { a ->
                         CardBox(Modifier.padding(bottom = 10.dp)) {
-                            SectionLabel("已完成")
-                            Spacer(Modifier.height(6.dp))
-                            Text(t.title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            Text("${modeText(t.modeId)} · ${scopeText(t)}",
-                                fontSize = 12.sp, color = Sub)
-                            Text("最后更新 " + java.text.SimpleDateFormat(
+                            Text(a.name, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(4.dp))
+                            val sizeText = java.lang.String.format(java.util.Locale.US,
+                                "%.1f MB", a.bytes / 1048576.0)
+                            val timeText = java.text.SimpleDateFormat(
                                 "MM-dd HH:mm", java.util.Locale.US)
-                                .format(java.util.Date(t.updatedAt)),
-                                fontSize = 12.sp, color = Sub)
-                            if (t.bookId !in books) {
-                                Text("书已从书架删掉，成品仍在「我的音频」",
-                                    fontSize = 12.sp, color = Warn)
-                            }
+                                .format(java.util.Date(a.createdAt))
+                            Text("${a.source} · $sizeText · $timeText",
+                                fontSize = 11.sp, color = Sub)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 TextButton(onClick = {
-                                    EventLog.ui("TASK_PLAY", "id=${t.bookId.take(8)}")
-                                    onAudio(t.bookId)
+                                    EventLog.ui("TASK_PLAY_AUDIO", "kind=${a.source}")
+                                    PlayQueue.setTracks(
+                                        listOf(Track(a.file, a.name,
+                                            id = "task:" + a.file.absolutePath)),
+                                        "task")
+                                    PlayQueue.playFrom(0, id = "task")
                                 }) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         UiIconGlyph(UiIcon.LISTEN, Primary)
                                         Spacer(Modifier.width(4.dp))
-                                        Text("听成品 ›", fontSize = 12.sp, color = Primary)
+                                        Text("播放 ›", fontSize = 12.sp, color = Primary)
                                     }
                                 }
-                                TextButton(onClick = { onOpenTask(t.bookId) }) {
-                                    Text("打开书 ›", fontSize = 12.sp, color = Primary)
-                                }
                                 Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { confirmDelete = t }) {
-                                    Text("删除任务", fontSize = 12.sp, color = Warn)
+                                TextButton(onClick = { confirmAudio = a }) {
+                                    Text("删除音频", fontSize = 12.sp, color = Warn)
                                 }
                             }
                         }
@@ -354,6 +390,35 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
             },
             dismissButton = {
                 TextButton(onClick = { confirmDelete = null }) {
+                    Text("取消", fontSize = 13.sp)
+                }
+            }
+        )
+    }
+    // R308 · 删的是「这一份音频」，不是整本书的任务记录。
+    confirmAudio?.let { a ->
+        AlertDialog(
+            onDismissRequest = { confirmAudio = null },
+            title = { Text("删掉这条音频？", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Text("只删「${a.name}」这一份成品，书、别的章音频和首页其他片段都不动。",
+                    fontSize = 13.sp, color = Sub)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    EventLog.ui("TASK_AUDIO_DELETE", "kind=${a.source}")
+                    scope.launch(Dispatchers.IO) {
+                        if (a.clipId != null) ClipLibrary.remove(c, setOf(a.clipId!!))
+                        else AudioLibrary.removeFile(c, a.file)
+                        withContext(Dispatchers.Main) {
+                            loadTick++
+                            confirmAudio = null
+                        }
+                    }
+                }) { Text("删除", fontSize = 13.sp, color = Warn) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmAudio = null }) {
                     Text("取消", fontSize = 13.sp)
                 }
             }

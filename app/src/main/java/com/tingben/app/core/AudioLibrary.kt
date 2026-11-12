@@ -1,6 +1,8 @@
 package com.tingben.app.core
 
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -62,6 +64,15 @@ object AudioLibrary {
             "%03d_%s.wav".format(chapter + 1, safeName(chapterTitle)))
 
     /**
+     * R308 · 章成品的唯一对外形态：拼好的 WAV 转码成 64kbps 单声道 AAC-LC M4A。
+     * 与 WAV 同 stem，重做时两条一起覆盖，不会在目录里堆出两份同章音频。
+     */
+    fun chapterM4aFile(c: Context, bookId: String, bookTitle: String,
+                       chapter: Int, chapterTitle: String): File =
+        File(bookDir(c, bookId, bookTitle),
+            "%03d_%s.m4a".format(chapter + 1, safeName(chapterTitle)))
+
+    /**
      * R272 · 不再新生成整本.wav：一本书拼一份大文件会把手机撑爆，唯一成品形态
      * 是「一章一个音频」（chapterFile）。下面 isWholeBook / chapterOnlyFor /
      * hasChapterAudio 只用于**兼容读取旧版已落盘的整本.wav**，不主动删用户文件；
@@ -69,7 +80,8 @@ object AudioLibrary {
      */
     /** 整本成品（含旧版兜底、单章书重做后沿用整本文件名）不是单章成品。 */
     fun isWholeBook(item: AudioItem): Boolean =
-        item.scope.startsWith("整本") || item.file.name == "整本.wav"
+        item.scope.startsWith("整本") || item.file.name == "整本.wav" ||
+            item.file.name == "整本.m4a"
 
     /** 严格：只取真章级成品，供重做/删除用——绝不能把整本成品删掉。 */
     fun chapterOnlyFor(c: Context, bookId: String, chapterIndex: Int): AudioItem? =
@@ -258,7 +270,9 @@ object AudioLibrary {
             // 顶层仍留着旧版 chapter_*.wav 与整本成品，兼容逻辑不删。
             candidateDirs(c).forEach { folder ->
                 folder.listFiles()
-                    ?.filter { it.isFile && it.length() > 44 && it.name.endsWith(".wav") &&
+                    ?.filter { it.isFile && it.length() > 44 &&
+                            (it.name.endsWith(".wav") || it.name.endsWith(".m4a")) &&
+                            !it.name.endsWith(".meta.json") &&
                             it.absolutePath !in known }
                     ?.forEach { f ->
                         val stem = f.nameWithoutExtension
@@ -370,8 +384,10 @@ object AudioLibrary {
         val f = recorded ?: run {
             var found: File? = null
             for (d in candidateDirs(c)) {
-                val cand = File(d, "$id.wav")
-                if (cand.isFile) { found = cand; break }
+                val wav = File(d, "$id.wav")
+                val m4a = File(d, "$id.m4a")
+                if (wav.isFile) { found = wav; break }
+                if (m4a.isFile) { found = m4a; break }
             }
             found ?: File(dir(c), "$id.wav")
         }
@@ -414,5 +430,33 @@ object AudioLibrary {
     fun durationMsOfBytes(bytes: Long): Long =
         ((bytes - 44).coerceAtLeast(0) * 1000L / 48000L)
 
-    fun durationMs(f: File): Long = durationMsOfBytes(f.length())
+    /**
+     * R308 · WAV 按 24k/16bit/单声道字节数换算；M4A 是压缩格式，
+     * 继续按字节算会把 10 分钟的章说成 1 分钟，进度与续听全错。
+     * 用平台 MediaExtractor 读真实时长，读不到才按 64kbps 估算。
+     */
+    fun durationMs(f: File): Long {
+        if (f.name.endsWith(".wav", ignoreCase = true))
+            return durationMsOfBytes(f.length())
+        val real = compressedDurationMs(f)
+        if (real > 0) return real
+        return (f.length() * 1000L / 8000L).coerceAtLeast(0L)
+    }
+
+    private fun compressedDurationMs(f: File): Long = try {
+        val ex = MediaExtractor()
+        ex.setDataSource(f.absolutePath)
+        var out = 0L
+        for (i in 0 until ex.trackCount) {
+            val fmt = ex.getTrackFormat(i)
+            val mime = try { fmt.getString(MediaFormat.KEY_MIME) ?: "" }
+                catch (_: Throwable) { "" }
+            if (!mime.startsWith("audio/")) continue
+            if (fmt.containsKey(MediaFormat.KEY_DURATION))
+                out = fmt.getLong(MediaFormat.KEY_DURATION) / 1000L
+            break
+        }
+        ex.release()
+        out.coerceAtLeast(0L)
+    } catch (_: Throwable) { 0L }
 }

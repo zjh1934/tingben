@@ -99,7 +99,9 @@ object AudioExport {
             for ((ch, a) in items) {
                 val t = plan?.getOrNull(ch)?.title?.takeIf { it.isNotBlank() }
                     ?: "第 ${ch + 1} 章"
-                out += Item(dir, "%03d_%s.wav".format(ch + 1, safeName(t)), a.file)
+                // R308 · 章成品是 M4A 了，导出还写死 .wav 会生成名不副实的坏文件。
+                val ext = a.file.extension.ifBlank { "wav" }
+                out += Item(dir, "%03d_%s.%s".format(ch + 1, safeName(t), ext), a.file)
             }
         }
         return out
@@ -226,8 +228,10 @@ object AudioExport {
                 try { DocumentsContract.deleteDocument(r, existing.first) }
                 catch (_: Throwable) { /* 删不掉就照常新建，provider 会自己改名 */ }
             }
+            val mime = if (it.name.endsWith(".m4a", ignoreCase = true))
+                "audio/mp4" else "audio/wav"
             val child = try {
-                DocumentsContract.createDocument(r, parent, "audio/wav", it.name)
+                DocumentsContract.createDocument(r, parent, mime, it.name)
             } catch (e: Throwable) {
                 if (firstErr.isEmpty()) firstErr = e.message ?: "系统不给写"
                 failed++

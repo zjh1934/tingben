@@ -230,6 +230,8 @@ internal fun ChapterHubScreen(
     val chapters = snapshot.chapters
     val st by Producer.state.collectAsState()
     val task by Producer.resume.collectAsState()
+    // R308 · 章级「拼接中 / 转码中」的实时阶段，章名蒙层与格子转圈都读它。
+    val mergeBusy by AudioOps.mergeBusy.collectAsState()
 
     val diskKey = "${!st.running}|${st.stage}"
     var disk by remember(book.id, refresh) {
@@ -352,6 +354,13 @@ internal fun ChapterHubScreen(
     val chapterBase = remember(chapterSegs) {
         chapterSegs.minOfOrNull { it.index } ?: 0
     }
+    // R308 · 制作中这一章，第一个还没生成的小块就是「正在合成」的那一格；
+    // 重做中的格子由 pendingRedo 单独认。两者都在格子内转圈，不再让用户
+    // 对着一片灰格子猜进度走到哪了。
+    val segBusyIndex = remember(chapterSegs, st.running, st.done) {
+        if (!st.running || chapterSegs.isEmpty()) null
+        else chapterSegs.firstOrNull { !it.hasAudio }?.index
+    }
     var beatTick by remember { mutableStateOf(0) }
     // R287 · 每秒除读 redo.json，只 stat 当前制作章的小段（几百个文件）。
     // 整本 segmap 不重读、26678 次 stat 不再发生；只有格子转绿/切章才写回状态。
@@ -429,16 +438,21 @@ internal fun ChapterHubScreen(
         ActivityResultContracts.CreateDocument("audio/mp4")) { uri ->
         val src = pendingSrc ?: tmpCopy
         if (uri != null && src != null) {
-            Toast.makeText(c, "正在转 M4A…", Toast.LENGTH_SHORT).show()
+            // R308 · 章成品已经是 M4A 时这是「手动另存兜底」：直接写出去，
+            // 不再把压缩音频当 WAV 重新编一遍；只有 WAV 成品才走转码。
+            val alreadyM4a = src.name.endsWith(".m4a", ignoreCase = true)
+            if (!alreadyM4a) Toast.makeText(c, "正在转 M4A…", Toast.LENGTH_SHORT).show()
             exportScope.launch {
-                val tmp = File(c.cacheDir, "conv_${System.currentTimeMillis()}.m4a")
-                val r = withContext(Dispatchers.IO) { AudioOps.toM4a(c, src, tmp) }
-                if (r.ok) {
+                val tmp = if (alreadyM4a) src
+                    else File(c.cacheDir, "conv_${System.currentTimeMillis()}.m4a")
+                val r = if (alreadyM4a) null
+                    else withContext(Dispatchers.IO) { AudioOps.toM4a(c, src, tmp) }
+                if (r == null || r.ok) {
                     val ok = withContext(Dispatchers.IO) { AudioOps.copyTo(c, tmp, uri) }
-                    Toast.makeText(c, if (ok) "已转存 M4A" else "写出失败",
+                    Toast.makeText(c, if (ok) "已另存 M4A" else "写出失败",
                         Toast.LENGTH_SHORT).show()
                 } else Toast.makeText(c, r.reason, Toast.LENGTH_LONG).show()
-                tmp.delete()
+                if (!alreadyM4a) tmp.delete()
                 tmpCopy?.delete(); tmpCopy = null; pendingSrc = null
             }
         } else { tmpCopy?.delete(); tmpCopy = null; pendingSrc = null }
@@ -725,7 +739,10 @@ internal fun ChapterHubScreen(
                             onDismissMenu = { menuChapter = null },
                             onMenuSelect = { enterMulti(r.index) },
                             onMenuRedo = { redoWholeChapter(r.index) },
-                            canRedo = r.audio != null || r.playable)
+                            canRedo = r.audio != null || r.playable,
+                            busyLabel = mergeBusy
+                                ?.takeIf { it.bookId == book.id && it.chapter == r.index }
+                                ?.phase)
                     }
                     // R264 · 只给制作中的那一章生成小段区，恒定展开、无收起入口；
                     // 没在制作的章连 item 都不生成：不组合、不渲染、不计算。
@@ -832,6 +849,7 @@ internal fun ChapterHubScreen(
                             ChapterSegGrid(
                                 row = row, pq = pqSeg, base = chapterBase,
                                 multi = segMulti, checked = segChecked,
+                                busyIndex = segBusyIndex,
                                 onLong = { i -> segMulti = true; segChecked = setOf(i) },
                                 onToggle = { i ->
                                     segChecked = if (i in segChecked) segChecked - i
@@ -884,20 +902,35 @@ internal fun ChapterHubScreen(
                                     else rr.reason, Toast.LENGTH_LONG).show()
                                 exitMulti(); localTick++
                             })
-                            ActionChip("另存 WAV", icon = UiIcon.WAV, onClick = {
-                                val src = srcOf(i)
-                                if (src != null) { pendingSrc = src; saveWav.launch("chapter.wav") }
-                                else Toast.makeText(c, "这一章还没有可导出的音频",
-                                    Toast.LENGTH_SHORT).show()
-                                exitMulti()
-                            })
-                            ActionChip("转 M4A", icon = UiIcon.M4A, onClick = {
-                                val src = srcOf(i)
-                                if (src != null) { pendingSrc = src; saveM4a.launch("chapter.m4a") }
-                                else Toast.makeText(c, "这一章还没有可转的音频",
-                                    Toast.LENGTH_SHORT).show()
-                                exitMulti()
-                            })
+                            // R308 · 成品形态按真实文件来：M4A 只给「另存 M4A」，
+                            // 转码失败回落的 WAV 仍保留「另存 WAV / 转 M4A」手动兜底。
+                            val isM4a = ui.firstOrNull { it.index == i }?.audio?.file
+                                ?.name?.endsWith(".m4a", ignoreCase = true) == true
+                            if (isM4a) {
+                                ActionChip("另存 M4A", icon = UiIcon.M4A, onClick = {
+                                    val src = srcOf(i)
+                                    if (src != null) {
+                                        pendingSrc = src; saveM4a.launch("chapter.m4a")
+                                    } else Toast.makeText(c, "这一章还没有可导出的音频",
+                                        Toast.LENGTH_SHORT).show()
+                                    exitMulti()
+                                })
+                            } else {
+                                ActionChip("另存 WAV", icon = UiIcon.WAV, onClick = {
+                                    val src = srcOf(i)
+                                    if (src != null) { pendingSrc = src; saveWav.launch("chapter.wav") }
+                                    else Toast.makeText(c, "这一章还没有可导出的音频",
+                                        Toast.LENGTH_SHORT).show()
+                                    exitMulti()
+                                })
+                                ActionChip("转 M4A", icon = UiIcon.M4A, onClick = {
+                                    val src = srcOf(i)
+                                    if (src != null) { pendingSrc = src; saveM4a.launch("chapter.m4a") }
+                                    else Toast.makeText(c, "这一章还没有可转的音频",
+                                        Toast.LENGTH_SHORT).show()
+                                    exitMulti()
+                                })
+                            }
                         }
                     }
                     ActionChip("删除选中音频", danger = true, icon = UiIcon.DELETE, onClick = {
@@ -1097,7 +1130,8 @@ private fun ChapterRow(
     onLong: () -> Unit, onToggle: (Int) -> Unit,
     onRead: () -> Unit, onListen: () -> Unit,
     menuExpanded: Boolean, onDismissMenu: () -> Unit, onMenuSelect: () -> Unit,
-    onMenuRedo: () -> Unit, canRedo: Boolean
+    onMenuRedo: () -> Unit, canRedo: Boolean,
+    busyLabel: String? = null
 ) {
     val p = r.synthesized?.coerceIn(0f, 1f)
     Box(Modifier.fillMaxWidth()) {
@@ -1140,6 +1174,22 @@ private fun ChapterRow(
             }
         }
         HubDivider()
+    }
+    // R308 · 拼章 / 转码期间在章名上盖一层，明说在干什么。
+    // 整章 WAV 大、转码要几十秒，没有这层用户只看到进度条不动。
+    if (busyLabel != null) {
+        Box(Modifier.matchParentSize()
+            .background(HubCard.copy(alpha = 0.92f))
+            .clickable(enabled = false) { },
+            contentAlignment = Alignment.Center) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp,
+                    color = HubPrimary)
+                Spacer(Modifier.width(8.dp))
+                Text(busyLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    color = HubPrimary)
+            }
+        }
     }
     // R253 · 长按就地菜单：只放两组里「章级」的动作，勾选后的批量操作仍在底部条。
     DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
@@ -1232,7 +1282,8 @@ private fun SegGridHead(
 private fun ChapterSegGrid(
     row: List<SegRow>, pq: PlaybackState, base: Int = 0,
     multi: Boolean, checked: Set<Int>,
-    onLong: (Int) -> Unit, onToggle: (Int) -> Unit, onTap: (SegRow) -> Unit
+    onLong: (Int) -> Unit, onToggle: (Int) -> Unit, onTap: (SegRow) -> Unit,
+    busyIndex: Int? = null
 ) {
     BoxWithConstraints(
         Modifier.fillMaxWidth()
@@ -1274,6 +1325,13 @@ private fun ChapterSegGrid(
                         if (multi) {
                             SelectBox(checked = isChecked, tint = HubPrimary,
                                 boxColor = HubCard, modifier = Modifier.size(16.dp))
+                        } else if (sg.pendingRedo || sg.index == busyIndex) {
+                            // R308 · 重做中 / 正在合成这一格：就地转圈，用户一眼看得出
+                            // 进度停在哪，不必对着一片灰格子猜。
+                            CircularProgressIndicator(
+                                modifier = Modifier.size((cell.value * 0.5f).dp),
+                                strokeWidth = 2.dp,
+                                color = if (sg.pendingRedo) HubWarn else HubPrimary)
                         } else {
                             Text("${sg.index - base + 1}", fontSize = 11.sp,
                                 color = segNumberColor(playing, playable, multi, isChecked,

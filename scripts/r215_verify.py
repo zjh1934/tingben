@@ -68,7 +68,7 @@ def check(f):
     if 'EventLog.Kind.ENGINE, "MIXER_TRIAL_FAIL"' not in mx:
         e.append("试听失败日志丢了（R165 口径）")
     # ③ 首页：点合成 → 落片段 → 主播放条，不建书、不跳页、不进试听通道
-    for k in ['Text(if (busy > 0) "再合成一段" else "合成这段"',
+    for k in ['Text("▶  " + if (busy > 0) "再合成一段" else "合成这段"',
               'text.length > ClipSynth.MAX_CHARS',
               'ClipSynth.synthesize(c, snapshot,',
               '"clip_listen.wav", "首页片段"',

@@ -57,10 +57,13 @@ POS = {
         "DocumentsContract.buildDocumentUriUsingTree(t, treeId)",
         # R157 · 目录分层后有两处 createDocument：子目录（MIME_TYPE_DIR）
         # 与成品文件（audio/wav）。分别判，删掉任一处都要被拦下。
-        "DocumentsContract.createDocument(r, parent, \"audio/wav\", it.name)",
+        "DocumentsContract.createDocument(r, parent, mime, it.name)",
         "DocumentsContract.Document.MIME_TYPE_DIR, part",
         "DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)",
         '"audio/wav"',
+        # R308 · 章成品转 M4A 后按真实扩展名给 MIME，两个分支都得在。
+        '"audio/mp4"',
+        'if (it.name.endsWith(".m4a", ignoreCase = true))',
         "AudioOps.copyTo(c, it.file, child)",
         "if (!it.file.isFile) { skipped++; continue }",
         "fun treeLabel(c: Context): String",
@@ -191,7 +194,7 @@ def logic_cases(f):
         print("  私有目录结论 ✓（无存储权限 / 无 DocumentsProvider / filesDir/audio）")
     # ④ 行为判据（也进 check，才能被反向注入拦住）
     eb = code_only(export_body(f["export"]))
-    if not eb or "DocumentsContract.createDocument(r, parent, \"audio/wav\", it.name)" not in eb:
+    if not eb or "DocumentsContract.createDocument(r, parent, mime, it.name)" not in eb:
         bad.append("成品文件没走 SAF 写出")
     if "AudioOps.copyTo(c, it.file, child)" not in eb:
         bad.append("导出没复用现有写出通道")
@@ -212,7 +215,7 @@ def check(f):
             if s in code_only(f[key]):
                 e.append("不该出现[%s]: %s" % (key, s[:65]))
     eb = code_only(export_body(f["export"]))
-    if not eb or "DocumentsContract.createDocument(r, parent, \"audio/wav\", it.name)" not in eb:
+    if not eb or "DocumentsContract.createDocument(r, parent, mime, it.name)" not in eb:
         e.append("成品文件没走 SAF 写出")
     if "DocumentsContract.Document.MIME_TYPE_DIR, part" not in eb:
         e.append("导出没建按书分的子目录")
@@ -250,7 +253,8 @@ def selftest():
     logic_bad = len(logic_cases(f))
     cuts = [
         ("成品文件 SAF 写出被摘", "export",
-         "DocumentsContract.createDocument(r, parent, \"audio/wav\", it.name)", ""),
+         "DocumentsContract.createDocument(r, parent, mime, it.name)", ""),
+        ("M4A 导出分支被摘", "export", '"audio/mp4"', '""'),
         ("子目录创建被摘", "export",
          "DocumentsContract.Document.MIME_TYPE_DIR, part", ""),
         ("同名目录复用被摘", "export",

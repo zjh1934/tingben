@@ -38,7 +38,11 @@ POS = [
     ("main", "fun switchMode(m: ModelStore.Mode)"),
     ("main", "Prefs.setModelMode(c, m.id)"),
     ("main", "Producer.isBusy()"),
-    ("main", "VoiceDesignPane(draft) { draft = it }"),
+    # R307 · 调用改成带「选预设即生效」回调的多行形态，锚按现状迁移；
+    # 仍守「三模式 pane 都在」+ 新增的描述生效链路，不放宽守恒。
+    ("main", "ModelStore.Mode.VOICE_DESIGN -> VoiceDesignPane("),
+    ("main", "onApplyVoice = { v ->"),
+    ("main", "onApplyStyle = { v ->"),
     ("main", "CustomVoicePane("),
     ("main", "BasePane("),
     ("main", "value = draft.cvStyle"),

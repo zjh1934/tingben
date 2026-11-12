@@ -68,7 +68,9 @@ HUB_BAN = [
 MAIN_MUST = [
     # R226 · 顶栏「任务」入口上移 App 层
     'EventLog.ui("HOME_TASKS", "open:global")',
-    'placeholder = { Text("粘贴或输入要念的正文", fontSize = 12.sp) }',
+    # R307 · 首页重绘后输入框改用 decorationBox 的空态提示，
+    # 不是 TextField 的 placeholder；按现状迁移，能力判据不放宽。
+    'if (text.isEmpty()) Text("粘贴或输入要念的正文",',
     'SettingsSection("开发者工具", "排查", open = devOpen,',
     "var devOpen by remember { mutableStateOf(false) }",
     'SettingsSection("运行与通知", "系统", collapsible = false)',
@@ -142,6 +144,8 @@ def selftest():
         ("看板回潮", "hub",
          lambda t: t.replace("任务队列 · ${queued.size} 个", "TaskBoardDialog(")),
         ("取消按钮被摘", "multi", lambda t: t.replace('ActionChip("取消"', 'Text("×"')),
+        ("首页空态提示被摘", "main", lambda t: t.replace(
+            'if (text.isEmpty()) Text("粘贴或输入要念的正文",', "")),
         ("首页废话回潮", "main", lambda t: t.replace(
             "private enum class Screen {", 'Text("建好的书在左上角 ☰ 里", fontSize = 11.sp)\nprivate enum class Screen {')),
         ("开发者工具默认展开", "main", lambda t: t.replace(

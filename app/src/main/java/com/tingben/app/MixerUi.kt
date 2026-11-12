@@ -312,9 +312,21 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
             }
 
             when (mode) {
-                ModelStore.Mode.VOICE_DESIGN -> VoiceDesignPane(draft) { draft = it }
+                ModelStore.Mode.VOICE_DESIGN -> VoiceDesignPane(
+                    draft = draft, onDraft = { draft = it },
+                    onApplyVoice = { v ->
+                        // R307 · 选预设即生效：详细描述当场落到生效值，不点顶栏
+                        // 「保存」也不会白设。走 core 唯一写入口，只换这一个字段，
+                        // 别处没保存的改动仍由 dirty 机制管。
+                        MixerCommit.applyPicked(c, "voice_design", v)
+                        active = MixerDraft.active(c)
+                    })
                 ModelStore.Mode.CUSTOM_VOICE -> CustomVoicePane(
                     draft = draft, onDraft = { draft = it },
+                    onApplyStyle = { v ->
+                        MixerCommit.applyPicked(c, "cv_style", v)
+                        active = MixerDraft.active(c)
+                    },
                     speakerList = speakerList, speakerBusy = speakerBusy,
                     onBusy = { speakerBusy = it },
                     onSpeakers = { names ->
@@ -481,13 +493,15 @@ internal fun ModeTabs(
 }
 
 @Composable
-internal fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit) {
-    // R304 · 「声音描述」右边两枚按钮：▾ 选已存预设、＋添加 存新预设。
-    // 选中的是详细描述，直接填进下面这个输入框；简短描述只在列表里显示。
+internal fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit,
+                             onApplyVoice: (String) -> Unit) {
+    // R304 · 「声音描述」右边两枚按钮：选择 ▾ 选已存预设、＋添加 存新预设。
+    // R307 · 选中的「详细描述」既填进输入框，也当场写进生效值 —— 它才是
+    // 喂给模型的那一份；简短描述只在预设列表里显示，永远不进合成参数。
     DescPresetRow(
         label = "声音描述",
         slot = "voice_design",
-        onPick = { onDraft(draft.copy(voice = it)) },
+        onPick = { onDraft(draft.copy(voice = it)); onApplyVoice(it) },
         onClear = { onDraft(draft.copy(voice = "")) }
     )
     Spacer(Modifier.height(6.dp))
@@ -508,6 +522,7 @@ internal fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit) {
 internal fun CustomVoicePane(
     draft: MixerDraft,
     onDraft: (MixerDraft) -> Unit,
+    onApplyStyle: (String) -> Unit,
     speakerList: List<String>,
     speakerBusy: Boolean,
     onBusy: (Boolean) -> Unit,
@@ -561,7 +576,7 @@ internal fun CustomVoicePane(
     DescPresetRow(
         label = "风格描述",
         slot = "cv_style",
-        onPick = { onDraft(draft.copy(cvStyle = it)) }
+        onPick = { onDraft(draft.copy(cvStyle = it)); onApplyStyle(it) }
     )
     Spacer(Modifier.height(6.dp))
     OutlinedTextField(

@@ -38,7 +38,7 @@ def check(f):
     # ① 悬浮窗：双球圆环 + 可拖动 + 不写字 + 两态
     for k in ["private class RingView", "canvas.drawArc(oval, -90f, 360f * pct, false, arc)",
               "Gravity.TOP or Gravity.START", "MotionEvent.ACTION_MOVE",
-              "updateViewLayout(v, params)", "chapterPctNow >= 0f",
+              "updateViewLayout(v, p)", "chapterPctNow >= 0f",
               "bottomRing?.visibility = View.GONE"]:
         if k not in ov: e.append("悬浮窗缺: " + k[:52])
     if "import android.widget.TextView" in ov or "TextView(c)" in ov:
@@ -57,9 +57,9 @@ def check(f):
         e.append("Producer.emit 没取章节进度")
     # ③ R230 · 输入框 1/3 屏 + 粘贴钮进框内（内容区）；
     #    调音/任务入口上移系统顶栏，按符号在合并视图里守。
-    # R276 · 下方要给片段列表让位，框从 0.36 收到 0.30；判据跟着现状走，
+    # R276/R307 · 下方要给片段列表让位，框从 0.30 收到 0.26；判据跟着现状走，
     # 「不占满整屏」的守恒仍由下面 weight(1f) 那条守。
-    for k in ["fillMaxHeight(0.30f)", "Alignment.BottomEnd"]:
+    for k in ["fillMaxHeight(0.26f)", "Alignment.BottomEnd"]:
         if k not in it: e.append("首页缺: " + k[:52])
     # R244 · 按图标符号定位，不绑字按钮文案
     for k in ['MixerIcon(', 'TasksIcon(Primary)',
@@ -95,7 +95,7 @@ def selftest():
     cuts = [
         ("圆环描边被摘", "overlay", "canvas.drawArc(oval, -90f, 360f * pct, false, arc)", ""),
         ("拖动被摘", "overlay", "MotionEvent.ACTION_MOVE", "MotionEvent.ACTION_UP"),
-        ("updateViewLayout 被摘", "overlay", "updateViewLayout(v, params)", ""),
+        ("updateViewLayout 被摘", "overlay", "updateViewLayout(v, p)", ""),
         ("两态开关被摘", "overlay", "chapterPctNow >= 0f", "false"),
         ("浮窗又写字", "overlay", "import android.graphics.Canvas",
          "import android.widget.TextView\nimport android.graphics.Canvas"),
@@ -104,7 +104,7 @@ def selftest():
         ("链路没透传", "service", "total, chapterPct,", "total,"),
         ("emit 没算章节", "producer",
          "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }", ""),
-        ("框又占满屏", "input", "fillMaxHeight(0.30f)", "weight(1f)"),
+        ("框又占满屏", "input", "fillMaxHeight(0.26f)", "weight(1f)"),
         ("粘贴钮出框", "input", "Alignment.BottomEnd", "Alignment.TopEnd"),
         ("任务入口又置灰", "merged", "TasksIcon(Primary)", "TasksIcon(Sub)"),
         ("弹层没收小", "mixer", "fillMaxHeight(0.86f)", "fillMaxSize()"),
