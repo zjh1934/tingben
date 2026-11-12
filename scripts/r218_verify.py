@@ -80,8 +80,9 @@ def check(f):
               '"已完成 ${(bookPct * 100).toInt()}%"', '"整体 ${(bookPct * 100).toInt()}%"']:
         if k in hb: e.append("段数文案回潮: " + k[:40])
     # ⑥ 顶栏只剩一枚齿轮 + 勾选态文字入口
-    if hb.count('"制作设置 ›"') != 1:
-        e.append("勾选态制作设置文字入口数不对")
+    # R304 · 底部菜单不再摆制作设置；出现即回潮
+    if hb.count('"制作设置 ›"') != 0:
+        e.append("底部菜单不该再有制作设置入口")
     # R226 · 常态齿轮上移系统顶栏（合并视图）
     if 'Text("⚙", fontSize = 16.sp' not in mg:
         e.append("常态顶栏齿轮入口被摘")

@@ -188,6 +188,23 @@ object Producer {
         val reason: String?    // 只进日志，不进 UI
     )
 
+    /**
+     * R305 · 真机反馈「书明明做完了，一打开软件就发烫」：旧任务记录没落到
+     * done 时，开机 pending() 会把它当成意外中断 → AUTO 续跑，TTS 引擎一启动
+     * 就全速推理；restore() 还会为它重分整本书、扫全部小块。章级成品已经
+     * 覆盖这次勾选的章时，别再自动开跑。只改「要不要自动跑」的判定，
+     * 不动任务记录、不拦用户在任务页手动继续或重新勾选重做。
+     */
+    private fun bookFinishCovered(c: Context, t: TaskInfo): Boolean {
+        val playable = try {
+            AudioLibrary.chapterSnapshot(c, t.bookId).second
+        } catch (_: Throwable) { return false }
+        if (playable.isEmpty()) return false
+        val only = t.only
+        return if (!only.isNullOrEmpty()) playable.containsAll(only)
+        else t.total > 0 && t.done >= t.total
+    }
+
     fun pending(c: Context): PendingTask? {
         if (busy) return null
         val paused = TaskResume.queuePaused(c)
@@ -225,6 +242,12 @@ object Producer {
         }
         val t = TaskResume.active(c) ?: return null
         if (t.phase == "done") return null
+        // R305 · 章级成品齐了就别把旧任务当没做完、开机自动重跑一遍。
+        if (bookFinishCovered(c, t)) {
+            EventLog.log(EventLog.Kind.PIPELINE, "RESUME_SKIP_FINISHED",
+                "total=${t.total} done=${t.done}")
+            return null
+        }
         if (BookStore.list(c).none { it.id == t.bookId }) return null
         val why = TaskResume.autoResumeBlockReason(c, t)
         val label = when {

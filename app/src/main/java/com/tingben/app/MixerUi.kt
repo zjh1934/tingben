@@ -288,20 +288,15 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                     Text("保存", fontSize = 12.sp)
                 }
             }
-            // R303 · 关闭重设计：原来 40dp 浅底 + 主色细叉和背景糊在一起，
-            // 用户说「叉号不明显」。改成主色实心胶囊「关闭 ✕」，反色文字与
-            // 反色粗叉、44dp 高，一眼看出是出口；独立页仍走顶栏返回键。
+            // R304 · 用户要的就是一枚红叉，不要「关闭 ✕」那枚胶囊。
+            // 红色实心圆底 + 白色粗叉，44dp 可点区；独立页仍走顶栏返回键。
             if (onClose != null) {
-                Row(Modifier.height(44.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Primary)
-                        .clickable { leave() }
-                        .padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("关闭", fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                        color = palette.onPrimary)
-                    IconClose(palette.onPrimary, Modifier.size(16.dp))
+                Box(Modifier.size(44.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xFFE53935))
+                        .clickable { leave() },
+                    contentAlignment = Alignment.Center) {
+                    IconClose(Color.White, Modifier.size(20.dp))
                 }
             }
         }
@@ -487,12 +482,14 @@ internal fun ModeTabs(
 
 @Composable
 internal fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("声音描述", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.text)
-        Spacer(Modifier.weight(1f))
-        Text("清空", fontSize = 12.sp, color = Sub,
-            modifier = Modifier.clickable { onDraft(draft.copy(voice = "")) })
-    }
+    // R304 · 「声音描述」右边两枚按钮：▾ 选已存预设、＋添加 存新预设。
+    // 选中的是详细描述，直接填进下面这个输入框；简短描述只在列表里显示。
+    DescPresetRow(
+        label = "声音描述",
+        slot = "voice_design",
+        onPick = { onDraft(draft.copy(voice = it)) },
+        onClear = { onDraft(draft.copy(voice = "")) }
+    )
     Spacer(Modifier.height(6.dp))
     OutlinedTextField(
         value = draft.voice, onValueChange = { onDraft(draft.copy(voice = it)) },
@@ -553,13 +550,19 @@ internal fun CustomVoicePane(
                 FilterChip(
                     selected = draft.speaker == name,
                     onClick = { onDraft(draft.copy(speaker = name)) },
-                    label = { Text(name, fontSize = 12.sp) }
+                    // R304 · 模型自带的英文名在界面显示中文，送进引擎的仍用原名。
+                    label = { Text(speakerCn(name), fontSize = 12.sp) }
                 )
             }
         }
     }
     Spacer(Modifier.height(12.dp))
-    Text("自定义", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.text)
+    // R304 · 标签从「自定义」改成「风格描述」，右边同样带选预设 / 添加预设。
+    DescPresetRow(
+        label = "风格描述",
+        slot = "cv_style",
+        onPick = { onDraft(draft.copy(cvStyle = it)) }
+    )
     Spacer(Modifier.height(6.dp))
     OutlinedTextField(
         value = draft.cvStyle, onValueChange = { onDraft(draft.copy(cvStyle = it)) },

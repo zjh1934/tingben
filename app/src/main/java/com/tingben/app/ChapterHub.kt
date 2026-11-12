@@ -706,7 +706,9 @@ internal fun ChapterHubScreen(
                             r = r, multi = multiMode, checked = r.index in selected,
                             // R264 · 章名不再承担展开/收起：制作中的那一章自动展开，
                             // 看书交给右侧小眼睛，章行只保留长按菜单。
-                            onLong = { menuChapter = r.index },
+                            // R304 · 长按就地菜单只在「没进勾选态」时弹：进了勾选态
+                            // 就该由底部那张菜单管，长按不再跟它抢操作。
+                            onLong = { if (!multiMode) menuChapter = r.index },
                             onToggle = { i ->
                                 val on = i !in selected
                                 val next = if (on) selected + i else selected - i
@@ -852,23 +854,25 @@ internal fun ChapterHubScreen(
             MultiSelectBar(
                 count = selected.size,
                 onSelectAll = {
-                    selected = ui.indices.toSet()
+                    // R304 · 点一下全选、再点一下反选取消打勾。
+                    // 原来永远是全选，勾满了想一次清掉只能逐章点回去。
+                    selected = if (ui.isNotEmpty() && selected.size == ui.size)
+                        emptySet() else ui.indices.toSet()
                     EventLog.ui("MULTI_ALL", "n=${selected.size}")
                 },
                 onCancel = { exitMulti() },
-                allLabel = "全选章节",
-                // R291 · 勾完章最该找的就是「制作」。原来它跟调音、导出一起
-                // 排在横滑区里，被前三个固定按钮挤出屏幕，看着像根本没有制作入口。
-                // 现在做成固定主按钮，选中即常驻、一眼能按。
-                primaryLabel = if (selected.isEmpty()) null else "制作选中 ${selected.size} 章",
+                allLabel = if (ui.isNotEmpty() && selected.size == ui.size)
+                    "取消全选" else "全选章节",
+                showCount = false,
+                // R291 · 制作固定在动作行最左边，不跟着次要动作横滑。
+                // R304 · 这张菜单重新设计：不带「已选多少章」，也不再重复摆
+                // 调音台 / 制作设置（右上角已有），只管选中的这几章本身。
+                primaryLabel = if (selected.isEmpty()) null else "制作选中章节",
                 onPrimary = { startAction(HubAction.SYNTH) },
                 primaryIcon = UiIcon.SYNTH,
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 if (selected.isNotEmpty()) {
-                    // R224 · 一排字 → 有底色的按钮，长按选中后一眼能看出哪些能点
-                    ActionChip("调音 ›", icon = UiIcon.MIXER, onClick = onMixer)
-                    ActionChip("制作设置 ›", icon = UiIcon.SETTINGS, onClick = { onProduceSetup(book.id) })
                     if (selected.size == 1) {
                         val i = selected.first()
                         val has = ui.getOrNull(i)?.let { it.audio != null || it.playable } ?: false

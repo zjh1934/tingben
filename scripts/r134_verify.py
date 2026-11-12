@@ -40,7 +40,8 @@ POS = {
         # 第一列：长按也能勾选，底部换成统一条
         ".pointerInput(r.index, multi, checked)",
         "onLongPress = { onLong() }",
-        "allLabel = \"全选章节\"",
+        '"取消全选"',
+        '"全选章节"',
         # 第三列：多选态 + 方块 + 底部条 + 批量删除
         "var multiMode by remember(book.id) { mutableStateOf(false) }",
         "var segChecked by remember(book.id) { mutableStateOf(setOf<Int>()) }",
@@ -111,7 +112,7 @@ def selftest():
         "全选入口被摘": ("multi", "onSelectAll: () -> Unit"),
         "取消入口被摘": ("multi", "onCancel: () -> Unit"),
         "第一列长按被摘": ("hub", "onLongPress = { onLong() }"),
-        "第一列底部条被摘": ("hub", 'allLabel = "全选章节"'),
+        "第一列底部条被摘": ("hub", '"取消全选"'),
         "第三列多选态被摘": ("hub", "var multiMode by remember(book.id) { mutableStateOf(false) }"),
         "第三列不进多选": ("hub", "onLongPress = { if (playable) onLong(sg.index) }"),
         "第三列方块被摘": ("hub", "SelectBox("),

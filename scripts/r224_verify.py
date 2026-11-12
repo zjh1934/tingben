@@ -29,13 +29,14 @@ def files():
         "task": rd(APP / "TaskUi.kt"),
     }
 
-CHIPS = ["ActionChip(\"调音 ›\"", "ActionChip(\"制作设置 ›\"",
-         # R291 · 制作升成固定主按钮，不再是可被横滑藏掉的小 chip
-         'primaryLabel = if (selected.isEmpty()) null else "制作选中 ',
+CHIPS = ['primaryLabel = if (selected.isEmpty()) null else "制作选中章节"',
          "ActionChip(\"拼成整章\"",
          "ActionChip(\"另存 WAV\"", "ActionChip(\"转 M4A\"",
          "ActionChip(\"删除选中音频\", danger = true"]
 BAN = ["TextButton(onClick = onMixer)", "TextButton(onClick = onCancel)",
+        # R304 · 这两枚 chip 已撤，出现即回潮
+        'ActionChip("调音 ›", icon = UiIcon.MIXER',
+        'ActionChip("制作设置 ›", icon = UiIcon.SETTINGS',
        'Text("合成音频", fontSize = 12.sp, color = HubPrimary)',
        'Text("调音 ›", fontSize = 12.sp, color = HubPrimary)',
        'ActionChip("合成音频"']
@@ -66,13 +67,13 @@ def check(f):
               "Canvas(Modifier.size(glyphSize))", "0.30f * i.toFloat()",
               "strokeWidth = sw, cap = StrokeCap.Round"]:
         if k not in ic: e.append("图标库缺: " + k[:52])
-    for v in ["MIXER", "SETTINGS", "SYNTH", "MERGE", "WAV", "M4A", "DELETE",
+    for v in ["SYNTH", "MERGE", "WAV", "M4A", "DELETE",
               "PLAY", "STOP", "LISTEN", "EXPORT", "CANCEL", "ALL", "AUDIO", "TASKS"]:
         if "UiIcon." + v + " ->" not in ic: e.append("枚举值没画: " + v)
     if "icon: UiIcon? = null" not in m or "UiIconGlyph(icon, tint" not in m:
         e.append("ActionChip 没接图标槽")
     # R291 · 制作改走 primaryIcon 参数，参数名变了但图标一个不能少
-    for v in ["MIXER", "SETTINGS", "SYNTH", "MERGE", "WAV", "M4A", "DELETE"]:
+    for v in ["SYNTH", "MERGE", "WAV", "M4A", "DELETE"]:
         if "UiIcon." + v not in hb:
             e.append("目录页动作条图标没配齐: " + v)
     # 只禁渲染出来的 ⚙ 字符；KDoc 里解释「不用 ⚙ 字符」的说明不算回潮
@@ -104,9 +105,10 @@ def selftest():
         ("点击被摘", "multi", ".clickable(onClick = onClick)", ""),
         ("危险色被摘", "multi", "danger: Boolean = false", ""),
         ("制作退回横滑小按钮", "hub",
-         'primaryLabel = if (selected.isEmpty()) null else "制作选中 ',
+         'primaryLabel = if (selected.isEmpty()) null else "制作选中章节"',
          'ActionChip("合成音频", icon = UiIcon.SYNTH, onClick = { startAction(HubAction.SYNTH) })\n                '),
-        ("调音退回文字", "hub", 'ActionChip("调音 ›"', 'Text("调音 ›"'),
+        ("底部旧 chip 回潮", "hub", 'showCount = false',
+          'showCount = false\n                    ActionChip("调音 ›", icon = UiIcon.MIXER, onClick = onMixer)'),
         ("删除危险色被摘", "hub", 'ActionChip("删除选中音频", danger = true',
          'ActionChip("删除选中音频"'),
         ("全选退回文字", "multi", "ActionChip(allLabel", "TextButton(onClick"),

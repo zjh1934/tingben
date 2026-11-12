@@ -48,7 +48,7 @@ POS = {
         "private fun ChapterRow(",
         "LaunchedEffect(showResplit, book.id, planTick)",
         "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
-        "onLong = { menuChapter = r.index },",
+        "onLong = { if (!multiMode) menuChapter = r.index },",
         "item(key = \"ch_${r.index}\")",
         "继续队列",
         "队列 ${queued.size}",

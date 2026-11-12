@@ -51,7 +51,7 @@ POS = {
         # 参数个数和灰色 IconButton，属于「改一处 UI 就得哄脚本」的旧债。
         "MixerScreen(c, onBack = onClose, onClose = onClose,",
         "onRegisterLeave = { requestLeave = it }",
-        "IconClose(palette.onPrimary, Modifier.size(16.dp))",
+        "IconClose(Color.White, Modifier.size(20.dp))",
         ".clickable { leave() }",
         "if (onClose != null) BackHandler(enabled = !dirty) { onClose?.invoke() }",
         "showLeave = false; discardAll(); (onClose ?: onBack)()",
@@ -66,7 +66,7 @@ POS = {
     "hub": [
         "按顺序播放",
         '"全选章节"',
-        'onLong = { menuChapter = r.index }',
+        'onLong = { if (!multiMode) menuChapter = r.index }',
         'BackHandler(enabled = multiMode) { exitMulti() }',
         "Box(Modifier.size(34.dp)",
         "SelectBox(checked = isChecked",
@@ -132,7 +132,7 @@ def logic_cases(f):
         bad.append("弹层无改动时的返回守卫丢了")
     if "showLeave = false; discardAll(); (onClose ?: onBack)()" not in m:
         bad.append("「丢弃并离开」没有关弹层")
-    if "IconClose(palette.onPrimary, Modifier.size(16.dp))" not in m or ".clickable { leave() }" not in m:
+    if "IconClose(Color.White, Modifier.size(20.dp))" not in m or ".clickable { leave() }" not in m:
         bad.append("弹层没有关闭叉")
     if "MixerScreen(c, onBack = onClose, onClose = onClose," not in m:
         bad.append("弹层没有复用整套调音台")
@@ -238,7 +238,7 @@ def selftest():
         ("合成前调音入口被摘", "main", "if (mixerOpen) MixerDialog(c, onClose =", ""),
         ("调音弹层被摘", "main",
          "MixerScreen(c, onBack = onClose, onClose = onClose,", ""),
-        ("关闭叉被摘", "main", "IconClose(palette.onPrimary, Modifier.size(16.dp))", ""),
+        ("关闭叉被摘", "main", "IconClose(Color.White, Modifier.size(20.dp))", ""),
         ("遮罩空白退出被摘", "main",
          "onRegisterLeave = { requestLeave = it }", ""),
         ("未保存返回守卫被摘", "main",
@@ -246,7 +246,7 @@ def selftest():
         ("章节全选被摘", "hub",
          '"全选章节"', ""),
         ("章节反选被摘", "hub",
-         'onLong = { menuChapter = r.index }', ""),
+         'onLong = { if (!multiMode) menuChapter = r.index }', ""),
         ("勾选热区缩回", "hub", "Box(Modifier.size(34.dp)", "Box(Modifier.size(24.dp)"),
         ("日志退回 txt", "main",
          'ActivityResultContracts.CreateDocument("text/markdown")',

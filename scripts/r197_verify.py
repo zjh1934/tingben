@@ -33,8 +33,8 @@ FILES = {
 POS = {
     "hub": [
         'onProduceSetup: (String) -> Unit = {},',
-        '"制作设置 ›"',
-        'onProduceSetup(book.id)',
+        '"取消全选"',
+        'onProduceSetup: (String) -> Unit',
     ],
     "main": [
         'nav.push(Screen.PRODUCE)',
@@ -91,16 +91,19 @@ def check(f):
     if "Screen.PRODUCE" not in f["main"]:
         e.append("PRODUCE 目的地整个没了")
     # R218 · 常态顶栏收成一枚齿轮（不写文字），勾选态保留文字入口
+    # R304 · 制作设置入口右上角已有，底部菜单里一枚都不该有
     n_entry = f["hub"].count('"制作设置 ›"')
-    if n_entry != 1:
-        e.append("勾选态制作设置文字入口应为 1 枚，实为 %d" % n_entry)
+    if n_entry != 0:
+        e.append("底部菜单不该再有制作设置入口，实为 %d" % n_entry)
     # R226 · 常态齿轮上移系统顶栏（合并视图），勾选态仍留 hub
     if 'Text("⚙", fontSize = 16.sp' not in f["main"]:
         e.append("常态顶栏齿轮入口被摘")
     if "nav.push(Screen.PRODUCE)" not in f["main"]:
         e.append("顶栏齿轮没跳制作设置")
-    if f["hub"].count("onProduceSetup(book.id)") != 1:
-        e.append("勾选态制作设置入口丢了")
+    if "onProduceSetup: (String) -> Unit" not in f["hub"]:
+        e.append("制作设置回调签名丢了")
+    if "onProduceSetup(book.id)" in f["hub"]:
+        e.append("底部菜单旧入口回潮")
     o = orphans(f["main"])
     if o:
         e += o
@@ -113,11 +116,8 @@ def selftest():
     cuts = [
         ("常态齿轮入口整块被摘", "main",
          'Text("⚙", fontSize = 16.sp', ''),
-        ("勾选态入口被摘", "hub",
-         'ActionChip("制作设置 ›", icon = UiIcon.SETTINGS, onClick = { onProduceSetup(book.id) })',
-         ''),
-        ("只剩一枚入口", "hub", '"制作设置 ›"', '"制作设置"'),
-        ("两枚都没传 book.id", "hub", 'onProduceSetup(book.id)', 'onProduceSetup("")'),
+        ("全选 toggle 被摘", "hub", '"取消全选"', '"全选章节"'),
+        ("两枚都没传 book.id", "hub", 'onProduceSetup: (String) -> Unit', 'onProduceSetup("")'),
         ("回调签名退化成无参", "hub", 'onProduceSetup: (String) -> Unit = {},',
          'onProduceSetup: () -> Unit = {},'),
         ("跳转被摘", "main", "nav.push(Screen.PRODUCE)", ""),

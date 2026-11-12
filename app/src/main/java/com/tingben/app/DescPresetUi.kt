@@ -1,0 +1,164 @@
+package com.tingben.app
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.tingben.app.core.DescPresetStore
+
+/**
+ * R304 · 标签右边那两枚按钮：▾ 选已存的预设、＋添加 新建预设。
+ * 「声音描述」(slot=voice_design) 与「风格描述」(slot=cv_style) 共用这一套。
+ * 选择列表只显示简短描述；点中后把详细描述交给调用方填进输入框。
+ */
+@Composable
+internal fun DescPresetRow(
+    label: String,
+    slot: String,
+    onPick: (String) -> Unit,
+    onClear: (() -> Unit)? = null
+) {
+    val ctx = LocalContext.current
+    var items by remember { mutableStateOf(DescPresetStore.list(ctx, slot)) }
+    var showPick by remember { mutableStateOf(false) }
+    var showAdd by remember { mutableStateOf(false) }
+    var shortText by remember { mutableStateOf("") }
+    var longText by remember { mutableStateOf("") }
+
+    Row(verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()) {
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            color = palette.text)
+        Spacer(Modifier.width(8.dp))
+        // ▾ · 选择预设
+        Box(Modifier.size(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(palette.primarySoft)
+            .clickable {
+                items = DescPresetStore.list(ctx, slot)
+                showPick = true
+            }, contentAlignment = Alignment.Center) {
+            Text("▾", fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                color = palette.primary)
+        }
+        Spacer(Modifier.width(6.dp))
+        // ＋ 添加
+        Box(Modifier.height(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(palette.primarySoft)
+            .clickable {
+                shortText = ""
+                longText = ""
+                showAdd = true
+            }
+            .padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+            Text("＋添加", fontSize = 12.sp,
+                fontWeight = FontWeight.Medium, color = palette.primary)
+        }
+        Spacer(Modifier.weight(1f))
+        if (onClear != null) {
+            Text("清空", fontSize = 12.sp, color = Sub,
+                modifier = Modifier.clickable { onClear() })
+        }
+    }
+
+    if (showPick) {
+        AlertDialog(
+            onDismissRequest = { showPick = false },
+            title = { Text("选一个「$label」预设", fontSize = 14.sp) },
+            text = {
+                Column {
+                    if (items.isEmpty()) {
+                        Text("还没有预设，先点「＋添加」存一个",
+                            fontSize = 12.sp, color = Sub)
+                    } else {
+                        items.forEach { p ->
+                            TextButton(
+                                onClick = { onPick(p.long); showPick = false },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(p.short, fontSize = 13.sp) }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPick = false }) {
+                    Text("关闭", fontSize = 12.sp)
+                }
+            },
+            dismissButton = {}
+        )
+    }
+
+    if (showAdd) {
+        AlertDialog(
+            onDismissRequest = { showAdd = false },
+            title = { Text("添加「$label」预设", fontSize = 14.sp) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = shortText,
+                        onValueChange = { shortText = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("简短描述", fontSize = 11.sp) },
+                        textStyle = TextStyle(fontSize = 13.sp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = longText,
+                        onValueChange = { longText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 6,
+                        label = { Text("详细描述", fontSize = 11.sp) },
+                        textStyle = TextStyle(fontSize = 13.sp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (DescPresetStore.save(ctx, slot, shortText, longText)) {
+                        items = DescPresetStore.list(ctx, slot)
+                        showAdd = false
+                    }
+                }) { Text("保存", fontSize = 12.sp) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdd = false }) {
+                    Text("取消", fontSize = 12.sp)
+                }
+            }
+        )
+    }
+}
+
+/**
+ * R304 · 第二种模式的音色表是模型自带的英文名，界面统一显示中文；
+ * 没收录的名字原样显示，不猜、不硬翻。
+ */
+internal fun speakerCn(name: String): String = when (name.trim().lowercase()) {
+    "serena" -> "温柔女声"
+    "vivian" -> "明快女声"
+    "uncle_fu" -> "沉稳男声"
+    "dylan" -> "青年男声"
+    "eric" -> "清朗男声"
+    "ryan" -> "磁性男声"
+    "aiden" -> "少年音"
+    "ono_anna" -> "知性女声"
+    "sohee" -> "软萌女声"
+    else -> name
+}

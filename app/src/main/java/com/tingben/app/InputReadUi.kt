@@ -306,8 +306,18 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
             Spacer(Modifier.height(8.dp))
             Box(Modifier.weight(1f)) {
                 if (clips.isEmpty()) {
-                    Text("还没有片段", fontSize = 12.sp, color = Sub,
-                        modifier = Modifier.padding(top = 8.dp))
+                    // R304 · 不写「还没有片段」这行字：留白区常驻三条空槽位轮廓，
+                    // 有片段时同一个位置换成真条目，布局不跳、也不会是空白一片。
+                    Column(Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        repeat(3) {
+                            Box(Modifier.fillMaxWidth().height(54.dp)
+                                .background(palette.sub.copy(alpha = 0.30f))
+                                .padding(1.dp)) {
+                                Box(Modifier.fillMaxSize().background(palette.card))
+                            }
+                        }
+                    }
                 } else {
                     // R285 · 片段多时最后一条要能完整滚出：列表在 weight(1f) 容器里，
                     // 多选条与全局播放条各占一行，留 10dp 尾部余量，末条不贴边。

@@ -63,7 +63,7 @@ def check(f):
     if "R226 · 三枚操作已上移到系统顶栏" not in hb:
         e.append("ChapterHub 缺上移说明")
     # ④ R298 · 目录页就地看板撤掉，任务统一从主页右上角进全局任务页
-    for k in ["R298 · 目录页就地任务看板撤掉", "制作选中 ${selected.size} 章",
+    for k in ["R298 · 目录页就地任务看板撤掉", "制作选中章节",
               "任务队列 · ${queued.size} 个"]:
         if k not in hb: e.append("目录页任务能力缺失: " + k[:46])
     for k in ["nav.push(Screen.TASKS)", 'EventLog.ui("HOME_TASKS", "open:global")',
@@ -115,7 +115,7 @@ def selftest():
         ("书名被搬下顶栏", "main", "chrome.copy(title = chapterBookTitle)", 'chrome.copy(title = "")'),
         ("三按钮回内容区", "hub", "// R226 · 三枚操作已上移到系统顶栏",
          'Text("停止", fontSize = 12.sp, color = HubWarn)'),
-        ("目录页任务能力被摘", "hub", "制作选中 ${selected.size} 章", ""),
+        ("目录页任务能力被摘", "hub", "制作选中章节", ""),
         ("任务页落地被摘", "main", 'EventLog.ui("HOME_TASKS", "open:global")', ""),
         ("目录页看板回潮", "hub", "R298 · 目录页就地任务看板撤掉", "TaskBoardDialog("),
         ("收尾判断被摘", "main", "bookId?.let { Producer.isBusyForBook(it) }", "true"),

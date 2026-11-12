@@ -65,9 +65,12 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
     # R224 · 勾选动作改成有底色的 ActionChip，不再是一排平铺的字
     # R291 · 「合成音频」升成固定主按钮（primaryLabel），不再混在横滑动作里
-    for s in ['primaryLabel = if (selected.isEmpty()) null else "制作选中 ',
-              'ActionChip("调音 ›"', 'onMixer: () -> Unit']:
+    for s in ['primaryLabel = if (selected.isEmpty()) null else "制作选中章节"',
+              'showCount = false', '"取消全选"', 'onMixer: () -> Unit']:
         if s not in hub: e.append('目录页缺: ' + s)
+    # R304 · 这两枚入口右上角已有，底部菜单不再重复摆；出现即回潮
+    for s in ['ActionChip("调音 ›"', 'ActionChip("制作设置 ›"']:
+        if s in hub: e.append('底部菜单旧入口回潮: ' + s)
     # R195 · 四步进度条只在已删的独立进度页里；G2b 后进度做进目录页
     # （st.done/total + 心跳），这条死代码专属守恒项退役。
     if '送进声音模型的正文' in main: e.append('看台仍留展开正文旧口径（R91 已改格子即播停）')

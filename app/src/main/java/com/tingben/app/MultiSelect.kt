@@ -143,6 +143,8 @@ internal fun MultiSelectBar(
     primaryLabel: String? = null,
     onPrimary: (() -> Unit)? = null,
     primaryIcon: UiIcon? = null,
+    // R304 · 章节目录页那张菜单不要「已选多少章」这行字；首页片段列表仍保留。
+    showCount: Boolean = true,
     actions: @Composable RowScope.() -> Unit
 ) {
     Card(
@@ -153,7 +155,7 @@ internal fun MultiSelectBar(
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("已选 $count", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                if (showCount) Text("已选 $count", fontSize = 13.sp, fontWeight = FontWeight.Bold,
                     color = palette.primary, modifier = Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
                 ActionChip(allLabel, icon = UiIcon.ALL, onClick = {

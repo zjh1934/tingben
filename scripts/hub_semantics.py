@@ -35,7 +35,7 @@ HUB_POS = [
     "private fun ChapterSegGrid(",
     # 章行：默认点进阅读、长按进多选；R171 起常态只有听 / 展开两枚图标
     "onRead = { openReader(r.index) }",
-    "onLong = { menuChapter = r.index }",
+    "onLong = { if (!multiMode) menuChapter = r.index }",
     "IconButton(onClick = onListen",
     "IconButton(onClick = onRead",
     # R171 · 三点「更多」撤掉，选中一律长按；勾选态必须能退出
@@ -86,7 +86,7 @@ HUB_POS = [
     "TaskResume.dequeue(c, t.bookId)",
     # R243 · 「继续队列」按钮砍掉，底层能力仍在 Producer；这里判同源数据，
     # 按钮回潮由 HUB_BAN 拦，不放宽能力判据。
-    "制作选中 ${selected.size} 章",
+    "制作选中章节",
     # R169 · 章名深浅两色统一 palette.text：浅色下 HubGrey 只有 1.74:1，
     # 真机截图里 103 章整列看不见；「有没有做好」交给右侧耳机图标颜色。
     "color = palette.text,",
@@ -227,7 +227,7 @@ def injections():
          lambda t: t.replace("onRead = { openReader(r.index) }",
                              "onTap = { }")),
         ("长按菜单锚被摘", "hub",
-         lambda t: t.replace("onLong = { menuChapter = r.index }",
+         lambda t: t.replace("onLong = { if (!multiMode) menuChapter = r.index }",
                              "onLong = { }")),
         ("听本章入口消失", "hub",
          lambda t: t.replace("IconButton(onClick = onListen", "IconButton(onClick = {} //")),
@@ -269,7 +269,7 @@ def injections():
         ("目录页看板说明被摘", "hub",
          lambda t: t.replace("R298 · 目录页就地任务看板撤掉", "")),
         ("制作按钮被摘", "hub",
-         lambda t: t.replace("制作选中 ${selected.size} 章", "")),
+         lambda t: t.replace("制作选中章节", "")),
         ("全局任务入口被摘", "main",
          lambda t: t.replace("nav.push(Screen.TASKS)", "")),
         ("目录页看板回潮", "hub",

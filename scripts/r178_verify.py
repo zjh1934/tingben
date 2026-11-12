@@ -135,7 +135,7 @@ def selftest():
         ("队列数据源被摘", "hub",
          lambda t: t.replace('val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }', '')),
         ("目录页看板回潮", "hub",
-         lambda t: t.replace('制作选中 ${selected.size} 章', 'TaskBoardDialog(')),
+         lambda t: t.replace('制作选中章节', 'TaskBoardDialog(')),
         ("停止按钮不节流", "main",
          lambda t: t.replace("if (now - lastHubTapMs >= 800L) {", "if (true) {", 1)),
         ("继续按钮不节流", "main",

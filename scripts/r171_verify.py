@@ -26,7 +26,7 @@ MULTI = SRC / "MultiSelect.kt"
 CI = ROOT / ".github/workflows/ci.yml"
 
 HUB_MUST = [
-    "onLong = { menuChapter = r.index }",
+    "onLong = { if (!multiMode) menuChapter = r.index }",
     "IconButton(onClick = onListen",
     "IconButton(onClick = onRead",
     # 三点菜单撤掉，换成勾选态的三条退出路径
@@ -35,7 +35,7 @@ HUB_MUST = [
     "R298 · 目录页就地任务看板撤掉",
     "if (multiMode && menuChapter == null) {",
     # 任务看板就地：与独立任务页同源，不另造状态口径
-    "制作选中 ${selected.size} 章",
+    "制作选中章节",
     "任务队列 · ${queued.size} 个",
     "queued.forEach { t ->",
     "val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }",
@@ -138,7 +138,7 @@ def selftest():
         ("目录页看板说明被摘", "hub",
          lambda t: t.replace("R298 · 目录页就地任务看板撤掉", "")),
         ("制作按钮被摘", "hub",
-         lambda t: t.replace("制作选中 ${selected.size} 章", "")),
+         lambda t: t.replace("制作选中章节", "")),
         ("看板回潮", "hub",
          lambda t: t.replace("任务队列 · ${queued.size} 个", "TaskBoardDialog(")),
         ("取消按钮被摘", "multi", lambda t: t.replace('ActionChip("取消"', 'Text("×"')),

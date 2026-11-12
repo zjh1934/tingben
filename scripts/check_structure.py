@@ -474,7 +474,9 @@ for banned in ["设定", "套用", "保存并生效", "直接保存生效", "应
 prefs_src = (ROOT / "app/src/main/java/com/tingben/app/core/Prefs.kt").read_text(encoding="utf-8", errors="replace")
 if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
-R99_MUST = ['Text("采样参数 · 9 项"', 'Text("自定义"', 'Text("保存"',
+# R304 · 「自定义」标签已换成「风格描述」并改用 DescPresetRow；
+# 判据按现状迁到新标签，不放宽「调音台该有这一项」的守恒。
+R99_MUST = ['Text("采样参数 · 9 项"', 'label = "风格描述"', 'Text("保存"',
             'Text("试听 · 已保存"', '改动还没保存', '离开会丢掉这次改动。',
             'val mode = remember(tick) { ModelStore.currentMode(c) }']
 for sym in R99_MUST:
