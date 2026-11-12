@@ -50,7 +50,7 @@ POS = {
               "const val SPLIT_EPOCH = 3"],
     "noise": ["object SiteNoise", "fun clean(text: String)", "章节内容开始",
               "下载和分享更多电子书", "fun droppedCount"],
-    "hub": ["var expandedChapter by remember(book.id)"],
+    "hub": ["val liveChapter: Int? = if (bookRunning) makingChapter else null"],
     "main": [
         "var chapterMixerOpen by rememberSaveable",
         "onMixer = { chapterMixerOpen = true",
@@ -196,8 +196,9 @@ def selftest():
         ("调音又跳独立页", "main", "onMixer = { chapterMixerOpen = true",
          "onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) }"),
         ("调音弹层被摘", "main", "if (chapterMixerOpen) {", ""),
-        ("列记忆又跨会话", "hub", "var expandedChapter by remember(book.id)",
-         "var savedCol by rememberSaveable(book.id)"),
+        ("展开收起态回潮", "hub",
+         "val liveChapter: Int? = if (bookRunning) makingChapter else null",
+         "var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }"),
         ("顶栏又双出口", "main", "if (onClose == null) {", ""),
         ("CI 漏挂 r148", "ci", "python3 scripts/r148_verify.py --selftest", ""),
     ]

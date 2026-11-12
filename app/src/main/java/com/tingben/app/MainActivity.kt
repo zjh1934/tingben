@@ -533,6 +533,14 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         } else {
             val b = BookStore.list(ctx).find { x -> x.id == t.bookId }
             if (b != null) {
+                // R284 · 诊断快照里「队列 1 项 · 暂停=true」的标记，只该防进程重启
+                // 自动跑起停掉的队列。用户主动点「继续制作」是明确意图：清掉它，
+                // 当前这本收尾后 pumpQueue 自然接上排队项，不会永久卡死。
+                if (TaskResume.queuePaused(ctx)) {
+                    Producer.unpauseQueue(ctx)
+                    EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_UNPAUSE_BY_CONTINUE",
+                        "用户主动继续制作，队列恢复调度")
+                }
                 bookId = b.id
                 lastSelection = t.only
                 Producer.start(ctx, b, t.only, true, t.think, t.config)
@@ -671,6 +679,12 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     } else if (hubStalled) {
                         IconButton(onClick = { hubResume() }) { PlayIcon(Primary) }
                     }
+                    // R272 · 调音台入口不只首页有，章节目录页顶栏也常驻一枚；
+                    // 与底部多选胶囊里的「调音 ›」不是一回事（那个跟选中章绑定）。
+                    IconButton(onClick = {
+                        chapterMixerOpen = true
+                        EventLog.ui("OVERLAY_MIXER", "open:hubbar")
+                    }) { MixerIcon(Primary) }
                     IconButton(onClick = {
                         EventLog.ui("HUB_TASKS", "id=${bookId?.take(8)}")
                         hubTasksTick++
@@ -689,7 +703,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 // R162 · 主页就是输入框：粘贴文字直接建书，书列表搬到左边抽屉。
                 Screen.LIBRARY -> InputReadScreen(ctx,
                     onBack = { },
-                    onAdded = { },   // R215 · 首页即贴即听，不再建书、不再跳目录页
+                    onAdded = { },   // R215/R276 · 首页贴一段点合成，不再建书、不再跳目录页
                     asHome = true,
                     importingBook = bookImporting,
                     modelMissing = modelMissing,

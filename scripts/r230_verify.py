@@ -76,7 +76,8 @@ def check(f):
     if '"已做好 $done/$total 章"' not in lb:
         e.append("制作进度条文字被误删（要保留）")
     # ⑥ 悬浮开关回设置页 + 打开即预览
-    for k in ['OverlayProgress.update(c, "", "预览", 0, 0, -1f)',
+    for k in ['OverlayProgress.update(c, "", "预览", 0, 0, -1f,',
+              "OverlaySource.PREVIEW",
               "打开即显示预览", "if (!it) OverlayProgress.hide(c)",
               'else if (!permOk) askPermission()']:
         if k not in st: e.append("设置页开关缺: " + k[:52])
@@ -86,7 +87,11 @@ def check(f):
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r230_verify.py --selftest"),
                               ("清单", f["r135"], '"r230_verify.py"'),
                               ("受管根", f["config"], "r230_verify.py")]:
-        if needle not in src: e.append(name + " 漏登记 r230")
+        if name == "受管根":
+            from r45_common import scope_indexed
+            if not scope_indexed(f["config"], "scripts/r230_verify.py"):
+                e.append(name + " 漏登记 r230")
+        elif needle not in src: e.append(name + " 漏登记 r230")
     return e
 
 def selftest():
@@ -100,13 +105,13 @@ def selftest():
         ("抽屉左下设置被摘", "chrome",
          'GearIcon(primary)\n                        Spacer(Modifier.width(6.dp))', ""),
         ("抽屉设置没接线", "main", 'EventLog.ui("DRAWER_SETTINGS", "open")', ""),
-        ("主页加号回潮", "shell", "Screen.LIBRARY  -> ChromeSpec(\"\", TAB_LIBRARY)",
-         'Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY,\n        showImport = true)'),
+        ("主页加号回潮", "shell", "Screen.LIBRARY  -> ChromeSpec(\"\", TAB_LIBRARY, showMenu = true)",
+         'Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY, showMenu = true,\n        showImport = true)'),
         ("顶栏首页分支被摘", "main", "Screen.LIBRARY -> {", ""),
         ("调音入口被摘", "main", 'MixerIcon(Primary)', ""),
         ("任务不置灰", "main", "enabled = homeHasTask", "enabled = true"),
-        ("首页又长悬浮开关", "input", "val clipboard = LocalClipboardManager.current",
-         'val clipboard = LocalClipboardManager.current\n    Text("悬浮·关")'),
+        ("首页又长悬浮开关", "input", "val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current",
+         'val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current\n    Text("悬浮·关")'),
         ("长按菜单状态被摘", "lib",
          "var menuBook by remember { mutableStateOf<String?>(null) }", ""),
         ("长按被摘", "lib", "onLongPress = { menuBook = b.id }", ""),
@@ -115,14 +120,18 @@ def selftest():
          'Text("上次读到 第 ${lastRead + 1} 章")'),
         ("进度条被误删", "lib", '"已做好 $done/$total 章"', ""),
         ("打开即预览被摘", "settings",
-         'else OverlayProgress.update(c, "", "预览", 0, 0, -1f)', ""),
+         'else OverlayProgress.update(c, "", "预览", 0, 0, -1f,', ""),
         ("无权限也硬挂", "settings", "else if (!permOk) askPermission()", "else if (false) { }"),
         ("CI 漏挂", "ci", "python3 scripts/r230_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r230_verify.py"', ""),
     ]
     bad = 0
+    # MixerIcon(Primary) 在合并视图里出现 2 次，只摘第一处判据仍绿、注入假生效
+    FULL = {"调音入口被摘"}
     for name, key, needle, repl in cuts:
-        g = dict(f); g[key] = f[key].replace(needle, repl, 1)
+        g = dict(f)
+        g[key] = (f[key].replace(needle, repl) if name in FULL
+                  else f[key].replace(needle, repl, 1))
         if check(g): print("  反向注入 %-22s 拦下" % name)
         else: print("  反向注入漏放:", name); bad += 1
     print("反向注入 %d/%d 全拦下" % (len(cuts) - bad, len(cuts)))

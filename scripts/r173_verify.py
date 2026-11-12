@@ -29,6 +29,9 @@ FILES = {
     "main": ui_sources.source(SRC),
     # R246 · AppChrome.kt 不在合并视图，rc #208 的两处真编译错正好出在这
     "chrome": SRC / "AppChrome.kt",
+    # R290 · rc #216 两处真编译错：不进合并视图的 SettingsUi 与尾随 lambda 调用点
+    "mixer": SRC / "MixerUi.kt",
+    "settings": SRC / "SettingsUi.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
@@ -274,6 +277,17 @@ def struct_errors(f):
     if ch.count("strokeWidth = sw, cap = StrokeCap.Round") != 2:
         e.append("两处 drawLine 没用 strokeWidth + cap 具名参数")
 
+    # R290 · rc #216 真编译错静态化：Gradle 才报、静态没抓到的两处
+    mx, st = f["mixer"], f["settings"]
+    if re.search(r"ClipSynth\.synthesize\([^)]*\)\s*\{", mx):
+        e.append("synthesize 又用尾随 lambda（末参是 File?，会误传给 outFile）")
+    if "cancelled = { myToken != trialToken || !isActive }" not in mx:
+        e.append("调音台试听没把 cancelled 具名传给 synthesize")
+    if re.search(r"Modifier\.padding\([^)]*horizontal\s*=[^)]*\btop\s*=", st, re.S):
+        e.append("padding 混用 horizontal 与 top/bottom（没有该重载）")
+    if "start = 10.dp, end = 10.dp" not in st:
+        e.append("分组标题 padding 没用四边具名参数")
+
     if "python3 scripts/r173_verify.py --selftest" not in f["ci"]:
         e.append("CI 未挂 r173_verify --selftest")
     return e
@@ -312,6 +326,15 @@ def selftest():
         ("drawLine 又传 Stroke 对象", "chrome",
          lambda t: t.replace("val sw = 2.dp.toPx()",
                              "val s = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)", 1)),
+        # R290 · rc #216 真编译错防回潮
+        ("synthesize 尾随 lambda 回潮", "mixer",
+         lambda t: t.replace("ClipSynth.synthesize(c, text, out, label,\n                    cancelled = { myToken != trialToken || !isActive })",
+                             "ClipSynth.synthesize(c, text, out, label) {\n                    myToken != trialToken || !isActive\n                }")),
+        ("cancelled 具名丢失", "mixer",
+         lambda t: t.replace(",\n                    cancelled = { myToken != trialToken || !isActive })", ")")),
+        ("padding 混用回潮", "settings",
+         lambda t: t.replace("start = 10.dp, end = 10.dp,\n                                        top = 8.dp, bottom = 3.dp",
+                             "horizontal = 10.dp, top = 8.dp, bottom = 3.dp")),
     ]
     bad = 0
     for name, key, mut in cases:

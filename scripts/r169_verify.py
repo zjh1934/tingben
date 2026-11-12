@@ -97,7 +97,8 @@ def selftest():
         ("文件名不限行", "main", lambda t: t.replace(
             "fontSize = 11.sp, color = Sub, maxLines = 1,\n                                overflow = TextOverflow.Ellipsis,\n                                fontFamily = FontFamily.Monospace,",
             "fontSize = 11.sp, color = Sub,\n                                fontFamily = FontFamily.Monospace,")),
-        ("导出按钮不禁用", "main", lambda t: t.replace("Button(enabled = expCount > 0, ", "Button(")),
+        ("导出按钮不禁用", "main", lambda t: t.replace(
+            "Button(enabled = expCount > 0 && !exporting, ", "Button(")),
     ]
     ok = not checks(base)
     got = 0

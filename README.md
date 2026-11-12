@@ -2,12 +2,12 @@
 
 > 本地离线把一本小说变成能听的音频。App 不联网，模型文件由用户自己导入、不进安装包。
 
-**当前版本 `1.1.31`** · 现状 → `STATUS.md` · 后续队列 → `ROADMAP.md`（唯一真源）· 动代码前必读 → `docs/00_现行契约.md`
+**当前版本 `1.1.32`** · 现状 → `STATUS.md` · 后续队列 → `ROADMAP.md`（唯一真源）· 动代码前必读 → `docs/00_现行契约.md`
 
 ## 安装
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.31/app-debug.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.32/app-debug.apk
 ```
 
 固定直链（永远是最新版）：
@@ -48,7 +48,21 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 4. 章名默认进阅读，长按才出勾选框，右侧听本章 / 展开小片 / 更多；合成前弹窗调声音
 5. 底部常驻播放条点一下展开全屏播放器；长按章或小块进多选、底部条批量操作
 
-## 1.1.5 做了什么
+## 1.1.32 做了什么
+
+- **任务页重做**：合成中 / 队列中 / 已完成三个可切分段，各带数量；停止或中断的任务归「待续」，继续制作、移除、打开书这些能力都还在
+- **目录页不再卡**：制作进度只刷新当前章的小段，整本计划不再每段重扫；小段格子恢复按行加载
+- **首页片段**：粘贴文字点合成，成品落在首页下方列表，取开头十个字当名字，能播、能勾选、长按能删除 / 导出 / 重做；片段与书分开存放
+- **播放条**：各页面常驻，上滑展开、下滑收起；在首页听片段、进某本书听章，播放列表自动切换
+- **音频归位**：试听、中间小段、整章成品分目录，成品按书名放、名字取章号 + 章名；拼成整章后中间小段清掉；不再拼整本大音频
+- **整章重做**：长按章行就地弹小菜单，已合成的章可重新制作；旧整本音频同时失效
+- **播放通知**：锁屏与耳机线控可操作，通知显示收听进度
+- **日志与体检**：正文、书名、音色描述不落盘，只留长度与短哈希；逐段跳过日志按窗口汇总；播放失败留可判原因的数值诊断
+- **导出**：整本成品与各章成品一起导出，重复导出不堆副本，结果留在设置页可回看
+
+## 早期版本做了什么（历史）
+
+### 1.1.5
 
 - **首页与导航收拢**：打开就是输入框（粘贴文字直接建书），已导入的书进左侧抽屉，
   右上角只留 ＋ 导入与齿轮设置；模型并进设置，任务 / 调音台 / 音频管理的独立入口全撤，
@@ -127,29 +141,32 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 ```
 app/src/main/java/com/tingben/app/
   MainActivity.kt          页面主体与编排
-  AppChrome.kt            全局壳：顶栏 / 左侧抽屉 / 状态栏安全区
-  ChapterHub.kt           单列目录页 + 应用内悬浮播放条
-  ProduceService.kt       前台服务、制作进度通知
-  ProduceOptions.kt       制作准备页三个分区
-  core/Pipeline.kt        书架、模型槽位、分块、逐段合成、WAV 合并、任务书签
-  core/PlayQueue.kt       播放队列与音频焦点
-  core/PlayNotif.kt       播放控制通知（1.1.1 新增）
-  core/PlaybackActions.kt 通知按钮广播接收（1.1.1 新增）
-  ChapterHub.kt           单列目录页 + 底部常驻播放条 + 统一多选条
-  PlayIcons.kt            五个代码绘制的播放控制图标
-  PlayerSheet.kt          全屏播放器浮层（不占导航枚举）
-  MultiSelect.kt          勾选方块 + 胶囊操作条
-  core/AudioLibrary.kt / AudioTree.kt / AtomicJson.kt   成品索引 / 三层树 / 原子落盘
-app/src/main/cpp/         tingben_native.cpp + CMakeLists + qwen.h / llama.h
-contracts/                模型清单、流水线规格、采样默认值
-scripts/                  CI 自检与验证脚本、构建与发布工具
-.github/workflows/ci.yml  自检 → 原生缓存 → 编译 → APK 闸门 → Release + 固定直链
+  AppChrome.kt             全局壳：顶栏 / 左侧抽屉 / 状态栏安全区
+  ChapterHub.kt            单列目录页 + 底部常驻播放条 + 统一多选条
+  ProduceService.kt        前台服务、制作进度通知
+  TaskUi.kt                任务页三状态（合成中 / 队列中 / 已完成）
+  InputReadUi.kt           首页输入框 + 片段列表
+  PlayerSheet.kt           全屏播放器浮层（不占导航枚举）
+  UiIcons.kt / PlayIcons.kt  代码自绘图标
+  OverlayProgress.kt       悬浮进度（单实例、按任务形态仲裁）
+  core/Pipeline.kt         分块、逐段合成、WAV 合并、任务书签
+  core/Producer.kt         制作主循环、续跑与队列
+  core/PlayQueue.kt / PlaySession.kt  播放队列 / 锁屏与线控会话
+  core/ClipLibrary.kt / ClipSynth.kt  首页片段登记与合成
+  core/AudioLibrary.kt / AudioOps.kt / AudioTree.kt  成品索引 / 章级操作 / 三层树
+  core/AudioExport.kt / TrialFiles.kt  导出 / 试听临时文件
+  core/TaskResume.kt / ChapterPlan.kt  断点 / 章节表
+  core/AtomicJson.kt       四类 JSON 原子落盘
+app/src/main/cpp/          tingben_native.cpp + CMakeLists + qwen.h / llama.h
+contracts/                 模型清单、流水线规格、采样默认值
+scripts/                   CI 自检与验证脚本、构建与发布工具
+.github/workflows/ci.yml   自检 → 原生缓存 → 编译 → APK 闸门 → Release + 固定直链
 ```
 
 第三方许可见 `docs/THIRD_PARTY_NOTICES.md`。
 
 ## 如实说
 
-- 静态自检绿 ≠ 编译过 ≠ 好用；沙盒无 Android SDK，真编译由 CI 完成。
-- 1.1.2 的界面、通知栏、播放器、多选、模型页在真机上都是零证据，不替手感打包票；出包前待验清单 26 项见 `docs/修复清单_按优先级.md`。
-- 按既定规矩不向用户索取装机验证；也不拿静态自检冒充体验结论。
+- 静态自检绿 ≠ 编译过 ≠ 好用；沙盒无 Android SDK，真编译由 CI 完成，出包后才能看手感。
+- 1.1.32 的任务页、首页片段、目录页卡顿、播放条手势都还没在真机上确认过手感；排期与待验项见 `docs/修复清单_按优先级.md`。
+- 装不装包、什么时候给反馈由用户自己定；不拿静态自检冒充体验结论。

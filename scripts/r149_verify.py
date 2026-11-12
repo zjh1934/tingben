@@ -47,6 +47,7 @@ POS = {
         "enum class ResumeAction { AUTO, QUEUE, VIEW }",
         "data class PendingTask(",
         "fun pending(c: Context): PendingTask?",
+        "fun unpauseQueue(c: Context)",
         "TaskResume.autoResumeBlockReason(c, t)",
         "BookStore.list(c).none { it.id == t.bookId }",
         "fun hasResumable(c: Context): TaskInfo? =",
@@ -62,6 +63,9 @@ POS = {
         "RESUME_CHECK",
         "RESUME_AUTO",
         "RESUME_ASK_SHOW",
+        # R284 · 用户主动点「继续制作」要清掉队列暂停标记，不然排队项永久卡死
+        "Producer.unpauseQueue(ctx)",
+        "QUEUE_UNPAUSE_BY_CONTINUE",
         # ② 三出口（主按钮 / 查看 / 稍后）
         "RESUME_ASK_PRIMARY",
         'EventLog.ui("RESUME_ASK_VIEW"',
@@ -141,14 +145,23 @@ def load():
 
 
 def pending_action(busy, paused, queue, active_phase, block_reason, book_exists):
-    """复刻 Producer.pending 的分支顺序。返回 (action 或 None, 命中哪条)。
+    """复刻 Producer.pending 的分支顺序（R284 迁移）。返回 (action, 命中哪条)。
 
-    与旧 hasResumable 的关键差别：手动停 / 失败 / 模型没齐 / 队列暂停
-    不再返回 None，而是给 VIEW / QUEUE 出口 —— 用户「不一定弹」的根因。
+    R284 · 真机快照「队列 1 项 · 暂停=true」+ active stopped 385/26678：
+    旧实现队列非空就返回 done/total 皆 0 的排队项，把真正在做的那本藏掉。
+    现在队列与未完成的本书并存时以 active 为弹窗主体；paused 或守卫命中
+    一律 VIEW，自动续跑守卫一条没放宽。
     """
     if busy:
         return None, "正在制作"
+    live = active_phase not in (None, "done") and book_exists
     if queue:
+        if live:
+            if paused:
+                return "VIEW", "队列暂停 → 查看任务（用户点继续再续那本）"
+            if block_reason:
+                return "VIEW", "守卫拦下：" + block_reason
+            return "AUTO", "排队中 · 继续制作"
         return ("QUEUE" if paused else "AUTO"), ("队列已暂停" if paused else "排队中")
     if active_phase is None:
         return None, "没有未完成任务"
@@ -166,8 +179,10 @@ def logic_cases(f):
     # name, busy, paused, queue, phase, block, book, want_action
     cases = [
         ("崩溃中断 → 继续制作", False, False, [], "interrupted", None, True, "AUTO"),
-        ("队列里有待做 → 继续制作", False, False, ["A"], "stopped", "手动停", True, "AUTO"),
-        ("队列暂停 → 继续队列", False, True, ["A"], "interrupted", None, True, "QUEUE"),
+        # R284 · 旧期望 AUTO 是「队列非空就绕过守卫」，现按现状收紧为 VIEW
+        ("队列里有待做 + 手动停 → 查看任务", False, False, ["A"], "stopped", "手动停", True, "VIEW"),
+        # R284 · 旧期望 QUEUE 会拿 0/0 排队项盖住 active 真进度
+        ("队列暂停 + 崩溃中断 → 查看任务", False, True, ["A"], "interrupted", None, True, "VIEW"),
         ("手动停止 → 查看任务", False, False, [], "stopped", "上次是你手动停的", True, "VIEW"),
         ("失败中断 → 查看任务", False, False, [], "interrupted", "没做完", True, "VIEW"),
         ("模型没齐 → 查看任务", False, False, [], "interrupted", "模型没齐", True, "VIEW"),
@@ -176,6 +191,10 @@ def logic_cases(f):
         ("正在制作 → 不弹", True, False, ["A"], "interrupted", None, True, None),
         ("任务已完成 → 不弹", False, False, [], "done", None, True, None),
         ("啥都没有 → 不弹", False, False, [], None, None, True, None),
+        # R284 新增：诊断快照原场景与两个边界
+        ("快照：暂停队列 + stopped 385/26678", False, True, ["A"], "stopped", "手动停", True, "VIEW"),
+        ("只有排队项无本书 → 仍留队列出口", False, True, ["A"], None, None, True, "QUEUE"),
+        ("书已删但队列在 → 不拿旧任务盖队列", False, False, ["A"], "interrupted", None, False, "AUTO"),
     ]
     for name, busy, paused, q, phase, block, book, want in cases:
         got, why = pending_action(busy, paused, q, phase, block, book)
@@ -230,6 +249,12 @@ def check(f):
         for s in needles:
             if s in code_only(f[key]):
                 e.append("旧形态回潮[%s]: %s" % (key, s[:65]))
+    # R284 · 清暂停必须内存态 + 落盘态一起清：pumpQueue 两处都判，
+    # 只清一个等于排队项永远起不来。放 check 里，注入才能被拦下。
+    uq = f["pipe"][f["pipe"].find("fun unpauseQueue(c: Context)"):]
+    uq = uq[:uq.find("}")] if "}" in uq else uq
+    if "queuePaused = false" not in uq or "TaskResume.setQueuePaused(c, false)" not in uq:
+        e.append("unpauseQueue 没同时清内存态与落盘态，pumpQueue 仍会被挡")
     return e
 
 
@@ -251,6 +276,10 @@ def selftest():
         ("开关落盘被摘", "prefs", "fun setAutoResumeOnStart(c: Context, v: Boolean)", ""),
         ("开关默认变开", "prefs", "getBoolean(KEY_AUTO_RESUME, false)",
          "getBoolean(KEY_AUTO_RESUME, true)"),
+        ("R284 主动继续不清暂停", "main", "Producer.unpauseQueue(ctx)", ""),
+        ("R284 清暂停只改磁盘不动内存", "pipe",
+         "fun unpauseQueue(c: Context) {\n        queuePaused = false\n        TaskResume.setQueuePaused(c, false)",
+         "fun unpauseQueue(c: Context) {\n        TaskResume.setQueuePaused(c, false)"),
         ("主出口被摘", "main", 'EventLog.ui("RESUME_ASK_PRIMARY"', ""),
         ("查看任务出口被摘", "main", 'EventLog.ui("RESUME_ASK_VIEW"', ""),
         ("稍后出口被摘", "main", 'EventLog.ui("RESUME_ASK_LATER"', ""),

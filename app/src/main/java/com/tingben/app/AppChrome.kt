@@ -50,6 +50,8 @@ internal data class ChromeSpec(
     val activeTab: Int = TAB_NONE,
     val showImport: Boolean = false,
     val showSettings: Boolean = false,
+    // R272 · ☰（书架抽屉）只在首页出现，二级页顶栏不再挂它。
+    val showMenu: Boolean = false,
     // 统一层级：根级页没有返回键，二级页一律由顶栏给同一枚返回键。
     val canBack: Boolean = false,
 )
@@ -135,9 +137,11 @@ internal fun AppTopBar(
         if (spec.canBack && onBack != null) {
             IconButton(onClick = onBack) { BackChevron(primary) }
         }
-        // ☰ 打开的是书抽屉，不再是功能菜单。
-        IconButton(onClick = onMenu) {
-            Text("☰", fontSize = 20.sp, color = primary)
+        // R272 · ☰ 打开的是书抽屉，只在首页出现；进到书里/任务/设置不再挂它。
+        if (spec.showMenu) {
+            IconButton(onClick = onMenu) {
+                Text("☰", fontSize = 20.sp, color = primary)
+            }
         }
         // R164 · 首页不显示品牌名（「听本」是画蛇添足），二级页仍显示页面名。
         if (spec.title.isNotEmpty()) {

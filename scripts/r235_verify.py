@@ -32,15 +32,39 @@ def files():
 def check(f):
     e = []
     h, m, u, r = f["hub"], f["producer"], f["produce"], f["r95"]
-    # ① 段级重做 UI
+    # ① 段级重做 UI（R266 · 制作中只标记，绝不排整章任务进队列）
     for k in ['onRedo = {', 'SegPlan.markSeg(work, it.index)',
               'EventLog.ui("SEG_REDO",',
               'Producer.enqueueOrStart(c, book, setOf(ch),',
               '"已标记 ${rows.size} 段，按当前调音台重新合成"',
-              '"已标记 ${rows.size} 段（格子转黄）：当前这段读完自动接重做"',
+              '"已标记 ${rows.size} 段（格子转黄）：当前这段做完马上重做，做完变回绿色"',
               '"重做选中" to onRedo',
               'onAll: () -> Unit, onTrial: () -> Unit, onRedo: () -> Unit, onDelete: () -> Unit']:
         if k not in h: e.append("段级重做 UI 缺: " + k[:56])
+    for k in ['val busyHere = Producer.isBusy()',
+              'if (!busyHere && ch != null)',
+              'if (!busyHere) Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))',
+              '"第 ${ch + 1} 章已标记重做：当前这段做完就逐段接上"']:
+        if k not in h: e.append("R266 制作中不排队列缺: " + k[:56])
+    # 重做标记轻量观察：只秒读 redo.json，格子转黄/转绿不靠 stage 合并
+    for k in ['var redoKeys by remember(book.id) { mutableStateOf(emptySet<String>()) }',
+              'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys ||',
+              'redoKeys = if (w == null) emptySet()',
+              'SegPlan.pending(w)']:
+        if k not in h: e.append("R266 重做标记观察缺: " + k[:56])
+    # R266 · 主循环就地回头重做
+    for k in ['val handledRedo = mutableSetOf<Int>()',
+              'val backlog = SegPlan.pending(work)',
+              'emit("正在重做小块",',
+              'NativeEngine.ttsSynthesize(ttsHandle, lj.text,',
+              'SegPlan.clearRedo(work, "seg:$j")',
+              '"SEG_REDO_DONE"', '"SEG_REDO_FAIL"',
+              'emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,\n                        "已重做 ${backlog.size} 个选中的小块"']:
+        if k not in m: e.append("R266 回头重做缺: " + k[:56])
+    # 旧形态回潮：等整本跑完 / 队列永久暂停
+    for banned in ['当前这段读完自动接重做',
+                   'if (st.running) Producer.enqueueOrStart(c, book, setOf(ch)']:
+        if banned in h: e.append("R266 旧排队形态回潮: " + banned)
     # ② 启动读全局默认
     if 'Producer.enqueueOrStart(c, book, selected, null, Prefs.defaultPerf(c))' not in h:
         e.append("目录页启动没读全局默认制作设置")
@@ -81,12 +105,16 @@ def check(f):
                    'def estimate(', 'SEG_FALLBACK = 24_000 * 2 * 60']:
         if banned in r: e.append("r95 旧锚点回潮: " + banned)
     # ⑥ AGENTS 口径 + 登记
-    for k in ['段级重做（R235）', '运行中改设置', 'r95 修准']:
+    for k in ['段级重做（R235，R266 修正）', '运行中改设置', 'r95 修准']:
         if k not in f["agents"]: e.append("AGENTS 漏写口径: " + k)
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r235_verify.py --selftest"),
                               ("清单", f["r135"], '"r235_verify.py"'),
                               ("受管根", f["config"], '"app/src/main/java"')]:
-        if needle not in src: e.append(name + " 漏登记 R235")
+        if name == "受管根":
+            from r45_common import scope_indexed
+            if not scope_indexed(f["config"], "app/src/main/java"):
+                e.append(name + " 漏登记 R235")
+        elif needle not in src: e.append(name + " 漏登记 R235")
     return e
 
 def selftest():
@@ -96,7 +124,19 @@ def selftest():
         ("重做按钮被摘", "hub", '"重做选中" to onRedo', ""),
         ("不标记 redo", "hub", 'SegPlan.markSeg(work, it.index)', ""),
         ("重做不启动", "hub", 'Producer.enqueueOrStart(c, book, setOf(ch),', ""),
-        ("排队反馈被摘", "hub", '"已标记 ${rows.size} 段（格子转黄）：当前这段读完自动接重做"', ""),
+        ("排队反馈被摘", "hub",
+         '"已标记 ${rows.size} 段（格子转黄）：当前这段做完马上重做，做完变回绿色"', ""),
+        ("制作中又排整章队列", "hub", "if (!busyHere && ch != null)", "if (ch != null)"),
+        ("整章重做制作中又排队列", "hub",
+         "if (!busyHere) Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))",
+         "Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))"),
+        ("重做标记观察被摘", "hub",
+         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys ||', ""),
+        ("心跳不读 redo", "hub", "SegPlan.pending(w)", "emptySet()"),
+        ("回头重做被摘", "producer", "val backlog = SegPlan.pending(work)", ""),
+        ("回头重做不清标记", "producer", 'SegPlan.clearRedo(work, "seg:$j")', ""),
+        ("回头重做不算失败", "producer", '"SEG_REDO_FAIL"', ""),
+        ("回头重做不切回阶段", "producer", 'emit("正在重做小块",', ""),
         ("启动不读默认", "hub", "Producer.enqueueOrStart(c, book, selected, null, Prefs.defaultPerf(c))", "Producer.enqueueOrStart(c, book, selected, null, ProduceConfig())"),
         ("设置不落盘", "produce", "Prefs.setDefaultPerf(c, cfg)", ""),
         ("实时参数函数被摘", "producer", "fun liveSeg(i: Int): LiveSeg {", ""),

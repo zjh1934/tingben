@@ -84,6 +84,9 @@ object AudioExport {
         val out = mutableListOf<Item>()
         val used = mutableMapOf<String, Int>()
         for (b in BookStore.list(c)) {
+            // R272 · 只导出「一章一个音频」。整本.wav 不再新生成，也不再进导出：
+            // 一本书拼成一份大文件会把手机撑爆（用户口径）。R268 那段收整本的
+            // 逻辑连同 R271「作废旧整本」一起删；旧版落盘的整本.wav 不主动删。
             val items = AudioLibrary.playableItems(c, b.id)
             if (items.isEmpty()) continue
             val prefix = if (b.origin == "input") "$INPUT_DIR/" else ""
@@ -120,6 +123,35 @@ object AudioExport {
                 val mime = cur.getString(2) ?: continue
                 if (dn == name && mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                     return DocumentsContract.buildDocumentUriUsingTree(tree, cur.getString(0))
+                }
+            }
+        }
+        null
+    } catch (_: Throwable) {
+        null
+    }
+
+    /**
+     * R268 · 同名成品文件是否已存在，以及它的大小。
+     * 目录层 findChildDir 早就做了「先查再建」，文件层却一直直接 createDocument：
+     * 多数 SAF provider 对同名文件会自动改名成「xxx (1).wav」，于是每点一次
+     * 「导出全部」就在目标目录多堆一份副本，越导越乱。
+     * 返回 (Uri, 字节数)；COLUMN_SIZE 取不到时 provider 可能给 -1，按「需重写」处理。
+     */
+    private fun findChildFile(r: ContentResolver, tree: Uri, parent: Uri,
+                              name: String): Pair<Uri, Long>? = try {
+        val parentId = DocumentsContract.getDocumentId(parent)
+        val kids = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+        val proj = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
+        r.query(kids, proj, null, null, null)?.use { cur ->
+            while (cur.moveToNext()) {
+                if (cur.getString(1) == name) {
+                    return DocumentsContract.buildDocumentUriUsingTree(tree, cur.getString(0)) to
+                        cur.getLong(2)
                 }
             }
         }
@@ -182,6 +214,17 @@ object AudioExport {
                 if (firstErr.isEmpty()) firstErr = "建不了「${it.dir}」文件夹"
                 failed++
                 continue
+            }
+            // R268 · 幂等：同名同大小说明已经导过且源没变，直接跳过；
+            // 大小不同说明这一章重做过，先删旧副本再写新的，不堆「(1)」文件。
+            val existing = findChildFile(r, t, parent, it.name)
+            if (existing != null && existing.second == it.file.length()) {
+                skipped++
+                continue
+            }
+            if (existing != null) {
+                try { DocumentsContract.deleteDocument(r, existing.first) }
+                catch (_: Throwable) { /* 删不掉就照常新建，provider 会自己改名 */ }
             }
             val child = try {
                 DocumentsContract.createDocument(r, parent, "audio/wav", it.name)

@@ -91,7 +91,11 @@ def check(f):
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r226_verify.py --selftest"),
                               ("清单", f["r135"], '"r226_verify.py"'),
                               ("受管根", f["config"], "r226_verify.py")]:
-        if needle not in src: e.append(name + " 漏登记 r226")
+        if name == "受管根":
+            from r45_common import scope_indexed
+            if not scope_indexed(f["config"], "scripts/r226_verify.py"):
+                e.append(name + " 漏登记 r226")
+        elif needle not in src: e.append(name + " 漏登记 r226")
     return e
 
 def selftest():

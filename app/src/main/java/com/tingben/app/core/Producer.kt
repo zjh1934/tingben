@@ -155,9 +155,18 @@ object Producer {
         }
     }
 
-    fun resumeQueue(c: Context): String? {
+    /**
+     * R284 · 暂停标记只该防「进程重启后自动把停掉的队列跑起来」（R213）。
+     * 用户在任务页主动点「继续制作」是明确意图，内存态与落盘态要一起清，
+     * 否则 pumpQueue 仍被 queuePaused 挡住，排队项永远卡死。
+     */
+    fun unpauseQueue(c: Context) {
         queuePaused = false
         TaskResume.setQueuePaused(c, false)
+    }
+
+    fun resumeQueue(c: Context): String? {
+        unpauseQueue(c)
         EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_RESUME", "用户恢复队列")
         return pumpQueue(c.applicationContext)
     }
@@ -185,6 +194,30 @@ object Producer {
         if (paused) queuePaused = true
         val q = TaskResume.queue(c).firstOrNull()
         if (q != null) {
+            // R284 · 真机诊断快照：「队列 1 项 · 暂停=true」同时 active 是
+            // stopped 385/26678。原实现只要队列非空就返回排队项（done/total 都是 0），
+            // 弹窗显示 0/0 块，真正在做的那本被藏掉；主按钮开跑的又是排队项 ——
+            // 用户眼里就是「这一章不去合成了」。队列是内部调度，恢复决策以
+            // active（有真实断点）为准；自动续跑守卫一条不动。
+            val live = TaskResume.active(c)?.takeIf { it.phase != "done" }
+                ?.takeIf { BookStore.list(c).any { b -> b.id == it.bookId } }
+            if (live != null) {
+                val liveWhy = TaskResume.autoResumeBlockReason(c, live)
+                val liveLabel = when {
+                    live.stage == "已达时长上限" -> "已达时长上限"
+                    live.phase == "blocked" -> "没开始成功"
+                    live.phase == "stopped" -> "已停止"
+                    liveWhy != null -> "待确认"
+                    else -> "排队中"
+                }
+                // 手动停 / 失败 / 规则变过 / 队列暂停：都不自动跑，给「查看任务」，
+                // 由用户在任务页点「继续制作」（resumeTask）主动续这本。
+                return if (paused || liveWhy != null)
+                    PendingTask(live, ResumeAction.VIEW, liveLabel,
+                        liveWhy ?: "队列已暂停")
+                else
+                    PendingTask(live, ResumeAction.AUTO, liveLabel, null)
+            }
             return if (paused)
                 PendingTask(q, ResumeAction.QUEUE, "队列已暂停", "队列已暂停")
             else
@@ -735,6 +768,9 @@ object Producer {
         // 要不要整本做。只统计真正合成的新段，跳过的旧段不算进均值。
         var segCostSum = 0L
         var segCostCount = 0
+        // R266 · 本次任务里已经回头重做过的段。失败也只试一次，标记留给下次
+        // 「继续制作」再认领，不在这里反复重试把主循环拖死。
+        val handledRedo = mutableSetOf<Int>()
         // R235 · 每段实时读一次 Prefs。音色分套（voiceStamp / cacheKey /
         // VoiceCache.switchTo）仍锁在开跑时那一次，绝不因运行中改设置换套、
         // 不删已做好的段、不把进度归零 —— R220 硬口径不破。
@@ -752,6 +788,27 @@ object Producer {
         }
         // 缓存上一份实时参数：重做 / 重试同一段时不重复读盘
         var lastLive: LiveSeg? = null
+        // R278 · 1.1.31 真机日志实证：续跑恢复时前 300+ 段逐条打
+        // 「段 N 已有音频，跳过」，详细日志被同一句话撑到 1MB（事件 266554 / 详细 1010942 字节），
+        // 真正有用的合成与报错全被淹掉。改成按窗口汇总：跳过原因（wav / chapter）、
+        // 首尾段号、条数一条不少，日志从 O(N) 降到 O(N/500)。
+        // 「已手工删除」是用户行为证据，仍逐条保留，不并入汇总。
+        var skipWav = 0
+        var skipChapter = 0
+        var skipFirst = -1
+        var skipLast = -1
+        fun flushSkip() {
+            val n = skipWav + skipChapter
+            if (n <= 0) return
+            EventLog.log(EventLog.Kind.PIPELINE, "TTS_SKIP",
+                "跳过 $n 段已有音频 · 段 $skipFirst~$skipLast · wav=$skipWav chapter=$skipChapter",
+                level = EventLog.Level.TRACE,
+                fields = mapOf("src" to "summary"))
+            skipWav = 0
+            skipChapter = 0
+            skipFirst = -1
+            skipLast = -1
+        }
         try {
             for ((i, a) in toSpeak.withIndex()) {
                 val live = liveSeg(i)
@@ -788,11 +845,11 @@ object Producer {
                 // 把日志和前台通知挪到真正要合成的段上；跳过段只记一条精简 SKIP。
                 // 用户之前报过「愣住、不知道后面进哪张」，这条日志误导也占一份。
                 if (skip) {
-                    EventLog.log(EventLog.Kind.PIPELINE, "TTS_SKIP",
-                        "段 ${i + 1}/${toSpeak.size} 已有音频，跳过",
-                        level = EventLog.Level.TRACE,
-                        fields = mapOf("seg" to (i + 1).toString(),
-                            "src" to if (covered) "chapter" else "wav"))
+                    // R278 · 不再逐段写盘；攒够一批或收尾时打一条汇总
+                    if (covered) skipChapter++ else skipWav++
+                    if (skipFirst < 0) skipFirst = i + 1
+                    skipLast = i + 1
+                    if (skipWav + skipChapter >= 500) flushSkip()
                 } else {
                     ProduceService.touch(c.applicationContext,
                         "合成段 ${i + 1}/${toSpeak.size}")
@@ -893,6 +950,47 @@ object Producer {
                     "已生成 ${i + 1}/${annotated.size} 段声音" +
                         if (eta > 0L) " · 按当前速度还需约 ${formatEta(eta)}" else "",
                     chapterProgress = chapterSnapshot)
+                // R266 · 段级重做就地接上。用户勾的往往是已经跑过的段，旧做法把
+                // 重做排成「整章新任务」进队列，得等整本跑完才轮到；当前任务一旦
+                // 没正常完成，finally 还会把队列永久暂停 —— 看着就像这一章不做了。
+                // 现在当前这段一收尾，立刻回头把标记的段重合成，不排新任务、
+                // 不打断主循环、不追加到 wavs（覆盖同一个文件，拼接读到的就是新声音）。
+                val backlog = SegPlan.pending(work)
+                    .filter { it.startsWith("seg:") }
+                    .mapNotNull { it.removePrefix("seg:").toIntOrNull() }
+                    .filter { j -> j <= i && j in toSpeak.indices && j !in handledRedo &&
+                        !SegDrops.matches(dropSnap, dropWav(j), dropText(j)) }
+                    .sorted()
+                if (backlog.isNotEmpty()) {
+                    emit("正在重做小块", i + 1, annotated.size, gateFails + synthFails,
+                        "正在重做 ${backlog.size} 个选中的小块",
+                        chapterProgress = chapterSnapshot)
+                    for (j in backlog) {
+                        handledRedo.add(j)
+                        if (cancelRequested) break
+                        val wj = File(work, dropWav(j))
+                        val lj = liveSeg(j)
+                        val code = try {
+                            NativeEngine.ttsSynthesize(ttsHandle, lj.text,
+                                lj.params.instruct, lj.params.speaker, "chinese",
+                                wj.absolutePath, lj.knobs)
+                        } catch (t: Throwable) { -99 }
+                        if (code == 0 && wj.exists() && wj.length() > 44) {
+                            SegPlan.clearRedo(work, "seg:$j")
+                            EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_DONE",
+                                "seg=${j + 1} · ${wj.length()} 字节")
+                        } else {
+                            // 失败保留旧 wav 与标记，不删能听的那一份
+                            EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_FAIL",
+                                "seg=${j + 1} code=$code 留待下次续跑")
+                        }
+                    }
+                    // 切回主阶段：stage 变化会驱动目录页重读 redo.json，
+                    // 格子由琥珀变回绿色，不用等整本跑完。
+                    emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
+                        "已重做 ${backlog.size} 个选中的小块",
+                        chapterProgress = chapterSnapshot)
+                }
             }
             if (spaceStopped) {
                 _state.value = Progress(false, "没完成", wavs.size, annotated.size,
@@ -903,6 +1001,8 @@ object Producer {
                 return
             }
         } finally {
+            // R278 · 尾巴不足一批的跳过段也别丢：return / break / 异常各出口都走这里
+            try { flushSkip() } catch (_: Throwable) { }
             try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
         }
         if (cancelRequested) {
@@ -910,75 +1010,46 @@ object Producer {
             return
         }
 
-        emit("正在整理音频", annotated.size, annotated.size, gateFails + synthFails, "正在把各段接成一个音频…")
-        val outFile = AudioLibrary.bookWholeFile(c, book.id, book.title)
-        val finalBytes = wavs.sumOf { it.length() } + 16L * 1024 * 1024
-        if (finalBytes > outFile.parentFile!!.usableSpace) {
-            _state.value = Progress(false, "没完成", annotated.size, annotated.size,
-                gateFails + synthFails,
-                "存储空间不够，音频接不起来；已生成的 ${wavs.size} 段都留着，" +
-                    "清出空间后点「继续制作」")
-            EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_SHORT_MERGE",
-                "need=$finalBytes free=${outFile.parentFile!!.usableSpace} parts=${wavs.size}")
-            return
+        emit("正在按章整理", annotated.size, annotated.size, gateFails + synthFails,
+            "正在把各章的小块拼成章音频…")
+        // R272 · 用户口径：一本书拼成一份整本.wav 会把手机撑爆，不要整本大文件。
+        // 唯一成品形态是「一章一个音频」：ensureChapterAudios 逐章
+        // WavMerger.merge → register 章级 item → markDone → 清掉中间小块。
+        // 收尾无条件拼（force=true）：拼好才清小块，关掉「自动拼成整章」也
+        // 必须出章成品，否则这本书一个可播文件都没有。
+        // 旧版已落在磁盘的整本.wav 不主动删、list() 仍兼容读取，只是不再新生成。
+        val c = appCtx
+        val byCh = LinkedHashMap<Int, MutableList<File>>()
+        for (i in 0 until toSpeak.size) {
+            val wavName = dropWav(i)
+            // R233 · 用户删掉的段本来就不该拼进来，也不算「缺块」
+            if (SegDrops.matches(dropSnap, wavName, dropText(i))) continue
+            val ci = segChapter.getOrElse(i) { -1 }
+            if (ci < 0) continue
+            byCh.getOrPut(ci) { mutableListOf() }
+                .add(File(work, wavName))
         }
-        val ok = WavMerger.merge(wavs, outFile, config.gapMs)
-        if (!ok || outFile.length() <= 44) {
-            outFile.delete()
-            File(outFile.parentFile, outFile.name + ".part").delete()
-            _state.value = Progress(false, "没完成", annotated.size, annotated.size,
-                gateFails + synthFails, "没能生成音频，可以回书架重新合成这一本")
-            return
-        }
-        val item = AudioLibrary.register(c, book.id, book.title, only, direct, outFile, chapters.size)
+        val merged = if (c != null) AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,
+            gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)
+        else 0 to 0
         val regWarn = AudioLibrary.writeError
-        EventLog.log(EventLog.Kind.PIPELINE, "AUDIO_REGISTER",
-            "${EventLog.safe(item.title)} · ${item.scope} · ${item.mode} · ${item.bytes} 字节")
-        try {
-            val chJson = JSONArray()
-            val firstOffset = LinkedHashMap<Int, Long>()
-            segStartBytes.forEachIndexed { si, off ->
-                val ci = segChapter.getOrElse(si) { -1 }
-                if (ci >= 0 && !firstOffset.containsKey(ci)) firstOffset[ci] = off / 48L
-            }
-            chapters.forEach { ch ->
-                chJson.put(JSONObject().put("index", ch.index).put("title", ch.title)
-                    .put("startMs", firstOffset[ch.index] ?: 0L))
-            }
-            AtomicJson.write(File(outFile.parentFile,
-                "${outFile.nameWithoutExtension}.chapters.json"), chJson.toString())
-        } catch (_: Throwable) { }
-
+        val outDir = if (c != null)
+            AudioLibrary.bookDir(c, book.id, book.title).absolutePath else null
         _state.value = Progress(false, "完成", annotated.size, annotated.size,
             gateFails + synthFails,
             if (regWarn != null) "音频已生成，但记录没写上：$regWarn；文件仍在「我的音频」里"
-            else "做好了，可以去「我的音频」听", outFile.absolutePath)
-        val c = appCtx
+            else if (merged.first > 0) "做好了，${merged.first} 个章节音频在「我的音频」里"
+            else "做好了，可以去「我的音频」听", outDir)
         val t = current
         if (c != null && t != null) {
             val done = t.copy(phase = "done", stage = "完成",
                 total = annotated.size, done = annotated.size,
-                updatedAt = System.currentTimeMillis(), output = outFile.absolutePath)
+                updatedAt = System.currentTimeMillis(), output = outDir)
             current = done
             TaskResume.save(c, done)
             _resume.value = done
         }
-        // R231 / R243 · 拼的是「这一章」，不是把整本重新拼一遍；收尾统一走
-        // AudioOps.ensureChapterAudios，目录页打开书时也会调它做回溯补齐。
-        if (c != null && Prefs.autoMergeChapter(c)) {
-            val byCh = LinkedHashMap<Int, MutableList<File>>()
-            for (i in 0 until toSpeak.size) {
-                val wavName = dropWav(i)
-                // R233 · 用户删掉的段本来就不该拼进来，也不算「缺块」
-                if (SegDrops.matches(dropSnap, wavName, dropText(i))) continue
-                val ci = segChapter.getOrElse(i) { -1 }
-                if (ci < 0) continue
-                byCh.getOrPut(ci) { mutableListOf() }
-                    .add(File(work, wavName))
-            }
-            AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,
-                gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c))
-        }
-        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_DONE", "${outFile.length()} 字节")
+        EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_DONE",
+            "chapters=${merged.first} skipped=${merged.second} segs=${annotated.size}")
     }
 }

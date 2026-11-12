@@ -28,3 +28,32 @@ def canon(t):
     return [x.rstrip() for x in t.splitlines()
             if x.strip() and not x.startswith("import ")
             and not x.lstrip().startswith(("//", "/*", "*", "#"))]
+
+
+def scope_indexed(config_text, path):
+    """官方 AOCI 0.1.1 起，受管范围由 managed_scope.rules 表达：
+    legacy-index-all 的 index 兜底 + 显式 exclude 负空间，不再逐条列
+    managed_roots。判 path 是否真在 index 覆盖内、且没被 exclude 命中。
+    """
+    import fnmatch, json
+    try:
+        d = json.loads(config_text)
+    except Exception:
+        return False
+    rules = [r for r in d.get("managed_scope", {}).get("rules", [])
+             if r.get("enabled", True)]
+    if not any(r.get("action") == "index" and r.get("pattern") == "**"
+               for r in rules):
+        return False
+    p = path.strip().lstrip("/")
+    for r in rules:
+        if r.get("action") != "exclude":
+            continue
+        pat = str(r.get("pattern", "")).strip().lstrip("/")
+        if not pat:
+            continue
+        if p == pat or p.startswith(pat.rstrip("/") + "/"):
+            return False
+        if fnmatch.fnmatch(p, pat):
+            return False
+    return True

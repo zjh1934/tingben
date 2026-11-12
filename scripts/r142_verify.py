@@ -70,7 +70,7 @@ POS = {
         'BackHandler(enabled = multiMode) { exitMulti() }',
         "Box(Modifier.size(34.dp)",
         "SelectBox(checked = isChecked",
-        "onTap: () -> Unit",
+        "onTap: (SegRow) -> Unit",
     ],
     "eventlog": [
         "fun exportBundle(c: Context): String", "fun exportSummary(c: Context): String",

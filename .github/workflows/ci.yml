@@ -413,7 +413,7 @@ jobs:
         run: python3 scripts/r214_verify.py
       - name: R214 反向注入
         run: python3 scripts/r214_verify.py --selftest
-      - name: R215 首页即贴即听与合成真源
+      - name: R215/R276 首页片段与合成真源
         run: python3 scripts/r215_verify.py
       - name: R215 反向注入
         run: python3 scripts/r215_verify.py --selftest

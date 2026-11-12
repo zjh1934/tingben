@@ -92,8 +92,8 @@ def check(f):
               '"lastDone, lastTotal, lastChapterPct, false"']:
         if k not in r: e.append("r161 现行判据/注入缺: " + k[:52])
     # ⑦ 索引硬口径仍在
-    if "索引/地图接得上（R238）" not in f["agents"]: e.append("AGENTS 索引硬口径被摘")
-    if "--refresh" not in f["board"]: e.append("AGENTS 索引口径被摘")
+    if "aoci verify" not in f["agents"]: e.append("AGENTS 官方治理口径被摘")
+    if "Baseline 由官方维护" not in f["board"]: e.append("AGENTS 官方治理口径被摘")
     # ⑨ R245 设置页重设计：M3 分组层级 / 徽标框退场 / 状态卡中性 / 低频后置
     for k in ["internal fun SettingsSection(",
               "Box(Modifier.size(width = 3.dp, height = 15.dp)",
@@ -115,7 +115,11 @@ def check(f):
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r239_verify.py --selftest"),
                               ("清单", f["r135"], '"r239_verify.py"'),
                               ("受管根", f["config"], '"app/src/main/java"')]:
-        if needle not in src: e.append(name + " 漏登记 R239")
+        if name == "受管根":
+            from r45_common import scope_indexed
+            if not scope_indexed(f["config"], "app/src/main/java"):
+                e.append(name + " 漏登记 R239")
+        elif needle not in src: e.append(name + " 漏登记 R239")
     return e
 
 def selftest():
@@ -146,8 +150,8 @@ def selftest():
          "lastDone, lastTotal, true)"),
         ("r161 旧注入锚点回潮", "r161", '"lastDone, lastTotal, lastChapterPct, true"',
          '"lastDone, lastTotal, true"'),
-        ("AGENTS 索引口径被摘", "agents", "索引/地图接得上（R238）", ""),
-        ("AGENTS 索引口径被摘（board）", "board", "--refresh", ""),
+        ("AGENTS 官方口径被摘", "agents", "aoci verify", ""),
+        ("AGENTS 官方口径被摘（board）", "board", "Baseline 由官方维护", ""),
         ("分组竖条被摘", "settings",
          "Box(Modifier.size(width = 3.dp, height = 15.dp)", ""),
         ("彩色徽标框回潮", "settings",

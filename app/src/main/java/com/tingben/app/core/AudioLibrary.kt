@@ -61,9 +61,30 @@ object AudioLibrary {
         File(bookDir(c, bookId, bookTitle),
             "%03d_%s.wav".format(chapter + 1, safeName(chapterTitle)))
 
-    /** 整本合成的那一个音频，也跟着书进同一个目录，不再平铺顶层 UUID。 */
-    fun bookWholeFile(c: Context, bookId: String, bookTitle: String): File =
-        File(bookDir(c, bookId, bookTitle), "整本.wav")
+    /**
+     * R272 · 不再新生成整本.wav：一本书拼一份大文件会把手机撑爆，唯一成品形态
+     * 是「一章一个音频」（chapterFile）。下面 isWholeBook / chapterOnlyFor /
+     * hasChapterAudio 只用于**兼容读取旧版已落盘的整本.wav**，不主动删用户文件；
+     * 新制作链路（Producer 收尾）不再调用任何整本路径函数。
+     */
+    /** 整本成品（含旧版兜底、单章书重做后沿用整本文件名）不是单章成品。 */
+    fun isWholeBook(item: AudioItem): Boolean =
+        item.scope.startsWith("整本") || item.file.name == "整本.wav"
+
+    /** 严格：只取真章级成品，供重做/删除用——绝不能把整本成品删掉。 */
+    fun chapterOnlyFor(c: Context, bookId: String, chapterIndex: Int): AudioItem? =
+        list(c).filter { it.bookId == bookId && it.chaptersKnown &&
+            chapterIndex in it.chapters && !isWholeBook(it) && it.file.length() > 44L }
+            .maxByOrNull { it.createdAt }
+
+    /**
+     * 宽松：供补拼去重。多章书的整本成品覆盖很多章，不能算「这章已拼」；
+     * 单章书的整本成品恰好只覆盖那一章，本身就是章成品，别再拼一份一样的。
+     */
+    fun hasChapterAudio(c: Context, bookId: String, chapterIndex: Int): Boolean =
+        list(c).any { it.bookId == bookId && it.chaptersKnown &&
+            chapterIndex in it.chapters && it.file.length() > 44L &&
+            (!isWholeBook(it) || it.chapters.size == 1) }
 
     /** 成品可能散在顶层（旧版、整本成品）与各书名子目录，恢复扫描都看。 */
     fun candidateDirs(c: Context): List<File> {
@@ -275,15 +296,52 @@ object AudioLibrary {
         return items.sortedByDescending { it.createdAt }
     }
 
+    /**
+     * R282 · 跳章起点：旧版整本.wav 覆盖全书章号，只要它比章成品新，
+     * 原来 maxBy(createdAt) 就会把整本大文件选成某一章的播放源；而
+     * chapterStartMs 的伴生偏移表整本成品从来没有，起点恒 0 —— 从第 N
+     * 章点播放实际播的是整本开头。现在只要这一章有「一章一个音频」的
+     * 成品，一律优先它；整本成品只在某章确实没有任何单章成品时兜底
+     * （旧版已落盘文件不主动删、仍可听，但起点只能从 0 起，不假装精确）。
+     */
     fun latestByChapter(c: Context, bookId: String): Map<Int, AudioItem> =
         list(c).filter { it.bookId == bookId && it.chaptersKnown && it.file.length() > 44 }
             .flatMap { a -> a.chapters.map { ch -> ch to a } }
             .groupBy { it.first }
-            .mapValues { (_, pairs) -> pairs.maxBy { it.second.createdAt }.second }
+            .mapValues { (_, pairs) ->
+                val single = pairs.filter { !isWholeBook(it.second) }
+                (single.ifEmpty { pairs }).maxBy { it.second.createdAt }.second
+            }
 
     fun playableChapters(c: Context, bookId: String): Set<Int> =
         list(c).filter { it.bookId == bookId && it.chaptersKnown }
             .flatMap { it.chapters }.toSet()
+
+    /**
+     * R287 · 一次 list() 同时给出「章级最新成品」与「可播章集合」。
+     * 原来目录页两个查询各扫一遍全盘（读 index.json + 遍历所有成品目录 +
+     * 逐文件读伴生 .meta.json），制作中 stage 一变就双份 IO，是目录页发卡的主因之一。
+     * 语义与分别调用 latestByChapter / playableChapters 完全等价：
+     * latest 只看 length>44，playable 不看长度。
+     */
+    fun chapterSnapshot(c: Context, bookId: String): Pair<Map<Int, AudioItem>, Set<Int>> {
+        val all = list(c).filter { it.bookId == bookId && it.chaptersKnown }
+        val playable = all.flatMap { it.chapters }.toSet()
+        val latest = all.filter { it.file.length() > 44 }
+            .flatMap { a -> a.chapters.map { ch -> ch to a } }
+            .groupBy { it.first }
+            .mapValues { (_, pairs) ->
+                val single = pairs.filter { !isWholeBook(it.second) }
+                (single.ifEmpty { pairs }).maxBy { it.second.createdAt }.second
+            }
+        return latest to playable
+    }
+
+    /** R287 · 书架页原来每本书各扫一遍全盘算可播章数，改成一次 list() 分组统计。 */
+    fun playableCountByBook(c: Context): Map<String, Int> =
+        list(c).filter { it.bookId != null && it.chaptersKnown }
+            .groupBy { it.bookId!! }
+            .mapValues { (_, items) -> items.flatMap { it.chapters }.toSet().size }
 
     fun playableItems(c: Context, bookId: String): List<Pair<Int, AudioItem>> =
         latestByChapter(c, bookId).toList().sortedBy { it.first }
@@ -325,6 +383,9 @@ object AudioLibrary {
         val all = readIndex(c) ?: return corruptRemove()
         return removeAt(c, all, f)
     }
+
+    // R272 · 整本.wav 不再新生成，「作废旧整本」(R271) 整条伪需求已删。
+    // 旧版落在磁盘的整本.wav 仍由 list() 兜底扫描兼容读取，不主动删用户文件。
 
     private fun corruptRemove(): Boolean {
         writeError = "音频记录损坏，删除暂不可用"

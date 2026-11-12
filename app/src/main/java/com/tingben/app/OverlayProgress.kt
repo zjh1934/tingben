@@ -23,7 +23,7 @@ import com.tingben.app.diag.EventLog
  * R214 · 按用户口径重画：不写字，只留圆环 + 中间百分比数字。
  *
  * 形态：整本书合成 = 上下两球叠成 8 字（上=整本进度、下=章节进度）；
- *       首页「粘一段即贴即听」= 单球。两态由 chapterPct 是否 >= 0 决定。
+ *       首页片段合成 = 单球。两态由 chapterPct 是否 >= 0 决定。
  * 可拖动：按住浮窗任意位置移动，位置只在本会话内有效，不落盘。
  *
  * 浮窗不是保活白名单、不承担续跑；停止 / 完成 / 超时 / 服务销毁
@@ -32,7 +32,20 @@ import com.tingben.app.diag.EventLog
  * 不用 Compose：Service 里没有 LifecycleOwner，挂 ComposeView 要额外造一套 owner。
  * 纯 View + 主线程 Handler，权限没给就直接不显示，不弹窗、不拖垮制作。
  */
+/**
+ * R267 · 一个开关只管「显不显示」，形态归当前真实任务独占。
+ * 优先级：整本制作 > 首页片段合成 > 设置页 0% 预览。
+ * 用户实证「一个圈 / 两个圈来回跳」不是两个浮窗：单实例被三方 update 抢着刷，
+ * 预览 0%、片段合成 0/1 会把制作进度盖掉，片段合成播完的 hide 还把制作浮窗整个删了。
+ */
+enum class OverlaySource { PREVIEW, CLIP, PRODUCE }
+
 object OverlayProgress {
+
+    private data class Frame(val done: Int, val total: Int,
+                             val chapterPct: Float, val source: OverlaySource)
+    private val lock = Any()
+    @Volatile private var frame: Frame? = null
 
     @Volatile private var root: View? = null
     @Volatile private var lp: WindowManager.LayoutParams? = null
@@ -162,13 +175,23 @@ object OverlayProgress {
     }
 
     /**
-     * chapterPct >= 0 → 双球（整本 + 章节，8 字）；< 0 → 单球（即贴即听）。
-     * 默认 -1f 保持旧调用点零改动。
+     * R267 · 低优先级来源不覆盖高优先级的进度，只按当前真实帧重绘一次。
+     * 好处：制作中拨开设置开关、或首页点「听这段」，立刻看到的是制作球，
+     * 不用等下一段 emit；也不会再出现 0% 预览把上球刷掉的假「不更新」。
+     * 双球只属于整本制作（chapterPct >= 0f）；片段合成 / 预览一律单球。
      */
     fun update(c: Context, book: String, stage: String, done: Int, total: Int,
-               chapterPct: Float = -1f) {
+               chapterPct: Float = -1f,
+               source: OverlaySource = OverlaySource.PREVIEW) {
         val app = c.applicationContext
-        if (!enabled(app)) { hide(app); return }
+        if (!enabled(app)) { hide(c); return }
+        val target = synchronized(lock) {
+            val cur = frame
+            val f = if (cur != null && source.ordinal < cur.source.ordinal) cur
+                    else Frame(done, total, chapterPct, source)
+            frame = f
+            f
+        }
         main.post {
             try {
                 val wm = app.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
@@ -181,20 +204,24 @@ object OverlayProgress {
                     lp = params
                     EventLog.log(EventLog.Kind.UI, "OVERLAY_SHOW", "悬浮进度已显示")
                 }
-                val topPct = if (total > 0) done.toFloat() / total else 0f
+                val doneNow = target.done
+                val totalNow = target.total
+                val chapterPctNow = target.chapterPct
+                val topPct = if (totalNow > 0) doneNow.toFloat() / totalNow else 0f
                 topRing?.pct = topPct
-                // R255 · 上球真机反馈「不更新」：每次都强制重绘一次；不落书名，
-                // 只记两个纯数值，真机日志可定位是上游没传还是 View 没画。
+                // R255 · 每次都强制重绘一次；不落书名，只记纯数值与来源，
+                // 真机日志可定位是上游没传还是 View 没画。
                 topRing?.postInvalidate()
-                EventLog.log(EventLog.Kind.UI, "OVERLAY_PCT",
-                    "top=${(topPct * 100).toInt()} bottom=${(chapterPct * 100).toInt()} " +
-                        "done=$done total=$total", level = EventLog.Level.TRACE)
-                if (chapterPct >= 0f) {
+                if (target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f) {
                     bottomRing?.visibility = View.VISIBLE
-                    bottomRing?.pct = chapterPct
+                    bottomRing?.pct = chapterPctNow
                 } else {
                     bottomRing?.visibility = View.GONE
                 }
+                EventLog.log(EventLog.Kind.UI, "OVERLAY_PCT",
+                    "top=${(topPct * 100).toInt()} bottom=${(chapterPctNow * 100).toInt()} " +
+                        "done=$doneNow total=$totalNow src=${target.source.name}",
+                    level = EventLog.Level.TRACE)
             } catch (t: Throwable) {
                 // 厂商 ROM 可能拒绝 addView；浮窗是可选增强，不能拖垮制作
                 UiErrors.report("悬浮进度显示不了，制作照常进行", t)
@@ -203,9 +230,17 @@ object OverlayProgress {
         }
     }
 
-    /** 停止 / 完成 / 超时 / 服务销毁一律调它，绝不把 View 留在屏幕上。 */
+    /** R267 · 低来源的「播完/取消」不许把高来源（制作中）的浮窗一起删掉。 */
+    fun hide(c: Context, source: OverlaySource) {
+        val cur = synchronized(lock) { frame }
+        if (cur != null && source.ordinal < cur.source.ordinal) return
+        hide(c)
+    }
+
+    /** 停止 / 完成 / 超时 / 服务销毁 / 关开关一律调它，绝不把 View 留在屏幕上。 */
     fun hide(c: Context) {
         val app = c.applicationContext
+        synchronized(lock) { frame = null }
         main.post {
             val v = root ?: return@post
             root = null; lp = null; topRing = null; bottomRing = null

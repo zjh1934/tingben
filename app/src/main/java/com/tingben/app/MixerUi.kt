@@ -234,12 +234,11 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
         busyTrial = true
         trialMsg = "合成中…"
         val job = scope.launch(Dispatchers.IO) {
-            // R215 · 合成主体下沉到 ClipSynth，试听与首页即贴即听共用同一份
+            // R215/R276 · 合成主体下沉到 ClipSynth，试听与首页片段共用同一份
             // model / mode 分支 / 失败判定；这里只管状态、播放与 UI 文案。
             val res = runCatching {
-                ClipSynth.synthesize(c, text, out, label) {
-                    myToken != trialToken || !isActive
-                }
+                ClipSynth.synthesize(c, text, out, label,
+                    cancelled = { myToken != trialToken || !isActive })
             }
             withContext(Dispatchers.Main) {
                 if (myToken != trialToken || !isActive) return@withContext

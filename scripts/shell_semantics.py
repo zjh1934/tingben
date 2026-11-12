@@ -182,7 +182,7 @@ def injections():
         ("齿轮消失", "chrome",
          lambda t: t.replace('        if (spec.showSettings) {', '        if (false) {')),
         ("品牌名回潮", "main",
-         lambda t: t.replace('Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY)',
+         lambda t: t.replace('Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY, showMenu = true)',
                              'Screen.LIBRARY  -> ChromeSpec("听本", TAB_LIBRARY)')),
         ("二级页齿轮回潮", "main",
          lambda t: t.replace('Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)',

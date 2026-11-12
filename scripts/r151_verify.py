@@ -41,18 +41,18 @@ POS = {
         "private enum class Screen {",
     ],
     "hub": [
-        "var hubSegs by remember(book.id)",
-        "var hubSegChapters by remember(book.id)",
+        "var hubByChapter by remember(book.id)",
+        "var liveSegsFor by remember(book.id)",
         "LaunchedEffect(book.id, st.running, localTick, task?.bookId,",
-        "if (expandedChapter != null) st.done else 0)",
+        "LaunchedEffect(book.id, st.running, localTick, task?.bookId, liveChapter) {",
         "Workbench.segments(c, t) to Workbench.segChapters(c, t)",
-        "val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters)",
+        "val chapterSegs = remember(liveChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)",
         "var beatTick by remember { mutableStateOf(0) }",
         "EventLog.lastEngine()", "EventLog.lastEngineAgeMs()",
         "var confirmSegDel by remember",
-        'visible = expandedChapter == r.index,',
+        'if (r.index == liveChapter) {',
         'HubDivider()',
-        'chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->',
+        'items(chapterSegs.chunked(SEG_GRID_COLUMNS),',
         "LazyColumn(Modifier.fillMaxSize(),",
         "row = row, pq = pqSeg,",
         "multi = segMulti, checked = segChecked,",
@@ -64,7 +64,7 @@ POS = {
         "var segChecked by remember",
         'SegGridHead(chapterSegs, segMulti',
         'if (multi) {',
-        "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
+        "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
         'EventLog.ui("SEG_ALL"',
         'EventLog.ui("SEG_TRIAL_PICKED"',
         'EventLog.ui("SEG_DELETE_ASK"',
@@ -179,13 +179,13 @@ def logic_cases(f):
             print("  多选 %-8s → %s" % (action, got))
 
     # R163 · 单列后展开章的小片就是按章过滤的，守「惰性行」而非「全量」
-    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in f["hub"]:
+    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in f["hub"]:
         bad.append("展开章小片没有惰性行")
         if "segMulti" not in f["hub"] or "onDelete" not in f["hub"]:
             bad.append("看台缺多选或删段出口")
         if "heartbeat" not in f["hub"]:
             bad.append("看台缺模型心跳")
-    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in f["hub"]:
+    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in f["hub"]:
         bad.append("全量格子没拆成惰性行")
     # 9137 段时应是约 914 个行 item，而不是 1 个巨型 item
     n = 9137
@@ -266,20 +266,21 @@ def selftest():
          "onProgress: () -> Unit,"),
         ("任务页调用点被摘", "main", "onClick = { onProgress(t.bookId) }",
          "onClick = onProgress"),
-        ("一次读盘被摘", "hub", "var hubSegs by remember(book.id)", ""),
-        ("段章映射被摘", "hub", "var hubSegChapters by remember(book.id)", ""),
+        ("一次读盘被摘", "hub", "var hubByChapter by remember(book.id)", ""),
+        ("段章映射被摘", "hub", "var liveSegsFor by remember(book.id)", ""),
         ("第一列派生被摘", "hub",
-         "val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters)", ""),
+         "val chapterSegs = remember(liveChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)", ""),
         ("展开态刷新退化成每段全扫", "hub",
-         "if (expandedChapter != null) st.done else 0", "st.done"),
+         "LaunchedEffect(book.id, st.running, localTick, task?.bookId, liveChapter)",
+         "LaunchedEffect(book.id, st.running, localTick, task?.bookId, st.done)"),
         ("心跳刷新被摘", "hub", "var beatTick by remember { mutableStateOf(0) }", ""),
         ("引擎动作被摘", "hub", "EventLog.lastEngine()", ""),
-        ("看台区块被摘", "hub", 'visible = expandedChapter == r.index,', ""),
+        ("看台区块被摘", "hub", "if (r.index == liveChapter) {", ""),
         ("第二列没拿到全量段", "hub", "row = row, pq = pqSeg,",
          "segs = chapterSegs, pq = pqSeg,"),
         ("第二列没拿到心跳", "hub", "multi = segMulti, checked = segChecked,", ""),
         ("删段回调被摘", "hub", "onTap = { sg -> tapSeg(sg) })", ""),
-        ("全量格子被摘", "hub", 'chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->', ""),
+        ("全量格子被摘", "hub", 'items(chapterSegs.chunked(SEG_GRID_COLUMNS),', ""),
         ("退回一次性组合", "hub", 'HubDivider()',
          "segs.chunked(10).forEach"),
         ("多选态被摘", "hub", "var segMulti by remember", ""),

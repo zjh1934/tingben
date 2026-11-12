@@ -65,7 +65,8 @@ def check(f):
         e.append("CI 漏挂 r221")
     if '"r221_verify.py"' not in f["r135"]:
         e.append("现行清单漏登记 r221")
-    if "r221_verify.py" not in f["config"]:
+    from r45_common import scope_indexed
+    if not scope_indexed(f["config"], "scripts/r221_verify.py"):
         e.append("新守门没登记进受管根")
     return e
 

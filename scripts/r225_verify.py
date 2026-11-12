@@ -75,11 +75,13 @@ def check(f):
                       ("task", 'id=${t.bookId.take(8)}'),
                       ("hub", 'board id=${t.bookId.take(8)}')]:
         if needle not in f[k]: e.append("诊断字段缺失[%s]: %s" % (k, needle[:40]))
-    # ⑥ 登记
+    # ⑥ 登记（受管范围改按官方 managed_scope.rules 判，不再找旧字符串）
+    from r45_common import scope_indexed
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r225_verify.py --selftest"),
-                              ("清单", f["r135"], '"r225_verify.py"'),
-                              ("受管根", f["config"], "r225_verify.py")]:
+                              ("清单", f["r135"], '"r225_verify.py"')]:
         if needle not in src: e.append(name + " 漏登记 r225")
+    if not scope_indexed(f["config"], "scripts/r225_verify.py"):
+        e.append("受管根 漏登记 r225")
     return e
 
 def selftest():

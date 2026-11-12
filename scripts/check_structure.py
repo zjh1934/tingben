@@ -412,7 +412,10 @@ if "ModalNavigationDrawer(" in main_src:
     errs.append("R51 回退：又用回覆盖式 ModalNavigationDrawer(")
 if not nav.back_order_ok(main_src):
     errs.append("R46 回退：抽屉 BackHandler 没排在全局回退之后")
-for sym in ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS",
+# R276 · DropdownMenu 不再是旧壳信号：R253 起章行、R276 起首页片段
+# 都用它做「就地长按小菜单」，是现行形态。旧壳回退仍由下面五个符号
+# 与 nav.semantics 守，判据按现状迁移、不靠删掉整套检查放行。
+for sym in ["AppBottomBar(", "MENU_ITEMS", "TOP_TABS",
             "onMenu = { idx ->", "AppTab("]:
     if sym in main_src or sym in chrome_src:
         errs.append("R46 回退：旧壳残留 " + sym)

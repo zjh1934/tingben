@@ -6,6 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 // R138 · 批次 B 地基：章节表是「一本书一份」的落盘真值源。
 //
@@ -38,22 +39,38 @@ object ChapterPlan {
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     } catch (_: Throwable) { "len_${text.length}_${text.hashCode()}" }
 
-    fun load(c: Context, bookId: String): ChapterPlanData? = try {
-        val r = AtomicJson.read(file(c, bookId))
-        val body = if (r is AtomicJson.Read.Ok) r.text else return null
-        val o = JSONObject(body)
-        val arr = o.optJSONArray("chapters") ?: return null
-        val list = (0 until arr.length()).mapNotNull { i ->
-            val it = arr.optJSONObject(i) ?: return@mapNotNull null
-            Chapter(it.optInt("index", i), it.optString("title", "未命名章节"),
-                it.optInt("start", 0), it.optInt("end", 0))
-        }
-        if (list.isEmpty()) null else
-            ChapterPlanData(o.optInt("schema", 0), o.optString("ruleId", ""),
-                o.optString("sha", ""), list, o.optInt("epoch", 0))
-    } catch (_: Throwable) { null }
+    /**
+     * R282 · 写盘失败时的会话内兜底。真机日志 05:07:41 报过一次
+     * 「章节表没写进磁盘」：save() 已带现场诊断，但下一次 load() 返回
+     * null 会重新 build，规则可能换、章号重编，已生成音频对错章。
+     * 把本次认定的章节表留在内存，load() 优先命中它，至少本次进程内
+     * 章号恒定；进程被杀后仍会退回重新识别，这是磁盘写失败的固有限制，
+     * 不假装已经落盘。
+     */
+    private val memoryFallback = ConcurrentHashMap<String, ChapterPlanData>()
+
+    fun load(c: Context, bookId: String): ChapterPlanData? {
+        memoryFallback[bookId]?.let { return it }
+        return try {
+            val r = AtomicJson.read(file(c, bookId))
+            val body = if (r is AtomicJson.Read.Ok) r.text else return null
+            val o = JSONObject(body)
+            val arr = o.optJSONArray("chapters") ?: return null
+            val list = (0 until arr.length()).mapNotNull { i ->
+                val it = arr.optJSONObject(i) ?: return@mapNotNull null
+                Chapter(it.optInt("index", i), it.optString("title", "未命名章节"),
+                    it.optInt("start", 0), it.optInt("end", 0))
+            }
+            if (list.isEmpty()) null else
+                ChapterPlanData(o.optInt("schema", 0), o.optString("ruleId", ""),
+                    o.optString("sha", ""), list, o.optInt("epoch", 0))
+        } catch (_: Throwable) { null }
+    }
 
     private fun save(c: Context, bookId: String, plan: ChapterPlanData) {
+        // R282 · 先留会话内真值：写成功、写失败、抛异常三条路径都以此为准，
+        // 不让「本次没落盘」变成「下次换一套章号」。
+        memoryFallback[bookId] = plan
         try {
             val a = JSONArray()
             plan.chapters.forEach { ch ->
@@ -84,6 +101,7 @@ object ChapterPlan {
     }
 
     fun delete(c: Context, bookId: String) {
+        memoryFallback.remove(bookId)
         try { AtomicJson.delete(file(c, bookId)) } catch (_: Throwable) { }
     }
 

@@ -1,59 +1,46 @@
 package com.tingben.app
 
 import android.content.Context
-import android.net.Uri
-import android.os.Bundle
-import android.provider.OpenableColumns
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.tingben.app.core.*
 import com.tingben.app.diag.EventLog
 import com.tingben.app.engine.NativeEngine
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 
 // @ui-part: InputReadUi
+/**
+ * R276 · 首页是「贴一段 → 点合成 → 等几分钟 → 产物进下方留白列表」，
+ * 不是「粘上就响」，也不建书。片段单独一层目录、走主播放条，
+ * 可对它们勾选 / 长按菜单 / 删除 / 导出 / 按当前调音台重做。
+ * asHome=false（外部分享进来的输入朗读页）仍可建书，能力不删。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -> Unit,
                             asHome: Boolean = false,
@@ -63,27 +50,127 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                             // R230 · 调音/任务上移系统顶栏、悬浮开关收回设置页，
                             // 首页内容区不再单独占一排按钮。
                            ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val inputScope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
-    // R176 · 建书是异步落盘，连点会重复触发；成功后清空输入框，
-    // 免得用户看着还在的全文以为没点上又按一次。
+    // R176 · 建书是异步落盘，连点会重复触发；成功后清空输入框。
     var adding by rememberSaveable { mutableStateOf(false) }
-    // R215 · 首页即贴即听的合成状态；与分享页的「建书」状态分开，互不顶掉。
-    var listening by rememberSaveable { mutableStateOf(false) }
+    // R276 · 在跑的合成条数；离开页面时据此取消 native，别让它闷头合成。
+    var busy by rememberSaveable { mutableStateOf(0) }
     val listenScope = rememberCoroutineScope()
+    val synthMutex = remember { Mutex() }
     DisposableEffect(Unit) { onDispose {
-        // 离开页面时别让 native 还在闷头合成下一段
-        if (listening) { try { NativeEngine.nativeCancel() } catch (_: Throwable) { } }
+        if (busy > 0) { try { NativeEngine.nativeCancel() } catch (_: Throwable) { } }
     } }
+
+    // R276 · 首页片段列表与它的多选态
+    var clips by remember { mutableStateOf(emptyList<ClipLibrary.Item>()) }
+    var selected by remember { mutableStateOf(emptySet<String>()) }
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { clips = ClipLibrary.list(c) }
+    fun refresh() { clips = ClipLibrary.list(c) }
+
+    // 单条另存：用系统保存界面自选位置；批量导出走设置里记住的目录树。
+    var pendingSave by remember { mutableStateOf<ClipLibrary.Item?>(null) }
+    val saveOne = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
+        val it = pendingSave
+        pendingSave = null
+        if (uri != null && it != null) {
+            listenScope.launch {
+                val ok = withContext(Dispatchers.IO) { AudioOps.copyTo(c, it.audio, uri) }
+                Toast.makeText(c, if (ok) "已另存" else "另存失败", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 点播：片段队列就是播放器列表；进书听时 ChapterHub 会换成该书的章队列。 */
+    fun playClip(item: ClipLibrary.Item) {
+        val all = clips.filter { it.isDone }
+        val i = all.indexOfFirst { it.id == item.id }
+        if (i < 0) return
+        PlayQueue.setTracks(all.map {
+            Track(it.audio, it.name, id = "clip:${it.id}")
+        }, "clip")
+        PlayQueue.playFrom(i)
+    }
+
+    fun dropClips(ids: Set<String>) {
+        ClipLibrary.remove(c, ids)
+        if (PlayQueue.state.value.queueId == "clip") PlayQueue.release()
+        selected = selected - ids
+        menuFor = null
+        refresh()
+    }
+
+    /**
+     * 合成一条：Mutex 串行，不打断正在跑的那段；redo 时先写 .redo.wav，
+     * 成功再覆盖正式文件，失败保留旧音频（不把能听的弄丢）。
+     */
+    fun synth(item: ClipLibrary.Item, snapshot: String, redo: Boolean): Job =
+        listenScope.launch {
+            busy++
+            synthMutex.withLock {
+                OverlayProgress.update(c, "", "合成中", 0, 1, -1f, OverlaySource.CLIP)
+                val tmp = if (redo) ClipLibrary.redoFile(c, item.id) else item.audio
+                val res = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ClipSynth.synthesize(c, snapshot, "clip_listen.wav", "首页片段",
+                            outFile = tmp)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    val path = res.getOrNull()
+                    var ok = path != null
+                    if (ok && redo) {
+                        ok = try {
+                            tmp.copyTo(item.audio, overwrite = true); true
+                        } catch (_: Throwable) { false }
+                        try { tmp.delete() } catch (_: Throwable) { }
+                    }
+                    val reason = if (ok) "" else ClipLibrary.reasonOf(res.exceptionOrNull())
+                    if (!ok) ClipLibrary.setFailReason(c, item.id, reason)
+                    ClipLibrary.finish(c, item.id, ok)
+                    if (ok) {
+                        OverlayProgress.update(c, "", "完成", 1, 1, -1f, OverlaySource.CLIP)
+                        EventLog.ui("CLIP_LISTEN", "chars=${snapshot.length}")
+                        listenScope.launch {
+                            delay(1200)
+                            OverlayProgress.hide(c, OverlaySource.CLIP)
+                        }
+                    } else {
+                        OverlayProgress.hide(c, OverlaySource.CLIP)
+                        EventLog.log(EventLog.Kind.ENGINE, "CLIP_LISTEN_FAIL", "id=${item.id.take(6)}")
+                        Toast.makeText(c,
+                            "没合成出来：${ClipLibrary.reasonText(reason)}，可以长按这条重做",
+                            Toast.LENGTH_LONG).show()
+                    }
+                    refresh()
+                    busy--
+                }
+            }
+        }
+
+    fun redoOne(item: ClipLibrary.Item) {
+        val t = ClipLibrary.text(c, item.id)
+        if (t.isBlank()) {
+            Toast.makeText(c, "这条的原文不在了，没法重做", Toast.LENGTH_SHORT).show()
+            return
+        }
+        ClipLibrary.markRunning(c, item.id)
+        refresh()
+        synth(item, t, true)
+    }
+
+    // 菜单 / 多选态各自单独消费返回键，菜单优先（R255 互斥口径）
+    BackHandler(enabled = menuFor != null) { menuFor = null }
+    BackHandler(enabled = selected.isNotEmpty() && menuFor == null) { selected = emptySet() }
+
     Column(Modifier.fillMaxSize().background(Bg).padding(16.dp)) {
-        // 这是「正在发生的事」，不是常驻说明文字：只在导入中显示
         if (importingBook) {
             Text("正在后台导入一本书…", fontSize = 11.sp, color = Sub,
                 modifier = Modifier.padding(bottom = 6.dp))
         }
-        // R180 · 没有模型就合成不了。模型页藏在设置里，新装用户根本不知道。
-        // 这里只给一行状态 + 一个入口，模型齐了整行消失；不写教程、不常驻。
         if (modelMissing > 0) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
@@ -100,18 +187,16 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                     contentAlignment = Alignment.Center) {
                     IconBack(Primary)
                 }
-                Text("输入朗读", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                Text("输入朗读", fontSize = 16.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     color = palette.text)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onBack) { Text("关闭", fontSize = 12.sp, color = Sub) }
             }
             Spacer(Modifier.height(12.dp))
         }
-        // R171 · 用户实证「文本框上面有废话文字说明」。标题、说明书、输入框 label
-        // 三处讲同一件事，全撤：空框里一句 placeholder，输入后自动消失。
-        // R214 · 框不再 weight(1f) 占满整屏，收到约 1/3 屏；
-        // 粘贴 / 清除搬进框内右下角，不再单独占一行。
-        Box(Modifier.fillMaxWidth().fillMaxHeight(0.36f)) {
+        // R171/R214 · 框约 1/3 屏，粘贴 / 清除在框内右下角，不放教程文字。
+        Box(Modifier.fillMaxWidth().fillMaxHeight(0.30f)) {
             OutlinedTextField(
                 value = text, onValueChange = { text = it },
                 placeholder = { Text("粘贴或输入要念的正文", fontSize = 12.sp) },
@@ -133,9 +218,7 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
         Row(verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))
             if (asHome) {
-                // R215 · 首页就是「粘一段即贴即听」：不建书、不落书架、不跳页。
-                // 文字原样留着，方便改一句再听一次。
-                Button(enabled = !listening && text.isNotBlank(), onClick = {
+                Button(enabled = text.isNotBlank(), onClick = {
                     if (text.isBlank()) {
                         Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
                         return@Button
@@ -146,41 +229,11 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                             Toast.LENGTH_LONG).show()
                         return@Button
                     }
-                    if (listening) return@Button
-                    listening = true
                     val snapshot = text
-                    // 即贴即听 = 单球浮窗（chapterPct < 0）
-                    OverlayProgress.update(c, "", "合成中", 0, 1, -1f)
-                    listenScope.launch {
-                        val res = withContext(Dispatchers.IO) {
-                            runCatching {
-                                ClipSynth.synthesize(c, snapshot,
-                                    "clip_listen.wav", "首页即贴即听")
-                            }
-                        }
-                        withContext(Dispatchers.Main) {
-                            listening = false
-                            val path = res.getOrNull()
-                            if (path != null) {
-                                OverlayProgress.update(c, "", "完成", 1, 1, -1f)
-                                // 试听通道独立，不碰主播放队列与播放通知
-                                PlayQueue.setTracks(listOf(Track(File(path), "这段朗读",
-                                    id = "clip:$path")), "trial")
-                                PlayQueue.playFrom(0, id = "trial")
-                                EventLog.ui("CLIP_LISTEN", "chars=${snapshot.length}")
-                                listenScope.launch {
-                                    delay(1200)
-                                    OverlayProgress.hide(c)
-                                }
-                            } else {
-                                OverlayProgress.hide(c)
-                                val why = res.exceptionOrNull()?.message ?: "未知原因"
-                                EventLog.log(EventLog.Kind.ENGINE, "CLIP_LISTEN_FAIL", why)
-                                Toast.makeText(c, "没合成出来：$why", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
-                }) { Text(if (listening) "正在合成…" else "听这段", fontSize = 13.sp) }
+                    val item = ClipLibrary.create(c, snapshot)
+                    refresh()
+                    synth(item, snapshot, false)
+                }) { Text(if (busy > 0) "再合成一段" else "合成这段", fontSize = 13.sp) }
             } else {
                 Button(enabled = !adding, onClick = {
                     if (text.isBlank()) {
@@ -203,7 +256,6 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                                 text = ""   // 失败时正文原样留着，不丢用户输入
                                 val added = res.getOrNull()
                                 if (added != null) {
-                                    // R180 · 建完就进这本书，不再让用户回抽屉里找
                                     onAdded(added.id)
                                     Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -217,6 +269,142 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                 }) { Text(if (adding) "正在加…" else "建书", fontSize = 13.sp) }
             }
         }
+
+        // R276 · 下方留白 = 片段常驻列表。每条前 10 字名 + 状态，点一下走播放条。
+        if (asHome) {
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.weight(1f)) {
+                if (clips.isEmpty()) {
+                    Text("还没有片段", fontSize = 12.sp, color = Sub,
+                        modifier = Modifier.padding(top = 8.dp))
+                } else {
+                    // R285 · 片段多时最后一条要能完整滚出：列表在 weight(1f) 容器里，
+                    // 多选条与全局播放条各占一行，留 10dp 尾部余量，末条不贴边。
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 10.dp)
+                    ) {
+                        items(clips, key = { it.id }) { item ->
+                            ClipRow(
+                                item = item,
+                                checked = item.id in selected,
+                                menuExpanded = menuFor == item.id,
+                                onToggle = {
+                                    selected = if (item.id in selected) selected - item.id
+                                               else selected + item.id
+                                },
+                                onMenu = { menuFor = item.id },
+                                onDismissMenu = { menuFor = null },
+                                onPlay = { playClip(item) },
+                                onExport = {
+                                    menuFor = null
+                                    if (item.isDone) {
+                                        pendingSave = item
+                                        saveOne.launch(item.exportName)
+                                    } else Toast.makeText(c, "还没合成好", Toast.LENGTH_SHORT).show()
+                                },
+                                onRedo = { menuFor = null; redoOne(item) },
+                                onDelete = { menuFor = null; dropClips(setOf(item.id)) }
+                            )
+                        }
+                    }
+                }
+            }
+            // R255 · 菜单弹着时底部条收起，两者不同时出现、不抢操作
+            if (selected.isNotEmpty() && menuFor == null) {
+                MultiSelectBar(
+                    count = selected.size,
+                    onSelectAll = { selected = clips.map { it.id }.toSet() },
+                    onCancel = { selected = emptySet() }
+                ) {
+                    val chosen = clips.filter { it.id in selected }
+                    ActionChip("删除", danger = true, icon = UiIcon.DELETE,
+                        onClick = { dropClips(selected) })
+                    ActionChip("重做", icon = UiIcon.SYNTH, onClick = {
+                        chosen.filter { !it.isRunning }.forEach { redoOne(it) }
+                        selected = emptySet()
+                    })
+                    ActionChip("导出", icon = UiIcon.EXPORT, onClick = {
+                        val ready = chosen.filter { it.isDone }
+                        if (ready.isEmpty()) {
+                            Toast.makeText(c, "选中的都还没合成好", Toast.LENGTH_SHORT).show()
+                        } else {
+                            listenScope.launch {
+                                val (ok, skip, why) = withContext(Dispatchers.IO) {
+                                    ClipLibrary.exportTo(c, AudioExport.treeUri(c), ready)
+                                }
+                                Toast.makeText(c,
+                                    if (why.isNotBlank()) why
+                                    else "已导出 $ok 个，跳过 $skip 个",
+                                    Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        selected = emptySet()
+                    })
+                }
+            }
+        }
     }
 }
 
+/** R276 · 一条首页片段：常驻勾 + 前 10 字名 + 状态 + 就地长按小菜单。 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun ClipRow(
+    item: ClipLibrary.Item,
+    checked: Boolean,
+    menuExpanded: Boolean,
+    onToggle: () -> Unit,
+    onMenu: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onPlay: () -> Unit,
+    onExport: () -> Unit,
+    onRedo: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val state = when {
+        item.isRunning -> "合成中"
+        item.isDone -> "完成"
+        item.reason.isNotBlank() -> "失败 · ${ClipLibrary.reasonText(item.reason)} · 可重做"
+        else -> "失败 · 可重做"
+    }
+    val tint = when {
+        item.isRunning -> Warn
+        item.isDone -> palette.primary
+        else -> palette.warn
+    }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+            .combinedClickable(onClick = {
+                if (item.isDone) onPlay()
+            }, onLongClick = onMenu)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SelectBox(checked, modifier = Modifier.size(22.dp).clickable { onToggle() })
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(item.name, fontSize = 13.sp, color = palette.text,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(state, fontSize = 11.sp, color = tint)
+        }
+        if (item.isDone) {
+            Box(Modifier.size(36.dp).clickable { onPlay() },
+                contentAlignment = Alignment.Center) {
+                UiIconGlyph(UiIcon.PLAY, palette.primary, glyphSize = 18.dp)
+            }
+        }
+        DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
+            DropdownMenuItem(text = { Text("勾选此条", fontSize = 13.sp) },
+                onClick = { onDismissMenu(); onToggle() })
+            if (item.isDone) {
+                DropdownMenuItem(text = { Text("播放", fontSize = 13.sp) },
+                    onClick = { onDismissMenu(); onPlay() })
+                DropdownMenuItem(text = { Text("导出", fontSize = 13.sp) },
+                    onClick = onExport)
+            }
+            DropdownMenuItem(text = { Text("重做", fontSize = 13.sp) }, onClick = onRedo)
+            DropdownMenuItem(text = { Text("删除", fontSize = 13.sp) }, onClick = onDelete)
+        }
+    }
+}

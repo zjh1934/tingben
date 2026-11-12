@@ -52,7 +52,7 @@ POS = {
         "Producer.enqueueOrStart(c, book, selected, null, Prefs.defaultPerf(c))",
     ],
     "main": [
-        'item(key = "tasks_queue")',
+        'items(pending, key = { it.bookId })',
         "TaskResume.queue(c)",
         "Producer.queueState(c)",
         # R243 · 按钮砍掉，只留暂停提示；恢复走自动续跑，底层 resumeQueue 仍在 pipe
@@ -106,7 +106,7 @@ def selftest():
         "开软件不优先跑队列": ("pipe", "val q = pumpQueue(c.applicationContext)"),
         "恢复队列入口被摘": ("pipe", "fun resumeQueue(c: Context): String?"),
         "目录页改回拒绝": ("hub", "Producer.enqueueOrStart(c, book, selected, null, Prefs.defaultPerf(c))"),
-        "任务页队列卡被摘": ("main", 'item(key = "tasks_queue")'),
+        "任务页队列卡被摘": ("main", 'items(pending, key = { it.bookId })'),
         "r114 回到每例复制整树": ("r114", "基准树只建一次"),
         "r114 不还原文件": ("r114", "f.write_text(s, encoding='utf-8')"),
         "主页任务回目录页": ("main", "nav.push(Screen.TASKS)"),

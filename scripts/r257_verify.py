@@ -53,7 +53,7 @@ def check(f):
               '"book=${EventLog.safe(t.title)}',
               '"书=${EventLog.safe(book.title)}',
               '"title=${EventLog.safe(title)} type=',
-              '"${EventLog.safe(item.title)} · ${item.scope}']:
+              'EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_DONE",']:
         if k not in "".join(f[x] for x in ("main", "hub", "producer", "svc")):
             e.append("书名 safe 缺: " + k[:52])
     # ③ URI / UUID / 音色 ID
@@ -85,13 +85,17 @@ def check(f):
             e.append("回溯补齐又挂回 st.done（真机 50 次 0/338 白烧 IO）")
     if "LaunchedEffect(book.id, st.running) {" not in h:
         e.append("补齐独立 effect 丢了")
-    if "if (st.running) return@LaunchedEffect" not in h:
-        e.append("制作中没跳过补齐")
+    # R269 · 补齐 effect 与 redoKeys 观察 effect 各自都有一句；只判「出现过」
+    # 会让注入摘掉一处仍绿，须两处齐全。
+    if h.count("if (st.running) return@LaunchedEffect") < 2:
+        e.append("制作中没跳过补齐/秒读（两个 effect 各要一句）")
     # ⑤ 三处挂载
+    from r45_common import scope_indexed
     for k, where in [("python3 scripts/r257_verify.py\n", "ci"),
-                     ('"r257_verify.py"', "r135"),
-                     ('"r257_verify.py"', "config")]:
+                     ('"r257_verify.py"', "r135")]:
         if k not in f[where]: e.append("漏挂[%s]: %s" % (where, k[:40]))
+    if not scope_indexed(f["config"], "scripts/r257_verify.py"):
+        e.append("漏挂[config]: 官方受管范围没覆盖 r257")
     return e
 
 def selftest():
@@ -111,7 +115,8 @@ def selftest():
         ("服务书名原文回潮", "svc",
          '"title=${EventLog.safe(title)} type=', '"title=$title type='),
         ("成品书名原文回潮", "producer",
-         '"${EventLog.safe(item.title)} · ${item.scope}', '"${item.title} · ${item.scope}'),
+         '"chapters=${merged.first} skipped=${merged.second} segs=${annotated.size}"',
+          '"chapters=${merged.first} · ${item.title} · ${item.scope}'),
         ("URI 原文回潮", "main",
          'uri=${EventLog.safe(raw)}', 'uri=${raw?.take(90)}'),
         ("完整 UUID 回潮", "main",
@@ -126,13 +131,16 @@ def selftest():
          "if (st.running) return@LaunchedEffect", ""),
         ("CI 漏挂", "ci", "python3 scripts/r257_verify.py\n", ""),
         ("清单漏登记", "r135", '"r257_verify.py"', ""),
-        ("受管根漏登记", "config", '"r257_verify.py"', ""),
+        ("官方 index 兜底被摘", "config", '"action": "index"', '"action": "exclude"'),
     ]
     bad = 0
+    # 锚点在源码里出现多次时只摘第一处判据恒真、注入漏放，须全量替换
+    FULL = {"制作中不跳过"}
     for name, key, needle, repl in cuts:
         g = dict(f)
         assert needle in g[key], "注入锚找不到: " + name
-        g[key] = g[key].replace(needle, repl, 1)
+        g[key] = (g[key].replace(needle, repl) if name in FULL
+                  else g[key].replace(needle, repl, 1))
         if check(g): print("  反向注入 %-20s 拦下" % name)
         else: print("  反向注入漏放:", name); bad += 1
     print("反向注入 %d/%d 全拦下（纯内存，源文件零写入）" % (len(cuts) - bad, len(cuts)))

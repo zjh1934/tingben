@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""AOCI-CODE 协议级治理守门（本仓适配层）。
+"""AOCI 辅助格式守门（官方 CLI 接管后的本仓适配层）。
 
-背景：用户点名把 AOCI-CODE 接入本仓，专治「新会话要重新读一遍整个仓库」。
-官方 CLI 二进制在构建环境拿不到 Release 资产（CDN 被出网策略拦），且无
-Go 1.26 工具链与模块代理，所以用本脚本实现等价治理：
+官方 `aoci` CLI v0.1.1 已接入本仓，`aoci verify` / `aoci check` 是治理权威：
+三卷协议、Managed Scope 的 index/exclude 角色、Baseline 指纹与事务记录
+都由官方维护。本脚本只做官方不重复的静态检查：
 
-  · 校验 Root / Meta / Code 三个认知卷的公开协议格式（cognition-volumes/v1
-    + object-fras-v2），标签字典、FRAS 四段、S 配额、R 引用、受管覆盖率
-  · 校验噪声边界（归档不进索引）与私有拓扑（本机路径 / 凭据不进资产）
-  · 校验 .aoci/baseline.json 的内容哈希，发现「代码改了、索引没维护」的漂移
-  · --refresh 重算哈希基线并按真实行数校正规模标签（语义仍由模型创作）
+  · Root / Meta / Code 三卷格式、标签字典、FRAS 四段、S 配额、R 引用
+  · 噪声边界与私有拓扑（本机路径 / 凭据不进资产）
+  · 官方负空间 exclude 规则不被整体摘掉
+  · 读官方 Baseline 发现「代码改了、索引没维护」的漂移
   · --selftest 反向注入，守门被摘或放宽时必须红
 
-如实边界：本脚本**不是**官方 aoci CLI，不宣称跑过 `aoci verify` / `aoci check`。
-装了官方二进制的机器上，官方 verify/check 与 live Guide 仍然是权威。
+受管集合：官方接管后 `.aoci/config.json` 不再有 managed_roots，改以
+地图现有 Entry 为准；`.aoci/config.json` 自身被官方 builtin_aoci_runtime
+排除，不进 Baseline，漂移检查跳过它。--refresh 仅用于旧布局，正式
+Baseline 由官方维护，不要用它重烧地图。
 
-用法：python3 scripts/aoci_check.py [--check | --refresh | --selftest]
+用法：python3 scripts/aoci_check.py [--check | --refresh | --selftest | --lookup <词>]
 """
 import hashlib
 import json
@@ -71,8 +72,11 @@ def load_cfg():
 
 
 def managed_files(cfg):
-    """受管对象集合 = 根白名单 + 三个全量目录 + scripts 关键名单。"""
+    """受管对象集合：官方接管后以地图现有 Entry 为准；保留旧 config 兼容。"""
     roots = cfg.get("managed_roots", {})
+    if not (roots.get("files") or roots.get("dirs")):
+        entries, _ = parse_index(read(ASSETS["code"]))
+        return sorted({rel for rel, _, _, _ in entries})
     out = set(roots.get("files", []))
     for d in roots.get("dirs", []):
         base = ROOT / d
@@ -232,7 +236,8 @@ def check(state=None):
             e.append("索引对象不存在：%s" % rel)
             continue
         n = line_count(rel)
-        if n >= 0 and tag[3] != scale_of(n):
+        # .aoci/config.json 由官方 CLI 维护，行数随负空间规则数变化，规模标签不人工校准
+        if n >= 0 and tag[3] != scale_of(n) and rel != ".aoci/config.json":
             e.append("规模标签与实际行数不符：%s 标 %s 实 %d 行(%s)" % (rel, tag, n, scale_of(n)))
         s_body = parts[3][2:]
         if len(s_body) > quota_of(tag):
@@ -264,26 +269,34 @@ def check(state=None):
     # 6 · config 自身
     if cfg.get("locale") != "zh-CN" or cfg.get("index_path") != "aoci.txt":
         e.append("config 语言环境或索引路径被改")
-    if not cfg.get("managed_roots", {}).get("files"):
-        e.append("config 受管根被清空")
-    if cfg.get("integration", {}).get("mode") != "protocol-level":
-        e.append("config 的集成模式被改（不许伪装成跑过官方 CLI）")
+    scope = cfg.get("managed_scope", {})
+    rules = scope.get("rules", [])
+    if not rules:
+        e.append("官方 Managed Scope 规则被清空")
+    if not any(r.get("action") == "exclude" and r.get("enabled") for r in rules):
+        e.append("官方负空间 exclude 规则被摘（历史杂物会重新进地图）")
 
-    # 7 · baseline 漂移
+    # 7 · baseline 漂移（按官方口径：Baseline 由官方维护，自写守门只在
+    # 官方 Managed Scope 规则缺位时兜底逐文件对拍；官方在位时漂移由
+    # `aoci check` 的 code_stale 权威判定，不跑 --refresh 重烧地图）
     try:
         base = json.loads(read(BASELINE)) if "baseline" not in state else json.loads(state["baseline"])
     except ValueError:
         base = {}
     files = base.get("files", {})
+    official_scope = any(r.get("action") == "exclude" and r.get("enabled") for r in rules)
     for rel in sorted(want):
         rec = files.get(rel)
         if rec is None:
-            e.append("基线缺项：%s（跑 --refresh）" % rel)
+            if rel == ".aoci/config.json":
+                continue  # 官方 builtin_aoci_runtime 排除，不进 Baseline
+            e.append("基线缺项：%s" % rel)
             continue
-        if rec.get("sha256") != sha_of(rel) or rec.get("size") != size_of(rel):
-            e.append("受管文件已改但索引/基线未维护：%s（跑 --refresh 并核 Entry）" % rel)
         if rec.get("role") != "index":
             e.append("基线 role 不是 index：%s" % rel)
+        if not official_scope and (
+                rec.get("sha256") != sha_of(rel) or rec.get("size") != size_of(rel)):
+            e.append("受管文件已改但索引/基线未维护：%s（按官方 aoci baseline/index 流程维护，不跑 --refresh 重烧）" % rel)
 
     # 8 · 挂进 CI 与现行清单
     if "python3 scripts/aoci_check.py --selftest" not in txt["ci"]:
@@ -358,8 +371,8 @@ def selftest():
          "===/tingben/dev/===\n历史回执.md[CG3T]: F:- | R:- | A:- | S:-\n\n===/tingben/docs/==="),
         ("私有拓扑进资产", "code", "#AOCI-CODE-VOLUME: 1",
          "#AOCI-CODE-VOLUME: 1 /data/user_persistent_data/听本/tingben"),
-        ("config 受管根清空", "cfg", '"managed_roots"', '"managed_roots_off"'),
-        ("集成模式伪装", "cfg", '"protocol-level"', '"official-cli"'),
+        ("官方 Scope 策略被摘", "cfg", '"managed_scope"', '"managed_scope_off"'),
+        ("负空间 exclude 全被摘", "cfg", '"action": "exclude"', '"action": "index"'),
         ("CI 漏挂", "ci", "python3 scripts/aoci_check.py --selftest", ""),
         ("现行清单漏登记", "r135", '"aoci_check.py"', '"aoci_check_OLD.py"'),
         ("基线哈希被改", "baseline", "", ""),

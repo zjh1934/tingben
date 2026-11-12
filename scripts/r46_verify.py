@@ -44,7 +44,8 @@ MAIN_POS = [
     'EventLog.ui("DRAWER_NAV", "open")',
     ".navigationBarsPadding()",
 ]
-OLD_SHELL = ["AppBottomBar(", "DropdownMenu(", "MENU_ITEMS", "TOP_TABS", "AppTab(",
+OLD_SHELL = ["AppBottomBar(", "DropdownMenu(expanded = false, onDismissRequest = {}) {}",
+             "MENU_ITEMS", "TOP_TABS", "AppTab(",
              "onMenu = { idx ->", "ModalNavigationDrawer("]
 
 def enum_count(s):

@@ -65,6 +65,12 @@ POS = {
         "if (!it.file.isFile) { skipped++; continue }",
         "fun treeLabel(c: Context): String",
         "private fun safeName(s: String): String",
+        # R272 · 只导出章成品，整本.wav 不再新生成也不进导出
+        "if (items.isEmpty()) continue",
+        "val items = AudioLibrary.playableItems(c, b.id)",
+        "private fun findChildFile(",
+        "findChildFile(r, t, parent, it.name)",
+        "DocumentsContract.deleteDocument(r, existing.first)",
     ],
     "main": [
         "ActivityResultContracts.OpenDocumentTree()",
@@ -80,6 +86,12 @@ POS = {
         "AudioExport.exportAll(c, tree)",
         "withContext(Dispatchers.IO) { AudioExport.collect(c).size }",
         '"导出全部"',
+        # R268 · 导出中置灰、结果留在页里，不是一闪而过的 Toast
+        "var exporting by remember { mutableStateOf(false) }",
+        "enabled = expCount > 0 && !exporting",
+        'if (exporting) "正在导出…" else "导出全部"',
+        "exportResult = msg",
+        "if (exportResult.isNotEmpty()) {",
     ],
     "manifest": [
         'android.permission.POST_NOTIFICATIONS',
@@ -253,6 +265,12 @@ def selftest():
          "takePersistableUriPermission(uri, flags)", ""),
         ("按书收集成品被摘", "export",
          "AudioLibrary.playableItems(c, b.id)", ""),
+        ("整本成品又进导出", "export", "if (items.isEmpty()) continue",
+         'if (items.isEmpty()) { val whole = AudioLibrary.list(c).firstOrNull(); if (whole != null) out += Item(dir, "整本.wav", whole.file); continue }'),
+        ("同名文件幂等被摘", "export",
+         "findChildFile(r, t, parent, it.name)", "null"),
+        ("重做后不重写", "export",
+         "DocumentsContract.deleteDocument(r, existing.first)", ""),
         ("失效文件跳过被摘", "export",
          "if (!it.file.isFile) { skipped++; continue }", ""),
         ("安全化被摘", "export",
@@ -269,6 +287,9 @@ def selftest():
         ("内部路径教程回潮", "main", '"导出位置"',
          '"导出位置；内部暂存路径不开放修改"'),
         ("导出动作被摘", "main", "AudioExport.exportAll(c, tree)", ""),
+        ("导出中可重复点", "main",
+         "enabled = expCount > 0 && !exporting", "enabled = expCount > 0"),
+        ("结果只剩 Toast", "main", "exportResult = msg", ""),
         ("IO 切换被摘", "main",
          "withContext(Dispatchers.IO) { AudioExport.collect(c).size }", ""),
         ("没选位置提示被摘", "main", "先点「选择」挑一个文件夹", ""),
@@ -276,9 +297,13 @@ def selftest():
         ("现行清单漏 r156", "r135", '"r156_verify.py"', ""),
     ]
     bad = 0
+    # R268 · 同名探测串在 findChildDir / findChildFile 里各一处，
+    # 只摘第一处判据仍成立、注入会漏放，须全量替换。
+    FULL = {"同名目录复用被摘"}
     for name, key, needle, repl in cuts:
         x = dict(f)
-        x[key] = f[key].replace(needle, repl, 1)
+        x[key] = (f[key].replace(needle, repl) if name in FULL
+                  else f[key].replace(needle, repl, 1))
         if not check(x):
             bad += 1
             print("  反向注入漏放:", name)

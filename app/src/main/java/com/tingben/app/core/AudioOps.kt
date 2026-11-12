@@ -110,17 +110,22 @@ object AudioOps {
     /**
      * R243 · 章节成品补齐：制作收尾与目录页回溯共用这一处，别再各写一套。
      * 旧行为只在整本跑完那一刻拼一次，装新版前已合成好的小段永远长不出
-     * 章节成品；这里按章补，audioFor 已有的跳过，避免每次续跑重复登记一份。
+     * 章节成品；这里按章补，**只看真章级成品**（R265），整本成品登记覆盖了
+     * 全部章但不能算「这章已拼」——否则整本一收尾，338 章的补拼全被跳过。
      * 缺块章跳过（用户删掉的段由调用方排除，不在这里猜）。
      */
     fun ensureChapterAudios(c: Context, bookId: String, bookTitle: String,
                             byChapter: Map<Int, List<File>>,
-                            gapMs: Int = 0, declickMs: Int = 30): Pair<Int, Int> {
-        if (!Prefs.autoMergeChapter(c)) return 0 to 0
+                            gapMs: Int = 0, declickMs: Int = 30,
+                            force: Boolean = false): Pair<Int, Int> {
+        // R272 · 收尾必须无条件拼章：整本大文件已不再生成，章成品是唯一成品形态，
+        // 拼好才清中间小块。开关只管「目录页回溯补齐」要不要自动做，
+        // 不能让一次正常制作跑完却一个可播文件都没有。
+        if (!force && !Prefs.autoMergeChapter(c)) return 0 to 0
         var made = 0
         var skipped = 0
         for ((ci, parts) in byChapter) {
-            if (AudioLibrary.audioFor(c, bookId, ci) != null) { skipped++; continue }
+            if (AudioLibrary.hasChapterAudio(c, bookId, ci)) { skipped++; continue }
             if (parts.isEmpty() || parts.any { !it.isFile || it.length() <= 44L }) {
                 skipped++; continue
             }

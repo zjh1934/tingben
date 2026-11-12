@@ -69,7 +69,10 @@ POS = {
         'val already = wav.exists() && wav.length() > 44',
         "val skip = (covered || already) && !redoSeg",
         'EventLog.log(EventLog.Kind.PIPELINE, "TTS_SKIP"',
-        '"段 ${i + 1}/${toSpeak.size} 已有音频，跳过"',
+        # R278 · 逐条「已有音频，跳过」刷屏改按窗口汇总，守恒信息一条不少
+        '"跳过 $n 段已有音频',
+        "if (skipWav + skipChapter >= 500) flushSkip()",
+        "try { flushSkip() } catch (_: Throwable) { }",
         "var lastParams: SynthInput.Params? = null",
         "SynthInput.params(c, built.first, style), Prefs.ttsKnobs(c)",
         "if (skip) {",
@@ -114,6 +117,10 @@ BAN = {
     "export": [
         # 旧行为：所有书平铺、文件名里塞书名
         '"%s_第%02d章.wav".format(safeName(b.title), ch + 1)',
+    ],
+    "pipe": [
+        # R278 · 续跑时逐段写盘，1.1.31 实测把详细日志撑到 1MB
+        '"段 ${i + 1}/${toSpeak.size} 已有音频，跳过"',
     ],
 }
 
@@ -320,6 +327,7 @@ def selftest():
          "TextSplitter.split(text)"),
         ("skip 判定被摘", "pipe", "val skip = (covered || already) && !redoSeg", ""),
         ("TTS_SKIP 被摘", "pipe", '"TTS_SKIP"', '"TTS_INPUT"'),
+        ("跳过汇总被摘", "pipe", '"跳过 $n 段已有音频', '"段 1 已有音频"'),
         ("日志又打回跳过段", "pipe",
          "ProduceService.touch(c.applicationContext,", ""),
         ("可空参数兜底被摘", "pipe",
@@ -352,9 +360,14 @@ def selftest():
         ("现行清单漏 r157", "r135", '"r157_verify.py"', ""),
     ]
     bad = 0
+    # R268 · 同名探测串在目录层与文件层各一处，只摘第一处判据仍成立
+    # R278 · TTS_SKIP 有「逐条 dropped」与「窗口汇总」两处，只摘第一处
+    # 会漏掉另一处、判据仍绿，必须全量替换才算「机制被摘」。
+    FULL = {"同名目录复用被摘", "TTS_SKIP 被摘"}
     for name, key, needle, repl in cuts:
         x = dict(f)
-        x[key] = f[key].replace(needle, repl, 1)
+        x[key] = (f[key].replace(needle, repl) if name in FULL
+                  else f[key].replace(needle, repl, 1))
         if not check(x):
             bad += 1
             print("  反向注入漏放:", name)

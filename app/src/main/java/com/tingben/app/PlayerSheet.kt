@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -193,7 +195,17 @@ internal fun PlayerSheet(
     Column(Modifier.fillMaxSize().background(palette.bg)
         .statusBarsPadding().navigationBarsPadding()) {
 
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+        // R272 · 音乐播放器式：拖顶部这一行下滑收起。手势只挂在把手行，
+        // 不铺满全屏，避免与选章列表滚动 / 进度条拖拽抢事件；点 ‹ 关闭照旧。
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)
+            .pointerInput(Unit) {
+                var acc = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { acc = 0f },
+                    onDragEnd = { if (acc > 55f) onClose(); acc = 0f },
+                    onVerticalDrag = { _, dy -> if (dy > 0) acc += dy }
+                )
+            },
             verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) {
                 IconChevronDown(palette.primary, Modifier.size(24.dp))
@@ -219,7 +231,12 @@ internal fun PlayerSheet(
                 Text("暂无可播章节", fontSize = 13.sp,
                     color = palette.sub, modifier = Modifier.padding(horizontal = 20.dp))
             } else {
-                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                // R285 · 选章列表与下方主控制行 / 功能行同在一个 Column：
+                // weight(1f) 已保证不被挤掉，再留 8dp 尾部余量，最后一章不贴控制行。
+                LazyColumn(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 8.dp)
+                ) {
                     items(list) { (idx, a) ->
                         Row(Modifier.fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 3.dp)
@@ -231,7 +248,8 @@ internal fun PlayerSheet(
                                     st.queueId.length > 8) st.queueId
                                 else "chapter:" + bookId.orEmpty()
                                 PlayQueue.setTracks(list.map { (j, x) ->
-                                    Track(x.file, "${x.title} · 第 ${j + 1} 章",
+                                    Track(x.file, "${x.title} · 第 ${j + 1} 章" +
+                                        (if (AudioLibrary.isWholeBook(x) && x.chapters.size > 1) "（从整本开头播）" else ""),
                                         AudioLibrary.chapterStartMs(c, x, j),
                                         id = "chapter:${x.file.absolutePath}")
                                 }, q)

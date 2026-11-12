@@ -57,21 +57,23 @@ def check(f):
         if k not in hb: e.append("章内段号缺: " + k[:56])
     if 'Text("${sg.index + 1}"' in hb:
         e.append("又显示整本连续大段号")
-    # ③ 空章不展开 / 零留白
-    for k in ["val generated = segsHere.any { it.hasAudio }",
-              "val making = (bookRunning &&",
-              "if (generated || making) {",
-              "Column(Modifier.fillMaxWidth().background(HubSoft)) {",
+    # ③ R264 · 制作中的章恒定展开，不再有「展开/收起」；小块区只在 bookRunning 渲染
+    for k in ["val liveChapter: Int? = if (bookRunning) makingChapter else null",
+              "val bookRunning = st.running && task?.bookId == book.id",
+              "if (r.index == liveChapter) {",
+              "Box(Modifier.fillMaxWidth().background(HubSoft)) {",
               "top = 0.dp, bottom = 2.dp"]:
-        if k not in hb: e.append("展开/留白缺: " + k[:56])
-    if "val hasSegs = map != null" in hb:
-        e.append("旧判据回潮：拿全局切分计划判有段，点谁都展开")
+        if k not in hb: e.append("恒定展开/零留白缺: " + k[:56])
+    for k in ["val generated = segsHere.any { it.hasAudio }",
+              "if (generated || making) {", "val hasSegs = map != null"]:
+        if k in hb: e.append("R264 旧展开形态回潮: " + k[:56])
     # ④ 登记
     if "python3 scripts/r220_verify.py --selftest" not in f["ci"]:
         e.append("CI 漏挂 r220")
     if '"r220_verify.py"' not in f["r135"]:
         e.append("现行清单漏登记 r220")
-    if "r220_verify.py" not in f["config"]:
+    from r45_common import scope_indexed
+    if not scope_indexed(f["config"], "scripts/r220_verify.py"):
         e.append("新守门没登记进受管根")
     return e
 
@@ -94,19 +96,25 @@ def selftest():
         ("又显示大段号", "hub", 'Text("${sg.index - base + 1}"',
          'Text("${sg.index + 1}"'),
         ("网格没接 base", "hub", "row = row, pq = pqSeg, base = chapterBase,", ""),
-        ("空章又展开", "hub", "if (generated || making) {", "if (true) {"),
-        ("旧判据回潮", "hub", "val generated = segsHere.any { it.hasAudio }",
-         "val hasSegs = map != null"),
+        ("制作外仍渲染小块区", "hub",
+         "val liveChapter: Int? = if (bookRunning) makingChapter else null",
+         "val liveChapter: Int? = makingChapter"),
+        ("旧展开形态回潮", "hub", "if (r.index == liveChapter) {",
+         "if (generated || making) { if (r.index == liveChapter) {"),
         ("顶部又留白", "hub", "top = 0.dp, bottom = 2.dp",
          "vertical = 8.dp"),
-        ("展开底色被摘", "hub", "Column(Modifier.fillMaxWidth().background(HubSoft)) {",
+        ("展开底色被摘", "hub", "Box(Modifier.fillMaxWidth().background(HubSoft)) {",
          "Column(Modifier.fillMaxWidth()) {"),
         ("CI 漏挂", "ci", "python3 scripts/r220_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r220_verify.py"', ""),
     ]
     bad = 0
     for name, key, needle, repl in cuts:
-        g = dict(f); g[key] = f[key].replace(needle, repl, 1)
+        g = dict(f)
+        # R287 · 展开底色在 head item 与每行 item 各出现一次，只摘第一处
+        # 另一处仍能让检查通过 → 必须全量替换，注入才真的生效。
+        g[key] = (f[key].replace(needle, repl) if name == "展开底色被摘"
+                  else f[key].replace(needle, repl, 1))
         if check(g): print("  反向注入 %-22s 拦下" % name)
         else: print("  反向注入漏放:", name); bad += 1
     print("反向注入 %d/%d 全拦下" % (len(cuts) - bad, len(cuts)))

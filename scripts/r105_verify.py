@@ -63,7 +63,8 @@ errs += check(trial, 'trial', [
     'trialJob?.cancel()',
     # R215 · 合成主体搬到 ClipSynth，协程取消检查从 ensureActive()
     # 变成 cancelled() 回调；真源仍在本视图里，判据不放宽，只换符号。
-    'ClipSynth.synthesize(c, text, out, label)',
+    'ClipSynth.synthesize(c, text, out, label,',
+    'cancelled = { myToken != trialToken || !isActive }',
     'myToken != trialToken || !isActive',
     'if (cancelled())',
     'if (myToken != trialToken || !isActive) return@withContext',

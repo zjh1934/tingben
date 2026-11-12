@@ -53,7 +53,11 @@ def check(f):
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r248_verify.py"),
                               ("清单", f["r135"], '"r248_verify.py"'),
                               ("受管根", f["config"], '"r248_verify.py"')]:
-        if needle not in src: e.append(name + " 漏登记 r248")
+        if name == "受管根":
+            from r45_common import scope_indexed
+            if not scope_indexed(f["config"], "scripts/r248_verify.py"):
+                e.append(name + " 漏登记 r248")
+        elif needle not in src: e.append(name + " 漏登记 r248")
     if f["ci"].count("r248_verify.py") < 2:
         e.append("CI 正向/反向没挂全")
     return e
@@ -84,7 +88,7 @@ def selftest():
         ("attach 不建会话", "queue", "PlaySession.ensure(ctx)", ""),
         ("CI 漏挂", "ci", "python3 scripts/r248_verify.py\n", ""),
         ("清单漏登记", "r135", '"r248_verify.py"', ""),
-        ("受管根漏登记", "config", '"r248_verify.py"', ""),
+        ("受管范围兜底被摘", "config", '"pattern": "**"', '"pattern": "none/**"'),
     ]
     bad = 0
     for name, key, needle, repl in cuts:

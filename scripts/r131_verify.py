@@ -47,7 +47,7 @@ POS = {
         "onResumeTask: () -> Unit = {}",
         "private fun ChapterRow(",
         "LaunchedEffect(showResplit, book.id, planTick)",
-        "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
+        "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
         "onLong = { menuChapter = r.index },",
         "item(key = \"ch_${r.index}\")",
         "继续队列",

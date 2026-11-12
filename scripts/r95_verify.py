@@ -16,6 +16,9 @@ FILES = {
     "reading": ROOT / "app/src/main/java/com/tingben/app/core/ReadingState.kt",
     "hub": ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt",
     "pipe": core_sources.source(ROOT),
+    # R282 · R272 把逐章 register 从 Pipeline 合并视图搬进了 AudioOps.kt，
+    # 守恒锚跟着换文件查，不删判据、不放宽口径。
+    "ops": ROOT / "app/src/main/java/com/tingben/app/core/AudioOps.kt",
     "main": ui_sources.source(ROOT),
     "chrome": ROOT / "app/src/main/java/com/tingben/app/AppChrome.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
@@ -54,9 +57,10 @@ POS = {
         'STORAGE_PARTIAL',
         'STORAGE_PARTIAL_STOP',
         '清出空间后点「继续制作」',
-        'val finalBytes = wavs.sumOf { it.length() } + 16L * 1024 * 1024',
-        'if (finalBytes > outFile.parentFile!!.usableSpace)',
-        'WavMerger.merge(wavs, outFile, config.gapMs)',
+        # R272 · 整本大文件不再生成：收尾只按章拼（force 强制），不预留整本空间
+        'val merged = if (c != null) AudioOps.ensureChapterAudios(',
+        'gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)',
+        'chapters=${merged.first} skipped=${merged.second}',
         'for ((i, a) in toSpeak.withIndex())',
     ],
     "ci": ['scripts/r95_verify.py', 'scripts/r95_space_parity.py'],
@@ -72,8 +76,11 @@ BAN = {
 KEEP = {
     "chrome": ['internal fun AppDrawerSheet(', 'private fun GearIcon('],
     "main": ['SETTINGS, MODELS, CHAPTERS }', 'commitAll()'],
-    "pipe": ['AudioLibrary.register(c, book.id, book.title', 'TaskResume.save(c, done)',
+    # R272 · 整本登记已删，守恒锚改到逐章登记（mergeChapterAuto）
+    # R282 · 逐章登记在 AudioOps.kt，不在 Pipeline 合并视图里；查对了才守得住
+    "pipe": ['TaskResume.save(c, done)',
              'ProduceService.update', 'NativeEngine.ttsSynthesize('],
+    "ops": ['AudioLibrary.register(c, bookId, bookTitle, only = setOf(chapter),'],
 }
 
 OLD_WORDS = ['系统提示词', '数据标注', '语言模型', '导出日志', '标注进度']
@@ -99,8 +106,10 @@ def check(f):
     p = f['pipe']
     if p.find('if (estimateBytes > budgetBytes)') > p.find('for ((i, a) in toSpeak.withIndex())'):
         e.append('预检写在合成循环之后，等于没拦住')
-    if p.find('if (finalBytes > outFile.parentFile!!.usableSpace)') > p.find('val ok = WavMerger.merge'):
-        e.append('合并预检写在 merge 之后，等于没拦住')
+    # R272 · 整本级合并/预检整条删除，回潮即红
+    for s in ['val finalBytes = wavs.sumOf', 'WavMerger.merge(wavs, outFile, config.gapMs)',
+              'AudioLibrary.bookWholeFile(', 'AudioLibrary.scopeFile(']:
+        if s in p: e.append('收尾又拼整本大文件: ' + s[:48])
     return e
 
 def load():
@@ -129,11 +138,14 @@ if __name__ == '__main__':
             ('看书页不落盘', 'hub', lambda t: t.replace('ReadingState.save(c, book.id, i, p, off)', '// x')),
             ('退回无 state 列表', 'hub', lambda t: t.replace('LazyColumn(state = listState,', 'LazyColumn(')),
             ('删合成前预检', 'pipe', lambda t: t.replace('if (estimateBytes > budgetBytes)', 'if (false)')),
-            ('删合并前预检', 'pipe', lambda t: t.replace('if (finalBytes > outFile.parentFile!!.usableSpace)', 'if (false)')),
+            ('收尾不强制按章拼', 'pipe', lambda t: t.replace('force = true)', 'force = false)')),
             ('空间提示塌回笼统', 'pipe', lambda t: t.replace('清出空间后点「继续制作」', '没能生成音频')),
             ('CI 摘验证', 'ci', lambda t: t.replace('scripts/r95_verify.py', 'x.py')),
             ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r95_space_parity.py', 'x.py')),
             ('守恒破坏·壳层', 'chrome', lambda t: t.replace('private fun GearIcon(', 'private fun BrokenGear(')),
+            # R282 · 逐章登记被摘也必须红，守恒判据跟着新文件一起验
+            ('逐章登记被摘', 'ops', lambda t: t.replace(
+                'AudioLibrary.register(c, bookId, bookTitle, only = setOf(chapter),', '// x')),
         ]
         bad = 0
         for name, key, mut in cases:

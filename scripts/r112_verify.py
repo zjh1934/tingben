@@ -12,7 +12,7 @@ POS = [
     "LaunchedEffect(book.id, refresh, diskKey, localTick) {",
     "if (disk != null) delay(350)",
     "disk = withContext(Dispatchers.IO) {",
-    "AudioLibrary.latestByChapter(c, book.id) to AudioLibrary.playableChapters(c, book.id)",
+    "AudioLibrary.chapterSnapshot(c, book.id)",
     "val ui by remember(chapters, disk, task)",
     "derivedStateOf",
     "st.chapterProgress",
@@ -77,6 +77,10 @@ def main():
                  "disk = run {"))),
             ("丢掉逐章进度源",
              lambda t: dict(t, hub=t["hub"].replace("st.chapterProgress", "emptyMap()"))),
+            ("章快照退回双次全盘扫描",
+             lambda t: dict(t, hub=t["hub"].replace(
+                 "AudioLibrary.chapterSnapshot(c, book.id)",
+                 "AudioLibrary.latestByChapter(c, book.id) to AudioLibrary.playableChapters(c, book.id)"))),
             ("看书页退回组合期同步读整本",
              lambda t: dict(t, hub=t["hub"].replace(
                  'var text by remember(book) { mutableStateOf<String?>(null) }',

@@ -72,13 +72,16 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     LaunchedEffect(refresh, books) {
         val (reads, prog) = withContext(Dispatchers.IO) {
             val reads = ReadingState.allLast(c)
+            // R287 · 原来每本书各调一次 playableChapters → 每本都全盘扫一遍
+            // index.json + 成品目录 + 伴生 meta。改成一次 list() 按书分组统计。
+            val counts = try {
+                AudioLibrary.playableCountByBook(c)
+            } catch (_: Throwable) { emptyMap() }
             val prog = books.associate { b ->
                 val total = try {
                     ChapterPlan.resolve(c, b).first.size
                 } catch (_: Throwable) { 0 }
-                val done = try {
-                    AudioLibrary.playableChapters(c, b.id).size
-                } catch (_: Throwable) { 0 }
+                val done = counts[b.id] ?: 0
                 b.id to Pair(done.coerceAtMost(maxOf(total, 0)), total)
             }
             reads to prog

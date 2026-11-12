@@ -9,7 +9,8 @@
 
 这里把判据收敛成「一本书一个主页，能力还在不在」：
   · 单列：三列/分页/列跳转零回潮
-  · 章行：点进阅读、长按进多选、勾选框只在多选态、听/展开两枚图标（R171 撤三点）
+  · 章行：看原文/听成品两枚图标（R171 撤三点）、长按进多选、勾选框只在多选态
+  · R264：制作中的那一章恒定展开，展开/收起状态与控件零回潮
   · 章级：拼整章 / 另存 WAV / 转 M4A / 删音频（删列不丢能力）
   · 小片：固定 10 列（整块居中 / 行内左对齐）、惰性行、点播再点停、长按多选、批量试听与删除
   · 顶部：双进度、停止/继续、可播汇总、顺序播放、队列就地管理
@@ -27,8 +28,10 @@ HUB_POS = [
     "internal fun ChapterHubScreen(",
     "private fun ChapterRow(",
     "private fun HeadphoneIcon(",
-    "private fun ChevronIcon(",
     "private fun SegGridHead(",
+    # R264 · 制作中的那一章自动展开，没有展开/收起状态与切换箭头
+    "val liveChapter: Int? = if (bookRunning) makingChapter else null",
+    "if (r.index == liveChapter) {",
     "private fun ChapterSegGrid(",
     # 章行：默认点进阅读、长按进多选；R171 起常态只有听 / 展开两枚图标
     "onRead = { openReader(r.index) }",
@@ -54,7 +57,7 @@ HUB_POS = [
     "srcOf(i: Int): File?",
     # 分段小片：固定 10 列（整块居中 / 行内左对齐）+ 惰性行 + 点播暂停 + 长按多选
     "internal const val SEG_GRID_COLUMNS = 10",
-    "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
+    "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
     "BoxWithConstraints(",
     "contentAlignment = Alignment.Center",
     "repeat(SEG_GRID_COLUMNS)",
@@ -92,13 +95,20 @@ HUB_POS = [
     "Workbench.segments(c, t) to Workbench.segChapters(c, t)",
     "SelectionContainer",
     'EventLog.ui("OPEN_READER"',
-    'EventLog.ui("HUB_CH_EXPAND"',
+    'item(key = "seg_head_${r.index}")',
     'EventLog.ui("SEG_TAP"',
     'EventLog.ui("RESPLIT_OPEN"',
 ]
 
 # ── 三列 / 分页 / 列跳转零回潮 ───────────────────────────────────────
 HUB_BAN = [
+    # R264 · 展开/收起整套旧形态不许回潮
+    "var expandedChapter",
+    "val willOpen =",
+    "HUB_CH_EXPAND",
+    "liveChapters",
+    "AnimatedVisibility(",
+    "private fun ChevronIcon(",
     # R243 · 费解的「继续队列」按钮不许回潮
     'Text("继续队列 ›"',
     "Producer.resumeQueue(c)",
@@ -226,7 +236,7 @@ def injections():
          lambda t: t.replace("contentAlignment = Alignment.Center",
                              "contentAlignment = Alignment.TopStart")),
         ("格子退回全量组合", "hub",
-         lambda t: t.replace("chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
+         lambda t: t.replace("items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
                              "items(listOf(chapterSegs),")),
         ("逐行居中回潮", "hub",
          lambda t: t.replace("repeat(SEG_GRID_COLUMNS)", "row.forEachIndexed { _, _ ->")),

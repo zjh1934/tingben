@@ -5,14 +5,10 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -147,12 +143,12 @@ private fun chapterStates(
  * 用户实证：17:18 一分钟内「章节 / 合成 / 可播」三列来回切十几次，
  * 「像在不同卡片里切来切去，不像在看一本有声书」。三列本质上是同一份
  * 章节数据的三种视图，硬拆成三页只会逼用户来回找。现在：
- *   · 点章名 = 进阅读（文本可复制），不再专门给「读」按钮
- *   · 右侧两枚图标：听本章 / 展开小片（R171 撤掉三点「更多」，选中一律长按）
+ *   · 右侧两枚图标：看原文 / 听成品（R171 撤掉三点「更多」，选中一律长按）
+ *   · R264 · 章名不再管展开/收起，制作中的那一章恒定展开小段区
  *   · 长按章行 = 进多选，勾选框**只在多选态出现**，平时不占位
  *     R171：勾选态里按返回键 / 点「取消」都退出勾选并留在目录页，
  *     不会一按返回就离开这本书；选空了底部条也还在，取消入口不消失
- *   · 展开的章就地铺小片格子，点一下播再点一下停，长按可批量删/试听
+ *   · 制作章就地铺小片格子，点一下播再点一下停，长按可批量删/试听
  *   · 整本与章进度、停止/继续、可播汇总、按顺序播放、任务队列全在顶部
  *   · 原第三列的「拼整章 / 另存 WAV / 转 M4A / 删章音频」搬进章级多选条，
  *     能力搬干净了才删列，不随列一起丢
@@ -205,10 +201,10 @@ internal fun ChapterHubScreen(
                 if (b == null) Triple(null, null, null) else {
                     val text = BookStore.read(c, b)
                     val s = ChapterPlan.resolve(c, b, text)
+                    // R287 · 一次扫描出章级成品与可播章集合，不再各扫一遍全盘。
+                    val snap = AudioLibrary.chapterSnapshot(c, b.id)
                     Triple(
-                        HubLoad(b, s.first,
-                            AudioLibrary.latestByChapter(c, b.id),
-                            AudioLibrary.playableChapters(c, b.id),
+                        HubLoad(b, s.first, snap.first, snap.second,
                             ReadingState.last(c, b.id)),
                         null,
                         ChapterPlan.frontMatter(text, s.first))
@@ -247,8 +243,10 @@ internal fun ChapterHubScreen(
     }
     LaunchedEffect(book.id, refresh, diskKey, localTick) {
         if (disk != null) delay(350)
+        // R287 · 原来两个查询各做一次全盘扫描（index.json + 所有成品目录 +
+        // 逐文件伴生 meta），制作中 stage 一变就双份 IO。合并成一次。
         disk = withContext(Dispatchers.IO) {
-            AudioLibrary.latestByChapter(c, book.id) to AudioLibrary.playableChapters(c, book.id)
+            AudioLibrary.chapterSnapshot(c, book.id)
         }
     }
     val ui by remember(chapters, disk, task) {
@@ -264,7 +262,16 @@ internal fun ChapterHubScreen(
     // R163 · 勾选框平时不渲染，长按 / 点三点才进多选态。
     var selected by rememberSaveable(book.id) { mutableStateOf<Set<Int>>(emptySet()) }
     var multiMode by remember(book.id) { mutableStateOf(false) }
-    var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }
+    // R264 · 制作中的那一章恒定展开：没有「展开/收起」状态、没有切换按钮、
+    // 也不再靠点章名开关。liveChapter 是派生值，收工即无展开体。
+    val bookRunning = st.running && task?.bookId == book.id
+    val makingChapter = remember(st.chapterProgress, task, ui.size) {
+        var idx = -1
+        for ((k, v) in st.chapterProgress) if (v < 1f && k > idx) idx = k
+        if (idx < 0) idx = task?.only?.maxOrNull() ?: 0
+        idx.coerceIn(0, (ui.size - 1).coerceAtLeast(0))
+    }
+    val liveChapter: Int? = if (bookRunning) makingChapter else null
     // R253 · 长按章行弹就地菜单（像桌面右键），与「勾选后进底部批量条」是两组操作。
     var menuChapter by remember(book.id) { mutableStateOf<Int?>(null) }
     var segMulti by remember(book.id) { mutableStateOf(false) }
@@ -281,20 +288,30 @@ internal fun ChapterHubScreen(
     // R219 · 点进度条滚到正在制作的那一章，不用一章章翻
     val chapterListState = rememberLazyListState()
 
-    // 一次读盘、书内共用同一份真值：按章展开的小段与整本分段计划同源。
-    var hubSegs by remember(book.id) { mutableStateOf(emptyList<SegRow>()) }
-    var hubSegChapters by remember(book.id) { mutableStateOf<Map<Int, Int>?>(null) }
+    // 一次读盘、书内共用同一份真值：按制作章过滤的小段与整本分段计划同源。
+    // R287 · 整本计划（2 万+ 段）只在切书 / 任务切换 / 显式刷新时读一次，并在
+    // IO 线程直接建好「按章索引」。原来这个 effect 把 st.done 当 key，制作中每
+    // 完成一段就重读 segmap、对 26678 个 wav 逐个 stat，组合层再全量 filter，
+    // 这是目录页乃至整个软件发卡的硬根因。
+    var hubByChapter by remember(book.id) {
+        mutableStateOf<Map<Int, List<SegRow>>>(emptyMap())
+    }
+    // R287 · 当前制作章的小段：每秒只 stat 几百个文件，有变化才写回，不空转重组。
+    var liveSegs by remember(book.id) { mutableStateOf(emptyList<SegRow>()) }
+    // 这份快照属于哪一章；切章时还没刷新到就先回退到按章索引，不串上一章的格子。
+    var liveSegsFor by remember(book.id) { mutableStateOf<Int?>(null) }
+    // R266 · 重做标记单独轻量观察：只秒读 redo.json（几 KB），不重扫 2 万段。
+    // 标记后转黄、Producer 清标记后转绿，都不必等整本做完或 stage 合并。
+    var redoKeys by remember(book.id) { mutableStateOf(emptySet<String>()) }
     val pqSeg by PlayQueue.previewState.collectAsState()
-    // R262 · 没展开任何章时不再每段完成都全量读一遍整本分段计划（2 万+ 段），
-    // 只在展开制作章时随进度刷；redo / 删段 / 拼章靠 localTick 显式刷一次。
-    LaunchedEffect(book.id, st.running, localTick, task?.bookId,
-        if (expandedChapter != null) st.done else 0) {
-        val (all, map) = withContext(Dispatchers.IO) {
+    LaunchedEffect(book.id, st.running, localTick, task?.bookId, liveChapter) {
+        hubByChapter = withContext(Dispatchers.IO) {
             val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
-            Workbench.segments(c, t) to Workbench.segChapters(c, t)
+            val all = Workbench.segments(c, t)
+            val m = Workbench.segChapters(c, t)
+            if (m == null) emptyMap()
+            else all.groupBy { m[it.index] ?: -1 }.filterKeys { it >= 0 }
         }
-        hubSegs = all
-        hubSegChapters = map
     }
     // R257 · 回溯补齐从 st.done 驱动里拆出来。1.1.30 真机日志：
     // CHAPTER_MERGE_ENSURE 共 50 次、全是「补拼 0 章 / 跳过 338 章」，且每段
@@ -323,11 +340,15 @@ internal fun ChapterHubScreen(
         // 拼出成品才刷一次磁盘快照，让小耳机当页就亮；无成品不空转。
         if (made > 0) localTick++
     }
-    val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters) {
-        val ch = expandedChapter
-        val map = hubSegChapters
-        if (ch == null || map == null) emptyList()
-        else hubSegs.filter { map[it.index] == ch }
+    // R287 · 组合层只处理当前章几百行，不再每次重组都 filter 26678 段。
+    val chapterSegs = remember(liveChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys) {
+        val ch = liveChapter
+        if (ch == null) emptyList()
+        else (liveSegs.takeIf { liveSegsFor == ch } ?: hubByChapter[ch] ?: emptyList())
+            .map { sg ->
+                sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys ||
+                    "block:${sg.block}" in redoKeys)
+            }
     }
     // R220 · 小段编号每章从 1 重新开始，不再接着前一章的一堆大数字。
     // 文件里的段号仍是整本连续的（续跑/拼接都靠它），只改显示。
@@ -335,9 +356,45 @@ internal fun ChapterHubScreen(
         chapterSegs.minOfOrNull { it.index } ?: 0
     }
     var beatTick by remember { mutableStateOf(0) }
-    LaunchedEffect(st.running) {
+    // R287 · 每秒除读 redo.json，只 stat 当前制作章的小段（几百个文件）。
+    // 整本 segmap 不重读、26678 次 stat 不再发生；只有格子转绿/切章才写回状态。
+    LaunchedEffect(book.id, st.running, localTick, liveChapter, hubByChapter) {
         if (!st.running) return@LaunchedEffect
-        while (true) { delay(1000); beatTick++ }
+        var lastFlags = emptyList<Boolean>()
+        var lastCh: Int? = null
+        while (true) {
+            delay(1000); beatTick++
+            val t = TaskResume.byBook(c, book.id)
+            val w = Workbench.workDir(c, t)
+            redoKeys = if (w == null) emptySet()
+            else withContext(Dispatchers.IO) { SegPlan.pending(w) }
+            val ch = liveChapter
+            val rows = if (ch == null) emptyList() else hubByChapter[ch] ?: emptyList()
+            val fresh = if (w == null || rows.isEmpty()) emptyList()
+            else withContext(Dispatchers.IO) {
+                rows.map { sg ->
+                    val f = File(w, sg.wavName)
+                    sg.copy(wav = f.takeIf { it.exists() && it.length() > 44 })
+                }
+            }
+            if (ch != null) {
+                val flags = fresh.map { it.wav != null }
+                if (flags != lastFlags || ch != lastCh) {
+                    liveSegs = fresh
+                    liveSegsFor = ch
+                    lastFlags = flags
+                    lastCh = ch
+                }
+            }
+        }
+    }
+    // 非制作时标记/清标记也要立刻反映（重做一轮走的就是这条路径）
+    LaunchedEffect(book.id, st.running, localTick) {
+        if (st.running) return@LaunchedEffect
+        val t = TaskResume.byBook(c, book.id)
+        val w = Workbench.workDir(c, t)
+        redoKeys = if (w == null) emptySet()
+        else withContext(Dispatchers.IO) { SegPlan.pending(w) }
     }
     val heartbeat = remember(beatTick, st.done) {
         val (act, _) = EventLog.lastEngine()
@@ -418,7 +475,9 @@ internal fun ChapterHubScreen(
         val q = "chapter:${book.id}"
         if (single) {
             val a = ui.getOrNull(i)?.audio ?: return
-            PlayQueue.setTracks(listOf(Track(a.file, "${book.title} · 第 ${i + 1} 章",
+            // R283 · 旧版整本成品兜底时没有伴生偏移表，起点只能从 0 起；标签明示，不假装精确
+            PlayQueue.setTracks(listOf(Track(a.file, "${book.title} · 第 ${i + 1} 章" +
+                (if (AudioLibrary.isWholeBook(a) && a.chapters.size > 1) "（从整本开头播）" else ""),
                 AudioLibrary.chapterStartMs(c, a, i),
                 id = "chapter:${a.file.absolutePath}")), q)
             PlayQueue.playFrom(0, id = q)
@@ -426,7 +485,8 @@ internal fun ChapterHubScreen(
             val list = AudioLibrary.playableItems(c, book.id)
             if (list.isEmpty()) return
             PlayQueue.setTracks(list.map { (idx, a) ->
-                Track(a.file, "${book.title} · 第 ${idx + 1} 章",
+                Track(a.file, "${book.title} · 第 ${idx + 1} 章" +
+                    (if (AudioLibrary.isWholeBook(a) && a.chapters.size > 1) "（从整本开头播）" else ""),
                     AudioLibrary.chapterStartMs(c, a, idx),
                     id = "chapter:${a.file.absolutePath}")
             }, q)
@@ -492,63 +552,65 @@ internal fun ChapterHubScreen(
     }
 
     val curRule = remember(book.id, planTick) { ChapterPlan.currentRuleId(c, book.id) }
-    val bookRunning = st.running && task?.bookId == book.id
     val stalledTask = !st.running && task?.bookId == book.id &&
         st.stage in listOf("没完成", "已停止", "出错了")
     val totalNow = maxOf(st.total, task?.total ?: 0)
     val doneNow = (if (bookRunning) st.done else (task?.done ?: 0))
         .coerceIn(0, maxOf(totalNow, 1))
     val bookPct = if (totalNow > 0) doneNow.toFloat() / totalNow.toFloat() else 0f
-    val chNow = expandedChapter
+    val chNow = liveChapter
     val chPct = if (chNow == null) 0f else
         (ui.getOrNull(chNow)?.synthesized
             ?: st.chapterProgress[chNow] ?: 0f).coerceIn(0f, 1f)
-    // R218 · 没展开任何章时，本章进度条取「正在做的最靠后一章」，不再因展开才出现
+    // R264 · 制作中本章进度条就取恒定展开的那一章；收工后取最靠后一章
     val chapterPctNow = if (chNow != null) chPct else run {
         var m = 0f
         for ((_, v) in st.chapterProgress) if (v > m) m = v
         m
     }
-    val showHead = bookRunning || stalledTask || chNow != null ||
+    val showHead = bookRunning || stalledTask ||
         (task?.bookId == book.id && st.stage == "完成")
-    // R219 · 正在做的那一章：章进度里最靠后且没做完的；没有就取选章范围
-    val makingChapter = remember(st.chapterProgress, task, ui.size) {
-        var idx = -1
-        for ((k, v) in st.chapterProgress) if (v < 1f && k > idx) idx = k
-        if (idx < 0) idx = task?.only?.maxOrNull() ?: 0
-        idx.coerceIn(0, (ui.size - 1).coerceAtLeast(0))
-    }
-    // R262 · 只有「正在合成」的章才有资格展开小段：章进度里跑着且没做完的，
-    // 加上进度条定位到的当前章。没在制作、或这章没在跑 → 点不开、不读盘、
-    // 不过滤整本分段计划，连展开体的 item 都不生成。
-    val liveChapters: Set<Int> = remember(st.chapterProgress, makingChapter, bookRunning) {
-        if (!bookRunning) emptySet()
-        else st.chapterProgress.filter { (_, v) -> v > 0f && v < 1f }.keys.toSet() + makingChapter
-    }
-    LaunchedEffect(bookRunning) { if (!bookRunning) expandedChapter = null }
     fun scrollToMaking() {
         resplitScope.launch {
             chapterListState.animateScrollToItem(makingChapter)
         }
     }
-    // R253 · 长按菜单「整章重做」：该章所有段标记重做、撤掉旧整章成品（否则
-    // ensureChapterAudios 会因 audioFor 非空跳过、小耳机还播旧的），再启动只做这章。
-    // 小块 WAV 不删：重做失败也能用「拼成整章」手动恢复。
+    /**
+     * R270 · 只给「整章重做」用：已拼好的章只有整章成品、小块早被清掉，
+     * 撤掉旧成品与 done 记录，主循环才会重新生成这一章的全部段。
+     * 不连文件一起删的话 `AudioLibrary.list()` 的兜底恢复扫描会把它重新登记回来，
+     * 补拼依旧跳过、小耳机仍播旧声音。整本成品 scope=整本，`chapterOnlyFor` 不会误删。
+     * 制作中的章没有章级成品，不走这里。
+     */
+    fun invalidateChapterAudio(ch: Int) {
+        AudioLibrary.chapterOnlyFor(c, book.id, ch)?.let { AudioLibrary.removeFile(c, it.file) }
+        AudioTree.clearDone(c, book.id, ch)
+        EventLog.ui("CH_AUDIO_INVALIDATE", "ch=$ch")
+    }
+
+    // R253 · 长按菜单「整章重做」：该章所有段标记重做、撤掉旧整章成品，再启动只做这章。
+    // R270 · 旧注释「小块 WAV 不删、失败可手动拼回」是 R255 之前的口径；
+    // 拼成整章后中间小块已清掉，重做就是重新生成全章，不存在留着的小块。
     fun redoWholeChapter(ch: Int) {
         val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
         val work = Workbench.workDir(c, t)
-        val map = hubSegChapters
-        val segsHere = if (map != null) hubSegs.filter { map[it.index] == ch } else emptyList()
+        // R287 · 按章索引直接取，不再在主线程 filter 整本 26678 段。
+        val segsHere = hubByChapter[ch] ?: emptyList()
         if (work == null || segsHere.isEmpty()) {
             Toast.makeText(c, "没找到这一章的制作记录", Toast.LENGTH_SHORT).show()
             return
         }
-        AudioLibrary.audioFor(c, book.id, ch)?.let { AudioLibrary.removeFile(c, it.file) }
+        // R270 · 只撤「已拼好的章」的旧成品；制作中的章没有成品，不走这条。
+        invalidateChapterAudio(ch)
         segsHere.forEach { SegPlan.markSeg(work, it.index) }
-        Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))
-        EventLog.ui("CH_REDO", "ch=$ch n=${segsHere.size}")
+        // R266 · 制作中同样只标记，让主循环逐段回头重做；排整章任务进队列会等整本跑完。
+        val busyHere = Producer.isBusy()
+        if (!busyHere) Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))
+        EventLog.ui("CH_REDO", "ch=$ch n=${segsHere.size} running=$busyHere")
         localTick++
-        Toast.makeText(c, "第 ${ch + 1} 章已排重做，按当前调音台重新合成",
+        Toast.makeText(c, if (busyHere)
+            "第 ${ch + 1} 章已标记重做：当前这段做完就逐段接上"
+        else "第 ${ch + 1} 章已排重做，按当前调音台重新合成",
             Toast.LENGTH_LONG).show()
     }
     val finishedChapters = ui.count { it.playable || it.audio != null }
@@ -644,30 +706,8 @@ internal fun ChapterHubScreen(
                     item(key = "ch_${r.index}") {
                         ChapterRow(
                             r = r, multi = multiMode, checked = r.index in selected,
-                            // R218 · 点章名 = 展开小段；看书交给右侧小眼睛
-                            onTap = {
-                                // R262 · 没在合成的章点了就是没反应：直接收起，
-                                // 连整本分段计划的 filter 都不跑（2 万+ 段不用算）。
-                                if (!bookRunning || r.index !in liveChapters) {
-                                    expandedChapter = null
-                                } else {
-                                    val map = hubSegChapters
-                                    val segsHere = if (map != null)
-                                        hubSegs.filter { map[it.index] == r.index }
-                                    else emptyList()
-                                    val generated = segsHere.any { it.hasAudio }
-                                    val making = (bookRunning &&
-                                        (task?.only?.contains(r.index) != false)) ||
-                                        ((st.chapterProgress[r.index] ?: 0f) > 0f)
-                                    if (generated || making) {
-                                        val willOpen = expandedChapter != r.index
-                                        expandedChapter = if (willOpen) r.index else null
-                                        EventLog.ui("HUB_CH_EXPAND",
-                                            "ch=${r.index} open=$willOpen",
-                                            mapOf("book" to book.id))
-                                    }
-                                }
-                            },
+                            // R264 · 章名不再承担展开/收起：制作中的那一章自动展开，
+                            // 看书交给右侧小眼睛，章行只保留长按菜单。
                             onLong = { menuChapter = r.index },
                             onToggle = { i ->
                                 val on = i !in selected
@@ -687,17 +727,11 @@ internal fun ChapterHubScreen(
                             onMenuRedo = { redoWholeChapter(r.index) },
                             canRedo = r.audio != null || r.playable)
                     }
-                    // R262 · 没在合成的章连这个 item 都不生成：不组合、不渲染、不计算。
-                    if (r.index == expandedChapter && r.index in liveChapters) {
-                    // R218 · 展开收进同一个 item 用 AnimatedVisibility 进出，
-                    // 不再整块突然插进来；两条进度条已常驻，不会「从上面弹出来」。
-                    item(key = "seg_body_${r.index}") {
-                        AnimatedVisibility(
-                            visible = expandedChapter == r.index,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut()
-                        ) {
-                            Column(Modifier.fillMaxWidth().background(HubSoft)) {
+                    // R264 · 只给制作中的那一章生成小段区，恒定展开、无收起入口；
+                    // 没在制作的章连 item 都不生成：不组合、不渲染、不计算。
+                    if (r.index == liveChapter) {
+                    item(key = "seg_head_${r.index}") {
+                        Box(Modifier.fillMaxWidth().background(HubSoft)) {
                                 SegGridHead(chapterSegs, segMulti, segChecked.size,
                                     onRedo = {
                                         val rows = chapterSegs.filter {
@@ -706,7 +740,7 @@ internal fun ChapterHubScreen(
                                         val t = task?.takeIf { it.bookId == book.id }
                                             ?: TaskResume.byBook(c, book.id)
                                         val work = Workbench.workDir(c, t)
-                                        val ch = expandedChapter
+                                        val ch = liveChapter
                                         when {
                                             rows.isEmpty() -> Toast.makeText(c,
                                                 "先勾几个已生成的小块",
@@ -715,22 +749,26 @@ internal fun ChapterHubScreen(
                                                 "没找到这本书的制作记录",
                                                 Toast.LENGTH_SHORT).show()
                                             else -> {
-                                                // R253 · 不再在制作中一口拒绝。标记即排队：
-                                                // 没在跑 → 立刻开一轮；正在跑 → enqueueOrStart
-                                                // 把重做任务排进队列，当前这段读完由队列泵
-                                                // 自动接上，绝不算断正在合成的段。
+                                                // R266 · 制作中绝不再排「整章新任务」进队列：
+                                                // 那样得等整本跑完才轮到，当前任务一停队列
+                                                // 还会永久暂停，看着就像这一章不做了。只标记，
+                                                // 由 Producer 主循环在当前段收尾后就地回头重做。
+                                                val busyHere = Producer.isBusy()
+                                                // R270 · 小块只存在于制作中这一章，此时还没有章级成品，
+                                                // 没有任何「旧成品」要撤。拼章后小块会被清掉，
+                                                // 已合成的章根本没有小块可操作（要动走整章重做）。
                                                 rows.forEach { SegPlan.markSeg(work, it.index) }
                                                 EventLog.ui("SEG_REDO",
-                                                    "n=${rows.size} running=${st.running}")
+                                                    "n=${rows.size} running=$busyHere")
                                                 exitSegMulti()
-                                                if (ch != null) {
+                                                if (!busyHere && ch != null) {
                                                     Producer.enqueueOrStart(c, book, setOf(ch),
                                                         null, Prefs.defaultPerf(c))
                                                 }
                                                 localTick++   // 立刻重读 redo.json，格子转琥珀
                                                 Toast.makeText(c,
-                                                    if (st.running)
-                                                        "已标记 ${rows.size} 段（格子转黄）：当前这段读完自动接重做"
+                                                    if (busyHere)
+                                                        "已标记 ${rows.size} 段（格子转黄）：当前这段做完马上重做，做完变回绿色"
                                                     else
                                                         "已标记 ${rows.size} 段，按当前调音台重新合成",
                                                     Toast.LENGTH_LONG).show()
@@ -773,18 +811,22 @@ internal fun ChapterHubScreen(
                                             exitSegMulti()
                                         }
                                     })
-                                chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->
-                                    ChapterSegGrid(
-                                        row = row, pq = pqSeg, base = chapterBase,
-                                        multi = segMulti, checked = segChecked,
-                                        onLong = { i -> segMulti = true; segChecked = setOf(i) },
-                                        onToggle = { i ->
-                                            segChecked = if (i in segChecked) segChecked - i
-                                                        else segChecked + i
-                                        },
-                                        onTap = { sg -> tapSeg(sg) })
-                                }
-                            }
+                        }
+                    }
+                    // R287 · 恢复 R155「按行拆成父列表独立 item」：R264 曾把几百行
+                    // 格子塞进一个 item 全量组合，长章滚动/每次刷新都必卡。
+                    items(chapterSegs.chunked(SEG_GRID_COLUMNS),
+                        key = { row -> "seg_row_${r.index}_${row.first().index}" }) { row ->
+                        Box(Modifier.fillMaxWidth().background(HubSoft)) {
+                            ChapterSegGrid(
+                                row = row, pq = pqSeg, base = chapterBase,
+                                multi = segMulti, checked = segChecked,
+                                onLong = { i -> segMulti = true; segChecked = setOf(i) },
+                                onToggle = { i ->
+                                    segChecked = if (i in segChecked) segChecked - i
+                                                else segChecked + i
+                                },
+                                onTap = { sg -> tapSeg(sg) })
                         }
                     }
                     }
@@ -1054,13 +1096,14 @@ internal fun ChapterHubScreen(
 
 /**
  * R219 · 章名左边常驻一枚勾（点勾即选中、不再靠长按进多选），
- * 右边只留小眼睛（看原文）/ 小耳机（听成品）；点章名展开小段。
+ * 右边只留小眼睛（看原文）/ 小耳机（听成品）。
+ * R264 · 制作中的那一章自动展开小段区，章名不再管展开/收起，只保留长按菜单。
  * 章名下一根细进度条直接表达合成进度。
  */
 @Composable
 private fun ChapterRow(
     r: ChapterUi, multi: Boolean, checked: Boolean,
-    onTap: () -> Unit, onLong: () -> Unit, onToggle: (Int) -> Unit,
+    onLong: () -> Unit, onToggle: (Int) -> Unit,
     onRead: () -> Unit, onListen: () -> Unit,
     menuExpanded: Boolean, onDismissMenu: () -> Unit, onMenuSelect: () -> Unit,
     onMenuRedo: () -> Unit, canRedo: Boolean
@@ -1071,8 +1114,8 @@ private fun ChapterRow(
         Row(
             Modifier.fillMaxWidth().height(52.dp)
                 .pointerInput(r.index, multi, checked) {
-                    // detectTapGestures 的回调签名带 Offset，不能直接传 () -> Unit
-                    detectTapGestures(onLongPress = { onLong() }, onTap = { onTap() })
+                    // R264 · 只留长按菜单，点章名不再切换展开/收起
+                    detectTapGestures(onLongPress = { onLong() })
                 }
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -1156,28 +1199,13 @@ private fun HeadphoneIcon(tint: Color) {
     }
 }
 
-/** 代码绘制的下三角：展开 / 收起本章小片。 */
-@Composable
-private fun ChevronIcon(tint: Color, up: Boolean) {
-    Canvas(modifier = Modifier.size(16.dp)) {
-        val w = size.width; val h = size.height
-        val s = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-        val y1 = if (up) h * 0.62f else h * 0.38f
-        val y2 = if (up) h * 0.38f else h * 0.62f
-        val p = Path().apply {
-            moveTo(w * 0.22f, y1); lineTo(w * 0.5f, y2); lineTo(w * 0.78f, y1)
-        }
-        drawPath(p, color = tint, style = s)
-    }
-}
-
-/** 展开章的小片头部：状态 + 分段多选操作，不写教程。 */
+/** R264 · 制作章的小片头部：状态 + 分段多选操作，不写教程。 */
 @Composable
 private fun SegGridHead(
     segs: List<SegRow>, multi: Boolean, picked: Int,
     onAll: () -> Unit, onTrial: () -> Unit, onRedo: () -> Unit, onDelete: () -> Unit
 ) {
-    // R219 · 非多选态整块不渲染，展开后顶部不再留一块空白
+    // R219 · 非多选态整块不渲染，小片区顶部不再留一块空白
     if (!multi) return
     Column(Modifier.fillMaxWidth().background(HubSoft)
         .padding(horizontal = 16.dp, vertical = 2.dp)) {
@@ -1268,7 +1296,7 @@ private fun ChapterSegGrid(
 }
 
 // 代码绘制的三点操作图标（R132 引入，R171 起不再使用）：
-// 章行选中一律长按，右侧只留听与展开两枚图标；这行留作格子行的分段标记。
+// 章行选中一律长按，右侧只留看原文 / 听成品两枚图标；这行留作格子行的分段标记。
 
 @Composable
 private fun HubDivider() {
@@ -1373,6 +1401,16 @@ internal fun MiniPlayBar(
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
         .background(HubCard, RoundedCornerShape(20.dp))
         .clickable { onExpand() }
+        // R272 · 音乐播放器式：上滑这条小栏展开全屏播放器。手势只挂在小栏本身，
+        // 不铺到外层页面，免得跟章节列表滚动抢事件；点击展开照旧保留。
+        .pointerInput(Unit) {
+            var acc = 0f
+            detectVerticalDragGestures(
+                onDragStart = { acc = 0f },
+                onDragEnd = { if (acc < -55f) onExpand(); acc = 0f },
+                onVerticalDrag = { _, dy -> if (dy < 0) acc += dy }
+            )
+        }
         .padding(horizontal = 12.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PlayerCover(HubPrimary, 44.dp, st.isPlaying)

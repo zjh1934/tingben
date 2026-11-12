@@ -30,6 +30,8 @@ def check(files):
             e.append("格子两态缺失: " + s[:48])
 
     BAN = [
+        'var expandedChapter',
+        'val willOpen =',
         'segSel',
         '点格子看正文',
         '绿=已出声',
@@ -69,10 +71,10 @@ def main():
     errs = check(files)
     if "--selftest" in sys.argv:
         injections = [
-            ("退回选中展开态",
+            ("展开收起态回潮",
              lambda t: dict(t, main=t["main"].replace(
-                 'var expandedChapter by remember(book.id)',
-                 'var segSel by remember { mutableStateOf<Int?>(null) }\n    var expandedChapter by remember(book.id)'))),
+                 'val liveChapter: Int? = if (bookRunning) makingChapter else null',
+                 'var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }'))),
             ("恢复独立播放键",
              lambda t: dict(t, main=t["main"].replace(
                  '        Spacer(Modifier.height(6.dp))',

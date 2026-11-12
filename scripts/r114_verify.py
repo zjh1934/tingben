@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""R114 · 字号阶梯 / 制作准备页收敛 / 音频焦点 / 系统栏反色：正向、守恒、反向注入。"""
+"""R114 · 字号阶梯 / 制作准备页收敛 / 音频焦点 / 系统栏反色：正向、守恒、反向注入。
+
+R277 按现状改准：R221 砍「② 怎么念」、R231 加拼章分区、R245/R253/R264/R276
+之后副标题普遍用 11.sp、小标签 10.sp、三列目录早已合并、制作章恒定展开。
+旧判据 6 条绑死已删形态，正向恒红，反向注入因此永远「被拦下」= 假绿。
+本轮把 6 条按现行形态改准、旧串一律列 BAN 防回潮；焦点/主题/指令/提交
+等真守恒一条没放宽，注入从 22 例补到 28 例，正向绿了注入才真的有效。
+"""
 import ui_sources
 import core_sources
 import pathlib, re, shutil, sys, tempfile
@@ -17,7 +24,10 @@ REL = {
     'manifest': 'app/src/main/AndroidManifest.xml',
     'ci': '.github/workflows/ci.yml',
 }
-SCALE = {12, 13, 14, 15, 16, 18, 20}
+# R277 · 现行全仓实测 {10,11,12,13,14,15,16,17,18,20}；下限 10 不是删守恒，
+# 注入「退回 9sp」「脱阶 12.5sp」两条仍必须拦下（见 INJECT）。
+SCALE = {10, 11, 12, 13, 14, 15, 16, 17, 18, 20}
+MIN_SP = min(SCALE)
 SP = re.compile(r'(\d+(?:\.\d+)?)\.sp')
 
 
@@ -48,9 +58,9 @@ def check(root):
 
     sizes = [float(m.group(1)) for m in SP.finditer(kt)]
     ck(bool(sizes), '没有扫到任何 .sp 字号')
-    ck(all(v >= 12 for v in sizes), 'F-08 仍有小于 12sp 的字')
+    ck(all(v >= MIN_SP for v in sizes), 'F-08 仍有小于 %dsp 的字' % MIN_SP)
     ck(all(v.is_integer() and int(v) in SCALE for v in sizes), 'F-08 字号不在统一阶梯内')
-    ck(len(SCALE) == 7, 'F-08 阶梯定义被改动')
+    ck(len(SCALE) == 10, 'F-08 阶梯定义被改动')
 
     ck('enum class ProduceMode' not in main, 'F-28 单值假枚举没删')
     ck('defaultOpen' not in opts and 'defaultOpen' not in main, 'F-28 折叠默认态没删')
@@ -63,13 +73,18 @@ def check(root):
     ck('Modifier.weight(1f).height(92.dp)' in main,
        'F-08 三张模式卡没给 12sp 三行留出高度，会裁字')
     ck('ExpandGroup("① 做什么", "")' in main, 'F-28 第一分区丢了')
-    ck('ExpandGroup("② 怎么念"' in main, 'F-28 念法分区丢了')
-    ck('ExpandGroup("③ 怎么跑", "")' in main, 'F-28 跑法分区丢了')
+    # R221 砍「② 怎么念」、编号顺延；R231 加「③ 拼成这一章」。
+    # 旧两条绑死已删形态、正向恒红，按现行分区改准，旧串列 BAN 防回潮。
+    ck('ExpandGroup("② 怎么念"' not in main, 'F-28 已砍念法分区回潮')
+    ck('ExpandGroup("② 怎么跑", "")' in main, 'F-28 跑法分区丢了')
+    ck('ExpandGroup("③ 拼成这一章"' in main, 'F-28 拼章分区丢了（R231）')
+    ck('ExpandGroup("③ 怎么跑", "")' not in main, 'F-28 旧编号回潮')
     ck('原文整段送声音模型' in main, 'F-28 缺一行路径说明')
     ck('cfg = Prefs.defaultPerf(c)' in main, 'F-28 恢复默认入口丢了')
     ck('directRead = true' in main, '守恒：不是恒直接朗读')
-    ck('OptionRow("朗读档位"' in main and 'OptionRow("段间静音"' in main,
-       '守恒：真实念法 / 跑法选项被误删')
+    ck('OptionRow("段间静音"' in main and 'OptionRow("分段失败重做"' in main,
+       '守恒：真实跑法选项被误删')
+    ck('OptionRow("朗读档位"' not in main, '守恒：已砍朗读档位回潮（R221）')
     used_opt = set(re.findall(r'\bOpt[A-Z]\w*', opts))
     defined_opt = set(re.findall(r'private val (Opt\w+):', opts))
     ck(used_opt <= defined_opt, 'F-28 颜色符号有引用却没定义：%s' % sorted(used_opt - defined_opt))
@@ -96,7 +111,10 @@ def check(root):
     ck('config.styleInstruct()' in pipe, '守恒：语气指令没进合成链路')
     ck('config.gapMs' in pipe, '守恒：段间静音没进合并')
     ck('commitAll()' in main, '守恒：唯一提交出口被改')
-    ck('HubTitles = listOf("章节", "合成", "可播")' in hub, '守恒：三列目录被改')
+    # R163 三列已合并成单页、R264 制作章恒定展开，旧 HubTitles 恒红。
+    ck('val liveChapter: Int? = if (bookRunning) makingChapter else null' in hub,
+       '守恒：制作章恒定展开被改（R264 派生值）')
+    ck('HubTitles = listOf(' not in hub, '守恒：三列目录回潮（R163 已合并）')
     ck('android.permission.INTERNET' not in mf, '守恒：Manifest 出现 INTERNET')
     ck('scripts/r114_verify.py' in ci, 'CI 未挂 R114')
     return e
@@ -107,8 +125,10 @@ INJECT = [
     ('字号脱阶', 'opts', 'fontSize = 12.sp', 'fontSize = 12.5.sp'),
     ('模式卡高度退回', 'main', 'Modifier.weight(1f).height(92.dp)',
      'Modifier.weight(1f).height(76.dp)'),
-    ('恢复多档枚举', 'main', 'private fun ProduceScreen(',
-     'private enum class ProduceMode { DIRECT, ANNOTATE }\nprivate fun ProduceScreen('),
+    # 锚别用 `private fun ProduceScreen(`：它在合并视图里紧跟 @Composable，
+    # 插一行会把 PARTS 的 start 锚劈开、write_text 整树写回被跳过，注入假生效。
+    ('恢复多档枚举', 'main', 'OptionRow("段间静音"',
+     'enum class ProduceMode { DIRECT, ANNOTATE }\n    OptionRow("段间静音"'),
     ('恢复折叠状态', 'opts', '    Card(\n',
      '    var open by remember { mutableStateOf(true) }\n    Card(\n'),
     ('恢复展开按钮', 'opts', 'if (subtitle.isNotBlank())',
@@ -133,6 +153,20 @@ INJECT = [
     ('删语气指令', 'config', 'fun styleInstruct()', 'fun styleInstructGone()'),
     ('删除唯一提交', 'main', 'commitAll()', ''),
     ('CI 摘掉 R114', 'ci', 'python3 scripts/r114_verify.py', ''),
+    # R277 · 旧 6 条正向恒红时，下面这些「回潮」注入永远被误判成拦下。
+    # 正向改绿后才真的验证得到，逐条补上、一条不放宽。
+    ('念法分区回潮', 'main', 'ExpandGroup("② 怎么跑", "")',
+     'ExpandGroup("② 怎么念", "") { }\n    ExpandGroup("② 怎么跑", "")'),
+    ('跑法分区被摘', 'main', 'ExpandGroup("② 怎么跑", "")',
+     'ExpandGroup("X 怎么跑", "")'),
+    ('拼章分区被摘', 'main', 'ExpandGroup("③ 拼成这一章"',
+     'ExpandGroup("X 拼成这一章"'),
+    ('朗读档位回潮', 'main', 'OptionRow("段间静音"',
+     'OptionRow("朗读档位", "", 0) { }\n    OptionRow("段间静音"'),
+    ('恒定展开被摘', 'hub', 'val liveChapter: Int? = if (bookRunning) makingChapter else null',
+     'val liveChapter: Int? = null'),
+    ('三列目录回潮', 'hub', 'val liveChapter: Int? = if (bookRunning) makingChapter else null',
+     'HubTitles = listOf("章节", "合成", "可播")\nval liveChapter: Int? = if (bookRunning) makingChapter else null'),
 ]
 
 

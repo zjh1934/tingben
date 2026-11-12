@@ -46,7 +46,7 @@ MAIN = [
     'BookStore.add(ctx, r.title, r.text)',
     'EventLog.ui("BOOK_IMPORT_OPEN", "id=${added.id.take(8)}")',
     'nav.push(Screen.CHAPTERS)',
-    # R215 · 首页改成即贴即听，不再把建书结果跳目录页；
+    # R215/R276 · 首页改成片段合成（贴一段→点合成→产物进列表），不再把建书结果跳目录页；
     # 但外部分享页仍要 onAdded 回收并回首页，能力不删。
     'onAdded = { },   // R215',
     'onAdded = { _ ->\n                    inputReadOpen = false',

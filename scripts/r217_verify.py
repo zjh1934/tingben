@@ -49,8 +49,16 @@ def check(f):
         if k not in ov: e.append("悬浮窗缺: " + k[:56])
     if "(pct * 100).toInt().toString()" in ov:
         e.append("球上又退回无单位的裸数字（看着像 1、2 段号）")
-    if "done.toFloat() / total" not in ov or "chapterPct >= 0f" not in ov:
+    if "doneNow.toFloat() / totalNow" not in ov or "chapterPctNow >= 0f" not in ov:
         e.append("两球进度来源被改坏")
+    # ⑦ R267 · 单实例形态由真实任务独占：低来源不抢进度、不误删浮窗
+    for k in ["enum class OverlaySource { PREVIEW, CLIP, PRODUCE }",
+              "source.ordinal < cur.source.ordinal",
+              "fun hide(c: Context, source: OverlaySource)",
+              "target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f"]:
+        if k not in ov: e.append("R267 形态仲裁缺: " + k[:56])
+    if "OverlaySource.PREVIEW" not in st or "OverlaySource.CLIP" not in f["input"]:
+        e.append("R267 预览 / 片段来源没标")
     if "Prefs.overlayProgress(c) && KeepAlive.overlayGranted(c)" not in ov:
         e.append("浮窗权限 / 开关双闸门被摘")
     # ② 下球按章号取当前章，不按 value 最大值
@@ -73,7 +81,8 @@ def check(f):
         if banned in it: e.append("首页又长出悬浮开关: " + banned)
         if banned in mg: e.append("App 层又存一份悬浮开关: " + banned)
     # ⑤ R230 · 开关留在设置页，且打开即预览（点了不理的根因修复）
-    for k in ['OverlayProgress.update(c, "", "预览", 0, 0, -1f)',
+    for k in ['OverlayProgress.update(c, "", "预览", 0, 0, -1f,',
+              "OverlaySource.PREVIEW",
               "打开即显示预览", 'if (!it) OverlayProgress.hide(c)',
               'else if (!permOk) askPermission()']:
         if k not in st: e.append("设置页开关缺: " + k[:56])
@@ -82,7 +91,8 @@ def check(f):
         e.append("CI 漏挂 r217")
     if '"r217_verify.py"' not in f["r135"]:
         e.append("现行清单漏登记 r217")
-    if "r217_verify.py" not in f["config"]:
+    from r45_common import scope_indexed
+    if not scope_indexed(f["config"], "scripts/r217_verify.py"):
         e.append("新守门没登记进受管根")
     # ⑦ 数字对拍：0% 写 0、90% 写 90、越界夹住
     def label(p): return str(max(0, min(100, int(p * 100))))
@@ -100,7 +110,14 @@ def selftest():
         ("% 单位被摘", "overlay", 'canvas.drawText("%", cx + label.measureText(num) / 2f,', ""),
         ("退回裸数字", "overlay", "val num = pctLabel(pct)",
          'val num = (pct * 100).toInt().toString()'),
-        ("双球来源被摘", "overlay", "chapterPct >= 0f", "false"),
+        ("双球来源被摘", "overlay", "chapterPctNow >= 0f", "false"),
+        ("来源枚举被摘", "overlay",
+         "enum class OverlaySource { PREVIEW, CLIP, PRODUCE }", ""),
+        ("优先级仲裁被摘", "overlay", "source.ordinal < cur.source.ordinal", "false"),
+        ("条件 hide 被摘", "overlay",
+         "fun hide(c: Context, source: OverlaySource)", ""),
+        ("双球归属被摘", "overlay",
+         "target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f", "true"),
         ("权限闸门被摘", "overlay", "Prefs.overlayProgress(c) && KeepAlive.overlayGranted(c)", "true"),
         ("下球退回最大值", "producer",
          "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }",
@@ -111,7 +128,9 @@ def selftest():
         ("打开无权限又静默", "settings", "else if (!permOk) askPermission()", ""),
         ("关时不收浮窗", "settings", "if (!it) OverlayProgress.hide(c)", ""),
         ("打开即预览被摘", "settings",
-         'else OverlayProgress.update(c, "", "预览", 0, 0, -1f)', ""),
+         'else OverlayProgress.update(c, "", "预览", 0, 0, -1f,', ""),
+        ("预览来源被摘", "settings", "OverlaySource.PREVIEW",
+         "OverlaySource.CLIP"),
         ("无权限也硬挂浮窗", "settings",
          "else if (!permOk) askPermission()", "else if (false) { }"),
         ("设置页文案回旧口径", "settings", "打开即显示预览", "制作时显示"),
@@ -123,8 +142,12 @@ def selftest():
         ("现行清单漏登记", "r135", '"r217_verify.py"', ""),
     ]
     bad = 0
+    # 同一锚点在源码里出现多次时只摘第一处判据恒真、注入漏放，须全量替换
+    FULL = {"优先级仲裁被摘"}
     for name, key, needle, repl in cuts:
-        g = dict(f); g[key] = f[key].replace(needle, repl, 1)
+        g = dict(f)
+        g[key] = (f[key].replace(needle, repl) if name in FULL
+                  else f[key].replace(needle, repl, 1))
         got = check(g)
         if got: print("  反向注入 %-24s 拦下 %d 条" % (name, len(got)))
         else: print("  反向注入漏放: " + name); bad += 1

@@ -95,7 +95,8 @@ internal fun OverlayProgressRow(c: Context) {
             Prefs.setOverlayProgress(c, it)
             if (!it) OverlayProgress.hide(c)
             else if (!permOk) askPermission()
-            else OverlayProgress.update(c, "", "预览", 0, 0, -1f)
+            else OverlayProgress.update(c, "", "预览", 0, 0, -1f,
+                OverlaySource.PREVIEW)
             // R230 · 真修「打开开关根本不理」：以前只有制作中 update 才创建浮窗，
             // 开关打开后当前没在制作就毫无反应。现在权限齐了立刻挂一个 0% 单球预览，
             // 制作开始时由 ProduceService.update 原地更新，停止/完成照旧 hide。
@@ -266,11 +267,20 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     var expTreeLabel by remember { mutableStateOf(AudioExport.treeLabel(c)) }
     var expCount by remember { mutableStateOf(0) }
     var segTotal by remember { mutableStateOf(0) }
+    // 中间小块按书分组：bookId → 书名，避免把 UUID 当分组名露给用户
+    var bookTitles by remember { mutableStateOf(emptyMap<String, String>()) }
+    // R268 · 导出以前只有一闪而过的 Toast：点完没反应、结果也回看不了。
+    // 现在按钮有导出中态、结果留在页里，重复点也进不来。
+    var exporting by remember { mutableStateOf(false) }
+    var exportResult by remember { mutableStateOf("") }
     LaunchedEffect(refresh) {
         expCount = withContext(Dispatchers.IO) { AudioExport.collect(c).size }
         segTotal = withContext(Dispatchers.IO) {
             File(c.filesDir, "work").walkTopDown()
                 .count { it.isFile && it.name.endsWith(".wav") }
+        }
+        bookTitles = withContext(Dispatchers.IO) {
+            BookStore.list(c).associate { it.id to it.title }
         }
     }
     // 两个本机目录在设置里可达：私有目录第三方文件管理器进不去，
@@ -460,25 +470,35 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Text("选择", fontSize = 12.sp)
                 }
             }
-            SettingLine("成", "已做好 $expCount 个整章成品", "按书名分文件夹 · WAV") {
-                Button(enabled = expCount > 0, onClick = {
+            SettingLine("成", "整章成品", "已做好 $expCount 个 · 按书名分文件夹 · WAV") {
+                Button(enabled = expCount > 0 && !exporting, onClick = {
                         val tree = AudioExport.treeUri(c)
                         if (tree == null) {
                             Toast.makeText(c, "先点「选择」挑一个文件夹",
                                 Toast.LENGTH_SHORT).show()
                         } else {
+                            exporting = true
+                            exportResult = ""
                             expScope.launch {
-                                val r = withContext(Dispatchers.IO) {
-                                    AudioExport.exportAll(c, tree)
+                                val r = try {
+                                    withContext(Dispatchers.IO) {
+                                        AudioExport.exportAll(c, tree)
+                                    }
+                                } catch (_: Throwable) {
+                                    AudioExport.Result(reason = "导出中断，请重试")
                                 }
                                 val msg = when {
-                                    r.ok == 0 && r.reason.isNotEmpty() -> r.reason
-                                    r.ok == 0 -> "还没有可导出的成品"
                                     r.failed > 0 -> "导出 ${r.ok} 个，失败 ${r.failed} 个" +
                                             if (r.reason.isNotEmpty()) "（${r.reason}）" else ""
-                                    r.skipped > 0 -> "已导出 ${r.ok} 个，跳过 ${r.skipped} 个失效文件"
+                                    r.ok == 0 && r.reason.isNotEmpty() -> r.reason
+                                    r.ok == 0 && r.skipped > 0 ->
+                                        "没有新文件要写，${r.skipped} 个之前已导出"
+                                    r.ok == 0 -> "还没有可导出的成品"
+                                    r.skipped > 0 -> "已导出 ${r.ok} 个，跳过 ${r.skipped} 个已存在的"
                                     else -> "已导出 ${r.ok} 个成品"
                                 }
+                                exporting = false
+                                exportResult = msg
                                 Toast.makeText(c, msg, Toast.LENGTH_LONG).show()
                             }
                         }
@@ -486,8 +506,12 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     modifier = Modifier.height(34.dp),
                     shape = RoundedCornerShape(50),
                     contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Text("导出全部", fontSize = 12.sp)
+                    Text(if (exporting) "正在导出…" else "导出全部", fontSize = 12.sp)
                 }
+            }
+            if (exportResult.isNotEmpty()) {
+                Text(exportResult, fontSize = 11.sp, color = Sub,
+                    modifier = Modifier.padding(start = 40.dp, top = 2.dp, bottom = 4.dp))
             }
             SettingLine("块", "中间小块 $segTotal 个", "合成中的临时音频 · 拼成整章后清") {
                 Button(onClick = {
@@ -561,7 +585,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         }
 
         browseRoot?.let { root ->
-            LocalFilesDialog(root, browseLabel,
+            LocalFilesDialog(root, browseLabel, bookTitles,
                 onSave = { f ->
                     pendingSave = f
                     try { saveOne.launch(f.name) }
@@ -573,47 +597,78 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     }
 }
 
-/** 本机音频目录的应用内浏览：列两层 WAV，点一个另存到用户挑的位置。 */
+/** 按书分组递归列 WAV。
+ *  中间小块实际在 work/<bookId>/v11/direct/all/ 第四层，旧的两层列举根本列不出来；
+ *  bookId 是 UUID 也不该当组名露给用户，用书名替换，查不到的长 id 只留前 8 位。
+ *  整章成品在 audio/<书名>/ 下，第一层目录名本身就是书名，直接沿用。 */
+internal fun browseGroups(root: File, bookTitles: Map<String, String>): List<Pair<String, List<File>>> {
+    val prefix = root.absolutePath + File.separator
+    val byGroup = linkedMapOf<String, MutableList<File>>()
+    try {
+        root.walkTopDown().forEach { f ->
+            if (!f.isFile || !f.name.endsWith(".wav", ignoreCase = true)) return@forEach
+            val rel = f.absolutePath.removePrefix(prefix)
+            val top = rel.substringBefore(File.separatorChar, "")
+            val group = when {
+                top.isEmpty() -> root.name
+                bookTitles.containsKey(top) -> bookTitles.getValue(top)
+                top.length > 24 -> top.take(8) + "…"
+                else -> top
+            }
+            byGroup.getOrPut(group) { mutableListOf() }.add(f)
+        }
+    } catch (_: Throwable) { }
+    return byGroup.map { (g, fs) -> g to fs.sortedByDescending { it.lastModified() } }
+        .sortedBy { it.first }
+}
+
+/** 本机音频目录的应用内浏览：按书分组列 WAV，点一个另存到用户挑的位置。 */
 @Composable
 internal fun LocalFilesDialog(root: File, label: String,
-                             onSave: (File) -> Unit, onDismiss: () -> Unit) {
-    val files = remember(root.absolutePath) {
-        val out = mutableListOf<File>()
-        root.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") }?.let { out.addAll(it) }
-        root.listFiles()?.filter { it.isDirectory }?.forEach { d ->
-            d.listFiles()?.filter { it.isFile && it.name.endsWith(".wav") }?.let { out.addAll(it) }
-        }
-        out.sortedByDescending { it.lastModified() }
-    }
+                              bookTitles: Map<String, String>,
+                              onSave: (File) -> Unit, onDismiss: () -> Unit) {
+    val groups = remember(root.absolutePath) { browseGroups(root, bookTitles) }
+    val total = groups.sumOf { it.second.size }
+    val segRe = Regex("""^(?:chunk|direct)_(\d{4})\.wav$""")
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Card(Modifier.fillMaxWidth(0.92f), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(14.dp)) {
                 Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(3.dp))
-                Text("${files.size} 个 WAV · 点一个另存到你自己挑的位置",
+                Text("${groups.size} 组 · $total 个 WAV · 点一个另存到你自己挑的位置",
                     fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.height(10.dp))
-                if (files.isEmpty()) {
+                if (groups.isEmpty()) {
                     Text("这里现在没有音频文件", fontSize = 12.sp, color = Sub)
                 } else {
                     LazyColumn(Modifier.heightIn(max = 380.dp)) {
-                        items(files, key = { it.absolutePath }) { f ->
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { onSave(f) }
-                                    .padding(horizontal = 10.dp, vertical = 9.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(f.name, fontSize = 12.sp, maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis)
-                                    f.parentFile?.name?.takeIf { it != root.name }?.let { p ->
-                                        Text(p, fontSize = 10.sp, color = Sub)
+                        groups.forEach { (g, fs) ->
+                            item(key = "group_$g") {
+                                Text("$g · ${fs.size} 个", fontSize = 11.sp,
+                                    color = Primary, fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(
+                                        start = 10.dp, end = 10.dp,
+                                        top = 8.dp, bottom = 3.dp))
+                            }
+                            items(fs, key = { it.absolutePath }) { f ->
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { onSave(f) }
+                                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        val seg = segRe.matchEntire(f.name)
+                                        Text(seg?.let { "第 ${it.groupValues[1]} 段" } ?: f.name,
+                                            fontSize = 12.sp, maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis)
+                                        Text(f.name, fontSize = 10.sp, color = Sub,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
+                                    Text("%.1f MB".format(f.length() / 1024f / 1024f),
+                                        fontSize = 11.sp, color = Sub)
                                 }
-                                Text("%.1f MB".format(f.length() / 1024f / 1024f),
-                                    fontSize = 11.sp, color = Sub)
                             }
                         }
                     }

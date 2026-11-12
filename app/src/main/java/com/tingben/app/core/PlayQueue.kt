@@ -11,6 +11,7 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.PlaybackParams
 import androidx.core.content.ContextCompat
+import com.tingben.app.diag.EventLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -72,6 +73,28 @@ object PlayQueue {
     // 只按 queueId 判定，调用点一个都不用改：seg / trial 是临时试听态。
     private fun isPreview(id: String): Boolean = id == "seg" || id == "trial"
 
+    /**
+     * R278 · 1.1.31 真机诊断摘要里三条「播放：这段音频打不开 / 文件不在了」
+     * 只有一句固定文案，分不清是文件被清、格式坏还是队列引用了旧路径。
+     * 补纯数值诊断：只记队列类别、段号、文件是否存在、长度、MediaPlayer 的
+     * what/extra，绝不落路径 / 书名 / 正文原文（R225/R257 口径）。
+     * 用 PIPELINE + WARN，不进 allErrors() 的 ERROR 列表，只在事件流里可查。
+     */
+    private fun queueKind(): String = when {
+        queueId.startsWith("chapter:") -> "chapter"
+        queueId == "clip" -> "clip"
+        queueId == "seg" -> "seg"
+        queueId == "trial" -> "trial"
+        queueId.isEmpty() -> "none"
+        else -> "other"
+    }
+
+    private fun playDiag(action: String, seg: Int, detail: String,
+                         kind: String = queueKind()) {
+        EventLog.log(EventLog.Kind.PIPELINE, action,
+            "queue=$kind seg=$seg · $detail", level = EventLog.Level.WARN)
+    }
+
     // ---- R140 · 批次 D：独立试听通道 ----
     // 主播放仍用上面那一套 player/tracks/index/_state，脚本与 UI 全部不变。
     // 小段 / 调音台试听另起一套 MediaPlayer，绝不碰主队列与播放控制通知。
@@ -108,6 +131,9 @@ object PlayQueue {
         previewIndex = i
         val t = previewTracks[i]
         if (!t.file.isFile) {
+            playDiag("PREVIEW_OPEN_MISS", i + 1,
+                "exists=${t.file.exists()} len=${t.file.length()} tracks=${previewTracks.size}",
+                if (previewQueueId == "trial") "trial" else "seg")
             UiErrors.playback("这段音频文件不在了，已跳过", null)
             if (i + 1 < previewTracks.size) { previewOpen(i + 1); return }
             previewFinish()
@@ -421,6 +447,8 @@ object PlayQueue {
         val t = tracks[i]
         val from = (overrideStartMs ?: t.startMs).coerceAtLeast(0L)
         if (!t.file.isFile) {
+            playDiag("PLAY_OPEN_MISS", i + 1,
+                "exists=${t.file.exists()} len=${t.file.length()} tracks=${tracks.size}")
             UiErrors.playback("第 ${i + 1} 段的音频文件不在了，已跳过", null)
             if (i + 1 < tracks.size) { open(i + 1); return }
             finish()
@@ -451,9 +479,10 @@ object PlayQueue {
                     if (index + 1 < tracks.size) open(index + 1)
                     else finish()
                 }
-                setOnErrorListener { failed, _, _ ->
+                setOnErrorListener { failed, what, extra ->
                     failed.release()
                     player = null
+                    playDiag("PLAY_OPEN_ERR", index + 1, "what=$what extra=$extra")
                     UiErrors.playback("这段音频打不开，跳到下一段", null)
                     if (index + 1 < tracks.size) open(index + 1)
                     else finish()
@@ -462,8 +491,9 @@ object PlayQueue {
                 setDataSource(t.file.absolutePath)
                 prepareAsync()
             }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
             player = null
+            playDiag("PLAY_OPEN_THROW", i + 1, "cls=${t.javaClass.simpleName}")
             UiErrors.playback("音频打开失败，已跳过这一段", null)
             if (i + 1 < tracks.size) open(i + 1)
             else finish()

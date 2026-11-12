@@ -92,9 +92,9 @@ internal fun backTargetOf(s: Screen, modelsFrom: Screen): Screen =
     }
 
 internal fun chromeOf(s: Screen): ChromeSpec = when (s) {
-    // R164 · 品牌名从顶栏撤掉。R230 · 右上角 ＋/齿轮 全部撤掉，
-    // 首页只留 ☰ 与右侧「调音 / 任务」两枚（trailing 由 App 层挂）。
-    Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY)
+    // R164 · 品牌名从顶栏撤掉。R230 · 右上角 ＋/齿轮 全部撤掉。
+    // R272 · ☰ 只在首页；首页右侧「调音 / 任务」两枚由 App 层挂。
+    Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY, showMenu = true)
     Screen.PRODUCE  -> ChromeSpec("制作设置", TAB_LIBRARY, canBack = true)
     // R218 · 目录页顶栏直接写书名，不写「目录」二字（都进这本书了）。
     // 标题由 App 层按 bookId 覆盖；这里留空串占位。

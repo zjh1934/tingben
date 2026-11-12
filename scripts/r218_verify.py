@@ -58,21 +58,23 @@ def check(f):
               'ExpandGroup("② 怎么念"', 'OptionRow("朗读档位"',
               'OptionRow("语速倾向"', 'OptionRow("情绪强度"']:
         if k in pr: e.append("制作设置页画蛇添足的块回潮: " + k[:40])
-    # ④ 章行：小眼睛 + 小耳机、点章名展开
+    # ④ 章行：小眼睛 + 小耳机；R264 制作章恒定展开、无展开收起控件
     for k in ["onRead: () -> Unit, onListen: () -> Unit",
               "IconButton(onClick = onRead", "EyeIcon(HubPrimary)",
               "IconButton(onClick = onListen", "onRead = { openReader(r.index) }",
-              "val willOpen = expandedChapter != r.index"]:
+              "val liveChapter: Int? = if (bookRunning) makingChapter else null"]:
         if k not in hb: e.append("章行缺: " + k[:60])
-    if "ChevronIcon(if (expanded)" in hb:
-        e.append("章行又退回展开箭头")
-    # ⑤ 两条进度条常驻 + 展开动效 + 段数文案撤掉
+    # R264 · 展开/收起整套旧形态不许回潮
+    for k in ["var expandedChapter", "val willOpen =", "HUB_CH_EXPAND",
+              "liveChapters", "AnimatedVisibility(", "private fun ChevronIcon("]:
+        if k in hb: e.append("展开/收起旧形态回潮: " + k[:40])
+    # ⑤ 两条进度条常驻 + 制作章小段区常驻 + 段数文案撤掉
     for k in ["val chapterPctNow =", "LinearProgressIndicator(progress = { bookPct }",
               "LinearProgressIndicator(progress = { chapterPctNow }",
               "modifier = Modifier.fillMaxWidth().height(22.dp),",
-              "AnimatedVisibility(", "expandVertically() + fadeIn()",
-              "shrinkVertically() + fadeOut()",
-              "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->"]:
+              'item(key = "seg_head_${r.index}")',
+              "if (r.index == liveChapter) {",
+              "items(chapterSegs.chunked(SEG_GRID_COLUMNS),"]:
         if k not in hb: e.append("进度/展开缺: " + k[:60])
     for k in ['"本章 ${segs.size} 小段"', "小段已生成", "还没有小段",
               '"已完成 ${(bookPct * 100).toInt()}%"', '"整体 ${(bookPct * 100).toInt()}%"']:
@@ -88,7 +90,8 @@ def check(f):
         e.append("CI 漏挂 r218")
     if '"r218_verify.py"' not in f["r135"]:
         e.append("现行清单漏登记 r218")
-    if "r218_verify.py" not in f["config"]:
+    from r45_common import scope_indexed
+    if not scope_indexed(f["config"], "scripts/r218_verify.py"):
         e.append("新守门没登记进受管根")
     return e
 
@@ -110,8 +113,11 @@ def selftest():
         ("点章名又进阅读", "hub", "onRead = { openReader(r.index) }",
          "onTap = { openReader(r.index) }"),
         ("本章进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
-        ("展开动效被摘", "hub", "expandVertically() + fadeIn()", ""),
-        ("段数文案回潮", "hub", "AnimatedVisibility(", '"本章 12 小段"'),
+        ("制作章恒定展开被摘", "hub", "if (r.index == liveChapter) {", ""),
+        ("展开收起态回潮", "hub",
+         "val liveChapter: Int? = if (bookRunning) makingChapter else null",
+         "var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }"),
+        ("段数文案回潮", "hub", 'item(key = "seg_head_${r.index}")', '"本章 12 小段"'),
         ("齿轮被摘", "merged", 'Text("⚙", fontSize = 16.sp', ""),
         ("CI 漏挂", "ci", "python3 scripts/r218_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r218_verify.py"', ""),

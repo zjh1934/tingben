@@ -5,10 +5,11 @@
 模型并入设置），同时夹着几个可独立查证的具体问题。我判断大架构
 留到真机证据回来再动，这轮只落确认过的四项：
 
-  ① 折叠会不会占内存 / 卡
-     查证：同一时刻只有一章展开（`expandedChapter` 是 Int?），章行本身
+  ① 折叠会不会占内存 / 卡（R264 后：制作中的那一章恒定展开，
+     不存在展开/收起状态与切换）
+     查证：只有 liveChapter 一章有小段区，章行本身
      是 LazyColumn 的惰性 item —— 不是「每章都展开」。真正的隐患在
-     展开章的 ChapterSegGrid：它用 Column + chunked().forEach 把整章
+     制作章的 ChapterSegGrid：它用 Column + chunked().forEach 把整章
      几百个格子一次性全组合，且挤在父列表的**同一个 item** 里，
      滚动经过时整块测量 / 重组。改成按行拆成父列表独立 item。
   ② 调音弹层盖住系统返回 / 桌面手势区、点空白返回不了
@@ -46,12 +47,13 @@ POS = {
         # ① 展开格子惰性化
         "ui.forEach { r ->",
         'item(key = "ch_${r.index}")',
-        "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
-        'AnimatedVisibility(',
+        "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
+        'item(key = "seg_head_${r.index}")',
         'SegGridHead(chapterSegs, segMulti',
         "private fun SegGridHead(",
         "private fun ChapterSegGrid(",
-        "val willOpen = expandedChapter != r.index",
+        "val liveChapter: Int? = if (bookRunning) makingChapter else null",
+        "if (r.index == liveChapter) {",
         # ③ 阅读页可复制
         "SelectionContainer {",
         "SegGridHead(chapterSegs, segMulti",
@@ -134,15 +136,18 @@ def logic_cases(f):
         else:
             print("  %3d 段章：全量 %3d 个格子 → 只组合 %3d 个 ✓"
                   % (segs, old, new))
-    # 一次只展开一章
-    if "val willOpen = expandedChapter != r.index" not in h:
-        bad.append("展开态不是单章互斥，会同时展开多章")
+    # R264 · 制作中的那一章恒定展开，且不存在展开/收起状态
+    if "val liveChapter: Int? = if (bookRunning) makingChapter else null" not in h:
+        bad.append("制作章不再恒定展开")
+    elif any(s in h for s in ("var expandedChapter", "val willOpen =",
+                             "HUB_CH_EXPAND", "AnimatedVisibility(")):
+        bad.append("展开/收起旧形态回潮")
     else:
-        print("  一次只展开一章 ✓（不是「每章下面都折叠」）")
+        print("  制作中恒定展开一章 ✓（无展开/收起切换）")
     # 行为判据（也进 check，才能被反向注入拦住）
     # R163 · 单列后不再有 RawColumn 函数体，直接守整页里的惰性行
     rb = code_only(h)
-    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in rb:
+    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in rb:
         bad.append("展开格子没拆成父列表的独立 item")
     if "chunked(8).forEach" in rb:
         bad.append("展开格子仍是全量 forEach 组合")
@@ -179,7 +184,7 @@ def check(f):
                 e.append("旧形态回潮[%s]: %s" % (key, s[:65]))
     # R163 · 三列并一列后不再有 RawColumn 函数体，直接守单列里的惰性行
     rb = code_only(f["hub"])
-    if "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->" not in rb or "chunked(8).forEach" in rb:
+    if "items(chapterSegs.chunked(SEG_GRID_COLUMNS)," not in rb or "chunked(8).forEach" in rb:
         e.append("展开格子没有惰性化")
     db = code_only(mixer_dialog_body(f["main"]))
     if not db or "navigationBarsPadding()" not in db or "requestLeave?.invoke()" not in db:
@@ -199,16 +204,16 @@ def selftest():
     logic_bad = len(logic_cases(f))
     cuts = [
         ("展开格子退回全量 forEach", "hub",
-         "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->",
+         "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
          "val _all = segs.chunked(8).forEach { }; items(chapterSegs.chunked(8),"),
-        ("展开格子被整个摘掉", "hub", "chapterSegs.chunked(SEG_GRID_COLUMNS).forEach { row ->", ""),
+        ("展开格子被整个摘掉", "hub", "items(chapterSegs.chunked(SEG_GRID_COLUMNS),", ""),
         ("章行退回单 items 整块", "hub", 'item(key = "ch_${r.index}")', ""),
         ("段头被摘", "hub", 'SegGridHead(chapterSegs, segMulti', ""),
         ("单行渲染器被摘", "hub",
          "private fun ChapterSegGrid(", ""),
-        ("单章互斥被破坏", "hub",
-         "val willOpen = expandedChapter != r.index",
-         "expandedChapter = i"),
+        ("展开收起态回潮", "hub",
+         "val liveChapter: Int? = if (bookRunning) makingChapter else null",
+         "var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }"),
         ("阅读页可复制被摘", "hub", "SelectionContainer {", ""),
         ("系统导航区避让被摘", "main",
          ".statusBarsPadding()\n            .navigationBarsPadding()",

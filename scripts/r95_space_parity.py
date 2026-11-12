@@ -49,7 +49,7 @@ def main():
               "STORAGE_PARTIAL", "STORAGE_PARTIAL_STOP",
               "空间用完了，已做好", "if (newlyWritten >= budgetSegs)",
               "var newlyWritten = 0", "newlyWritten++",
-              "if (finalBytes > outFile.parentFile!!.usableSpace)"]:
+              "AudioOps.ensureChapterAudios("]:
         if s not in src:
             errs.append("新公式锚点缺失: " + s)
     # ② 旧的一刀切不许回潮

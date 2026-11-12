@@ -72,9 +72,9 @@ def check(f):
               "fun hubStop()", "fun hubResume()",
               "tasksRequest = hubTasksTick"]:
         if k not in mg: e.append("顶栏缺: " + k[:56])
-    # ④ 空章不展开 / 左侧勾 / 零留白
-    for k in ["val generated = segsHere.any { it.hasAudio }",
-              "if (generated || making) {",
+    # ④ R264 · 制作中的那一章恒定展开，没在制作的章连 seg_body 都不生成
+    for k in ["val liveChapter: Int? = if (bookRunning) makingChapter else null",
+              "if (r.index == liveChapter) {",
               "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
               "multiMode = next.isNotEmpty()",
               "if (!multi) return",
@@ -85,7 +85,8 @@ def check(f):
         e.append("CI 漏挂 r219")
     if '"r219_verify.py"' not in f["r135"]:
         e.append("现行清单漏登记 r219")
-    if "r219_verify.py" not in f["config"]:
+    from r45_common import scope_indexed
+    if not scope_indexed(f["config"], "scripts/r219_verify.py"):
         e.append("新守门没登记进受管根")
     return e
 
@@ -106,7 +107,7 @@ def selftest():
         ("废话回潮", "merged", "fun hubStop()", 'Text("可播 3/10 章")'),
         ("顶栏按钮不齐", "merged", "trailing = when (screen)", ""),
         ("停止按钮被摘", "merged", 'IconButton(onClick = { hubStop() }', ""),
-        ("空章又弹块", "hub", "if (generated || making) {", "if (true) {"),
+        ("空章又弹块", "hub", "if (r.index == liveChapter) {", "if (true) {"),
         ("左侧勾被摘", "hub", "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }", ""),
         ("点勾不进多选", "hub", "multiMode = next.isNotEmpty()", ""),
         ("展开头部留白回潮", "hub", "if (!multi) return", ""),

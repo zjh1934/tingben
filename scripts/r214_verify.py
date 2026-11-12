@@ -4,7 +4,7 @@
 
 用户口径（自己拍板，不再等补话）：
   整本书合成 = 两球上下叠成 8 字（上=整本圆环、下=章节进度）；
-  首页即贴即听 = 单球；圆环中间写数字、外圈按百分比转；浮窗啥也不写、可拖动。
+  首页片段合成 = 单球；圆环中间写数字、外圈按百分比转；浮窗啥也不写、可拖动。
   首页框 1/3 屏、粘贴钮进框内右下、右上角调音 + 任务双入口（无任务置灰）。
   调音弹层上下收小，仍避让状态栏与手势区。
 
@@ -38,7 +38,7 @@ def check(f):
     # ① 悬浮窗：双球圆环 + 可拖动 + 不写字 + 两态
     for k in ["private class RingView", "canvas.drawArc(oval, -90f, 360f * pct, false, arc)",
               "Gravity.TOP or Gravity.START", "MotionEvent.ACTION_MOVE",
-              "updateViewLayout(v, params)", "chapterPct >= 0f",
+              "updateViewLayout(v, params)", "chapterPctNow >= 0f",
               "bottomRing?.visibility = View.GONE"]:
         if k not in ov: e.append("悬浮窗缺: " + k[:52])
     if "import android.widget.TextView" in ov or "TextView(c)" in ov:
@@ -50,13 +50,16 @@ def check(f):
     # ② 链路：章节进度必须真的传下去
     if "chapterPct: Float = -1f" not in sv:
         e.append("ProduceService.update 没接章节进度")
-    if "OverlayProgress.update(c, lastBook, stage, done, total, chapterPct)" not in sv:
-        e.append("章节进度没透传到浮窗")
+    if "OverlayProgress.update(c, lastBook, stage, done, total, chapterPct," not in sv \
+            or "OverlaySource.PRODUCE" not in sv:
+        e.append("章节进度没透传到浮窗，或没标 PRODUCE 来源")
     if "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }" not in pr:
         e.append("Producer.emit 没取章节进度")
     # ③ R230 · 输入框 1/3 屏 + 粘贴钮进框内（内容区）；
     #    调音/任务入口上移系统顶栏，按符号在合并视图里守。
-    for k in ["fillMaxHeight(0.36f)", "Alignment.BottomEnd"]:
+    # R276 · 下方要给片段列表让位，框从 0.36 收到 0.30；判据跟着现状走，
+    # 「不占满整屏」的守恒仍由下面 weight(1f) 那条守。
+    for k in ["fillMaxHeight(0.30f)", "Alignment.BottomEnd"]:
         if k not in it: e.append("首页缺: " + k[:52])
     # R244 · 按图标符号定位，不绑字按钮文案
     for k in ['MixerIcon(', 'TasksIcon(',
@@ -91,15 +94,15 @@ def selftest():
         ("圆环描边被摘", "overlay", "canvas.drawArc(oval, -90f, 360f * pct, false, arc)", ""),
         ("拖动被摘", "overlay", "MotionEvent.ACTION_MOVE", "MotionEvent.ACTION_UP"),
         ("updateViewLayout 被摘", "overlay", "updateViewLayout(v, params)", ""),
-        ("两态开关被摘", "overlay", "chapterPct >= 0f", "false"),
+        ("两态开关被摘", "overlay", "chapterPctNow >= 0f", "false"),
         ("浮窗又写字", "overlay", "import android.graphics.Canvas",
          "import android.widget.TextView\nimport android.graphics.Canvas"),
         ("removeView 被摘", "overlay", "wm?.removeViewImmediate(v)", ""),
         ("链路没接章节", "service", "chapterPct: Float = -1f", ""),
-        ("链路没透传", "service", "total, chapterPct)", "total)"),
+        ("链路没透传", "service", "total, chapterPct,", "total,"),
         ("emit 没算章节", "producer",
          "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }", ""),
-        ("框又占满屏", "input", "fillMaxHeight(0.36f)", "weight(1f)"),
+        ("框又占满屏", "input", "fillMaxHeight(0.30f)", "weight(1f)"),
         ("粘贴钮出框", "input", "Alignment.BottomEnd", "Alignment.TopEnd"),
         ("任务入口不置灰", "merged", "enabled = homeHasTask", "enabled = true"),
         ("弹层没收小", "mixer", "fillMaxHeight(0.86f)", "fillMaxSize()"),

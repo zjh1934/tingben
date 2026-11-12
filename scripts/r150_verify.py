@@ -42,12 +42,12 @@ POS = {
         "Producer.stop()", "onResumeTask()",
     ],
     "hub": [
-        "var expandedChapter by remember(book.id)",
-        "var hubSegs by remember(book.id)",
-        "val chapterSegs = remember(expandedChapter, hubSegs, hubSegChapters)",
+        "val liveChapter: Int? = if (bookRunning) makingChapter else null",
+        "var hubByChapter by remember(book.id)",
+        "val chapterSegs = remember(liveChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)",
         "val pqSeg by PlayQueue.previewState.collectAsState()",
         "Workbench.segments(c, t) to Workbench.segChapters(c, t)",
-        "hubSegs.filter { map[it.index] == ch }",
+        "hubByChapter[ch] ?: emptyList()",
         "val bookRunning = st.running && task?.bookId == book.id",
         "val stalledTask = !st.running && task?.bookId == book.id",
         "val bookPct =", "val chPct =",
@@ -57,7 +57,7 @@ POS = {
         "onRead: () -> Unit,",
         "row: List<SegRow>, pq: PlaybackState,",
         "onRead = { openReader(r.index) }",
-        'EventLog.ui("HUB_CH_EXPAND"',
+        'item(key = "seg_head_${r.index}")',
         "IconButton(onClick = onListen",
         "private fun ChapterSegGrid(",
         'SegGridHead(chapterSegs, segMulti',
@@ -74,6 +74,9 @@ POS = {
 
 BAN = {
     "hub": [
+        # R264 · 展开/收起旧形态不许回潮
+        "var expandedChapter", "val willOpen =", "HUB_CH_EXPAND",
+        "AnimatedVisibility(",
         '"正在制作 · ${st.done}/${st.total} 块"',
         "onTap = { onRead(r.index) }",
         '"这次没做完，已生成的段都留着"',
@@ -192,17 +195,18 @@ def selftest():
     assert not check(f), "基线自己就红了"
     logic_bad = len(logic_cases(f))
     cuts = [
-        ("展开状态被摘", "hub", "var expandedChapter by remember(book.id)", ""),
-        ("一次读盘被摘", "hub", "var hubSegs by remember(book.id)", ""),
+        ("制作章默认展开被摘", "hub",
+         "val liveChapter: Int? = if (bookRunning) makingChapter else null", ""),
+        ("一次读盘被摘", "hub", "var hubByChapter by remember(book.id)", ""),
         ("段数据加载被摘", "hub", "Workbench.segments(c, t) to Workbench.segChapters(c, t)", ""),
-        ("按章过滤被摘", "hub", "hubSegs.filter { map[it.index] == ch }", ""),
+        ("按章过滤被摘", "hub", "hubByChapter[ch] ?: emptyList()", ""),
         ("试听状态被摘", "hub", "val pqSeg by PlayQueue.previewState.collectAsState()", ""),
         ("整本进度条被摘", "hub", "LinearProgressIndicator(progress = { bookPct }", ""),
         ("章节进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
         ("停止按钮被摘", "main", 'EventLog.ui("HUB_STOP"', ""),
         ("停止动作被摘", "main", "Producer.stop()", ""),
         ("继续按钮被摘", "main", 'EventLog.ui("HUB_RESUME"', ""),
-        ("点章展开被摘", "hub", "onRead = { openReader(r.index) }", "onTap = { onRead(r.index) }"),
+        ("阅读入口被摘", "hub", "onRead = { openReader(r.index) }", "onTap = { onRead(r.index) }"),
         ("阅读入口被摘", "hub", "IconButton(onClick = onListen", ""),
         ("展开格组件被摘", "hub", "private fun ChapterSegGrid(", ""),
         ("preview 路由被摘", "hub", "PlayQueue.pausePreview()", "PlayQueue.toggle()"),

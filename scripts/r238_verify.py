@@ -52,7 +52,7 @@ def check(f):
     # 至少三处统一行（通知权限 / 导出位置 / 导出全部）
     for k in ['SettingLine("铃", "通知权限"',
               'SettingLine("导", "导出位置", expTreeLabel)',
-              'SettingLine("成", "已做好 $expCount 个整章成品"']:
+              'SettingLine("成", "整章成品", "已做好 $expCount 个']:
         if k not in s: e.append("统一行没接上: " + k[:52])
     # ② 碎卡合并
     if 'SettingsSection("文件与数据", "本机", collapsible = false)' not in s:
@@ -78,15 +78,19 @@ def check(f):
     if 'SettingsSection("成品文件"' in f["r156"]:
         e.append("r156 旧标题残留")
     # ⑤ 索引硬口径（用户点名「索引地图很重要，别接不上」）
-    for k in ["索引/地图接得上（R238）", "aoci_check 必绿", "exclude_dirs"]:
-        if k not in f["agents"]: e.append("AGENTS 漏写索引硬口径: " + k)
-    for k in ["aoci_check", "--refresh"]:
-        if k not in f["board"]: e.append("看板铁律漏写索引口径: " + k)
+    for k in ["aoci verify", "managed_scope.rules", "Baseline 由官方维护"]:
+        if k not in f["agents"]: e.append("AGENTS 漏写官方治理口径: " + k)
+    for k in ["aoci verify", "Baseline 由官方维护"]:
+        if k not in f["board"]: e.append("看板铁律漏写官方治理口径: " + k)
     # ⑥ 登记
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r238_verify.py --selftest"),
                               ("清单", f["r135"], '"r238_verify.py"'),
                               ("受管根", f["config"], '"app/src/main/java"')]:
-        if needle not in src: e.append(name + " 漏登记 R238")
+        if name == "受管根":
+            from r45_common import scope_indexed
+            if not scope_indexed(f["config"], "app/src/main/java"):
+                e.append(name + " 漏登记 R238")
+        elif needle not in src: e.append(name + " 漏登记 R238")
     return e
 
 def selftest():
@@ -100,7 +104,7 @@ def selftest():
         ("统一行高被摘", "settings", "Modifier.fillMaxWidth().padding(vertical = 9.dp)", "Modifier.fillMaxWidth()"),
         ("通知行没接", "settings", 'SettingLine("铃", "通知权限"', ""),
         ("导出行没接", "settings", 'SettingLine("导", "导出位置", expTreeLabel)', ""),
-        ("成品行没接", "settings", 'SettingLine("成", "已做好 $expCount 个整章成品"', ""),
+        ("成品行没接", "settings", 'SettingLine("成", "整章成品", "已做好 $expCount 个', ""),
         ("合并卡被摘", "settings", 'SettingsSection("文件与数据", "本机", collapsible = false)', ""),
         ("旧本机数据卡回潮", "settings", 'SettingsSection("运行与通知", "系统", collapsible = false)',
          'SettingsSection("本机数据", "本机", collapsible = false)\n        SettingsSection("运行与通知", "系统", collapsible = false)'),
@@ -113,8 +117,8 @@ def selftest():
         ("软件版本被摘", "settings", '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME', '"版本"'),
         ("r156 没迁移", "r156", 'SettingsSection("文件与数据", "本机", collapsible = false)',
          'SettingsSection("成品文件", "本机", collapsible = false)'),
-        ("AGENTS 索引口径被摘", "agents", "索引/地图接得上（R238）", ""),
-        ("AGENTS 索引口径被摘", "board", "aoci_check", ""),
+        ("AGENTS 官方口径被摘", "agents", "aoci verify", ""),
+        ("AGENTS 官方口径被摘(board)", "board", "Baseline 由官方维护", ""),
         ("CI 漏挂", "ci", "python3 scripts/r238_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r238_verify.py"', ""),
     ]

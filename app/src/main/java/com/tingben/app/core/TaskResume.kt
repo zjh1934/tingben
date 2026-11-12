@@ -32,6 +32,12 @@ object TaskResume {
     // 可以安全提升版本继续跑；只有用户真的换过规则才要求手动确认。
     const val SPLIT_RULE = 3
 
+    // R280 · invalidationReason 是纯查询，恢复流程一轮里会反复调它；
+    // 同一进程同一工作目录只记一条 MODE_CHANGED_KEEP，别把诊断日志刷成 5 条。
+    // 不回写模式指纹文件 —— 它是 VoiceCache 反推旧音色套的真值源。
+    private val notedModeChanged: MutableSet<String> =
+        java.util.Collections.synchronizedSet(HashSet())
+
     private fun file(c: Context) = File(c.filesDir, "task_active.json")
     private fun listFile(c: Context) = File(c.filesDir, "tasks.json")
     private fun queueFile(c: Context) = File(c.filesDir, "queue.json")
@@ -225,9 +231,17 @@ object TaskResume {
             // 现在 VoiceCache 把已做好的段认领保留，这里只记一笔并写回 stamp，
             // 点继续就按新参数做剩下的段。
             val modeFile = File(w, "mode_stamp.txt")
-            if (modeFile.exists() && modeFile.readText().trim() != expectedModeStamp(c)) {
-                EventLog.log(EventLog.Kind.PIPELINE, "MODE_CHANGED_KEEP",
-                    "换过模式/音色输入，已做好的段与章节留着，后面按新设置继续")
+            val modeNow = expectedModeStamp(c)
+            if (modeFile.exists() && modeFile.readText().trim() != modeNow) {
+                // 纯查询被恢复流程多处反复调用：按「工作目录 + 当前指纹」只记一条，
+                // 用户真改了设置会换指纹，仍会再记一条；绝不回写 stamp 文件。
+                val first = synchronized(notedModeChanged) {
+                    notedModeChanged.add(w.absolutePath + "|" + modeNow)
+                }
+                if (first) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "MODE_CHANGED_KEEP",
+                        "换过模式/音色输入，已做好的段与章节留着，后面按新设置继续")
+                }
                 null
             } else {
                 val voiceFile = File(w, "voice_stamp.txt")
