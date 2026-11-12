@@ -63,7 +63,8 @@ object OverlayProgress {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
+            // R307 · 不透明：白色页面上也看得清，不要再靠半透明叠在内容上。
+            PixelFormat.OPAQUE
         ).apply {
             // R214 · 改成 TOP|START，拖动时 x 增大就往右走，跟手指一致
             gravity = Gravity.TOP or Gravity.START
@@ -81,19 +82,21 @@ object OverlayProgress {
             set(v) { field = v.coerceIn(0f, 1f); invalidate() }
 
         private val stroke = sizePx * 0.11f
+        // R307 · 底色改成不透明浅色，原来的白描边 / 白字会在白页上消失，
+        // 换成深灰底环、主色弧、深色数字；不靠透明度换可读性。
         private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = stroke
-            color = 0x55FFFFFF
+            color = 0xFFD9DEE8.toInt()
         }
         private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = stroke
             strokeCap = Paint.Cap.ROUND
-            color = 0xFF7CC4FF.toInt()
+            color = 0xFF2F6FE0.toInt()
         }
         private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = 0xFF1D2129.toInt()
             textAlign = Paint.Align.CENTER
             textSize = sizePx * 0.40f
             isFakeBoldText = true
@@ -102,7 +105,7 @@ object OverlayProgress {
         // 数字主体仍是 0~100 的纯数值（0% 写 0、90% 写 90），右侧补一个小号
         // % 字符标明单位；不写书名、不写解释、不写段数。
         private val percentSign = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = 0xFF1D2129.toInt()
             textAlign = Paint.Align.CENTER
             textSize = sizePx * 0.16f
             isFakeBoldText = true
@@ -138,32 +141,63 @@ object OverlayProgress {
         val box = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
+            // R307 · 不透明实底 + 描边：白底页面上也看得清，不再靠透明度叠内容。
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFF4F6FA.toInt())
+                cornerRadius = 14 * c.resources.displayMetrics.density
+                setStroke((2 * c.resources.displayMetrics.density).toInt(),
+                    0xFFC9D4E8.toInt())
+            }
         }
         box.addView(top)
         // 两球略叠，视觉上成 8 字；单球时这枚 GONE，只剩上面那枚
         box.addView(bottom, LinearLayout.LayoutParams(size, size).apply {
             topMargin = -(size / 7)
         })
-        // R214 · 可拖动：按住整块移动，落点只改 LayoutParams，不动任何状态
+        // R307 · 按住可拖；松手自动贴到最近的屏幕边缘，并缩进去一半（只露半块）。
+        // 贴边后一按就先拉回屏内，进度数字能看全，再拖继续跟手。
         box.setOnTouchListener(object : View.OnTouchListener {
             private var downX = 0
             private var downY = 0
             private var originX = 0
             private var originY = 0
+            private var snapped = 0   // -1 贴左、1 贴右、0 未贴边
+
+            private fun moveTo(v: View, x: Int, y: Int) {
+                val p = lp ?: return
+                p.x = x; p.y = y
+                try {
+                    (v.context.getSystemService(Context.WINDOW_SERVICE)
+                        as? WindowManager)?.updateViewLayout(v, p)
+                } catch (_: Throwable) { }
+            }
+
             override fun onTouch(v: View, e: MotionEvent): Boolean {
                 val params = lp ?: return true
+                val sw = v.context.resources.displayMetrics.widthPixels
+                val sh = v.context.resources.displayMetrics.heightPixels
+                val w = v.width
+                val h = v.height
+                val maxY = (sh - h).coerceAtLeast(0)
                 when (e.action) {
                     MotionEvent.ACTION_DOWN -> {
+                        if (snapped != 0) {
+                            moveTo(v, if (snapped < 0) 0 else sw - w, params.y)
+                            snapped = 0
+                        }
                         downX = e.rawX.toInt(); downY = e.rawY.toInt()
                         originX = params.x; originY = params.y
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        params.x = originX + e.rawX.toInt() - downX
-                        params.y = originY + e.rawY.toInt() - downY
-                        try {
-                            (v.context.getSystemService(Context.WINDOW_SERVICE)
-                                as? WindowManager)?.updateViewLayout(v, params)
-                        } catch (_: Throwable) { }
+                        moveTo(v, originX + e.rawX.toInt() - downX,
+                            (originY + e.rawY.toInt() - downY).coerceIn(0, maxY))
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val left = params.x + w / 2 < sw / 2
+                        snapped = if (left) -1 else 1
+                        // 一半留在屏内、一半缩进边缘外
+                        moveTo(v, if (left) -(w / 2) else sw - w / 2,
+                            params.y.coerceIn(0, maxY))
                     }
                 }
                 return true

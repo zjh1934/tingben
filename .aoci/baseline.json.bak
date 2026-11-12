@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-11T16:16:15Z",
-  "updated_at": "2026-11-12T12:24:23Z",
+  "updated_at": "2026-11-12T13:21:08Z",
   "files": {
     ".github/workflows/ci.yml": {
       "role": "index",
@@ -35,9 +35,9 @@
     },
     "STATUS.md": {
       "role": "index",
-      "sha256": "6b2a4615813835928b81bec3ebb44feb9805cf22272e661448e330802fbda4e0",
+      "sha256": "388a88426f42be5059a233684be5ee6e2b20b531c3589a39049a345517f56eea",
       "size": 3659,
-      "normalized_sha256": "6b2a4615813835928b81bec3ebb44feb9805cf22272e661448e330802fbda4e0"
+      "normalized_sha256": "388a88426f42be5059a233684be5ee6e2b20b531c3589a39049a345517f56eea"
     },
     "aoci.code.txt": {
       "role": "index",
@@ -107,15 +107,15 @@
     },
     "app/src/main/java/com/tingben/app/DescPresetUi.kt": {
       "role": "index",
-      "sha256": "15fc3eec6b82743eef7e9be3aa821bc8a58ed4637c2339430dff30e1c31af0fd",
-      "size": 6231,
-      "normalized_sha256": "15fc3eec6b82743eef7e9be3aa821bc8a58ed4637c2339430dff30e1c31af0fd"
+      "sha256": "c0975ffca12ec80a2b00656d585b1e51ec4568eaeffb187e33b38da783c95b99",
+      "size": 7656,
+      "normalized_sha256": "c0975ffca12ec80a2b00656d585b1e51ec4568eaeffb187e33b38da783c95b99"
     },
     "app/src/main/java/com/tingben/app/InputReadUi.kt": {
       "role": "index",
-      "sha256": "1838381651b7fce860a89696d0c5bc4b9fc22229acaf4e2ce0a52a98fbdffac1",
-      "size": 22053,
-      "normalized_sha256": "1838381651b7fce860a89696d0c5bc4b9fc22229acaf4e2ce0a52a98fbdffac1"
+      "sha256": "82a5b112ec697878e546febbcf541aec727fbde30f7ea0ee0d76c0905a565c78",
+      "size": 25957,
+      "normalized_sha256": "82a5b112ec697878e546febbcf541aec727fbde30f7ea0ee0d76c0905a565c78"
     },
     "app/src/main/java/com/tingben/app/LibraryUi.kt": {
       "role": "index",
@@ -131,9 +131,9 @@
     },
     "app/src/main/java/com/tingben/app/MixerUi.kt": {
       "role": "index",
-      "sha256": "65a965b4936693557b2dfd0caaa980b92e3bda3db4297a0d4a75ceee114e6659",
-      "size": 37889,
-      "normalized_sha256": "65a965b4936693557b2dfd0caaa980b92e3bda3db4297a0d4a75ceee114e6659"
+      "sha256": "4d0e7513ad084c3d18a83d2e515facde34ba7044b833c60ff4753e93e1be4837",
+      "size": 38836,
+      "normalized_sha256": "4d0e7513ad084c3d18a83d2e515facde34ba7044b833c60ff4753e93e1be4837"
     },
     "app/src/main/java/com/tingben/app/ModelUi.kt": {
       "role": "index",
@@ -149,9 +149,9 @@
     },
     "app/src/main/java/com/tingben/app/OverlayProgress.kt": {
       "role": "index",
-      "sha256": "c44c48ffe95bf15e477cb7db44c7080da71bb307063c24a7ad1762c6c4979721",
-      "size": 11407,
-      "normalized_sha256": "c44c48ffe95bf15e477cb7db44c7080da71bb307063c24a7ad1762c6c4979721"
+      "sha256": "bb5cbc15265a5521dc5b3bdfc8c5f6d320c20df2a001ed80263c52e1d3217d56",
+      "size": 13322,
+      "normalized_sha256": "bb5cbc15265a5521dc5b3bdfc8c5f6d320c20df2a001ed80263c52e1d3217d56"
     },
     "app/src/main/java/com/tingben/app/PlayIcons.kt": {
       "role": "index",
@@ -335,9 +335,9 @@
     },
     "app/src/main/java/com/tingben/app/core/MixerDraft.kt": {
       "role": "index",
-      "sha256": "2598eee02897cadbf671ee3a8208e583222e1865680c33c08100f8c190291dd1",
-      "size": 3106,
-      "normalized_sha256": "2598eee02897cadbf671ee3a8208e583222e1865680c33c08100f8c190291dd1"
+      "sha256": "a1368380d3eed12d3612aa16479b5ed7f12bbefce7c56ab3a77b405f7c044f1d",
+      "size": 3893,
+      "normalized_sha256": "a1368380d3eed12d3612aa16479b5ed7f12bbefce7c56ab3a77b405f7c044f1d"
     },
     "app/src/main/java/com/tingben/app/core/MixerPresets.kt": {
       "role": "index",
@@ -851,9 +851,9 @@
     },
     "version.txt": {
       "role": "index",
-      "sha256": "d0e515322be087ad49e9f33e6a513ab5607cd94d35ebd3db6deaf98694ac4fa7",
+      "sha256": "f1568b28ff17ec5c429f2070d8fea5bc3f0704879e2a72b4989d2d66bee41737",
       "size": 7,
-      "normalized_sha256": "d0e515322be087ad49e9f33e6a513ab5607cd94d35ebd3db6deaf98694ac4fa7"
+      "normalized_sha256": "f1568b28ff17ec5c429f2070d8fea5bc3f0704879e2a72b4989d2d66bee41737"
     }
   },
   "managed_scope": {

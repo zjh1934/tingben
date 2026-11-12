@@ -7,17 +7,22 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -190,8 +195,12 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                 modifier = Modifier.padding(bottom = 6.dp))
         }
         if (modelMissing > 0) {
+            // R307 · 裸红字改成一条淡红胶囊，不再横在内容区最上面抢视线。
             Row(verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Warn.copy(alpha = 0.10f))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text("还差 $modelMissing 份模型没导入", fontSize = 12.sp,
                     color = Warn, modifier = Modifier.weight(1f))
                 TextButton(onClick = onModels) {
@@ -213,28 +222,60 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
             }
             Spacer(Modifier.height(12.dp))
         }
-        // R171/R214 · 框约 1/3 屏，粘贴 / 清除在框内右下角，不放教程文字。
-        Box(Modifier.fillMaxWidth().fillMaxHeight(0.30f)) {
-            OutlinedTextField(
-                value = text, onValueChange = { text = it },
-                placeholder = { Text("粘贴或输入要念的正文", fontSize = 12.sp) },
-                modifier = Modifier.fillMaxSize().padding(bottom = 34.dp),
-                textStyle = TextStyle(fontSize = 14.sp)
-            )
-            Row(Modifier.align(Alignment.BottomEnd)
-                    .padding(end = 6.dp, bottom = 4.dp),
+        // R307 · 主页重绘：输入区收成一张卡（标题 + 字数 + 正文 + 两枚胶囊）。
+        // 口径不变：贴一段 → 点合成 → 产物进下方留白列表，空槽位不写「还没有片段」。
+        if (asHome) {
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = {
-                    val got = clipboard.getText()?.text ?: ""
-                    if (got.isNotBlank()) text = got
-                    else Toast.makeText(c, "剪贴板里没有文字", Toast.LENGTH_SHORT).show()
-                }) { Text("粘贴", fontSize = 12.sp) }
-                TextButton(onClick = { text = "" }) { Text("清除", fontSize = 12.sp) }
+                Text("念点什么", fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold, color = palette.text)
+                Spacer(Modifier.weight(1f))
+                Text("${text.length} 字", fontSize = 12.sp, color = Sub)
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Box(Modifier.fillMaxWidth().fillMaxHeight(0.26f)
+            .clip(RoundedCornerShape(20.dp))
+            .background(palette.card)
+            .border(1.dp, Line, RoundedCornerShape(20.dp))) {
+            BasicTextField(
+                value = text, onValueChange = { text = it },
+                modifier = Modifier.fillMaxSize()
+                    .padding(16.dp).padding(bottom = 36.dp),
+                textStyle = TextStyle(fontSize = 14.sp, color = palette.text,
+                    lineHeight = 22.sp),
+                decorationBox = { inner ->
+                    Box(Modifier.fillMaxSize()) {
+                        if (text.isEmpty()) Text("粘贴或输入要念的正文",
+                            fontSize = 14.sp, color = Sub)
+                        inner()
+                    }
+                }
+            )
+            Row(Modifier.align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.clip(RoundedCornerShape(18.dp))
+                    .background(palette.primarySoft)
+                    .clickable {
+                        val got = clipboard.getText()?.text ?: ""
+                        if (got.isNotBlank()) text = got
+                        else Toast.makeText(c, "剪贴板里没有文字",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text("粘贴", fontSize = 12.sp, color = Primary)
+                }
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.clip(RoundedCornerShape(18.dp))
+                    .background(palette.primarySoft)
+                    .clickable { text = "" }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text("清除", fontSize = 12.sp, color = Primary)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
             if (asHome) {
                 Button(enabled = text.isNotBlank(), onClick = {
                     if (text.isBlank()) {
@@ -264,7 +305,15 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                     val item = ClipLibrary.create(c, snapshot)
                     refresh()
                     synth(item, snapshot, false)
-                }) { Text(if (busy > 0) "再合成一段" else "合成这段", fontSize = 13.sp) }
+                },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Primary, contentColor = palette.onPrimary,
+                        disabledContainerColor = palette.primarySoft,
+                        disabledContentColor = Sub)
+                ) { Text("▶  " + if (busy > 0) "再合成一段" else "合成这段",
+                    fontSize = 15.sp, fontWeight = FontWeight.Bold) }
             } else {
                 Button(enabled = !adding, onClick = {
                     if (text.isBlank()) {
@@ -297,24 +346,46 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                             adding = false
                         }
                     }
-                }) { Text(if (adding) "正在加…" else "建书", fontSize = 13.sp) }
+                },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) { Text(if (adding) "正在加…" else "建书", fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold) }
             }
         }
 
         // R276 · 下方留白 = 片段常驻列表。每条前 10 字名 + 状态，点一下走播放条。
         if (asHome) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(18.dp))
+            Text("合成好的音频", fontSize = 13.sp, color = Sub)
+            Spacer(Modifier.height(10.dp))
             Box(Modifier.weight(1f)) {
                 if (clips.isEmpty()) {
-                    // R304 · 不写「还没有片段」这行字：留白区常驻三条空槽位轮廓，
-                    // 有片段时同一个位置换成真条目，布局不跳、也不会是空白一片。
+                    // R307 · 空槽位改成与真实条目同构的骨架：勾选位 / 两行文字 /
+                    // 播放位，一眼看得出这里以后放什么；仍不写「还没有片段」。
                     Column(Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         repeat(3) {
-                            Box(Modifier.fillMaxWidth().height(54.dp)
-                                .background(palette.sub.copy(alpha = 0.30f))
-                                .padding(1.dp)) {
-                                Box(Modifier.fillMaxSize().background(palette.card))
+                            Row(Modifier.fillMaxWidth().height(64.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(palette.card)
+                                .border(1.dp, Line, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(20.dp)
+                                    .border(1.5.dp, Line, RoundedCornerShape(10.dp)))
+                                Spacer(Modifier.width(14.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Box(Modifier.width(160.dp).height(12.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(palette.sub.copy(alpha = 0.16f)))
+                                    Spacer(Modifier.height(8.dp))
+                                    Box(Modifier.width(96.dp).height(9.dp)
+                                        .clip(RoundedCornerShape(5.dp))
+                                        .background(palette.sub.copy(alpha = 0.10f)))
+                                }
+                                Box(Modifier.size(28.dp)
+                                    .border(1.5.dp, Line, RoundedCornerShape(14.dp)))
                             }
                         }
                     }

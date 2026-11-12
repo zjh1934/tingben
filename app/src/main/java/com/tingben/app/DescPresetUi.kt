@@ -43,15 +43,20 @@ internal fun DescPresetRow(
         Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
             color = palette.text)
         Spacer(Modifier.width(8.dp))
-        // ▾ · 选择预设
-        Box(Modifier.size(30.dp)
+        // R307 · 「选择 ▾」合成一枚按钮：文字 + 小三角，不再只有一个孤零零的三角。
+        Row(Modifier.height(30.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(palette.primarySoft)
             .clickable {
                 items = DescPresetStore.list(ctx, slot)
                 showPick = true
-            }, contentAlignment = Alignment.Center) {
-            Text("▾", fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            }
+            .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("选择", fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                color = palette.primary)
+            Spacer(Modifier.width(4.dp))
+            Text("▾", fontSize = 12.sp, fontWeight = FontWeight.Bold,
                 color = palette.primary)
         }
         Spacer(Modifier.width(6.dp))
@@ -86,10 +91,25 @@ internal fun DescPresetRow(
                             fontSize = 12.sp, color = Sub)
                     } else {
                         items.forEach { p ->
-                            TextButton(
-                                onClick = { onPick(p.long); showPick = false },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text(p.short, fontSize = 13.sp) }
+                            // R307 · 列表只显示简短描述；点条子把「详细描述」交给调用方，
+                            // 它才是真正喂进模型的那一份，简短版永远不进合成参数。
+                            Row(Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    onClick = { onPick(p.long); showPick = false },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(p.short, fontSize = 13.sp,
+                                    color = palette.text) }
+                                // R307 · 右侧垃圾桶：点一下直接删，不弹「确定删除吗」。
+                                Box(Modifier.size(36.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .clickable {
+                                        DescPresetStore.delete(ctx, slot, p.id)
+                                        items = DescPresetStore.list(ctx, slot)
+                                    }, contentAlignment = Alignment.Center) {
+                                    UiIconGlyph(UiIcon.DELETE, Warn, glyphSize = 18.dp)
+                                }
+                            }
                         }
                     }
                 }
