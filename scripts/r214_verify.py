@@ -77,9 +77,12 @@ def check(f):
     if "Modifier.fillMaxSize()" in mx.split("MixerDialog")[1][:400]:
         e.append("弹层又全屏撑满")
     # ⑤ MainActivity 接线：onTasks / hasTask 不能是空实现
-    for k in ["chapterMixerOpen = true", "hubOpenTasks = true",
+    for k in ["chapterMixerOpen = true", "screen = Screen.TASKS",
               "TaskResume.queue(ctx).isNotEmpty()", "Screen.LIBRARY -> {"]:
         if k not in mg: e.append("主界面接线缺: " + k[:52])
+    # R298 · 目录页就地看板撤掉，旧入口零回潮
+    for b in ["hubOpenTasks", "tasksRequest = hubTasksTick", "TaskBoardDialog("]:
+        if b in mg: e.append("目录页旧任务入口回潮: " + b[:40])
     # ⑥ 登记
     if "python3 scripts/r214_verify.py --selftest" not in f["ci"]:
         e.append("CI 漏挂 r214")
@@ -107,6 +110,7 @@ def selftest():
         ("任务入口不置灰", "merged", "enabled = homeHasTask", "enabled = true"),
         ("弹层没收小", "mixer", "fillMaxHeight(0.86f)", "fillMaxSize()"),
         ("弹层丢导航避让", "mixer", "navigationBarsPadding()", ""),
+        ("目录页旧入口回潮", "merged", "screen = Screen.TASKS", "hubOpenTasks = true"),
         ("主界面没接任务", "merged",
          "val homeHasTask = remember(refresh, bookImporting)", "val homeHasTask = false"),
         ("CI 漏挂", "ci", "python3 scripts/r214_verify.py --selftest", ""),

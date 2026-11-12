@@ -72,8 +72,15 @@ def check(f):
               'text.length > ClipSynth.MAX_CHARS',
               'ClipSynth.synthesize(c, snapshot,',
               '"clip_listen.wav", "首页片段"',
-              'OverlayProgress.update(c, "", "合成中", 0, 1, -1f,',
-              'OverlayProgress.update(c, "", "完成", 1, 1, -1f,',
+              # R301 · 旧锚「0, 1 / 1, 1」随整批进度迁移，判据一条没放宽；
+              # 另补批次计数、全批才收、连点去重几组真判据。
+              'OverlayProgress.update(c, "", "合成中", clipBatchDone, clipBatchTotal,',
+              'if (last) "完成" else "合成中"',
+              'var clipBatchDone by remember', 'var clipBatchTotal by remember',
+              'clipBatchTotal++', 'clipBatchDone++', 'val last = busy == 1',
+              'if (busy == 0) {', 'val recentSame = clips.any { old ->',
+              'ClipLibrary.text(c, old.id) == text',
+              '这段刚合成过，已在列表里',
               'OverlaySource.CLIP',
               'OverlayProgress.hide(c, OverlaySource.CLIP)',
               'ClipLibrary.create(c, snapshot)',
@@ -86,6 +93,12 @@ def check(f):
     # 成功（延迟收起）与失败两条路径都得收浮窗，少一条就留在屏幕上
     if it.count("OverlayProgress.hide(c, OverlaySource.CLIP)") < 2:
         e.append("悬浮窗收起出口不全（两条路径都要条件 hide，不能误删制作球）")
+    # R301 · 退回「每条各自 0/1」会让连点浮窗互相盖：真机日志 top=100 紧接 top=0
+    if 'OverlayProgress.update(c, "", "合成中", 0, 1,' in it:
+        e.append("片段浮窗又退回逐条 0/1 硬编码")
+    # R301 · 整批没收完就 hide，会把还在排队的片段进度抹掉
+    if 'if (busy == 0) {' not in it:
+        e.append("片段浮窗没等整批跑完就收起")
     # 片段绝不能退回「播完即丢」的试听通道
     if 'id = "trial"' in it or 'PlayQueue.playFrom(0, id = "trial")' in it:
         e.append("片段又退回 trial 试听通道（会被 sweep 删掉）")
@@ -167,7 +180,8 @@ def selftest():
         ("首页又清空正文", "input", 'val snapshot = text\n                    val item = ClipLibrary.create',
          'text = ""\n                    val snapshot = text\n                    val item = ClipLibrary.create'),
         ("首页绕过字数上限", "input", "text.length > ClipSynth.MAX_CHARS", "false"),
-        ("单球链路被摘", "input", 'OverlayProgress.update(c, "", "合成中", 0, 1, -1f,', ""),
+        ("单球链路被摘", "input",
+         'OverlayProgress.update(c, "", "合成中", clipBatchDone, clipBatchTotal,', ""),
         ("CLIP 来源被摘", "input", "OverlaySource.CLIP", "OverlaySource.PREVIEW"),
         ("播完不收浮窗", "input", "OverlayProgress.hide(c, OverlaySource.CLIP)", ""),
         ("分享页建书被删", "input", 'autoBookTitle(snapshot, "粘贴的文字")', ""),
@@ -176,6 +190,12 @@ def selftest():
         ("clip_view 被摘", "clipview", "def merged(root)", "def gone(root)"),
         ("CI 漏挂", "ci", "python3 scripts/r215_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r215_verify.py"', ""),
+        # R301 · 整批进度与连点去重的反向注入，防止退回逐条 0/1 的老形态
+        ("批次总数被摘", "input", "clipBatchTotal++", ""),
+        ("批次完成被摘", "input", "clipBatchDone++", ""),
+        ("全批才收被摘", "input", "if (busy == 0) {", "if (true) {"),
+        ("连点去重被摘", "input", "ClipLibrary.text(c, old.id) == text", "true"),
+        ("完成态被摘", "input", 'if (last) "完成" else "合成中"', '"合成中"'),
     ]
     bad = 0
     # 全量替换用例：锚点在源码里出现多次，只摘第一处判据仍恒真、注入会漏放

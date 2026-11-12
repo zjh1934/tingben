@@ -59,6 +59,11 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
     var busy by rememberSaveable { mutableStateOf(0) }
     val listenScope = rememberCoroutineScope()
     val synthMutex = remember { Mutex() }
+    // R301 · 连点「合成这段」时浮窗按整批进度走（0/4→1/4→…→4/4），
+    // 不再每条各自 0/1→1/1 互相覆盖、也不每条都重新 addView。
+    // 用 remember 而非 rememberSaveable：页面重建时队列也没了，归零最稳。
+    var clipBatchDone by remember { mutableStateOf(0) }
+    var clipBatchTotal by remember { mutableStateOf(0) }
     DisposableEffect(Unit) { onDispose {
         if (busy > 0) { try { NativeEngine.nativeCancel() } catch (_: Throwable) { } }
     } }
@@ -110,8 +115,10 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
     fun synth(item: ClipLibrary.Item, snapshot: String, redo: Boolean): Job =
         listenScope.launch {
             busy++
+            clipBatchTotal++
+            OverlayProgress.update(c, "", "合成中", clipBatchDone, clipBatchTotal,
+                -1f, OverlaySource.CLIP)
             synthMutex.withLock {
-                OverlayProgress.update(c, "", "合成中", 0, 1, -1f, OverlaySource.CLIP)
                 val tmp = if (redo) ClipLibrary.redoFile(c, item.id) else item.audio
                 val res = withContext(Dispatchers.IO) {
                     runCatching {
@@ -131,19 +138,30 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                     val reason = if (ok) "" else ClipLibrary.reasonOf(res.exceptionOrNull())
                     if (!ok) ClipLibrary.setFailReason(c, item.id, reason)
                     ClipLibrary.finish(c, item.id, ok)
+                    clipBatchDone++
+                    val last = busy == 1
                     if (ok) {
-                        OverlayProgress.update(c, "", "完成", 1, 1, -1f, OverlaySource.CLIP)
+                        OverlayProgress.update(c, "", if (last) "完成" else "合成中",
+                            clipBatchDone, clipBatchTotal, -1f, OverlaySource.CLIP)
                         EventLog.ui("CLIP_LISTEN", "chars=${snapshot.length}")
-                        listenScope.launch {
+                        if (last) listenScope.launch {
                             delay(1200)
-                            OverlayProgress.hide(c, OverlaySource.CLIP)
+                            // R301 · 这 1.2 秒里又点了一条就别收：新条自己会排收尾
+                            if (busy == 0) {
+                                OverlayProgress.hide(c, OverlaySource.CLIP)
+                                clipBatchDone = 0
+                                clipBatchTotal = 0
+                            }
                         }
                     } else {
-                        OverlayProgress.hide(c, OverlaySource.CLIP)
+                        if (last) OverlayProgress.hide(c, OverlaySource.CLIP)
+                        else OverlayProgress.update(c, "", "合成中",
+                            clipBatchDone, clipBatchTotal, -1f, OverlaySource.CLIP)
                         EventLog.log(EventLog.Kind.ENGINE, "CLIP_LISTEN_FAIL", "id=${item.id.take(6)}")
                         Toast.makeText(c,
                             "没合成出来：${ClipLibrary.reasonText(reason)}，可以长按这条重做",
                             Toast.LENGTH_LONG).show()
+                        if (last) { clipBatchDone = 0; clipBatchTotal = 0 }
                     }
                     refresh()
                     busy--
@@ -174,7 +192,7 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
         if (modelMissing > 0) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                Text("还差 $modelMissing 份模型，还不能合成", fontSize = 12.sp,
+                Text("还差 $modelMissing 份模型没导入", fontSize = 12.sp,
                     color = Warn, modifier = Modifier.weight(1f))
                 TextButton(onClick = onModels) {
                     Text("去导入 ›", fontSize = 12.sp, color = Primary)
@@ -227,6 +245,19 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                         Toast.makeText(c,
                             "这段 ${text.length} 字太长，最多 ${ClipSynth.MAX_CHARS} 字，先少粘一点",
                             Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
+                    // R301 · 60 秒内同一段文字连点不再生成几条重复片段：
+                    // 1.1.32 真机日志 15:40:52~15:40:53 一秒内两条同 hash，
+                    // 每条都要等好几分钟。要换音色重做走长按菜单，不靠连点。
+                    val recentSame = clips.any { old ->
+                        System.currentTimeMillis() - old.createdAt < 60_000L &&
+                            old.chars == text.length &&
+                            ClipLibrary.text(c, old.id) == text
+                    }
+                    if (recentSame) {
+                        Toast.makeText(c, "这段刚合成过，已在列表里",
+                            Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     val snapshot = text

@@ -82,7 +82,7 @@ def check(f):
               "gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)",
               'val merged = if (c != null)',
               "AudioLibrary.bookDir(c, book.id, book.title).absolutePath",
-              'chapters=${merged.first} skipped=${merged.second}']:
+              'chapters=$totalMade immediate=$chaptersMade late=${merged.first}']:
         if k not in pr: e.append("R272 收尾按章拼缺: " + k[:56])
     for k in ["WavMerger.merge(wavs, outFile, config.gapMs)",
               "AudioLibrary.bookWholeFile(", "AudioLibrary.scopeFile(",
@@ -101,6 +101,12 @@ def check(f):
     for k in ["AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,",
               "if (made > 0) localTick++"]:
         if k not in f["hub"]: e.append("目录页回溯补齐缺: " + k[:56])
+    # R301 · 正常跑完的书别每次进目录页全量读 segmap：1.1.32 真机日志
+    # 7 次「补拼 0 章 / 跳过 3 章」全是白烧 IO。中断/停止/待确认仍要补。
+    for k in ["AudioLibrary.chapterSnapshot(c, book.id).second.isNotEmpty()",
+              "if (hasAudio && !pendingPhase) return@withContext 0",
+              't.phase == "interrupted"', 't.phase == "stopped"']:
+        if k not in f["hub"]: e.append("目录页回溯短路缺: " + k[:56])
     # R265 · 唯一真源：补拼按宽松口径去重（旧版整本成品多章不算、单章算）。
     # R272 后整本.wav 不再新生成，但兼容读取旧盘数据的口径一条不放宽。
     for k in ["if (AudioLibrary.hasChapterAudio(c, bookId, ci))",
@@ -204,6 +210,8 @@ def selftest():
          "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,", ""),
         ("回溯补齐被摘", "hub",
          "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,", ""),
+        ("回溯短路被摘", "hub",
+         "if (hasAudio && !pendingPhase) return@withContext 0", ""),
         ("补拼去重被摘", "ops",
          "if (AudioLibrary.hasChapterAudio(c, bookId, ci))", ""),
         ("退回整本占章去重", "ops",

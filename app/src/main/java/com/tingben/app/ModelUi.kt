@@ -146,7 +146,7 @@ internal fun ModelScreen(c: Context, refresh: Int,
             Text("模型", fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f))
             Text(if (allReady) "已就绪 · ${installed.size} 个模式"
-                 else if (baseFile == null) "还缺共用底座" else "还缺模式主文件",
+                 else "还差 ${missing.size} 份模型",
                 fontSize = 12.sp, color = if (allReady) Good else Warn)
         }
 
@@ -314,7 +314,7 @@ internal fun ModelScreen(c: Context, refresh: Int,
 
         CardBox(Modifier.padding(bottom = 6.dp)) {
             if (allReady) {
-                Text("底座 + 至少 1 个模式都在", fontSize = 13.sp,
+                Text("底座 + 3 个模式都在", fontSize = 13.sp,
                     fontWeight = FontWeight.Bold)
                 Text(current.label + " 是当前模式。" + (if (current == ModelStore.Mode.VOICE_DESIGN)
                     "可以合成音频了。" else "切回「描述造音色」后即可继续。"),

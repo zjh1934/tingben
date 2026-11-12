@@ -92,35 +92,45 @@ object SegPlan {
         } catch (_: Throwable) { null }
     }
 
-    fun readRedo(work: File): MutableSet<String> {
+    // R297 · 目录页每秒读、Producer 每段读/清、点「重做选中」时批量写，三处并发。
+    // 旧实现是无锁的「读-改-写」：UI 勾几十段就逐条 fsync，主线程被拖住；
+    // 还会和 Producer 的 clearRedo 互相覆盖，刚标记的段凭空消失。
+    private val redoLock = Any()
+
+    fun readRedo(work: File): MutableSet<String> = synchronized(redoLock) {
         val body = when (val r = AtomicJson.read(File(work, REDO))) {
             is AtomicJson.Read.Ok -> r.text
-            else -> return mutableSetOf()
+            else -> return@synchronized mutableSetOf()
         }
-        return try {
+        try {
             val a = JSONArray(body)
             (0 until a.length()).map { a.getString(it) }.toMutableSet()
         } catch (_: Throwable) { mutableSetOf() }
     }
 
-    private fun writeRedo(work: File, s: Set<String>) {
+    private fun writeRedo(work: File, s: Set<String>) = synchronized(redoLock) {
         val a = JSONArray(); s.sorted().forEach { a.put(it) }
         atomic(File(work, REDO), a.toString())
     }
 
-    fun markSeg(work: File, seg: Int) {
+    fun markSeg(work: File, seg: Int) = synchronized(redoLock) {
         val r = readRedo(work); r.add("seg:$seg"); writeRedo(work, r)
     }
 
-    fun markBlock(work: File, block: Int) {
+    /** R297 · 一次勾选 N 段只写一次盘，主线程不再做 N 次 fsync。 */
+    fun markSegs(work: File, segs: Collection<Int>) = synchronized(redoLock) {
+        val r = readRedo(work); segs.forEach { r.add("seg:$it") }; writeRedo(work, r)
+    }
+
+    fun markBlock(work: File, block: Int) = synchronized(redoLock) {
         val r = readRedo(work); r.add("block:$block"); writeRedo(work, r)
     }
 
-    fun clearRedo(work: File, key: String) {
+    fun clearRedo(work: File, key: String) = synchronized(redoLock) {
         val r = readRedo(work); if (r.remove(key)) writeRedo(work, r)
     }
 
-    fun pending(work: File): Set<String> = readRedo(work)
+    fun pending(work: File): Set<String> = synchronized(redoLock) { readRedo(work) }
 
     fun redoSynthesize(work: File, s: SegMeta): Boolean {
         val w = File(work, s.wavName)

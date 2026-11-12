@@ -141,6 +141,10 @@ object ModelStore {
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
     fun synthesisBlockReason(c: Context): String? {
+        // R291 · 底座是 native 必需的第二个文件，缺了会直接打不开；
+        // 原先只查当前模式主文件，会让「只差底座」时按钮提前可用。
+        if (tokenizer(c) == null)
+            return "共用底座（12Hz）还没导入。到「模型」页导入再合成。"
         val m = currentMode(c)
         if (modeFile(c, m) == null)
             return "「${m.label}」的模式主文件还没导入。到「模型」页导入，或切回「描述造音色」。"
@@ -158,12 +162,19 @@ object ModelStore {
         }
     }
 
+    /**
+     * R291 · 用户实证：新装清干净后实际要导入 4 份（共用底座 + 3 个模式主文件），
+     * 首页却只显示「还差 2 个」——旧实现把 3 个模式合并成一个笼统的「模式主文件」，
+     * 计数和清单都不反映真实文件数。
+     * 现在按文件逐项列：缺底座算 1 份，每个没装的模式各算 1 份，最多 4 份。
+     * 注意「能不能合成」另由 synthesisBlockReason 判（底座 + 当前模式齐即可），
+     * 所以这里列全 4 份不会拦住只装够当前模式就开跑的用户。
+     */
     fun missing(c: Context): List<String> {
         val m = mutableListOf<String>()
         if (tokenizer(c) == null) m.add("共用底座（12Hz）")
-        if (installedModes(c).isEmpty()) m.add("模式主文件")
-        else if (modeFile(c, currentMode(c)) == null)
-            m.add("「${currentMode(c).label}」的模式主文件")
+        val have = installedModes(c).toSet()
+        Mode.values().filter { it !in have }.forEach { m.add("「${it.label}」主文件") }
         return m
     }
     fun ready(c: Context) = missing(c).isEmpty()

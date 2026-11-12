@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""R174 · 界面自审固化（画给自己看之后找到的两个真问题 + 一个核实结论）。
+"""R174 · 界面自审固化（画给自己看之后找到的真问题 + 一个核实结论）。
 
 自审板把六格界面按真实结构画出来自己看，逐条去代码核实，结论：
-  · 书架空态是一片白、没有能按的入口 → 加「导入第一本 ›」按钮（不是说明文字）
+  · R291 改判：抽屉顶部已经有实心「＋ 导入一本书」，书架空态原来那枚
+    「导入第一本 ›」是第二枚入口，新装/清干净后两枚同时出现。
+    现在只留顶部那一枚，空态整行不渲染，也不许回潮成废话说明。
   · 设置页有两张都标「系统」的卡 → 权限三行并进「运行与通知」
   · 目录页底部胶囊会挡最后一章？→ 核实有 contentPadding(bottom=100.dp)，
     已收口，这里把它固化成判据，防止以后被顺手删掉
@@ -19,13 +21,17 @@ import ui_sources
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC = ROOT / "app/src/main/java/com/tingben/app"
 FILES = {
     "main": ui_sources.source(ROOT),
-    "hub": ROOT / "app/src/main/java/com/tingben/app/ChapterHub.kt",
+    "chrome": SRC / "AppChrome.kt",
+    "hub": SRC / "ChapterHub.kt",
     "ci": ROOT / ".github/workflows/ci.yml",
 }
 
-EMPTY_BTN = 'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)'
+# R291 · 抽屉里唯一一枚导入入口；空态那枚是旧第二入口，用于回潮注入
+DRAWER_BTN = 'Text("＋ 导入一本书", fontSize = 13.sp)'
+OLD_EMPTY_BTN = 'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)'
 SYS_CARD = 'SettingsSection("运行与通知", "系统", collapsible = false)'
 BOTTOM_PAD = "contentPadding = PaddingValues(bottom = 100.dp)"
 
@@ -38,22 +44,16 @@ def group_of(src: str, start_needle: str) -> str:
 
 def checks(f):
     e = []
-    m, h = f["main"], f["hub"]
+    m, h, chrome = f["main"], f["hub"], f["chrome"]
 
-    # ① 书架空态：必须是一个能按的按钮，且挂在 books 为空的 else 分支里
-    if EMPTY_BTN not in m:
-        e.append("书架空态没有可点的导入入口")
-    if 'item(key = "empty")' not in m:
-        e.append("书架空态没有独立的 empty item")
-    else:
-        a = m.find("if (books.isNotEmpty())")
-        z = m.find("导入第一本", a)
-        if a < 0 or z < 0 or "else {" not in m[a:z]:
-            e.append("空态入口没落在 books 为空的 else 分支")
-    # 空态不许回潮成「废话说明」：用户明确反感文本框上方的说明文字
-    empty_zone = m[m.find('item(key = "empty")'):m.find('item(key = "empty")') + 400]
-    if "说明" in empty_zone or "教程" in empty_zone or "怎么" in empty_zone:
-        e.append("书架空态混进了说明文字（不是入口按钮）")
+    # ① R291 · 抽屉里只准一枚导入入口：顶部实心按钮在、空态不再画第二枚
+    if DRAWER_BTN not in chrome:
+        e.append("抽屉顶部唯一导入入口被删")
+    if OLD_EMPTY_BTN in m:
+        e.append("书架空态又出现第二枚导入入口")
+    # 空态整行不渲染；顺带挡住「废话说明」回潮（用户明确反感）
+    if 'item(key = "empty")' in m:
+        e.append("书架空态又渲染了 empty item（抽屉顶部已是唯一入口）")
 
     # ② 设置页系统类只留一张卡，三行权限都在卡内
     sys_lines = [x for x in m.splitlines()
@@ -83,12 +83,13 @@ def selftest():
     base = {k: p.read_text(encoding="utf-8") for k, p in FILES.items()}
     assert not checks(base), "基线自己就红了，先修基线"
     cases = [
-        ("空态入口被摘", "main", lambda t: t.replace(EMPTY_BTN, "")),
-        ("空态退回废话说明", "main",
-         lambda t: t.replace(EMPTY_BTN,
-             'Text("说明：点右上角＋导入第一本书，然后就能开始制作")')),
-        ("空态入口挪出 else", "main",
-         lambda t: t.replace('item(key = "empty")', 'item(key = "head")')),
+        ("抽屉唯一入口被摘", "chrome", lambda t: t.replace(DRAWER_BTN, "")),
+        ("第二导入入口回潮", "main",
+         lambda t: t.replace('items(books, key = { it.id })',
+             'item(key = "empty") { ' + OLD_EMPTY_BTN + ' }\n        items(books, key = { it.id })', 1)),
+        ("空态说明回潮", "main",
+         lambda t: t.replace('items(books, key = { it.id })',
+             'item(key = "empty") { Text("说明：点上面导入") }\n        items(books, key = { it.id })', 1)),
         ("系统卡又拆成两张", "main",
          lambda t: t.replace(SYS_CARD,
              SYS_CARD + ' { }\n        SettingsSection("后台运行与权限", "系统", collapsible = false)')),

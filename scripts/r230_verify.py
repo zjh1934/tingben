@@ -73,8 +73,12 @@ def check(f):
         e.append("「上次读到 第 N 章」回潮")
     if 'Column(horizontalAlignment = Alignment.End) {' in lb:
         e.append("置顶/删除又常驻卡片右侧")
-    if '"已做好 $done/$total 章"' not in lb:
-        e.append("制作进度条文字被误删（要保留）")
+    if '"已做好 $done/$total 章"' in lb:
+        e.append("进度条下面废话回潮")
+    if "Box(Modifier.fillMaxWidth(pct).fillMaxHeight()" not in lb:
+        e.append("制作进度条被误删")
+    if "R298 · 进度条下面不写" not in lb:
+        e.append("废话撤销说明缺失")
     # ⑥ 悬浮开关回设置页 + 打开即预览
     for k in ['OverlayProgress.update(c, "", "预览", 0, 0, -1f,',
               "OverlaySource.PREVIEW",
@@ -116,9 +120,10 @@ def selftest():
          "var menuBook by remember { mutableStateOf<String?>(null) }", ""),
         ("长按被摘", "lib", "onLongPress = { menuBook = b.id }", ""),
         ("置顶写盘被摘", "lib", "BookStore.setPinned(c, b.id, next)", ""),
-        ("废话回潮", "lib", "// R230 · 「上次读到 第 N 章」撤掉，制作进度条保留",
+        ("废话回潮", "lib", "// R230 · 点书名开书、长按书名弹置顶/删除，两个手势同一个检测器",
          'Text("上次读到 第 ${lastRead + 1} 章")'),
-        ("进度条被误删", "lib", '"已做好 $done/$total 章"', ""),
+        ("进度条被误删", "lib", "Box(Modifier.fillMaxWidth(pct).fillMaxHeight()", ""),
+        ("进度条废话回潮", "lib", "R298 · 进度条下面不写", '"已做好 $done/$total 章"'),
         ("打开即预览被摘", "settings",
          'else OverlayProgress.update(c, "", "预览", 0, 0, -1f,', ""),
         ("无权限也硬挂", "settings", "else if (!permOk) askPermission()", "else if (false) { }"),

@@ -32,19 +32,19 @@ HUB_MUST = [
     # 三点菜单撤掉，换成勾选态的三条退出路径
     "BackHandler(enabled = multiMode) { exitMulti() }",
     "BackHandler(enabled = segMulti) { exitSegMulti() }",
-    "BackHandler(enabled = showTasks) { showTasks = false }",
+    "R298 · 目录页就地任务看板撤掉",
     "if (multiMode && menuChapter == null) {",
     # 任务看板就地：与独立任务页同源，不另造状态口径
-    "TaskBoardDialog(",
-    "TaskResume.list(c)",
-    "TaskResume.realProgress(c, it)",
-    "TaskResume.invalidationReason(c, it)",
-    "TaskResume.remove(c, t.bookId)",
+    "制作选中 ${selected.size} 章",
+    "任务队列 · ${queued.size} 个",
+    "queued.forEach { t ->",
+    "val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }",
+    "AudioOps.mergeChapter(c, book.id, book.title, i, segs)",
     "TaskResume.dequeue(c, t.bookId)",
     # R243 · 「继续队列」按钮三处全砍，底层 resumeQueue 仍在 Producer。
     # 这里改判「队列数据同源」，按钮回潮由 HUB_BAN 拦，不放宽能力判据。
     "TaskResume.queue(c)",
-    "Producer.start(c, b, t.only, true, t.think, t.config)",
+    "LinearProgressIndicator(progress = { bookPct }",
 ]
 
 HUB_BAN = [
@@ -54,6 +54,12 @@ HUB_BAN = [
     "MoreDots(HubPrimary)",
     "private fun MoreDots(",
     "onMore = { enterMulti(r.index) })",
+    # R298 · 目录页就地任务看板撤掉，旧形态零回潮
+    "TaskBoardDialog(", "TaskResume.list(c)",
+    "TaskResume.realProgress(c, it)", "TaskResume.invalidationReason(c, it)",
+    "TaskResume.remove(c, t.bookId)",
+    "Producer.start(c, b, t.only, true, t.think, t.config)",
+    "BackHandler(enabled = showTasks)",
     "IconButton(onClick = onMore",
     # 选空就藏条 = 用户找不到取消入口（R171 修掉的老毛病）
     "if (multiMode && selected.isNotEmpty()) {",
@@ -61,22 +67,26 @@ HUB_BAN = [
 
 MAIN_MUST = [
     # R226 · 顶栏「任务」入口上移 App 层
-    'EventLog.ui("HUB_TASKS"',
+    'EventLog.ui("HOME_TASKS", "open:global")',
     'placeholder = { Text("粘贴或输入要念的正文", fontSize = 12.sp) }',
     'SettingsSection("开发者工具", "排查", open = devOpen,',
     "var devOpen by remember { mutableStateOf(false) }",
     'SettingsSection("运行与通知", "系统", collapsible = false)',
     "private fun PermEntryRow(",
     'PermEntryRow("应用详情", "系统设置")',
-    'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
+    # R291 · 抽屉只留一枚导入入口；这里守「导入能力仍接到调用方」
+    'onImportBook = { openBookPicker() }',
 ]
 
 MAIN_BAN = [
+    # R291 · 空态第二枚导入入口回潮
+    'Text("导入第一本 ›"',
     'SettingsSection("后台运行与权限"',   # R174 系统类只留一张卡
     'Text("建好的书在左上角 ☰ 里"',
     'label = { Text("要念的正文"',
     'Text("粘贴或输入要念的正文", fontSize = 14.sp',
     'SettingsSection("启动行为"',
+    'EventLog.ui("HUB_TASKS"',
     'SettingsSection("通知与权限"',
 ]
 
@@ -125,8 +135,12 @@ def selftest():
         ("选空又藏条", "hub", lambda t: t.replace(
             "        if (multiMode && menuChapter == null) {",
             "        if (multiMode && menuChapter == null && selected.isNotEmpty()) {")),
-        ("任务看板被摘", "hub", lambda t: t.replace("TaskBoardDialog(", "NoBoard(")),
-        ("看板不走同源数据", "hub", lambda t: t.replace("TaskResume.list(c)", "emptyList()")),
+        ("目录页看板说明被摘", "hub",
+         lambda t: t.replace("R298 · 目录页就地任务看板撤掉", "")),
+        ("制作按钮被摘", "hub",
+         lambda t: t.replace("制作选中 ${selected.size} 章", "")),
+        ("看板回潮", "hub",
+         lambda t: t.replace("任务队列 · ${queued.size} 个", "TaskBoardDialog(")),
         ("取消按钮被摘", "multi", lambda t: t.replace('ActionChip("取消"', 'Text("×"')),
         ("首页废话回潮", "main", lambda t: t.replace(
             "private enum class Screen {", 'Text("建好的书在左上角 ☰ 里", fontSize = 11.sp)\nprivate enum class Screen {')),

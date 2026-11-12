@@ -27,6 +27,7 @@ FILES = {
     "resume": SRC / "core/TaskResume.kt",
     "audio": SRC / "core/AudioLibrary.kt",
     "hub": SRC / "ChapterHub.kt",
+    "task": SRC / "TaskUi.kt",
     "main": ui_sources.source(SRC),
     "manifest": ROOT / "app/src/main/AndroidManifest.xml",
     "rules": ROOT / "app/src/main/res/xml/data_extraction_rules.xml",
@@ -76,7 +77,7 @@ AUDIO = [
     "chapterIndices",
 ]
 UI = {
-    "hub": ['t.phase == "blocked" -> "没开始"'],
+    "task": ['t.phase == "blocked" -> "没开始"'],
     "main": ['t.phase == "blocked" -> "没开始"'],
 }
 
@@ -199,7 +200,7 @@ def selftest():
          lambda t: t.replace('"${item.id}.meta.json"', '"${item.id}.none.json"')),
         ("恢复不读 meta", "audio",
          lambda t: t.replace('"$stem.meta.json"', '"$stem.none.json"')),
-        ("徽标不认 blocked", "hub",
+        ("徽标不认 blocked", "task",
          lambda t: t.replace('t.phase == "blocked" -> "没开始"', "")),
         ("备份又被打开", "manifest",
          lambda t: t.replace('android:allowBackup="false"', 'android:allowBackup="true"')),

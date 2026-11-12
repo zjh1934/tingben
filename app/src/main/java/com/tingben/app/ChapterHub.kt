@@ -11,8 +11,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -167,14 +165,10 @@ internal fun ChapterHubScreen(
     onProduceSetup: (String) -> Unit = {},
     onStarted: (String, Set<Int>) -> Unit,
     onOpenBook: (String) -> Unit = {},
-    // R178 · 通知点进来时直接展开就地任务看板，不用再切独立任务页
-    openTasksOnStart: Boolean = false,
     // R180 · 模型没齐时「去导入模型 ›」的出口
     onOpenModels: () -> Unit = {},
     // R218 · 制作设置页点「重新分章」回本页时唤起弹窗
-    resplitRequest: Int = 0,
-    // R226 · 顶栏「任务」按钮点一下就开就地看板；计数器递增，不复位不误弹
-    tasksRequest: Int = 0
+    resplitRequest: Int = 0
 ) {
     var localTick by remember { mutableStateOf(0) }
     var planTick by remember { mutableStateOf(0) }
@@ -277,13 +271,6 @@ internal fun ChapterHubScreen(
     var segMulti by remember(book.id) { mutableStateOf(false) }
     var segChecked by remember(book.id) { mutableStateOf(setOf<Int>()) }
     var showQueue by remember { mutableStateOf(false) }
-    var showTasks by remember { mutableStateOf(openTasksOnStart) }
-    LaunchedEffect(tasksRequest) {
-        if (tasksRequest > 0) {
-            showTasks = true
-            EventLog.ui("HUB_TASKS_OPEN", "from=topbar")
-        }
-    }
     // R178 · 真机日志里 17:59:40 STOP → 17:59:41 RESUME 只隔 0.3 秒，
     // R219 · 点进度条滚到正在制作的那一章，不用一章章翻
     val chapterListState = rememberLazyListState()
@@ -303,6 +290,8 @@ internal fun ChapterHubScreen(
     // R266 · 重做标记单独轻量观察：只秒读 redo.json（几 KB），不重扫 2 万段。
     // 标记后转黄、Producer 清标记后转绿，都不必等整本做完或 stage 合并。
     var redoKeys by remember(book.id) { mutableStateOf(emptySet<String>()) }
+    // R297 · 批量标记放 IO，主线程只管界面反馈，勾几十段也不卡。
+    val redoScope = rememberCoroutineScope()
     val pqSeg by PlayQueue.previewState.collectAsState()
     LaunchedEffect(book.id, st.running, localTick, task?.bookId, liveChapter) {
         hubByChapter = withContext(Dispatchers.IO) {
@@ -323,6 +312,14 @@ internal fun ChapterHubScreen(
         if (st.running) return@LaunchedEffect
         val made = withContext(Dispatchers.IO) {
             val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
+            // R301 · 正常跑完的书每章成品已在章边界拼好、中间小块已清（R300），
+            // 再每次进目录页全量读 segmap 只是空转：1.1.32 真机日志 7 次
+            // 「补拼 0 章 / 跳过 3 章」全是这类白烧 IO。只有中断 / 停止 /
+            // 待确认的任务，或一个章成品都还没有的旧书，才值得回溯补拼。
+            val hasAudio = AudioLibrary.chapterSnapshot(c, book.id).second.isNotEmpty()
+            val pendingPhase = t != null && (t.phase == "interrupted" ||
+                t.phase == "stopped" || t.phase == "blocked" || t.phase == "reconfirm")
+            if (hasAudio && !pendingPhase) return@withContext 0
             val (all, map) = Workbench.segments(c, t) to Workbench.segChapters(c, t)
             val drops = SegDrops.snapshot(c, book.id)
             val byCh = LinkedHashMap<Int, MutableList<File>>()
@@ -513,7 +510,7 @@ internal fun ChapterHubScreen(
     }
     fun exitMulti() { multiMode = false; selected = emptySet() }
     fun exitSegMulti() { segMulti = false; segChecked = emptySet() }
-    // R171 · 勾选态 / 分段勾选态 / 任务看板都自己消费返回键：
+    // R171 · 勾选态 / 分段勾选态都自己消费返回键：
     // 先关掉当前这层并留在目录页，不再让全局 goBack 直接把人送回书架。
     // 注册在 pane 的 BackHandler 之后（Compose 后注册优先），弹层优先收起。
     BackHandler(enabled = pane != null) { pane = null }
@@ -522,7 +519,6 @@ internal fun ChapterHubScreen(
     // 甚至离开这本书，和左勾 / 底部条抢操作。菜单与底部条也互斥显示。
     BackHandler(enabled = menuChapter != null) { menuChapter = null }
     BackHandler(enabled = segMulti) { exitSegMulti() }
-    BackHandler(enabled = showTasks) { showTasks = false }
     BackHandler(enabled = showQueue) { showQueue = false }
     BackHandler(enabled = showResplit) { showResplit = false }
     fun tapSeg(sg: SegRow) {
@@ -622,7 +618,9 @@ internal fun ChapterHubScreen(
         if (finishedChapters > 0) ListenState.get(c, "chapter:${book.id}") else null
     }
     // R180 · 模型没齐时别只给一句「没开始」，给一个能按的出口。
-    val needModels = remember(refresh) { ModelStore.missing(c).isNotEmpty() }
+    // R291 · 用「当前模式能不能合成」判，不用「4 份是否全装」判：
+    // 只装够当前模式就能开跑，不该一直挂「去导入」。
+    val needModels = remember(refresh) { ModelStore.synthesisBlockReason(c) != null }
 
     Box(Modifier.fillMaxSize().background(HubBg)) {
         Column(Modifier.fillMaxSize()) {
@@ -753,25 +751,36 @@ internal fun ChapterHubScreen(
                                                 // 那样得等整本跑完才轮到，当前任务一停队列
                                                 // 还会永久暂停，看着就像这一章不做了。只标记，
                                                 // 由 Producer 主循环在当前段收尾后就地回头重做。
+                                                // R297 · 旧做法逐段 markSeg（每段一次 fsync +
+                                                // 备份 + rename），勾几十段就把主线程卡死；还会和
+                                                // Producer 的 clearRedo 并发覆盖。改成一次批量写、
+                                                // 放 IO，界面反馈仍回主线程。
                                                 val busyHere = Producer.isBusy()
                                                 // R270 · 小块只存在于制作中这一章，此时还没有章级成品，
                                                 // 没有任何「旧成品」要撤。拼章后小块会被清掉，
                                                 // 已合成的章根本没有小块可操作（要动走整章重做）。
-                                                rows.forEach { SegPlan.markSeg(work, it.index) }
-                                                EventLog.ui("SEG_REDO",
-                                                    "n=${rows.size} running=$busyHere")
-                                                exitSegMulti()
-                                                if (!busyHere && ch != null) {
-                                                    Producer.enqueueOrStart(c, book, setOf(ch),
-                                                        null, Prefs.defaultPerf(c))
+                                                val w = work
+                                                val idxs = rows.map { it.index }
+                                                val n = rows.size
+                                                redoScope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        SegPlan.markSegs(w, idxs)
+                                                    }
+                                                    EventLog.ui("SEG_REDO",
+                                                        "n=$n running=$busyHere")
+                                                    exitSegMulti()
+                                                    if (!busyHere && ch != null) {
+                                                        Producer.enqueueOrStart(c, book, setOf(ch),
+                                                            null, Prefs.defaultPerf(c))
+                                                    }
+                                                    localTick++   // 立刻重读 redo.json，格子转琥珀
+                                                    Toast.makeText(c,
+                                                        if (busyHere)
+                                                            "已标记 $n 段（格子转黄）：当前这段做完马上重做，做完变回绿色"
+                                                        else
+                                                            "已标记 $n 段，按当前调音台重新合成",
+                                                        Toast.LENGTH_LONG).show()
                                                 }
-                                                localTick++   // 立刻重读 redo.json，格子转琥珀
-                                                Toast.makeText(c,
-                                                    if (busyHere)
-                                                        "已标记 ${rows.size} 段（格子转黄）：当前这段做完马上重做，做完变回绿色"
-                                                    else
-                                                        "已标记 ${rows.size} 段，按当前调音台重新合成",
-                                                    Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     },
@@ -848,13 +857,18 @@ internal fun ChapterHubScreen(
                 },
                 onCancel = { exitMulti() },
                 allLabel = "全选章节",
+                // R291 · 勾完章最该找的就是「制作」。原来它跟调音、导出一起
+                // 排在横滑区里，被前三个固定按钮挤出屏幕，看着像根本没有制作入口。
+                // 现在做成固定主按钮，选中即常驻、一眼能按。
+                primaryLabel = if (selected.isEmpty()) null else "制作选中 ${selected.size} 章",
+                onPrimary = { startAction(HubAction.SYNTH) },
+                primaryIcon = UiIcon.SYNTH,
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 if (selected.isNotEmpty()) {
                     // R224 · 一排字 → 有底色的按钮，长按选中后一眼能看出哪些能点
                     ActionChip("调音 ›", icon = UiIcon.MIXER, onClick = onMixer)
                     ActionChip("制作设置 ›", icon = UiIcon.SETTINGS, onClick = { onProduceSetup(book.id) })
-                    ActionChip("合成音频", icon = UiIcon.SYNTH, onClick = { startAction(HubAction.SYNTH) })
                     if (selected.size == 1) {
                         val i = selected.first()
                         val has = ui.getOrNull(i)?.let { it.audio != null || it.playable } ?: false
@@ -918,35 +932,8 @@ internal fun ChapterHubScreen(
             )
         }
 
-        // R171 · 任务看板就地展开：跨书任务不用离开这本书去独立任务页。
-        // 与任务页同源（TaskResume.list / realProgress / invalidationReason），
-        // 不另造一套状态口径；弹层自己消费返回键（见上面的 BackHandler）。
-        if (showTasks) {
-            TaskBoardDialog(
-                c = c,
-                onDismiss = { showTasks = false },
-                onOpenBook = { bid -> showTasks = false; onOpenBook(bid) },
-                onStartTask = { t ->
-                    showTasks = false
-                    resplitScope.launch {
-                        val b = withContext(Dispatchers.IO) {
-                            BookStore.list(c).find { it.id == t.bookId }
-                        }
-                        if (b == null) {
-                            Toast.makeText(c, "这本书已从书架删掉，没法续跑",
-                                Toast.LENGTH_LONG).show()
-                        } else if (Producer.isBusy()) {
-                            Toast.makeText(c, "另一本正在制作，等它跑完或先停它",
-                                Toast.LENGTH_LONG).show()
-                        } else {
-                            Producer.start(c, b, t.only, true, t.think, t.config)
-                            onOpenBook(t.bookId)
-                            EventLog.ui("HUB_TASK_RESUME", "book=${t.bookId.take(8)}")
-                        }
-                    }
-                },
-                onChanged = { localTick++ })
-        }
+        // R298 · 目录页就地任务看板撤掉：任务统一从主页右上角那枚进全局任务页，
+        // 不再在书里弹浮层、也不再挂第二枚任务按钮。
 
         // 删小段：二次确认 → IO 删除 → 索引记账 → 重读，分段计划保留。
         confirmSegDel?.let { files ->
@@ -1456,215 +1443,5 @@ internal fun MiniPlayBar(
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight()
                 .background(HubPrimary, RoundedCornerShape(50)))
         }
-    }
-}
-
-/**
- * R171 · 任务看板（目录页就地版）。
- *
- * 用户实证：「像任务这种看板，还没有合进这个目录页」。原来要看跨书任务必须
- * 切到独立的任务页，而目录页只有「队列 N」一个数字。这里把看板做成目录页的
- * 就地弹层：数据全部来自 TaskResume / Producer 的现行 API，与独立任务页同源，
- * 不复制状态口径；删除同样走二次确认，只删记录不删音频。
- *
- * 组合期不碰磁盘：全部在 LaunchedEffect + IO 里算完再显示。
- */
-@Composable
-private fun TaskBoardDialog(
-    c: Context,
-    onDismiss: () -> Unit,
-    onOpenBook: (String) -> Unit,
-    onStartTask: (TaskInfo) -> Unit,
-    onChanged: () -> Unit
-) {
-    val st by Producer.state.collectAsState()
-    val live by Producer.resume.collectAsState()
-    var tick by remember { mutableStateOf(0) }
-    var tasks by remember { mutableStateOf(emptyList<TaskInfo>()) }
-    var queued by remember { mutableStateOf(emptyList<TaskInfo>()) }
-    var qPaused by remember { mutableStateOf(false) }
-    var realMap by remember { mutableStateOf(emptyMap<String, Int>()) }
-    var warnMap by remember { mutableStateOf(emptyMap<String, String?>()) }
-    var bookIds by remember { mutableStateOf(emptySet<String>()) }
-    var confirmDelete by remember { mutableStateOf<TaskInfo?>(null) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(tick) {
-        withContext(Dispatchers.IO) {
-            val ts = TaskResume.list(c)
-            val running = Producer.isBusy()
-            tasks = ts
-            queued = TaskResume.queue(c)
-            qPaused = Producer.queueState(c).second
-            bookIds = BookStore.list(c).map { it.id }.toSet()
-            realMap = ts.associate {
-                it.bookId to if (running) 0 else TaskResume.realProgress(c, it)
-            }
-            warnMap = ts.associate { it.bookId to TaskResume.invalidationReason(c, it) }
-        }
-    }
-
-    val deleting = confirmDelete
-    if (deleting != null) {
-        val t = deleting
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            title = { Text("删掉这条任务？", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
-            text = {
-                Text("已做好的音频不会删", fontSize = 13.sp, color = HubSub)
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    EventLog.ui("TASK_DELETE", "board id=${t.bookId.take(8)}")
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            TaskResume.remove(c, t.bookId)
-                            TaskResume.dequeue(c, t.bookId)
-                        }
-                        confirmDelete = null
-                        tick++
-                        onChanged()
-                    }
-                }) { Text("删除", fontSize = 13.sp, color = HubWarn) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = null }) { Text("取消") }
-            }
-        )
-    } else {
-        // R243 · 同 showQueue 弹窗口径：任务弹窗不再给「继续队列」按钮，
-        // 「队列已暂停」提示仍在，底层 Producer.resumeQueue 不动。
-        val resumeQueueButton: (@Composable () -> Unit)? = null
-        AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("任务 · ${tasks.size} 本", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (queued.isNotEmpty() || qPaused) {
-                    Card(Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = HubSoft)) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(if (queued.isNotEmpty())
-                                    "队列 ${queued.size} 个待做 · 当前这本做完自动接下一个"
-                                 else "队列里没有待做任务",
-                                fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                                color = if (qPaused) HubWarn else HubPrimary)
-                            if (queued.isNotEmpty()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(queued.joinToString("、") { "《${it.title}》" }.take(60),
-                                    fontSize = 11.sp, color = HubSub, maxLines = 2)
-                            }
-                            if (qPaused) {
-                                Spacer(Modifier.height(4.dp))
-                                Text("队列已暂停", fontSize = 11.sp, color = HubWarn)
-                            }
-                        }
-                    }
-                }
-                if (tasks.isEmpty()) {
-                    Text("还没有制作任务", fontSize = 12.sp, color = HubSub)
-                }
-                val unfinished = tasks.filter { it.phase != "done" }
-                val done = tasks.filter { it.phase == "done" }
-                (unfinished + done).forEach { t ->
-                    val runningThis = st.running && live?.bookId == t.bookId
-                    val badge = when {
-                        runningThis -> "进行中"
-                        t.phase == "done" -> "已完成"
-                        t.phase == "reconfirm" -> "需重新确认"
-                        t.phase == "blocked" -> "没开始"
-                        t.phase == "stopped" -> "已停止"
-                        else -> "已中断"
-                    }
-                    val modeText = when (t.modeId) {
-                        "custom_voice" -> "预设音色"
-                        "base" -> "参考音频"
-                        else -> "描述造音色"
-                    }
-                    val scopeText = if (t.only == null) "整本"
-                        else "选中 ${t.only?.size ?: 0} 章"
-                    val real = realMap[t.bookId] ?: 0
-                    val total = maxOf(t.total, real, if (runningThis) st.total else 0)
-                    val doneNow = (if (runningThis) st.done else real)
-                        .coerceIn(0, maxOf(total, 1))
-                    val warn = warnMap[t.bookId]
-                    val otherBusy = st.running && live?.bookId != t.bookId
-                    Card(Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = HubCard)) {
-                        Column(Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(t.title, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                    maxLines = 1, modifier = Modifier.weight(1f),
-                                    color = palette.text)
-                                Text(badge, fontSize = 11.sp,
-                                    color = if (runningThis) HubPrimary
-                                            else if (t.phase == "done") HubGood else HubWarn)
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text("$modeText · $scopeText", fontSize = 11.sp, color = HubSub)
-                            if (t.bookId !in bookIds) {
-                                Text("书已从书架删掉，成品仍在「我的音频」",
-                                    fontSize = 11.sp, color = HubWarn)
-                            }
-                            warn?.let {
-                                Text(it, fontSize = 11.sp, color = HubWarn)
-                            }
-                            if (total > 0) {
-                                Spacer(Modifier.height(7.dp))
-                                LinearProgressIndicator(
-                                    progress = { doneNow.toFloat() / total.toFloat() },
-                                    modifier = Modifier.fillMaxWidth().height(6.dp))
-                                Spacer(Modifier.height(4.dp))
-                                Text("已做好 $doneNow/$total 块", fontSize = 11.sp, color = HubSub)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (!runningThis && t.phase != "done") {
-                                    // R172 · 旧 only 是旧章号，绝不能拿它直接开跑
-                                    TextButton(onClick = { onStartTask(t) },
-                                        enabled = !otherBusy && t.bookId in bookIds &&
-                                            t.phase != "reconfirm") {
-                                        Text(if (t.phase == "reconfirm") "需重新选章"
-                                             else "继续制作",
-                                            fontSize = 11.sp,
-                                            color = if (t.phase == "reconfirm") HubSub
-                                                    else HubPrimary)
-                                    }
-                                }
-                                TextButton(onClick = {
-                                    onDismiss()
-                                    onOpenBook(t.bookId)
-                                }) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        UiIconGlyph(UiIcon.EXPORT, HubPrimary)
-                                        Spacer(Modifier.width(3.dp))
-                                        Text("打开这本书 ›", fontSize = 11.sp, color = HubPrimary)
-                                    }
-                                }
-                                Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { confirmDelete = t },
-                                    enabled = !runningThis) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        UiIconGlyph(UiIcon.DELETE,
-                                            if (runningThis) HubSub else HubWarn)
-                                        Spacer(Modifier.width(3.dp))
-                                        Text("删除任务", fontSize = 11.sp,
-                                            color = if (runningThis) HubSub else HubWarn)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭", fontSize = 13.sp) }
-        },
-        dismissButton = resumeQueueButton
-    )
     }
 }

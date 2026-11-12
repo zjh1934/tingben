@@ -66,7 +66,7 @@ MAIN_BAN = [
 HUB = [
     'val resumePos = remember(refresh, finishedChapters)',
     'ListenState.get(c, "chapter:${book.id}")',
-    'val needModels = remember(refresh) { ModelStore.missing(c).isNotEmpty() }',
+    'val needModels = remember(refresh) { ModelStore.synthesisBlockReason(c) != null }',
     'fun playBook(atId: String?, fromMs: Long?)',
     'if (resumePos != null && resumePos.positionMs > 5000L) {',
     'Text("接着听 · %d:%02d ›".format(',
@@ -155,6 +155,9 @@ def selftest():
                              'null')),
         ("模型缺件出口被摘", "hub",
          lambda t: t.replace('Text("去导入模型 ›"', 'Text("按顺序播放"')),
+        ("缺件出口判据退回按 4 份全装判", "hub",
+         lambda t: t.replace('val needModels = remember(refresh) { ModelStore.synthesisBlockReason(c) != null }',
+                             'val needModels = remember(refresh) { ModelStore.missing(c).isNotEmpty() }')),
         ("播放队列两入口不再共用构造", "hub",
          lambda t: t.replace('fun playBook(atId: String?, fromMs: Long?) {',
                              'fun unused(atId: String?, fromMs: Long?) {')),

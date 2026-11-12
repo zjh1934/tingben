@@ -185,6 +185,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     // R148 · 目录页「调音」不再 push 到独立页：跳页会让 ChapterHub 重建，
     // 用户勾选的章节全丢，还多出一个返回键。改成就地弹层，勾选原样保留。
     var chapterMixerOpen by rememberSaveable { mutableStateOf(false) }
+    // R292 · 调音台从哪个页面开的，关的时候就记哪个来源。
+    var mixerFrom by rememberSaveable { mutableStateOf("hub") }
     var importing by rememberSaveable { mutableStateOf<String?>(null) }
     val importBytesFlow = remember { MutableStateFlow(0L) }
     val importBytes by importBytesFlow.collectAsState()
@@ -195,7 +197,6 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var bookImporting by rememberSaveable { mutableStateOf(false) }
     // R178 · 通知点「任务」不再跳独立任务页：落到那本书的目录页并自动展开
     // 就地任务看板（R171 已把看板做进目录页）。能力搬干净后再物理删页。
-    var hubOpenTasks by rememberSaveable { mutableStateOf(false) }
     // R218 · 制作设置页点「重新分章」后回目录页唤起弹窗，能力不占顶栏也不丢
     var resplitTick by rememberSaveable { mutableStateOf(0) }
     // R159 · 续跑确认。用户实证「关闭以后重新打开应用，它不一定弹」：
@@ -416,8 +417,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         val raw = full.substringAfter('|', full)
         when {
             raw == "tasks:" -> {
-                // R178 · 进 IO 找「有未完成任务的书」，落目录页 + 自动展开就地看板；
-                // 一本都没任务时给一句中文反馈，不再把用户丢到独立任务页。
+                // R298 · 进 IO 找「有未完成任务的书」，直接落到全局任务页；
+                // 一本都没任务时给一句中文反馈。
                 val b = withContext(Dispatchers.IO) {
                     val t = TaskResume.active(ctx) ?: TaskResume.queue(ctx).firstOrNull()
                     t?.bookId?.let { bid -> BookStore.list(ctx).find { it.id == bid } }
@@ -425,8 +426,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 if (b != null) {
                     bookId = b.id
                     nav.clear()
-                    screen = Screen.CHAPTERS
-                    hubOpenTasks = true
+                    screen = Screen.TASKS
                     EventLog.ui("NOTIF_TASKS_OPEN", "book=${b.id.take(8)}")
                 } else {
                     Toast.makeText(ctx, "暂时没有没做完的任务", Toast.LENGTH_SHORT).show()
@@ -566,7 +566,6 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val hubRunning = hubProd.running && hubTask?.bookId == bookId
     val hubStalled = !hubProd.running && hubTask?.bookId == bookId &&
         hubProd.stage in listOf("没完成", "已停止", "出错了")
-    var hubTasksTick by rememberSaveable { mutableStateOf(0) }
     var lastHubTapMs by remember { mutableStateOf(0L) }
     fun hubStop() {
         val now = System.currentTimeMillis()
@@ -659,7 +658,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             trailing = when (screen) {
                 Screen.LIBRARY -> {
                     {
-                        IconButton(onClick = { chapterMixerOpen = true
+                        IconButton(onClick = { chapterMixerOpen = true; mixerFrom = "home"
                             EventLog.ui("OVERLAY_MIXER", "open:home") }) {
                             MixerIcon(Primary)
                         }
@@ -682,13 +681,9 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     // R272 · 调音台入口不只首页有，章节目录页顶栏也常驻一枚；
                     // 与底部多选胶囊里的「调音 ›」不是一回事（那个跟选中章绑定）。
                     IconButton(onClick = {
-                        chapterMixerOpen = true
+                        chapterMixerOpen = true; mixerFrom = "hubbar"
                         EventLog.ui("OVERLAY_MIXER", "open:hubbar")
                     }) { MixerIcon(Primary) }
-                    IconButton(onClick = {
-                        EventLog.ui("HUB_TASKS", "id=${bookId?.take(8)}")
-                        hubTasksTick++
-                    }) { TasksIcon(Primary) }
                     IconButton(onClick = { nav.push(Screen.PRODUCE) },
                         modifier = Modifier.size(34.dp)) {
                         Text("⚙", fontSize = 16.sp, color = Primary)
@@ -718,22 +713,17 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                             bookId?.let { id -> TaskResume.byBook(ctx, id)?.let { resumeTask(it) } }
                         },
                         onPlayBook = { miniBook = it },
-                        onMixer = { chapterMixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open:hub") },
+                        onMixer = { chapterMixerOpen = true; mixerFrom = "hub"; EventLog.ui("OVERLAY_MIXER", "open:hub") },
                         onProduceSetup = { id -> bookId = id; nav.push(Screen.PRODUCE) },
                         onStarted = { id, sel ->
                             lastSelection = sel
                             openBook(id)
                         },
-                        openTasksOnStart = hubOpenTasks,
                         resplitRequest = resplitTick,
-                        tasksRequest = hubTasksTick,
                         onOpenModels = {
                             modelsFrom = Screen.CHAPTERS
                             nav.push(Screen.MODELS)
                         })
-                    // 只借这一帧把「自动展开」交给目录页，之后复位，
-                    // 下次正常从书列表打开书不会无故弹看板。
-                    SideEffect { if (hubOpenTasks) hubOpenTasks = false }
                 }
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
@@ -750,7 +740,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; nav.push(Screen.MODELS) },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
-                    onMixer = { chapterMixerOpen = true; EventLog.ui("OVERLAY_MIXER", "open:settings") })
+                    onMixer = { chapterMixerOpen = true; mixerFrom = "settings"; EventLog.ui("OVERLAY_MIXER", "open:settings") })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },
@@ -779,7 +769,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
         if (chapterMixerOpen) {
             MixerDialog(ctx, onClose = {
-                chapterMixerOpen = false; EventLog.ui("OVERLAY_MIXER", "close:hub")
+                chapterMixerOpen = false; EventLog.ui("OVERLAY_MIXER", "close:$mixerFrom")
             })
         }
         resumeAsk?.let { p ->

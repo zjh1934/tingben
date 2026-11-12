@@ -27,7 +27,7 @@ def files():
 TOP = ["trailing = when (screen)",
        'IconButton(onClick = { hubStop() }',
        'IconButton(onClick = { hubResume() }',
-       "hubTasksTick++",
+       "nav.push(Screen.TASKS)",
        'IconButton(onClick = { nav.push(Screen.PRODUCE) }']
 # 书名仍在系统顶栏，不能被搬下来
 TITLE = ["chrome.copy(title = chapterBookTitle)", "spec = shownChrome,"]
@@ -49,7 +49,7 @@ def check(f):
     for k in ["internal fun MixerIcon(", "internal fun TasksIcon(",
               "internal fun StopIcon(", "internal fun PlayIcon("]:
         if k not in ch: e.append("自绘图标缺: " + k[:44])
-    for k in ["MixerIcon(Primary)", "TasksIcon(Primary)", "StopIcon(Warn)", "PlayIcon(Primary)"]:
+    for k in ["MixerIcon(Primary)", "TasksIcon(if (homeHasTask) Primary else Sub)", "StopIcon(Warn)", "PlayIcon(Primary)"]:
         if k not in mn: e.append("顶栏没接图标: " + k[:44])
     for banned in ['Text("调音", fontSize = 12.sp', 'Text("任务", fontSize = 12.sp',
                    'Text("停止", fontSize = 12.sp, color = Warn)']:
@@ -62,15 +62,17 @@ def check(f):
         if k in hb: e.append("R226 回潮：三按钮又回到内容区单独一排 " + k[:40])
     if "R226 · 三枚操作已上移到系统顶栏" not in hb:
         e.append("ChapterHub 缺上移说明")
-    # ④ 任务看板仍能就地打开（计数器链路，不用会误弹的布尔复位）
-    for k in ["tasksRequest: Int = 0",
-              'LaunchedEffect(tasksRequest)',
-              'EventLog.ui("HUB_TASKS_OPEN", "from=topbar")']:
-        if k not in hb: e.append("ChapterHub 缺任务入口链路: " + k[:46])
-    if "tasksRequest = hubTasksTick" not in mn:
-        e.append("App 层没把 tasksRequest 传给目录页")
-    if "var hubTasksTick by rememberSaveable" not in mn:
-        e.append("计数器状态缺失")
+    # ④ R298 · 目录页就地看板撤掉，任务统一从主页右上角进全局任务页
+    for k in ["R298 · 目录页就地任务看板撤掉", "制作选中 ${selected.size} 章",
+              "任务队列 · ${queued.size} 个"]:
+        if k not in hb: e.append("目录页任务能力缺失: " + k[:46])
+    for k in ["nav.push(Screen.TASKS)", 'EventLog.ui("HOME_TASKS", "open:global")',
+              "screen = Screen.TASKS"]:
+        if k not in mn: e.append("全局任务页链路缺失: " + k[:46])
+    for banned in ["tasksRequest", "hubTasksTick", "TaskBoardDialog(",
+                   'EventLog.ui("HUB_TASKS_OPEN"', "openTasksOnStart"]:
+        if banned in hb or banned in mn:
+            e.append("目录页就地看板回潮: " + banned[:40])
     # ⑤ 收尾反馈与节流不丢
     for k in ["bookId?.let { Producer.isBusyForBook(it) }",
               'EventLog.ui("HUB_RESUME_BLOCKED"',
@@ -108,13 +110,14 @@ def selftest():
         ("整条 trailing 被摘", "main", "trailing = when (screen)", "trailing = {}"),
         ("停止按钮被摘", "main", "IconButton(onClick = { hubStop() }", ""),
         ("继续按钮被摘", "main", "IconButton(onClick = { hubResume() }", ""),
-        ("任务计数被摘", "main", "hubTasksTick++", ""),
+        ("全局任务入口被摘", "main", "nav.push(Screen.TASKS)", ""),
         ("齿轮被摘", "main", "IconButton(onClick = { nav.push(Screen.PRODUCE) }", ""),
         ("书名被搬下顶栏", "main", "chrome.copy(title = chapterBookTitle)", 'chrome.copy(title = "")'),
         ("三按钮回内容区", "hub", "// R226 · 三枚操作已上移到系统顶栏",
          'Text("停止", fontSize = 12.sp, color = HubWarn)'),
-        ("任务链路被摘", "hub", "LaunchedEffect(tasksRequest)", ""),
-        ("计数没传给目录页", "main", "tasksRequest = hubTasksTick", ""),
+        ("目录页任务能力被摘", "hub", "制作选中 ${selected.size} 章", ""),
+        ("任务页落地被摘", "main", 'EventLog.ui("HOME_TASKS", "open:global")', ""),
+        ("目录页看板回潮", "hub", "R298 · 目录页就地任务看板撤掉", "TaskBoardDialog("),
         ("收尾判断被摘", "main", "bookId?.let { Producer.isBusyForBook(it) }", "true"),
         ("节流被摘", "main", "if (now - lastHubTapMs >= 800L) {", "if (true) {"),
         ("日志脱敏回潮", "main", 'EventLog.ui("HUB_STOP", "id=${bookId?.take(8)}")',

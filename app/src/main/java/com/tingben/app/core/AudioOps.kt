@@ -132,8 +132,12 @@ object AudioOps {
             if (mergeChapterAuto(c, bookId, bookTitle, ci, parts,
                     gapMs = gapMs, declickMs = declickMs).ok) made++ else skipped++
         }
-        EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_ENSURE",
-            "补拼 $made 章 / 跳过 $skipped 章")
+        // R292 · 0/0 不打空日志：新书还没做、回溯跑一次也是全空，
+        // 真机诊断里三条「补拼 0 章 / 跳过 0 章」只是噪声。
+        if (made > 0 || skipped > 0) {
+            EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_ENSURE",
+                "补拼 $made 章 / 跳过 $skipped 章")
+        }
         return made to skipped
     }
 

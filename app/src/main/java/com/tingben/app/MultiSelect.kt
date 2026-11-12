@@ -38,15 +38,25 @@ internal fun ActionChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     danger: Boolean = false,
+    primary: Boolean = false,
     icon: UiIcon? = null
 ) {
-    val tint = if (danger) palette.warn else palette.primary
+    // R291 · 主按钮用实心主色 + onPrimary 文字，和次要的浅底 chip 一眼分得开
+    val tint = when {
+        primary -> palette.onPrimary
+        danger -> palette.warn
+        else -> palette.primary
+    }
+    val bg = when {
+        primary -> palette.primary
+        danger -> palette.warn.copy(alpha = 0.13f)
+        else -> palette.primarySoft
+    }
     Box(
         modifier.padding(end = 6.dp)
             .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (danger) palette.warn.copy(alpha = 0.13f)
-                        else palette.primarySoft)
+            .background(bg)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 11.dp),
         contentAlignment = Alignment.Center
@@ -117,7 +127,10 @@ internal fun SelectBox(
 }
 
 /**
- * 底部胶囊操作条：全选 / 已选计数 / 一排可横滑的动作 / 取消。
+ * 底部胶囊操作条：上面一行「已选 / 全选 / 取消」，下面一行动作。
+ * R291 · 原来所有动作都塞在一个横向滚动区里，而计数、全选、取消先占掉
+ * 大半宽度，排在后面的「制作」被挤出屏幕，勾完章根本看不见去哪开工。
+ * 现在主按钮固定在动作行左侧、不参与横滑；次要动作仍可横滑，不挤压控制行。
  * 动作由调用方给，组件不知道也不该知道「删的是章还是段」。
  */
 @Composable
@@ -127,6 +140,9 @@ internal fun MultiSelectBar(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
     allLabel: String = "全选",
+    primaryLabel: String? = null,
+    onPrimary: (() -> Unit)? = null,
+    primaryIcon: UiIcon? = null,
     actions: @Composable RowScope.() -> Unit
 ) {
     Card(
@@ -135,25 +151,34 @@ internal fun MultiSelectBar(
         shape = RoundedCornerShape(28.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("已选 $count", fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                color = palette.primary, modifier = Modifier.padding(start = 8.dp))
-            ActionChip(allLabel, icon = UiIcon.ALL, onClick = {
-                onSelectAll()
-                EventLog.ui("MULTI_ALL_BAR", allLabel)
-            })
-            // 动作可能多，横滑兜底，不挤压计数与取消
-            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically) {
-                actions()
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("已选 $count", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    color = palette.primary, modifier = Modifier.padding(start = 8.dp))
+                Spacer(Modifier.weight(1f))
+                ActionChip(allLabel, icon = UiIcon.ALL, onClick = {
+                    onSelectAll()
+                    EventLog.ui("MULTI_ALL_BAR", allLabel)
+                })
+                // R171 · 原来只有一个灰色 ×，用户「不知道这个勾选态怎么取消」。
+                // 换成看得见的「取消」文字，图标留作辅助，事件名不动。
+                ActionChip("取消", icon = UiIcon.CANCEL, onClick = {
+                    onCancel()
+                    EventLog.ui("MULTI_CANCEL_BAR", "")
+                }, modifier = Modifier.padding(start = 2.dp))
             }
-            // R171 · 原来只有一个灰色 ×，用户「不知道这个勾选态怎么取消」。
-            // 换成看得见的「取消」文字，图标留作辅助，事件名不动。
-            ActionChip("取消", icon = UiIcon.CANCEL, onClick = {
-                onCancel()
-                EventLog.ui("MULTI_CANCEL_BAR", "")
-            }, modifier = Modifier.padding(start = 2.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                if (primaryLabel != null && onPrimary != null) {
+                    ActionChip(primaryLabel, onClick = onPrimary, primary = true,
+                        icon = primaryIcon)
+                }
+                // 次要动作可能多，横滑兜底；主按钮在它左边，永远露着
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    actions()
+                }
+            }
         }
     }
 }

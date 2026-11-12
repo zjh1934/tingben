@@ -100,13 +100,14 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
 
     val mode = remember(tick) { ModelStore.currentMode(c) }
     val installed = remember(tick) { ModelStore.installedModes(c).map { it.id }.toSet() }
-    var missing by remember { mutableStateOf(emptyList<String>()) }
+    // R291 · 试听能不能用，看「当前模式能不能合成」，不看「4 份是否全装」。
+    var synthBlocked by remember { mutableStateOf(false) }
     var rows by remember { mutableStateOf(emptyList<MixerRow>()) }
     LaunchedEffect(tick) {
         withContext(Dispatchers.IO) {
-            val m = ModelStore.missing(c)
+            val blocked = ModelStore.synthesisBlockReason(c) != null
             val r = Mixer.snapshot(c)
-            withContext(Dispatchers.Main) { missing = m; rows = r }
+            withContext(Dispatchers.Main) { synthBlocked = blocked; rows = r }
         }
     }
 
@@ -363,7 +364,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Button(
-                    enabled = missing.isEmpty() && !busyTrial,
+                    enabled = !synthBlocked && !busyTrial,
                     onClick = { trial("已保存", active, savedTrialText, "mixer_trial_saved.wav") },
                     modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(50),
@@ -371,7 +372,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                         containerColor = Primary, contentColor = palette.onPrimary)
                 ) { Text("试听 · 已保存", fontSize = 12.sp) }
                 Button(
-                    enabled = missing.isEmpty() && !busyTrial,
+                    enabled = !synthBlocked && !busyTrial,
                     onClick = { trial("未保存", draft, trialText, "mixer_trial_draft.wav") },
                     modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(50),
@@ -383,8 +384,8 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                 Text(trialMsg, fontSize = 12.sp,
                     color = if (trialMsg.startsWith("试听失败")) Warn else Sub)
             }
-            if (missing.isNotEmpty()) {
-                Text("还缺模型文件，去「模型」页导入。", fontSize = 12.sp, color = Warn)
+            if (synthBlocked) {
+                Text("当前模式缺模型，去「模型」页导入。", fontSize = 12.sp, color = Warn)
             }
             Spacer(Modifier.height(14.dp))
             if (mode == ModelStore.Mode.VOICE_DESIGN) {

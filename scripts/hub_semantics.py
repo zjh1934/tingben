@@ -43,7 +43,7 @@ HUB_POS = [
     "BackHandler(enabled = segMulti) { exitSegMulti() }",
     "if (multiMode && menuChapter == null) {",
     # R171 · 任务看板就地看，不切独立任务页
-    "TaskBoardDialog(",
+    "R298 · 目录页就地任务看板撤掉",
     "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
     # 勾选框只在多选态：ChapterRow 里 if (multi) 分支
     "SelectBox(checked = checked, tint = HubPrimary",
@@ -86,7 +86,7 @@ HUB_POS = [
     "TaskResume.dequeue(c, t.bookId)",
     # R243 · 「继续队列」按钮砍掉，底层能力仍在 Producer；这里判同源数据，
     # 按钮回潮由 HUB_BAN 拦，不放宽能力判据。
-    "TaskResume.realProgress(c, it)",
+    "制作选中 ${selected.size} 章",
     # R169 · 章名深浅两色统一 palette.text：浅色下 HubGrey 只有 1.74:1，
     # 真机截图里 103 章整列看不见；「有没有做好」交给右侧耳机图标颜色。
     "color = palette.text,",
@@ -102,6 +102,10 @@ HUB_POS = [
 
 # ── 三列 / 分页 / 列跳转零回潮 ───────────────────────────────────────
 HUB_BAN = [
+    # R298 · 目录页就地任务看板整套撤掉，旧形态不许回潮
+    "TaskBoardDialog(", "TaskResume.realProgress(c, it)",
+    "showTasks = true", "hubTasksTick", "tasksRequest",
+    "HUB_TASKS_OPEN", "openTasksOnStart", "hubOpenTasks",
     # R264 · 展开/收起整套旧形态不许回潮
     "var expandedChapter",
     "val willOpen =",
@@ -142,11 +146,13 @@ MAIN_POS = [
     'Text("⚙", fontSize = 16.sp',
     'EventLog.ui("HUB_STOP"',
     'EventLog.ui("HUB_RESUME"',
-    'EventLog.ui("HUB_TASKS"',
+    'EventLog.ui("HOME_TASKS", "open:global")',
     "fun hubStop()", "fun hubResume()",
-    "tasksRequest = hubTasksTick",
+    "nav.push(Screen.TASKS)",
 ]
-MAIN_BAN = ["openBookCol", "hubCol", "initialCol ="]
+MAIN_BAN = ["openBookCol", "hubCol", "initialCol =",
+            'EventLog.ui("HUB_TASKS"', "tasksRequest = hubTasksTick",
+            "hubTasksTick", "hubOpenTasks", "TaskBoardDialog("]
 
 
 def _between(src: str, start: str, end: str) -> str:
@@ -260,4 +266,12 @@ def injections():
         ("入口又按列分流", "main",
          lambda t: t.replace("fun openBook(id: String?)",
                              "fun openBookCol(id: String?, col: Int)")),
+        ("目录页看板说明被摘", "hub",
+         lambda t: t.replace("R298 · 目录页就地任务看板撤掉", "")),
+        ("制作按钮被摘", "hub",
+         lambda t: t.replace("制作选中 ${selected.size} 章", "")),
+        ("全局任务入口被摘", "main",
+         lambda t: t.replace("nav.push(Screen.TASKS)", "")),
+        ("目录页看板回潮", "hub",
+         lambda t: t.replace("任务队列 · ${queued.size} 个", "TaskBoardDialog(")),
     ]

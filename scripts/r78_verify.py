@@ -12,10 +12,12 @@ CI = ROOT / ".github/workflows/ci.yml"
 # R246 · 按现状迁移：R215 首页不建书、R230 撤「上次读到」/改长按菜单、
 # R245 设置页统一行之后，11.sp/10.sp 是合法字号，不再当「旧形态」禁。
 POS = [
-    'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
+    # R291 · 抽屉顶部那枚「＋ 导入一本书」是唯一入口；空态的第二枚已删。
+    # 这里守「导入能力仍接到调用方」，第二枚入口由 BAN 拦回潮。
+    'onImportBook = { openBookPicker() }',
     'var menuBook by remember { mutableStateOf<String?>(null) }',
     'Text("置顶或删除", fontSize = 12.sp, color = Sub)',
-    'else "听这段"',                       # R215 首页粘一段即听，不建书
+    'Text(if (busy > 0) "再合成一段" else "合成这段", fontSize = 13.sp)',  # R276 首页贴一段→点合成，不建书
     'Text("再选一次文件 ›", fontSize = 12.sp, color = Primary)',
     'onLongPress = { menuBook = b.id }',   # R230 长按书名弹置顶/删除
     'var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }',
@@ -37,6 +39,8 @@ BAN = [
     'BookStore.add(c, "粘贴的文字", pasteText)',
     # R230 · 「上次读到 第 N 章」是撤掉的废话
     '上次读到 第 ${lastRead + 1} 章',
+    # R291 · 抽屉里只留一枚导入入口，空态「导入第一本 ›」不许回来
+    'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
 ]
 KEEP = [
     'RefreshStrip(', 'BookStore.list(c)', 'ModelStore.missing(c)',

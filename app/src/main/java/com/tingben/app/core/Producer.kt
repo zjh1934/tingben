@@ -771,6 +771,71 @@ object Producer {
         // R266 · 本次任务里已经回头重做过的段。失败也只试一次，标记留给下次
         // 「继续制作」再认领，不在这里反复重试把主循环拖死。
         val handledRedo = mutableSetOf<Int>()
+        // R300 · 用户口径：不是整本跑完才统一拼，是「这一章的小块做完，这章
+        // 立刻自动拼成一个章音频」。同章段在 toSpeak 里是连续区间，先按章归好
+        // 索引、记下每章最后一段，主循环走到边界就 mergeChapterAuto（登记 +
+        // markDone + 清这一章的小块），然后接着做下一章，段进度与通知一直有
+        // 动静。收尾那次 ensureChapterAudios 只当补漏网：正常路径到收尾时各
+        // 章都已拼过，hasChapterAudio 会直接跳过，不再是「全部跑完再拼」。
+        val chapterSegIndices = LinkedHashMap<Int, MutableList<Int>>()
+        segChapter.forEachIndexed { idx, ch ->
+            chapterSegIndices.getOrPut(ch) { mutableListOf() }.add(idx)
+        }
+        val chapterLastIndex = chapterSegIndices.mapValues { (_, idxs) -> idxs.last() }
+        val chapterAtBoundary = chapterLastIndex.entries.associate { (ch, last) -> last to ch }
+        val mergedThisRun = mutableSetOf<Int>()
+        val deferredChapters = mutableSetOf<Int>()
+        var chaptersMade = 0
+        var chaptersSkipped = 0
+        // 该章是否还有「小块重做」没消化：有就先别拼，等插队重做完再拼，
+        // 否则旧声音被拼进成品就再也改不回来。
+        fun chapterRedoLeft(ci: Int): Boolean = SegPlan.pending(work).any { key ->
+            val j = key.removePrefix("seg:").toIntOrNull() ?: return@any false
+            j in toSpeak.indices && j !in handledRedo &&
+                chapterSegIndices[ci]?.contains(j) == true &&
+                !SegDrops.matches(dropSnap, dropWav(j), dropText(j))
+        }
+        fun tryMergeChapter(ci: Int, at: Int) {
+            if (ci in mergedThisRun || cancelRequested || spaceStopped) return
+            if (chapterRedoLeft(ci)) { deferredChapters.add(ci); return }
+            val app = appCtx
+            val already = doneChapterFiles[ci]?.let { it.isFile && it.length() > 44 } == true ||
+                (app != null && AudioLibrary.hasChapterAudio(app, book.id, ci))
+            if (already) {
+                mergedThisRun.add(ci); deferredChapters.remove(ci); chaptersSkipped++
+                return
+            }
+            if (app == null) return
+            val parts = mutableListOf<File>()
+            var allOk = true
+            for (j in chapterSegIndices[ci].orEmpty()) {
+                val wn = dropWav(j)
+                if (SegDrops.matches(dropSnap, wn, dropText(j))) continue
+                val f = File(work, wn)
+                if (!f.isFile || f.length() <= 44L) { allOk = false; break }
+                parts.add(f)
+            }
+            if (!allOk || parts.isEmpty()) {
+                deferredChapters.add(ci)
+                EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_DEFER",
+                    "ch=${ci + 1} · 有段还没好，先留着小块等收尾补")
+                return
+            }
+            // 拼好即清标记：这一章已合成，就没有「小块重做」这回事了
+            chapterSegIndices[ci].orEmpty().forEach { j -> SegPlan.clearRedo(work, "seg:$j") }
+            val r = AudioOps.mergeChapterAuto(app, book.id, book.title, ci, parts,
+                gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c))
+            if (r.ok) {
+                mergedThisRun.add(ci); deferredChapters.remove(ci); chaptersMade++
+                emit("正在生成声音", at + 1, annotated.size, gateFails + synthFails,
+                    "第 ${ci + 1} 章已拼好，接着做下一章",
+                    chapterProgress = _state.value.chapterProgress)
+            } else {
+                deferredChapters.add(ci)
+                EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_DEFER",
+                    "ch=${ci + 1} · " + r.reason)
+            }
+        }
         // R235 · 每段实时读一次 Prefs。音色分套（voiceStamp / cacheKey /
         // VoiceCache.switchTo）仍锁在开跑时那一次，绝不因运行中改设置换套、
         // 不删已做好的段、不把进度归零 —— R220 硬口径不破。
@@ -830,6 +895,12 @@ object Producer {
                     emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
                         "已生成 ${i + 1}/${annotated.size} 段声音",
                         chapterProgress = _state.value.chapterProgress)
+                    // R297 · 标记后又被手工删掉的段不再合成，标记也不能永久留着：
+                    // 否则目录页格子一直转黄、每秒读盘还一直带着它。
+                    SegPlan.clearRedo(work, "seg:$i")
+                    // R300 · 章末最后一段正好被删掉时也不能漏了拼这一章
+                    chapterAtBoundary[i]?.let { tryMergeChapter(it, i) }
+                    deferredChapters.toList().forEach { tryMergeChapter(it, i) }
                     continue
                 }
                 val ci = segChapter.getOrElse(i) { -1 }
@@ -950,47 +1021,55 @@ object Producer {
                     "已生成 ${i + 1}/${annotated.size} 段声音" +
                         if (eta > 0L) " · 按当前速度还需约 ${formatEta(eta)}" else "",
                     chapterProgress = chapterSnapshot)
-                // R266 · 段级重做就地接上。用户勾的往往是已经跑过的段，旧做法把
-                // 重做排成「整章新任务」进队列，得等整本跑完才轮到；当前任务一旦
-                // 没正常完成，finally 还会把队列永久暂停 —— 看着就像这一章不做了。
-                // 现在当前这段一收尾，立刻回头把标记的段重合成，不排新任务、
-                // 不打断主循环、不追加到 wavs（覆盖同一个文件，拼接读到的就是新声音）。
-                val backlog = SegPlan.pending(work)
+                // R266 · 段级重做就地接上：不排「整章新任务」进队列（那样得等整本
+                // 跑完才轮到，任务一停队列还会永久暂停），也不追加到 wavs，
+                // 直接覆盖同一个文件，拼接读到的就是新声音。
+                // R297 · 旧做法把整批 backlog 在一段收尾后一次性同步跑完：
+                // N 段 × 几分钟全堵在这里，进度钉住、通知不刷、唤醒锁 30 分钟
+                // 不 touch 被释放，真机上就是「点了重做就卡死、不往前推进」。
+                // 现在每段收尾只插队做标记里最早的那一个，做完立刻 emit 一次
+                // 回主循环，done 继续涨、通知与浮窗继续动。
+                val nextRedo = SegPlan.pending(work)
                     .filter { it.startsWith("seg:") }
                     .mapNotNull { it.removePrefix("seg:").toIntOrNull() }
                     .filter { j -> j <= i && j in toSpeak.indices && j !in handledRedo &&
+                        segChapter.getOrElse(j) { -1 } !in mergedThisRun &&
                         !SegDrops.matches(dropSnap, dropWav(j), dropText(j)) }
-                    .sorted()
-                if (backlog.isNotEmpty()) {
+                    .minOrNull()
+                if (nextRedo != null && !cancelRequested) {
+                    handledRedo.add(nextRedo)
                     emit("正在重做小块", i + 1, annotated.size, gateFails + synthFails,
-                        "正在重做 ${backlog.size} 个选中的小块",
+                        "正在重做段 ${nextRedo + 1} · 做完立刻接着往前做",
                         chapterProgress = chapterSnapshot)
-                    for (j in backlog) {
-                        handledRedo.add(j)
-                        if (cancelRequested) break
-                        val wj = File(work, dropWav(j))
-                        val lj = liveSeg(j)
-                        val code = try {
-                            NativeEngine.ttsSynthesize(ttsHandle, lj.text,
-                                lj.params.instruct, lj.params.speaker, "chinese",
-                                wj.absolutePath, lj.knobs)
-                        } catch (t: Throwable) { -99 }
-                        if (code == 0 && wj.exists() && wj.length() > 44) {
-                            SegPlan.clearRedo(work, "seg:$j")
-                            EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_DONE",
-                                "seg=${j + 1} · ${wj.length()} 字节")
-                        } else {
-                            // 失败保留旧 wav 与标记，不删能听的那一份
-                            EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_FAIL",
-                                "seg=${j + 1} code=$code 留待下次续跑")
-                        }
+                    // 重做同样要喂唤醒锁，否则连续重做超过 UNIT_TIMEOUT_MS
+                    // 锁被系统释放，推理会挂在半路。
+                    ProduceService.touch(c.applicationContext, "重做段 ${nextRedo + 1}")
+                    val wj = File(work, dropWav(nextRedo))
+                    val lj = liveSeg(nextRedo)
+                    val code = try {
+                        NativeEngine.ttsSynthesize(ttsHandle, lj.text,
+                            lj.params.instruct, lj.params.speaker, "chinese",
+                            wj.absolutePath, lj.knobs)
+                    } catch (t: Throwable) { -99 }
+                    if (code == 0 && wj.exists() && wj.length() > 44) {
+                        SegPlan.clearRedo(work, "seg:$nextRedo")
+                        EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_DONE",
+                            "seg=${nextRedo + 1} · ${wj.length()} 字节")
+                    } else {
+                        // 失败保留旧 wav 与标记，不删能听的那一份
+                        EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_FAIL",
+                            "seg=${nextRedo + 1} code=$code 留待下次续跑")
                     }
                     // 切回主阶段：stage 变化会驱动目录页重读 redo.json，
                     // 格子由琥珀变回绿色，不用等整本跑完。
                     emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
-                        "已重做 ${backlog.size} 个选中的小块",
+                        "已重做 1 个选中的小块，继续往前做",
                         chapterProgress = chapterSnapshot)
                 }
+                // R300 · 本段收尾后看章边界：这一章小块齐了就立刻拼成章音频、
+                // 清掉小块，主循环接着做下一章，不等整本跑完。
+                chapterAtBoundary[i]?.let { tryMergeChapter(it, i) }
+                deferredChapters.toList().forEach { tryMergeChapter(it, i) }
             }
             if (spaceStopped) {
                 _state.value = Progress(false, "没完成", wavs.size, annotated.size,
@@ -1013,10 +1092,9 @@ object Producer {
         emit("正在按章整理", annotated.size, annotated.size, gateFails + synthFails,
             "正在把各章的小块拼成章音频…")
         // R272 · 用户口径：一本书拼成一份整本.wav 会把手机撑爆，不要整本大文件。
-        // 唯一成品形态是「一章一个音频」：ensureChapterAudios 逐章
-        // WavMerger.merge → register 章级 item → markDone → 清掉中间小块。
-        // 收尾无条件拼（force=true）：拼好才清小块，关掉「自动拼成整章」也
-        // 必须出章成品，否则这本书一个可播文件都没有。
+        // 唯一成品形态是「一章一个音频」：主循环已在每章边界 mergeChapterAuto
+        // 逐章拼好（R300），这里只补漏——边界没拼成的章才进 byCh，
+        // force=true 保证关掉「自动拼成整章」也必须出章成品。
         // 旧版已落在磁盘的整本.wav 不主动删、list() 仍兼容读取，只是不再新生成。
         val c = appCtx
         val byCh = LinkedHashMap<Int, MutableList<File>>()
@@ -1026,19 +1104,23 @@ object Producer {
             if (SegDrops.matches(dropSnap, wavName, dropText(i))) continue
             val ci = segChapter.getOrElse(i) { -1 }
             if (ci < 0) continue
+            // R300 · 这章已在边界拼好并清了小块，收尾不再重复扫它
+            if (ci in mergedThisRun) continue
             byCh.getOrPut(ci) { mutableListOf() }
                 .add(File(work, wavName))
         }
         val merged = if (c != null) AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,
             gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)
         else 0 to 0
+        // R300 · 章边界即时拼的 + 收尾补漏的，才是本次真正做出的章音频数
+        val totalMade = chaptersMade + merged.first
         val regWarn = AudioLibrary.writeError
         val outDir = if (c != null)
             AudioLibrary.bookDir(c, book.id, book.title).absolutePath else null
         _state.value = Progress(false, "完成", annotated.size, annotated.size,
             gateFails + synthFails,
             if (regWarn != null) "音频已生成，但记录没写上：$regWarn；文件仍在「我的音频」里"
-            else if (merged.first > 0) "做好了，${merged.first} 个章节音频在「我的音频」里"
+            else if (totalMade > 0) "做好了，${totalMade} 个章节音频在「我的音频」里"
             else "做好了，可以去「我的音频」听", outDir)
         val t = current
         if (c != null && t != null) {
@@ -1050,6 +1132,7 @@ object Producer {
             _resume.value = done
         }
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_DONE",
-            "chapters=${merged.first} skipped=${merged.second} segs=${annotated.size}")
+            "chapters=$totalMade immediate=$chaptersMade late=${merged.first} " +
+                "skipped=${merged.second} segs=${annotated.size}")
     }
 }

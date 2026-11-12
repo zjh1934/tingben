@@ -69,6 +69,10 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     // 用户实证「统计字数和本地离线对用户没有任何价值」→ 换成真实进度。
     // 章节表已落盘（R138 批次 B），resolve 命中后不再重扫整本；全部走 IO。
     var progress by remember { mutableStateOf(emptyMap<String, Pair<Int, Int>>()) }
+    // R298 · 抽屉书名下的进度条跟着制作实时动：原来只在 refresh / books 变化时
+    // 按「已做好的章数」算一次，制作中每完成一段都不重算，看着像卡住不动。
+    val prodState by Producer.state.collectAsState()
+    val liveTask by Producer.resume.collectAsState()
     LaunchedEffect(refresh, books) {
         val (reads, prog) = withContext(Dispatchers.IO) {
             val reads = ReadingState.allLast(c)
@@ -190,7 +194,11 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             items(books, key = { it.id }) { b ->
                 val lastRead = lastReads[b.id]
                 val (done, total) = progress[b.id] ?: (0 to 0)
-                val pct = if (total > 0) done.toFloat() / total.toFloat() else 0f
+                val live = prodState.running && liveTask?.bookId == b.id
+                val pct = if (live) {
+                    val t = maxOf(prodState.total, 1)
+                    prodState.done.coerceIn(0, t).toFloat() / t.toFloat()
+                } else if (total > 0) done.toFloat() / total.toFloat() else 0f
                 val isPinned = b.id in pinned
                 // R230 · 点书名开书、长按书名弹置顶/删除，两个手势同一个检测器
                 CardBox(Modifier.padding(bottom = 12.dp).pointerInput(b.id) {
@@ -219,27 +227,17 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                                     .background(if (done > 0 && done >= total) Good else Primary,
                                         RoundedCornerShape(50)))
                             }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                if (total > 0) "已做好 $done/$total 章"
-                                else "还没分章",
-                                fontSize = 11.sp, color = Sub)
-                            // R230 · 「上次读到 第 N 章」撤掉，制作进度条保留
+                            // R298 · 进度条下面不写「已做好 X/Y 章」这类废话，
+                            // 书名下面只留这一条跟着制作动的进度条。
                         }
                     }
                 }
             }
         } else {
-            // R174 · 自审发现：书架为空时 LazyColumn 一片白，新用户只能靠抽屉
-            // 右上角那枚小「＋ 导入」。给一个能按的入口，不写教程、不加说明文字。
-            item(key = "empty") {
-                Column(Modifier.fillMaxWidth().padding(top = 28.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    TextButton(onClick = onImportBook) {
-                        Text("导入第一本 ›", fontSize = 14.sp, color = Primary)
-                    }
-                }
-            }
+            // R291 · 抽屉顶部已经有「＋ 导入一本书」那枚实心按钮，这里原来的
+            // 「导入第一本 ›」是第二个入口。新装/清干净后书架为空，两枚同时
+            // 出现，看着像两套导入。只留顶部那一枚，空态整行不渲染。
+            // onImportBook 参数保留给调用方兼容，本页不再画按钮。
         }
     }
 }

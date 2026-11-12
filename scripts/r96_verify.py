@@ -33,8 +33,7 @@ POS = {
         'item(key = "count") {',
         'Text("共 ${books.size} 本"',
         'items(books, key = { it.id }) { b ->',
-        'item(key = "empty") {',
-        'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
+        # R291 · 空态不再画第二枚导入入口，empty item 与那行字一起退役
         'val lastRead = lastReads[b.id]',
     ],
     "reading": [
@@ -134,12 +133,13 @@ def check(f):
         if body.find('LaunchedEffect(refresh, books)') > body.find('LazyColumn('):
             e.append('后台加载塞回列表 DSL 内')
         if not (body.find('item(key = "head")') < body.find('item(key = "count")')
-                < body.find('items(books, key = { it.id })')
-                < body.find('item(key = "empty")')):
-            e.append('item 顺序错乱（含 R174 空态入口）')
-        # R174 · 书架为空时多一个 empty item（原来只有 head / import-error / count）
-        if body.count('item(key = ') != 4:
-            e.append('固定 item 数不是 4')
+                < body.find('items(books, key = { it.id })')):
+            e.append('item 顺序错乱')
+        # R291 · 抽屉顶部是唯一导入入口，空态 empty item 已退役：固定 3 个
+        if body.count('item(key = ') != 3:
+            e.append('固定 item 数不是 3')
+        if 'item(key = "empty")' in body or 'Text("导入第一本 ›"' in body:
+            e.append('R291 回潮：书架空态又冒出第二枚导入入口')
     return e
 
 def load():
@@ -194,6 +194,10 @@ def selftest():
                               '        item(key = "head") {', 1)),
         ('头部顺序破坏', 'main',
          lambda t: t.replace('item(key = "head")', 'item(key = "count")', 1)),
+        ('第二导入入口回潮', 'main',
+         lambda t: t.replace('items(books, key = { it.id }) { b ->',
+                             'item(key = "empty") { Text("导入第一本 ›", fontSize = 14.sp, color = Primary) }\n'
+                             '        items(books, key = { it.id }) { b ->', 1)),
         ('CI 摘验证', 'ci', lambda t: t.replace('scripts/r96_verify.py', 'x.py')),
         ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r96_read_parity.py', 'x.py')),
         ('对拍脚本被掏空', 'parity', lambda t: t.replace('CASES = [', 'DATA = [', 1)),

@@ -67,11 +67,15 @@ def check(f):
     for k in ["trailing = when (screen)",
               'IconButton(onClick = { hubStop() }',
               'IconButton(onClick = { hubResume() }',
-              'hubTasksTick++',
+              'nav.push(Screen.TASKS)',
               'IconButton(onClick = { nav.push(Screen.PRODUCE) }',
               "fun hubStop()", "fun hubResume()",
-              "tasksRequest = hubTasksTick"]:
+              "screen = Screen.TASKS"]:
         if k not in mg: e.append("顶栏缺: " + k[:56])
+    # R298 · 目录页就地看板撤掉，旧入口零回潮
+    for b in ["hubTasksTick", "tasksRequest = hubTasksTick", "TaskBoardDialog(",
+              'EventLog.ui("HUB_TASKS_OPEN"']:
+        if b in mg: e.append("目录页旧任务入口回潮: " + b[:40])
     # ④ R264 · 制作中的那一章恒定展开，没在制作的章连 seg_body 都不生成
     for k in ["val liveChapter: Int? = if (bookRunning) makingChapter else null",
               "if (r.index == liveChapter) {",
@@ -105,6 +109,7 @@ def selftest():
         ("进度条底色被摘", "hub", "trackColor = HubLine", ""),
         ("本章进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
         ("废话回潮", "merged", "fun hubStop()", 'Text("可播 3/10 章")'),
+        ("目录页旧入口回潮", "merged", "nav.push(Screen.TASKS)", "hubTasksTick++"),
         ("顶栏按钮不齐", "merged", "trailing = when (screen)", ""),
         ("停止按钮被摘", "merged", 'IconButton(onClick = { hubStop() }', ""),
         ("空章又弹块", "hub", "if (r.index == liveChapter) {", "if (true) {"),

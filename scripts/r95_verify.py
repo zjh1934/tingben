@@ -60,7 +60,7 @@ POS = {
         # R272 · 整本大文件不再生成：收尾只按章拼（force 强制），不预留整本空间
         'val merged = if (c != null) AudioOps.ensureChapterAudios(',
         'gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)',
-        'chapters=${merged.first} skipped=${merged.second}',
+        'chapters=$totalMade immediate=$chaptersMade late=${merged.first}',
         'for ((i, a) in toSpeak.withIndex())',
     ],
     "ci": ['scripts/r95_verify.py', 'scripts/r95_space_parity.py'],

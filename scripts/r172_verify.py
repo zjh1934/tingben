@@ -22,6 +22,7 @@ FILES = {
     "plan": SRC / "core/ChapterPlan.kt",
     "resume": SRC / "core/TaskResume.kt",
     "hub": SRC / "ChapterHub.kt",
+    "task": SRC / "TaskUi.kt",
     "main": ui_sources.source(SRC),
     "ci": ROOT / ".github/workflows/ci.yml",
 }
@@ -100,7 +101,7 @@ RESUME_MUST = [
 ]
 
 UI_MUST = {
-    "hub": ['t.phase == "reconfirm" -> "需重新确认"',
+    "task": ['t.phase == "reconfirm" -> "需重新确认"',
             't.phase != "reconfirm"'],
     "main": ['t.phase == "reconfirm" -> "需重新确认"',
              't.phase != "reconfirm"'],
@@ -195,7 +196,7 @@ def selftest():
          lambda t: t.replace("planEpoch = ChapterPlan.epoch(c, book.id)", "planEpoch = 0")),
         ("失效检查被摘", "resume",
          lambda t: t.replace("t.planEpoch != ChapterPlan.epoch(c, t.bookId)", "false")),
-        ("reconfirm 仍能一键续跑", "hub",
+        ("reconfirm 仍能一键续跑", "task",
          lambda t: t.replace('t.phase != "reconfirm"', "true")),
         ("任务页 badge 不认 reconfirm", "main",
          lambda t: t.replace('t.phase == "reconfirm" -> "需重新确认"',

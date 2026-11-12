@@ -30,12 +30,15 @@ def files():
     }
 
 CHIPS = ["ActionChip(\"调音 ›\"", "ActionChip(\"制作设置 ›\"",
-         "ActionChip(\"合成音频\"", "ActionChip(\"拼成整章\"",
+         # R291 · 制作升成固定主按钮，不再是可被横滑藏掉的小 chip
+         'primaryLabel = if (selected.isEmpty()) null else "制作选中 ',
+         "ActionChip(\"拼成整章\"",
          "ActionChip(\"另存 WAV\"", "ActionChip(\"转 M4A\"",
          "ActionChip(\"删除选中音频\", danger = true"]
 BAN = ["TextButton(onClick = onMixer)", "TextButton(onClick = onCancel)",
        'Text("合成音频", fontSize = 12.sp, color = HubPrimary)',
-       'Text("调音 ›", fontSize = 12.sp, color = HubPrimary)']
+       'Text("调音 ›", fontSize = 12.sp, color = HubPrimary)',
+       'ActionChip("合成音频"']
 
 def check(f):
     e = []
@@ -68,8 +71,10 @@ def check(f):
         if "UiIcon." + v + " ->" not in ic: e.append("枚举值没画: " + v)
     if "icon: UiIcon? = null" not in m or "UiIconGlyph(icon, tint" not in m:
         e.append("ActionChip 没接图标槽")
-    if hb.count("icon = UiIcon.") < 7:
-        e.append("目录页动作条图标没配齐（实 %d）" % hb.count("icon = UiIcon."))
+    # R291 · 制作改走 primaryIcon 参数，参数名变了但图标一个不能少
+    for v in ["MIXER", "SETTINGS", "SYNTH", "MERGE", "WAV", "M4A", "DELETE"]:
+        if "UiIcon." + v not in hb:
+            e.append("目录页动作条图标没配齐: " + v)
     # 只禁渲染出来的 ⚙ 字符；KDoc 里解释「不用 ⚙ 字符」的说明不算回潮
     if 'Text("⚙' in f["chrome"]:
         e.append("⚙ 字符回潮（应走 GearIcon 代码自绘）")
@@ -98,8 +103,9 @@ def selftest():
         ("圆角被摘", "multi", ".clip(RoundedCornerShape(12.dp))", ""),
         ("点击被摘", "multi", ".clickable(onClick = onClick)", ""),
         ("危险色被摘", "multi", "danger: Boolean = false", ""),
-        ("合成音频退回文字", "hub", 'ActionChip("合成音频"',
-         'TextButton(onClick = { startAction(HubAction.SYNTH) })'),
+        ("制作退回横滑小按钮", "hub",
+         'primaryLabel = if (selected.isEmpty()) null else "制作选中 ',
+         'ActionChip("合成音频", icon = UiIcon.SYNTH, onClick = { startAction(HubAction.SYNTH) })\n                '),
         ("调音退回文字", "hub", 'ActionChip("调音 ›"', 'Text("调音 ›"'),
         ("删除危险色被摘", "hub", 'ActionChip("删除选中音频", danger = true',
          'ActionChip("删除选中音频"'),

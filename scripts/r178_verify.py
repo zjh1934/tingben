@@ -40,22 +40,24 @@ FILES = {
 }
 
 MAIN = [
-    "var hubOpenTasks by rememberSaveable",
+    "nav.push(Screen.TASKS)",
     '"NOTIF_TASKS_OPEN"',
     'TaskResume.active(ctx) ?: TaskResume.queue(ctx).firstOrNull()',
-    'screen = Screen.CHAPTERS',
-    'openTasksOnStart = hubOpenTasks',
-    'SideEffect { if (hubOpenTasks) hubOpenTasks = false }',
+    'screen = Screen.TASKS',
+    'Screen.TASKS -> TaskCenterScreen(',
+    'EventLog.ui("HOME_TASKS", "open:global")',
     'item(key = "head")',
     'RefreshStrip(',
 ]
 MAIN_BAN = [
-    'raw == "tasks:" -> {\n                screen = Screen.TASKS',
+    'openTasksOnStart = hubOpenTasks',
+    'hubOpenTasks', 'hubTasksTick', 'tasksRequest = hubTasksTick',
+    'TaskBoardDialog(',
     'if (!compact) {\n            item(key = "head")',
 ]
 HUB = [
-    "openTasksOnStart: Boolean = false",
-    "mutableStateOf(openTasksOnStart)",
+    "R298 · 目录页就地任务看板撤掉",
+    "val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }",
 ]
 # R226 · 节流随三按钮上移 App 层
 MAIN += ["var lastHubTapMs by remember { mutableStateOf(0L) }",
@@ -90,6 +92,11 @@ def checks(f):
     for s in HUB:
         if s not in f["hub"]:
             e.append("目录页能力缺失: " + s[:60])
+    # R298 · 目录页就地看板撤掉后，旧形态不许回潮（注入改的是 hub 本体）
+    for b in ["TaskBoardDialog(", "openTasksOnStart", "hubOpenTasks",
+              "tasksRequest", "hubTasksTick"]:
+        if b in f["hub"]:
+            e.append("目录页就地看板回潮: " + b[:40])
 
     for s in CHROME:
         if s not in f["chrome"]:
@@ -107,16 +114,15 @@ def selftest():
     base = {k: p.read_text(encoding="utf-8") for k, p in FILES.items()}
     assert not checks(base), "基线自己就红了，先修基线"
     cases = [
-        ("通知又跳独立任务页", "main",
-         lambda t: t.replace('                    screen = Screen.CHAPTERS\n                    hubOpenTasks = true',
-                             '                    screen = Screen.TASKS')),
+        ("通知落点被摘", "main",
+         lambda t: t.replace('screen = Screen.TASKS', 'screen = Screen.LIBRARY')),
         ("通知落点不找书", "main",
          lambda t: t.replace('TaskResume.active(ctx) ?: TaskResume.queue(ctx).firstOrNull()',
                              'null')),
-        ("看板不自动展开", "main",
-         lambda t: t.replace('openTasksOnStart = hubOpenTasks', 'openTasksOnStart = false')),
-        ("展开标志不复位", "main",
-         lambda t: t.replace('SideEffect { if (hubOpenTasks) hubOpenTasks = false }', '')),
+        ("全局任务入口被摘", "main",
+         lambda t: t.replace('nav.push(Screen.TASKS)', '')),
+        ("任务页落地被摘", "main",
+         lambda t: t.replace('Screen.TASKS -> TaskCenterScreen(', '')),
         ("刷新条又被 compact 挡掉", "main",
          lambda t: t.replace('        item(key = "head") {\n            RefreshStrip(',
                              '        if (!compact) {\n            item(key = "head") {\n                RefreshStrip(')),
@@ -124,10 +130,12 @@ def selftest():
          lambda t: t.replace('.clickable { onRefresh() }', '')),
         ("刷新条 import 被摘", "chrome",
          lambda t: t.replace('import androidx.compose.foundation.clickable', '')),
-        ("看板初值不认参数", "hub",
-         lambda t: t.replace('mutableStateOf(openTasksOnStart)', 'mutableStateOf(false)')),
-        ("签名不加参数", "hub",
-         lambda t: t.replace('    openTasksOnStart: Boolean = false', '')),
+        ("目录页看板说明被摘", "hub",
+         lambda t: t.replace('R298 · 目录页就地任务看板撤掉', '')),
+        ("队列数据源被摘", "hub",
+         lambda t: t.replace('val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }', '')),
+        ("目录页看板回潮", "hub",
+         lambda t: t.replace('制作选中 ${selected.size} 章', 'TaskBoardDialog(')),
         ("停止按钮不节流", "main",
          lambda t: t.replace("if (now - lastHubTapMs >= 800L) {", "if (true) {", 1)),
         ("继续按钮不节流", "main",

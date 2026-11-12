@@ -24,7 +24,9 @@ BAN = ['语言模型', '标注', '数据标注', '文本模型', '4B', 'Qwen3-4B
        'no_think', 'A/B gate', 'MODEL_ID', 'AbGate', 'm2507', 'prompt_zh']
 GONE = ['Screen.LLM', 'NAV_LLM', 'LlmSettingsScreen', 'onLlm', 'Pane.Annotated',
         'HubAction.ANNOTATE', 'HubAction.DIRECT', 'ANNOTATE_SYNTH',
-        'ProduceMode.ANNOTATE', 'RawDump.forBlock']
+        'ProduceMode.ANNOTATE', 'RawDump.forBlock',
+        # R291 · 制作退回横滑区里的小 chip = 勾完章又看不见去哪制作
+        'ActionChip("合成音频"']
 
 def string_literals(text):
     """只取字符串字面量；跳过纯注释行与行尾 // 注释。"""
@@ -62,7 +64,9 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
         e.append('目录页不是单列 / 三列分页回潮')
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
     # R224 · 勾选动作改成有底色的 ActionChip，不再是一排平铺的字
-    for s in ['ActionChip("合成音频"', 'ActionChip("调音 ›"', 'onMixer: () -> Unit']:
+    # R291 · 「合成音频」升成固定主按钮（primaryLabel），不再混在横滑动作里
+    for s in ['primaryLabel = if (selected.isEmpty()) null else "制作选中 ',
+              'ActionChip("调音 ›"', 'onMixer: () -> Unit']:
         if s not in hub: e.append('目录页缺: ' + s)
     # R195 · 四步进度条只在已删的独立进度页里；G2b 后进度做进目录页
     # （st.done/total + 心跳），这条死代码专属守恒项退役。

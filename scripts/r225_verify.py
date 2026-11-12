@@ -73,8 +73,10 @@ def check(f):
                       ("prod", 'id=${t.bookId.take(8)}'),
                       ("main", 'id=${p.task.bookId.take(8)}'),
                       ("task", 'id=${t.bookId.take(8)}'),
-                      ("hub", 'board id=${t.bookId.take(8)}')]:
+                      ("hub", 'EventLog.ui("HUB_QUEUE"')]:
         if needle not in f[k]: e.append("诊断字段缺失[%s]: %s" % (k, needle[:40]))
+    if 'board id=' in f["hub"]:
+        e.append("目录页就地看板日志回潮")
     # ⑥ 登记（受管范围改按官方 managed_scope.rules 判，不再找旧字符串）
     from r45_common import scope_indexed
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r225_verify.py --selftest"),
@@ -102,9 +104,11 @@ def selftest():
         ("TASK_RESUME 写回书名", "task",
          'EventLog.ui("TASK_RESUME", "id=${t.bookId.take(8)}")',
          'EventLog.ui("TASK_RESUME", "book=${t.title}")'),
-        ("板内删除写回书名", "hub",
-         'EventLog.ui("TASK_DELETE", "board id=${t.bookId.take(8)}")',
-         'EventLog.ui("TASK_DELETE", "board book=${t.title}")'),
+        ("任务删除写回书名", "task",
+         'EventLog.ui("TASK_DELETE", "id=${t.bookId.take(8)}")',
+         'EventLog.ui("TASK_DELETE", "book=${t.title}")'),
+        ("目录页看板日志回潮", "hub",
+         'EventLog.ui("HUB_QUEUE"', 'EventLog.ui("HUB_QUEUE", "board id=${t.bookId.take(8)}")'),
         ("音色原文回潮", "mixer",
          'append(" · voice=").append(EventLog.safe(Prefs.voiceDescription(c)))',
          'append(" · voice=").append(Prefs.voiceDescription(c))'),
