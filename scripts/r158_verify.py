@@ -63,7 +63,7 @@ POS = {
         "PermRow(\"显示在其他应用上层\", ovOk,",
         "PermEntryRow(\"应用详情\",",
         'SettingsSection("运行与通知", "系统", collapsible = false)',
-        "R174 · 自审发现：设置页原来有两张都标「系统」的卡",
+        "R303 · 权限单独成块",
         "KeepAlive.batteryIgnoring(c)",
         "KeepAlive.overlayGranted(c)",
         "KeepAlive.requestIgnoreBattery(c)",
@@ -246,17 +246,25 @@ def check(f):
     if "private fun PermRow" not in f["main"]:
         e.append("权限行没抽成顶层组合函数（局部函数真编译会炸）")
     m = f["main"]
+    # R303 · 权限单独成「权限」卡：运行与通知只留自动续播，三行权限归权限卡。
     a = m.find('SettingsSection("运行与通知", "系统", collapsible = false)')
     b = m.find("SettingsSection(", a + 10) if a >= 0 else -1
-    grp = m[a:b] if a >= 0 and b > a else ""
-    for n2 in ("AutoResumeRow(c)", 'PermRow("忽略电池优化", batOk,',
+    run_grp = m[a:b] if a >= 0 and b > a else ""
+    p = m.find('SettingsSection("权限", "权限", collapsible = false)')
+    q = m.find("SettingsSection(", p + 10) if p >= 0 else -1
+    perm_grp = m[p:q] if p >= 0 and q > p else ""
+    if "AutoResumeRow(c)" not in run_grp:
+        e.append("运行与通知卡里缺自动续播")
+    for n2 in ('PermRow("忽略电池优化", batOk,',
                'PermRow("显示在其他应用上层", ovOk,',
                'PermEntryRow("应用详情", "系统设置")'):
-        if n2 not in grp:
-            e.append("R174 系统类没合进同一张卡: " + n2[:50])
+        if n2 not in perm_grp:
+            e.append("R303 权限卡里缺: " + n2[:50])
+    if "R303 · 权限单独成块" not in m:
+        e.append("R303 权限板块口径被摘")
     if len([x for x in m.splitlines()
             if 'SettingsSection(' in x and '"系统"' in x]) != 1:
-        e.append("R174 设置页又出现多张「系统」卡")
+        e.append("R303 设置页又出现多张「系统」卡")
     e += tutorial_check(f)
     return e
 
@@ -289,8 +297,7 @@ def selftest():
          ("系统类又拆成两张卡", "main",
           'SettingsSection("运行与通知", "系统", collapsible = false)',
           'SettingsSection("运行与通知", "系统", collapsible = false) { }\n        SettingsSection("后台运行与权限", "系统", collapsible = false)'),
-         ("合并口径被摘", "main",
-          "R174 · 自审发现：设置页原来有两张都标「系统」的卡", ""),
+         ("权限板块口径被摘", "main", "R303 · 权限单独成块", ""),
         ("教程长说明回潮", "main", '"只记诊断信号，不记书名与正文"',
          'Text("设置 → 应用设置 → 应用管理 → 找到听本，先补齐上面那一份")'),
         ("KeepAlive 对象被摘", "ka", "object KeepAlive", ""),

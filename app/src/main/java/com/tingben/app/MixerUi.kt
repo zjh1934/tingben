@@ -288,15 +288,20 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                     Text("保存", fontSize = 12.sp)
                 }
             }
-            // 弹层才有关闭叉；独立页走顶栏返回键即可，不重复给两个出口。
-            // R155 · 原来是一枚灰色 IconClose，用户说「没有明确的返回按键」：
-            // 换成带浅底的主色叉，形态和可点性一致，一眼看出这是出口。
+            // R303 · 关闭重设计：原来 40dp 浅底 + 主色细叉和背景糊在一起，
+            // 用户说「叉号不明显」。改成主色实心胶囊「关闭 ✕」，反色文字与
+            // 反色粗叉、44dp 高，一眼看出是出口；独立页仍走顶栏返回键。
             if (onClose != null) {
-                Box(Modifier.size(40.dp)
-                        .background(PrimarySoft, RoundedCornerShape(12.dp))
-                        .clickable { leave() },
-                    contentAlignment = Alignment.Center) {
-                    IconClose(Primary)
+                Row(Modifier.height(44.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Primary)
+                        .clickable { leave() }
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("关闭", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        color = palette.onPrimary)
+                    IconClose(palette.onPrimary, Modifier.size(16.dp))
                 }
             }
         }
@@ -337,15 +342,17 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
             // I1 · 用户实证「试听文本和试听两个按钮在采样参数上面」。
             // 顺序定成：选模式 → 描述想要的声音 → 马上试听 → 再细调九项参数，
             // 不用来回滚一长串滑块找试听按钮。
-            OutlinedTextField(
-                value = trialText, onValueChange = { trialText = it },
-                modifier = Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("试听文本", fontSize = 12.sp) },
-                textStyle = TextStyle(fontSize = 12.sp)
-            )
-            Spacer(Modifier.height(4.dp))
+            // R303 · 试听文本与「保存」同一排：输入框占满剩余宽度，右边一枚
+            // 主色小按钮只写「保存」，不再在下面单独挂一整行字按钮。
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = {
+                OutlinedTextField(
+                    value = trialText, onValueChange = { trialText = it },
+                    modifier = Modifier.weight(1f), singleLine = true,
+                    label = { Text("试听文本", fontSize = 12.sp) },
+                    textStyle = TextStyle(fontSize = 12.sp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
                     if (trialText.isBlank()) {
                         Toast.makeText(c, "先放点文字进来", Toast.LENGTH_SHORT).show()
                     } else {
@@ -353,7 +360,15 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                         savedTrialText = trialText
                         Toast.makeText(c, "试听文本已保存", Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("保存试听文本", fontSize = 12.sp) }
+                },
+                    modifier = Modifier.height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)) {
+                    Text("保存", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
                 if (busyTrial) {
                     TextButton(onClick = { stopTrial() }) {

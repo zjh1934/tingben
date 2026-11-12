@@ -65,8 +65,9 @@ def check(f):
               'SettingLine("续", "打开软件自动续跑"',
               'EventLog.ui("RESUME_SETTING"',
               "SettingLine(title.take(1), title, hint)",
-              'Text("打开 ›"',
-              '"已开启 · 查看"', "containerColor = if (granted) Good else Primary",
+              'Text(if (granted) "已打开" else "去打开"',
+              'Text("去打开", fontSize = 12.sp',
+              "containerColor = if (granted) Good else Primary",
               'SettingLine("铃", "通知权限"']:
         if k not in s: e.append("关键逻辑缺: " + k[:56])
     if s.count("SettingLine(title.take(1), title, hint)") != 2:
@@ -139,7 +140,7 @@ def selftest():
          'SettingLine("权", title, hint)'),
         ("绿底状态被摘", "settings", "containerColor = if (granted) Good else Primary",
          "containerColor = Primary"),
-        ("应用详情按钮被摘", "settings", 'Text("打开 ›"', ""),
+        ("权限按钮文案被摘", "settings", 'Text(if (granted) "已打开" else "去打开"', ""),
         ("通知行被摘", "settings", 'SettingLine("铃", "通知权限"', ""),
         ("主题徽标被摘", "settings", 'SettingLine("主", "主题", "外观基调") { }',
          'Text("主题", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)'),

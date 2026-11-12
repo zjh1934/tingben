@@ -41,7 +41,7 @@ POS = {
     "main": [
         'i.getBooleanExtra("open_player", false)',
         '"|player:"',
-        'raw == "player:" -> { playerOpen = true }',
+        'raw == "player:" -> { playerOpen = true; scope.launch { sheetY.snapTo(0f) } }',
         "var playerOpen by rememberSaveable { mutableStateOf(false) }",
         "onExpand = { playerOpen = true",
         "if (playerOpen) {",
@@ -126,7 +126,7 @@ def selftest():
         "通知层不拦 preview": ("notif", 'if (s.label.isEmpty() || s.preview) { cancel(c); return }'),
         "通知点击不回跳": ("notif", '.putExtra("open_player", true)'),
         "通知意图不解析": ("main", 'i.getBooleanExtra("open_player", false)'),
-        "player 分支被摘": ("main", 'raw == "player:" -> { playerOpen = true }'),
+        "player 分支被摘": ("main", 'raw == "player:" -> { playerOpen = true; scope.launch { sheetY.snapTo(0f) } }'),
         "播放器浮层被摘": ("main", "if (playerOpen) {"),
         "常驻条不展开": ("main", "onExpand = { playerOpen = true"),
         "常驻条不隔离试听": ("hub", "if (st.preview) return"),

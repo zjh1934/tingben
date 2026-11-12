@@ -126,7 +126,7 @@ internal fun PermEntryRow(title: String, hint: String, go: () -> Unit) {
             modifier = Modifier.height(34.dp),
             shape = RoundedCornerShape(50),
             contentPadding = PaddingValues(horizontal = 14.dp)) {
-            Text("打开 ›", fontSize = 12.sp)
+            Text("去打开", fontSize = 12.sp)
         }
     }
 }
@@ -232,7 +232,7 @@ internal fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Un
                 containerColor = if (granted) Good else Primary,
                 contentColor = if (granted) goodFg else palette.onPrimary),
             contentPadding = PaddingValues(horizontal = 14.dp)) {
-            Text(if (granted) "已开启 · 查看" else "去开启", fontSize = 12.sp)
+            Text(if (granted) "已打开" else "去打开", fontSize = 12.sp)
         }
     }
 }
@@ -403,16 +403,17 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             OverlayProgressRow(c)
         }
 
-        // R171 · 合并「启动行为」与「通知与权限」：原来一个开关独占一张卡，
-        // 另一张卡只有一行，都是把设置页拉得又长又碎的根因。
         SettingsSection("运行与通知", "系统", collapsible = false) {
             AutoResumeRow(c)
-            // R165 · 原来写死「去开启」，权限已经给了还是这句。按真实状态复检，
-            // 回前台（permTick）就刷新；已给换绿底，和下面两行权限同一口径。
+        }
+        // R303 · 权限单独成块：每行按真实状态显示「已打开」/「去打开」，
+        // 点一下都直接落到安卓系统对应的权限设置页，应用里不写教程。
+        // 回前台（permTick）复检，已给绿底、未给主色，四行同一口径。
+        SettingsSection("权限", "权限", collapsible = false) {
             val notifOk = remember(permTick) { NotifPerm.granted(c) }
             val goodFg = if (appThemeDark) Color(0xFF0E1117) else Color(0xFFFFFFFF)
             SettingLine("铃", "通知权限",
-                if (notifOk) "已允许，制作与播放进度会显示在通知栏" else "还没允许，点右边去开启") {
+                if (notifOk) "已允许，制作与播放进度会显示在通知栏" else "还没允许，点右边去打开") {
                 Button(onClick = {
                         try {
                             val i = android.content.Intent(
@@ -429,12 +430,9 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         containerColor = if (notifOk) Good else Primary,
                         contentColor = if (notifOk) goodFg else palette.onPrimary),
                     contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Text(if (notifOk) "已开启 · 查看" else "去开启", fontSize = 12.sp)
+                    Text(if (notifOk) "已打开" else "去打开", fontSize = 12.sp)
                 }
             }
-            // R174 · 自审发现：设置页原来有两张都标「系统」的卡（运行与通知 /
-            // 后台运行与权限），同类拆两处正是「设置页不合理」的残留。
-            // 现在系统类归到这一张，少一段空白、少一个重复分组。
             // R158b · 用户明确「教程不要塞进应用里」：长说明、图文步骤、
             // 箭头流程全部撤掉，只留按钮 + 状态。说明放沙盒方案文档，不进 APK。
             PermRow("忽略电池优化", batOk, "后台限制") {

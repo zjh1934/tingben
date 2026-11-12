@@ -70,6 +70,33 @@ object PlayQueue {
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> get() = _state
 
+    // R303 · 播放模式单一真值源：0 顺序 / 1 随机 / 2 循环。
+    // 不塞进 PlaybackState，避免每处构造 PlaybackState 都漏补字段把模式悄悄重置。
+    private val _mode = MutableStateFlow(0)
+    val modeState: StateFlow<Int> get() = _mode
+
+    fun cycleMode() {
+        _mode.value = (_mode.value + 1) % 3
+        EventLog.ui("PLAY_MODE", "mode=${_mode.value}")
+    }
+
+    /** 当前队列快照，给播放器页显示「当前播放的音频列表」。 */
+    fun snapshot(): List<Track> = tracks.toList()
+
+    /** 顺序 / 随机 / 循环共用的下一轨判定；null 表示该收尾了。 */
+    private fun nextIndex(i: Int): Int? {
+        if (tracks.isEmpty()) return null
+        return when (_mode.value) {
+            2 -> (i + 1) % tracks.size
+            1 -> if (tracks.size > 1) {
+                var t = i
+                while (t == i) t = kotlin.random.Random.nextInt(tracks.size)
+                t
+            } else null
+            else -> if (i + 1 < tracks.size) i + 1 else null
+        }
+    }
+
     // 只按 queueId 判定，调用点一个都不用改：seg / trial 是临时试听态。
     private fun isPreview(id: String): Boolean = id == "seg" || id == "trial"
 
@@ -384,7 +411,8 @@ object PlayQueue {
 
     fun next() {
         if (tracks.isEmpty()) return
-        if (index + 1 >= tracks.size) {
+        val target = nextIndex(index)
+        if (target == null) {
             val q = queueId
             release()
             _state.value = PlaybackState(speed = speed, ended = true, queueId = q,
@@ -392,7 +420,7 @@ object PlayQueue {
             clearNotif()
             return
         }
-        open(index + 1)
+        open(target)
     }
 
     fun seekTo(ms: Long) {
@@ -476,8 +504,8 @@ object PlayQueue {
                 setOnCompletionListener {
                     it.release()
                     player = null
-                    if (index + 1 < tracks.size) open(index + 1)
-                    else finish()
+                    val n = nextIndex(index)
+                    if (n != null) open(n) else finish()
                 }
                 setOnErrorListener { failed, what, extra ->
                     failed.release()

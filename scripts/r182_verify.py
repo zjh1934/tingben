@@ -42,8 +42,10 @@ QUEUE = [
 # 必须仍在：手动暂停照旧归还焦点（r116 老契约不破）
 QUEUE_KEEP = ['    fun pause() {\n        savePos()\n        abandonFocus()']
 PLAYER = [
-    'st.queueId.startsWith("chapter:") &&',
-    'st.queueId.length > 8) st.queueId',
+    'val list = remember(st.queueId)',
+    'PlayQueue.snapshot().mapIndexed',
+    'val q = st.queueId',
+    '当前播放的音频列表',
 ]
 TOOL_CHECK = ['def last_run(branch=None, sha=None):',
               '不拿旧 run 冒充结论']
@@ -102,9 +104,9 @@ def selftest():
         ("手动暂停不再归还焦点", "queue",
          lambda t: t.replace('    fun pause() {\n        savePos()\n        abandonFocus()',
                              '    fun pause() {\n        savePos()')),
-        ("选章又拼废队列 id", "player",
-         lambda t: t.replace('                                val q = if (st.queueId.startsWith("chapter:") &&\n                                    st.queueId.length > 8) st.queueId\n                                else "chapter:" + bookId.orEmpty()',
-                             '                                val q = "chapter:" + bookId.orEmpty()')),
+        ("列表又按整本书另扫一遍", "player",
+         lambda t: t.replace('val q = st.queueId',
+                             'val q = "chapter:" + bookId.orEmpty()')),
         ("CI 漏挂", "ci",
          lambda t: t.replace("python3 scripts/r182_verify.py --selftest", "")),
         ("发版工具 status 又拿旧 run", None,

@@ -51,7 +51,7 @@ POS = {
         # 参数个数和灰色 IconButton，属于「改一处 UI 就得哄脚本」的旧债。
         "MixerScreen(c, onBack = onClose, onClose = onClose,",
         "onRegisterLeave = { requestLeave = it }",
-        "IconClose(Primary)",
+        "IconClose(palette.onPrimary, Modifier.size(16.dp))",
         ".clickable { leave() }",
         "if (onClose != null) BackHandler(enabled = !dirty) { onClose?.invoke() }",
         "showLeave = false; discardAll(); (onClose ?: onBack)()",
@@ -132,7 +132,7 @@ def logic_cases(f):
         bad.append("弹层无改动时的返回守卫丢了")
     if "showLeave = false; discardAll(); (onClose ?: onBack)()" not in m:
         bad.append("「丢弃并离开」没有关弹层")
-    if "IconClose(Primary)" not in m or ".clickable { leave() }" not in m:
+    if "IconClose(palette.onPrimary, Modifier.size(16.dp))" not in m or ".clickable { leave() }" not in m:
         bad.append("弹层没有关闭叉")
     if "MixerScreen(c, onBack = onClose, onClose = onClose," not in m:
         bad.append("弹层没有复用整套调音台")
@@ -238,7 +238,7 @@ def selftest():
         ("合成前调音入口被摘", "main", "if (mixerOpen) MixerDialog(c, onClose =", ""),
         ("调音弹层被摘", "main",
          "MixerScreen(c, onBack = onClose, onClose = onClose,", ""),
-        ("关闭叉被摘", "main", "IconClose(Primary)", ""),
+        ("关闭叉被摘", "main", "IconClose(palette.onPrimary, Modifier.size(16.dp))", ""),
         ("遮罩空白退出被摘", "main",
          "onRegisterLeave = { requestLeave = it }", ""),
         ("未保存返回守卫被摘", "main",

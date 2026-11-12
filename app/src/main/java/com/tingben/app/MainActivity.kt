@@ -38,7 +38,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.window.Dialog
+import kotlin.math.roundToInt
 import androidx.compose.ui.window.DialogProperties
 import com.tingben.app.core.*
 import com.tingben.app.diag.EventLog
@@ -182,6 +189,19 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var inputReadOpen by rememberSaveable { mutableStateOf(false) }
     // 底部常驻条点开 / 通知点进来，展开同一个全屏播放器浮层
     var playerOpen by rememberSaveable { mutableStateOf(false) }
+    // R303 · 跟手位移：0 = 展开到位，屏高 = 完全滑出屏幕。上滑展开 / 下滑收起
+    // 拖动中每帧 snapTo 实时跟手，松手才补一段 animateTo，不再「点了才跳」。
+    val sheetH = with(LocalDensity.current) {
+        LocalConfiguration.current.screenHeightDp.dp.toPx()
+    }
+    val sheetY = remember(sheetH) { Animatable(sheetH) }
+    fun hidePlayer() {
+        scope.launch {
+            sheetY.animateTo(sheetH, tween(180))
+            playerOpen = false
+        }
+        EventLog.ui("OVERLAY_PLAYER", "close")
+    }
     // R148 · 目录页「调音」不再 push 到独立页：跳页会让 ChapterHub 重建，
     // 用户勾选的章节全丢，还多出一个返回键。改成就地弹层，勾选原样保留。
     var chapterMixerOpen by rememberSaveable { mutableStateOf(false) }
@@ -244,7 +264,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     // 原来系统返回键会被上面的全局 goBack() 吃掉：底层页面已经切走，浮层还盖在
     // 屏幕上，或者干脆关不掉 —— 就是用户说的「有时不能返回 / 不知道回到哪」。
     // 浮层自己消费返回，且注册在全局之后（后注册优先），两层不打架。
-    BackHandler(enabled = playerOpen) { playerOpen = false; EventLog.ui("OVERLAY_PLAYER", "close:back") }
+    BackHandler(enabled = playerOpen) { hidePlayer(); EventLog.ui("OVERLAY_PLAYER", "close:back") }
     BackHandler(enabled = inputReadOpen) { inputReadOpen = false; EventLog.ui("OVERLAY_INPUT_READ", "close:back") }
 
     KeepScreenOn()
@@ -433,7 +453,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 }
                 refresh++
             }
-            raw == "player:" -> { playerOpen = true }
+            raw == "player:" -> { playerOpen = true; scope.launch { sheetY.snapTo(0f) } }
             raw == "empty:" -> {
                 EventLog.log(EventLog.Kind.CRASH, "EXTERNAL_IMPORT_EMPTY", "收到分享但没拿到 Uri/文字")
                 Toast.makeText(ctx, "听本收到打开了，但对方没给文件；试试先在文件管理器里长按分享",
@@ -635,10 +655,6 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         Column(Modifier.fillMaxSize()) {
             // R230 · 首页两枚入口（调音常驻、任务有活才亮）与目录页三枚
             // 共用系统顶栏书名右侧同一排；主页右上角不再有 ＋/齿轮/悬浮开关。
-            val homeHasTask = remember(refresh, bookImporting) {
-                (TaskResume.active(ctx)?.takeIf { it.phase != "done" } != null) ||
-                    TaskResume.queue(ctx).isNotEmpty()
-            }
         AppTopBar(
             spec = shownChrome,
             onMenu = {
@@ -664,10 +680,11 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         }
                         IconButton(onClick = {
                             // R243 · 主页任务通向全局任务页，不是目录页就地看板
+                            // R303 · 没任务也能点进去看空态，不再置灰把入口拦住
                             EventLog.ui("HOME_TASKS", "open:global")
                             nav.push(Screen.TASKS)
-                        }, enabled = homeHasTask) {
-                            TasksIcon(if (homeHasTask) Primary else Sub)
+                        }) {
+                            TasksIcon(Primary)
                         }
                     }
                 }
@@ -751,21 +768,48 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
 
         MiniPlayBar(ctx, miniBook,
-            onExpand = { playerOpen = true; EventLog.ui("OVERLAY_PLAYER", "open") },
+            onExpand = { playerOpen = true; EventLog.ui("OVERLAY_PLAYER", "open")
+                scope.launch { sheetY.snapTo(sheetH); sheetY.animateTo(0f, tween(220)) } },
             onGoBook = { id ->
                 bookId = id
                 nav.push(Screen.CHAPTERS)
+            },
+            onPullUp = { px ->
+                if (!playerOpen) playerOpen = true
+                scope.launch { sheetY.snapTo((sheetH - px).coerceIn(0f, sheetH)) }
+            },
+            onPullEnd = {
+                scope.launch {
+                    if (sheetY.value < sheetH * 0.5f) sheetY.animateTo(0f, tween(180))
+                    else { sheetY.animateTo(sheetH, tween(180)); playerOpen = false }
+                }
             })
         }
         // 播放器是覆盖全屏的浮层，不进 Screen 枚举 / 导航栈：
         // 它不是「另一页」，是同一份 PlayQueue 状态的展开视图。
         if (playerOpen) {
-            PlayerSheet(ctx, miniBook ?: bookId,
-                onClose = { playerOpen = false; EventLog.ui("OVERLAY_PLAYER", "close") },
-                onGoBook = { id ->
-                    bookId = id
-                    nav.push(Screen.CHAPTERS)
-                })
+            // R303 · 位移只改这一层 Box 的放置，播放器内容不重组，动画每帧只重摆位置。
+            Box(Modifier.fillMaxSize()
+                .offset { IntOffset(0, sheetY.value.roundToInt()) }) {
+                PlayerSheet(ctx, miniBook ?: bookId,
+                    onClose = { hidePlayer() },
+                    onGoBook = { id ->
+                        bookId = id
+                        nav.push(Screen.CHAPTERS)
+                    },
+                    onPullDown = { px ->
+                        scope.launch { sheetY.snapTo(px.coerceIn(0f, sheetH)) }
+                    },
+                    onPullSettle = {
+                        scope.launch {
+                            if (sheetY.value > sheetH * 0.35f) {
+                                sheetY.animateTo(sheetH, tween(180))
+                                playerOpen = false
+                                EventLog.ui("OVERLAY_PLAYER", "close:drag")
+                            } else sheetY.animateTo(0f, spring())
+                        }
+                    })
+            }
         }
         if (chapterMixerOpen) {
             MixerDialog(ctx, onClose = {

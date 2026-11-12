@@ -62,10 +62,9 @@ def check(f):
     for k in ["fillMaxHeight(0.30f)", "Alignment.BottomEnd"]:
         if k not in it: e.append("首页缺: " + k[:52])
     # R244 · 按图标符号定位，不绑字按钮文案
-    for k in ['MixerIcon(', 'TasksIcon(',
-              "enabled = homeHasTask",
-              "TasksIcon(if (homeHasTask) Primary else Sub)",  # R244 · 置灰改走图标 tint
-              "val homeHasTask = remember(refresh, bookImporting)"]:
+    for k in ['MixerIcon(', 'TasksIcon(Primary)',
+              "R303 · 没任务也能点进去看空态",
+              "nav.push(Screen.TASKS)"]:
         if k not in mg: e.append("顶栏入口缺: " + k[:52])
     if "Modifier.fillMaxWidth().weight(1f)" in it:
         e.append("输入框又退回占满整屏")
@@ -78,7 +77,7 @@ def check(f):
         e.append("弹层又全屏撑满")
     # ⑤ MainActivity 接线：onTasks / hasTask 不能是空实现
     for k in ["chapterMixerOpen = true", "screen = Screen.TASKS",
-              "TaskResume.queue(ctx).isNotEmpty()", "Screen.LIBRARY -> {"]:
+              "val sheetH = with(LocalDensity.current)", "Screen.LIBRARY -> {"]:
         if k not in mg: e.append("主界面接线缺: " + k[:52])
     # R298 · 目录页就地看板撤掉，旧入口零回潮
     for b in ["hubOpenTasks", "tasksRequest = hubTasksTick", "TaskBoardDialog("]:
@@ -107,12 +106,12 @@ def selftest():
          "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }", ""),
         ("框又占满屏", "input", "fillMaxHeight(0.30f)", "weight(1f)"),
         ("粘贴钮出框", "input", "Alignment.BottomEnd", "Alignment.TopEnd"),
-        ("任务入口不置灰", "merged", "enabled = homeHasTask", "enabled = true"),
+        ("任务入口又置灰", "merged", "TasksIcon(Primary)", "TasksIcon(Sub)"),
         ("弹层没收小", "mixer", "fillMaxHeight(0.86f)", "fillMaxSize()"),
         ("弹层丢导航避让", "mixer", "navigationBarsPadding()", ""),
         ("目录页旧入口回潮", "merged", "screen = Screen.TASKS", "hubOpenTasks = true"),
-        ("主界面没接任务", "merged",
-         "val homeHasTask = remember(refresh, bookImporting)", "val homeHasTask = false"),
+        ("任务页跳转被摘", "merged",
+         "nav.push(Screen.TASKS)", "nav.push(Screen.LIBRARY)"),
         ("CI 漏挂", "ci", "python3 scripts/r214_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r214_verify.py"', ""),
     ]

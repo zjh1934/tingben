@@ -33,6 +33,7 @@ FILES = {
 DRAWER_BTN = 'Text("＋ 导入一本书", fontSize = 13.sp)'
 OLD_EMPTY_BTN = 'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)'
 SYS_CARD = 'SettingsSection("运行与通知", "系统", collapsible = false)'
+PERM_CARD = 'SettingsSection("权限", "权限", collapsible = false)'
 BOTTOM_PAD = "contentPadding = PaddingValues(bottom = 100.dp)"
 
 
@@ -63,12 +64,17 @@ def checks(f):
     if 'SettingsSection("后台运行与权限"' in m or 'SettingsSection("启动行为"' in m \
             or 'SettingsSection("通知与权限"' in m:
         e.append("已合并的系统分组又拆回去了")
-    grp = group_of(m, SYS_CARD)
-    for n in ("AutoResumeRow(c)", 'PermRow("忽略电池优化", batOk,',
+    run_grp = group_of(m, SYS_CARD)
+    if "AutoResumeRow(c)" not in run_grp:
+        e.append("运行与通知卡里缺自动续播")
+    perm_grp = group_of(m, PERM_CARD)
+    if "R303 · 权限单独成块" not in m:
+        e.append("权限板块口径被摘")
+    for n in ('PermRow("忽略电池优化", batOk,',
               'PermRow("显示在其他应用上层", ovOk,',
               'PermEntryRow("应用详情", "系统设置")'):
-        if n not in grp:
-            e.append("系统卡里缺: " + n[:48])
+        if n not in perm_grp:
+            e.append("权限卡里缺: " + n[:48])
 
     # ③ 自审核实结论固化：底部胶囊不遮最后一章
     if BOTTOM_PAD not in h:
@@ -96,6 +102,9 @@ def selftest():
         ("权限行被摘", "main",
          lambda t: t.replace('PermRow("忽略电池优化", batOk,',
                              'PermRow("已移除", batOk,')),
+        ("权限单独板块被摘", "main",
+         lambda t: t.replace(PERM_CARD,
+             'SettingsSection("运行与权限", "系统", collapsible = false)')),
         ("底部留白被删", "hub",
          lambda t: t.replace(BOTTOM_PAD, "contentPadding = PaddingValues(0.dp)")),
         ("CI 漏挂", "ci",

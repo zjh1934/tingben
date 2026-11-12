@@ -52,8 +52,8 @@ def check(f):
         e.append("顶栏 trailing 没按 screen 分发")
     # R244 · 顶栏改自绘图标，判据按符号不再绑字按钮
     for k in ["Screen.LIBRARY -> {", 'MixerIcon(Primary)',
-              'TasksIcon(', "enabled = homeHasTask",
-              "val homeHasTask = remember(refresh, bookImporting)"]:
+              'TasksIcon(Primary)',
+              "R303 · 没任务也能点进去看空态"]:
         if k not in mn: e.append("顶栏首页两枚缺: " + k[:52])
     # ④ 首页内容区零常驻按钮排、零悬浮开关
     for banned in ["overlayOn", "onOverlayToggle", "悬浮·开", "悬浮·关",
@@ -113,7 +113,7 @@ def selftest():
          'Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY, showMenu = true,\n        showImport = true)'),
         ("顶栏首页分支被摘", "main", "Screen.LIBRARY -> {", ""),
         ("调音入口被摘", "main", 'MixerIcon(Primary)', ""),
-        ("任务不置灰", "main", "enabled = homeHasTask", "enabled = true"),
+        ("任务入口又置灰", "main", "TasksIcon(Primary)", "TasksIcon(Sub)"),
         ("首页又长悬浮开关", "input", "val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current",
          'val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current\n    Text("悬浮·关")'),
         ("长按菜单状态被摘", "lib",

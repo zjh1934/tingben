@@ -1363,7 +1363,9 @@ private fun ReaderPane(
 @Suppress("UNUSED_PARAMETER")
 @Composable
 internal fun MiniPlayBar(
-    c: Context, bookId: String?, onGoBook: (String) -> Unit, onExpand: () -> Unit
+    c: Context, bookId: String?, onGoBook: (String) -> Unit, onExpand: () -> Unit,
+    onPullUp: (Float) -> Unit = {},
+    onPullEnd: () -> Unit = {}
 ) {
     val st by PlayQueue.state.collectAsState()
     // 两态隔离（R133）：制作中的小段 WAV / 调音台试听只在原格子就地播，
@@ -1394,8 +1396,12 @@ internal fun MiniPlayBar(
             var acc = 0f
             detectVerticalDragGestures(
                 onDragStart = { acc = 0f },
-                onDragEnd = { if (acc < -55f) onExpand(); acc = 0f },
-                onVerticalDrag = { _, dy -> if (dy < 0) acc += dy }
+                onDragEnd = { onPullEnd(); acc = 0f },
+                onDragCancel = { onPullEnd(); acc = 0f },
+                // R303 · 累计向上位移实时交给外层，整页跟着手指往上走
+                onVerticalDrag = { _, dy ->
+                    if (dy < 0f) { acc -= dy; onPullUp(acc) }
+                }
             )
         }
         .padding(horizontal = 12.dp, vertical = 10.dp)) {

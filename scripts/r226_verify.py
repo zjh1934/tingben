@@ -49,7 +49,7 @@ def check(f):
     for k in ["internal fun MixerIcon(", "internal fun TasksIcon(",
               "internal fun StopIcon(", "internal fun PlayIcon("]:
         if k not in ch: e.append("自绘图标缺: " + k[:44])
-    for k in ["MixerIcon(Primary)", "TasksIcon(if (homeHasTask) Primary else Sub)", "StopIcon(Warn)", "PlayIcon(Primary)"]:
+    for k in ["MixerIcon(Primary)", "TasksIcon(Primary)", "StopIcon(Warn)", "PlayIcon(Primary)"]:
         if k not in mn: e.append("顶栏没接图标: " + k[:44])
     for banned in ['Text("调音", fontSize = 12.sp', 'Text("任务", fontSize = 12.sp',
                    'Text("停止", fontSize = 12.sp, color = Warn)']:

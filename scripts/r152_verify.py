@@ -77,7 +77,7 @@ POS = {
         "RoundedCornerShape(10.dp))\n                .padding(3.dp)",
         "if (on) palette.card else Color.Transparent",
         '"清理", fontSize = 12.sp',
-        '"去开启", fontSize = 12.sp',
+        '"去打开", fontSize = 12.sp',
     ],
     "ci": ["python3 scripts/r152_verify.py --selftest"],
     "r135": ['"r152_verify.py"'],
