@@ -147,7 +147,9 @@ def selftest():
              "        try { PlayQueue.releaseIfBook(id) } catch (_: Throwable) { }\n"
              "        try { Producer.stopIfBook(id) } catch (_: Throwable) { }\n", "")),
         ("弹窗退回旧文案", "main",
-         lambda t: t.replace('                "以及收听与阅读位置。若正在播放或制作这本书，会一并停止；" +\n'
+         # R314 · 文案压短后按现状迁锚：删掉位置 / 停机 / 收尾窗口三句，
+         # checks 仍应报能力缺失，能力一条没放宽。
+         lambda t: t.replace('                "收听与阅读位置会一起删掉；正在播放或制作会一并停止；" +\n'
                              '                "还在收尾上一段时会先停，稍等再删一次。") },',
                              '                "和制作任务。") },')),
         ("忘登记 CURRENT_VERIFIERS", "r135",

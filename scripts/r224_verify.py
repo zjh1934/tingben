@@ -30,8 +30,8 @@ def files():
     }
 
 CHIPS = ['primaryLabel = if (selected.isEmpty()) null else "制作选中章节"',
-         "ActionChip(\"拼成整章\"",
-         "ActionChip(\"另存 WAV\"", "ActionChip(\"转 M4A\"",
+         "DropdownMenuItem(leadingIcon = { UiIconGlyph(UiIcon.MERGE",
+         "DropdownMenuItem(leadingIcon = { UiIconGlyph(UiIcon.WAV", "DropdownMenuItem(leadingIcon = { UiIconGlyph(UiIcon.M4A",
          "ActionChip(\"删除选中音频\", danger = true"]
 BAN = ["TextButton(onClick = onMixer)", "TextButton(onClick = onCancel)",
         # R304 · 这两枚 chip 已撤，出现即回潮
@@ -79,7 +79,7 @@ def check(f):
     # 只禁渲染出来的 ⚙ 字符；KDoc 里解释「不用 ⚙ 字符」的说明不算回潮
     if 'Text("⚙' in f["chrome"]:
         e.append("⚙ 字符回潮（应走 GearIcon 代码自绘）")
-    if "GearIcon(primary)" not in f["chrome"]:
+    if "UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)" not in f["chrome"]:
         e.append("抽屉设置没用真齿轮")
     for name, src, need in [("裁剪弹层", f["mixer"], "UiIconGlyph(UiIcon.AUDIO"),
                             ("任务页", f["task"], "UiIconGlyph(UiIcon.LISTEN")]:
@@ -122,9 +122,9 @@ def selftest():
         ("图标库被摘", "icons", "enum class UiIcon {", ""),
         ("局部函数 Float×Int 回潮", "icons", "0.30f * i.toFloat()", "0.30f * i"),
         ("ActionChip 图标槽被摘", "multi", "icon: UiIcon? = null", ""),
-        ("动作条图标被摘", "hub", 'ActionChip("拼成整章", icon = UiIcon.MERGE',
-         'ActionChip("拼成整章"'),
-        ("⚙ 字符回潮", "chrome", "GearIcon(primary)", 'Text("⚙ 设置"'),
+        ("动作条图标被摘", "hub", 'UiIconGlyph(UiIcon.MERGE, HubPrimary',
+         ""),
+        ("⚙ 字符回潮", "chrome", "UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)", 'Text("⚙ 设置"'),
         ("裁剪弹层图标被摘", "mixer", "UiIconGlyph(UiIcon.AUDIO", ""),
         ("任务页图标被摘", "task", "UiIconGlyph(UiIcon.LISTEN", ""),
     ]

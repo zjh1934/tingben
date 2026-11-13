@@ -563,7 +563,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 }
                 bookId = b.id
                 lastSelection = t.only
-                Producer.start(ctx, b, t.only, true, t.think, t.config)
+                Producer.start(ctx, b, t.only, directRead = true,
+                    thinkOverride = t.think, config = t.config)
                 // R163 · 续跑一律回这本书的目录页（现在只有一列）。
                 openBook(b.id)
             } else {
@@ -638,6 +639,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 // R162 · 书架页没有消失，只是搬进抽屉：进度色条、置顶、删除一个不少。
                 LibraryScreen(ctx, refresh,
                     compact = true,
+                    currentId = bookId,
                     onOpen = { id ->
                         bookId = id
                         nav.push(Screen.CHAPTERS)
@@ -701,9 +703,10 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         chapterMixerOpen = true; mixerFrom = "hubbar"
                         EventLog.ui("OVERLAY_MIXER", "open:hubbar")
                     }) { MixerIcon(Primary) }
+                    // R320 · ⚙ 字符换成自绘齿轮，和设置页前导图标同一套语言
                     IconButton(onClick = { nav.push(Screen.PRODUCE) },
                         modifier = Modifier.size(34.dp)) {
-                        Text("⚙", fontSize = 16.sp, color = Primary)
+                        UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)
                     }
                 }
                 }
@@ -747,7 +750,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onProgress = { openBook(bookId) },
                     onDone = { nav.clear(); openBook(bookId); refresh++ },
                     onStarted = { lastSelection = it },
-                    onResplit = { nav.pop(); resplitTick++ })
+                    onResplit = { nav.pop(); resplitTick++ },
+                    onSettings = { nav.push(Screen.SETTINGS) })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
                     onOpenTask = { id -> openBook(id) },
                     onProgress = { id -> openBook(id) },
@@ -792,6 +796,9 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             Box(Modifier.fillMaxSize()
                 .offset { IntOffset(0, sheetY.value.roundToInt()) }) {
                 PlayerSheet(ctx, miniBook ?: bookId,
+                    // R319 · 读 Animatable.value 会随每帧订阅重组，
+                    // 下滑时页面控件按这个比例淡出，不再整层平移叠成一团。
+                    pullFraction = (sheetY.value / sheetH).coerceIn(0f, 1f),
                     onClose = { hidePlayer() },
                     onGoBook = { id ->
                         bookId = id

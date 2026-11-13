@@ -16,8 +16,12 @@ POS = [
     # 这里守「导入能力仍接到调用方」，第二枚入口由 BAN 拦回潮。
     'onImportBook = { openBookPicker() }',
     'var menuBook by remember { mutableStateOf<String?>(null) }',
-    'Text("置顶或删除", fontSize = 12.sp, color = Sub)',
-    'Text(if (busy > 0) "再合成一段" else "合成这段", fontSize = 13.sp)',  # R276 首页贴一段→点合成，不建书
+    # R321 · R314 撤掉标题里「置顶或删除」这行废话，改为在删除确认里
+    # 写清后果；按现状迁移锚，仍守「菜单里有说明文字」，注入自动逐条拦。
+    'Text("删除会连已做好的音频一起删掉", fontSize = 12.sp, color = Sub)',
+    # R313 · 按钮加了 ▶ 前缀、字号 15sp，按现状迁移锚；判据一条没放宽，
+    # 反向注入仍把「缺正向」与「旧形态回潮」分开拦。
+    'Text("▶  " + if (busy > 0) "再合成一段" else "合成这段",',  # R276 首页贴一段→点合成，不建书
     'Text("再选一次文件 ›", fontSize = 12.sp, color = Primary)',
     'onLongPress = { menuBook = b.id }',   # R230 长按书名弹置顶/删除
     'var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }',

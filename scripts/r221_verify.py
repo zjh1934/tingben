@@ -17,7 +17,7 @@ CORE = APP / "core"
 def files():
     def rd(p): return p.read_text(encoding="utf-8", errors="replace")
     return {
-        "produce": rd(APP / "ProduceUi.kt"),
+        "produce": rd(APP / "ProduceUi.kt") + "\n" + rd(APP / "SettingsUi.kt"),
         "cfg": rd(CORE / "ProduceConfig.kt"),
         "draft": rd(CORE / "MixerDraft.kt"),
         "presets": rd(CORE / "MixerPresets.kt"),
@@ -35,7 +35,7 @@ def check(f):
     e = []
     pr, cfg, dr, ps, mx = f["produce"], f["cfg"], f["draft"], f["presets"], f["mixer"]
     # ① 制作设置页：只剩「做什么 + 怎么跑」
-    for k in ['ExpandGroup("① 做什么", "")', 'ExpandGroup("② 怎么跑", "")',
+    for k in ['ExpandGroup("这本书", "")', 'SettingsSection("制作设置", "合成", collapsible = false)',
               'OptionRow("段间静音"', 'OptionRow("分段失败重做"']:
         if k not in pr: e.append("制作设置页缺: " + k[:52])
     for k in BAN:
@@ -74,11 +74,11 @@ def selftest():
     f = files()
     assert not check(f), "基线自己就红了"
     cuts = [
-        ("怎么念整块回潮", "produce", 'ExpandGroup("② 怎么跑", "")',
+        ("怎么念整块回潮", "produce", 'SettingsSection("制作设置", "合成", collapsible = false)',
          'ExpandGroup("② 怎么念"'),
-        ("朗读档位 UI 回潮", "produce", 'ExpandGroup("① 做什么", "")',
+        ("朗读档位 UI 回潮", "produce", 'ExpandGroup("这本书", "")',
          'OptionRow("朗读档位"'),
-        ("怎么跑被摘", "produce", 'ExpandGroup("② 怎么跑", "")', ""),
+        ("怎么跑被摘", "produce", 'SettingsSection("制作设置", "合成", collapsible = false)', ""),
         ("styleInstruct 又拼预设", "cfg",
          "fun styleInstruct(): String = extraInstruct.trim()",
          "fun styleInstruct(): String = style.instruct"),

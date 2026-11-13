@@ -58,10 +58,10 @@ POS = {
         "R164 · 一排固定 10 列",
     ],
     "main": [
-        "private fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Unit)",
-        "PermRow(\"忽略电池优化\", batOk,",
-        "PermRow(\"显示在其他应用上层\", ovOk,",
-        "PermEntryRow(\"应用详情\",",
+        "private fun PermRow(icon: UiIcon, title: String, granted: Boolean,",
+        "PermRow(UiIcon.SHIELD, \"忽略电池优化\", batOk,",
+        "PermRow(UiIcon.PROGRESS, \"显示在其他应用上层\", ovOk,",
+        "PermEntryRow(UiIcon.SETTINGS, \"应用详情\",",
         'SettingsSection("运行与通知", "系统", collapsible = false)',
         "R303 · 权限单独成块",
         "KeepAlive.batteryIgnoring(c)",
@@ -255,9 +255,9 @@ def check(f):
     perm_grp = m[p:q] if p >= 0 and q > p else ""
     if "AutoResumeRow(c)" not in run_grp:
         e.append("运行与通知卡里缺自动续播")
-    for n2 in ('PermRow("忽略电池优化", batOk,',
-               'PermRow("显示在其他应用上层", ovOk,',
-               'PermEntryRow("应用详情", "系统设置")'):
+    for n2 in ('PermRow(UiIcon.SHIELD, "忽略电池优化", batOk,',
+               'PermRow(UiIcon.PROGRESS, "显示在其他应用上层", ovOk,',
+               'PermEntryRow(UiIcon.SETTINGS, "应用详情", "系统设置")'):
         if n2 not in perm_grp:
             e.append("R303 权限卡里缺: " + n2[:50])
     if "R303 · 权限单独成块" not in m:
@@ -286,9 +286,9 @@ def selftest():
         ("末行补齐占位被摘", "hub",
          "Spacer(Modifier.size(cell))", "", 1),
         ("PermRow 顶层函数被摘", "main",
-         "private fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Unit)", ""),
+         "private fun PermRow(icon: UiIcon, title: String, granted: Boolean,", ""),
         ("又写成局部 composable", "main",
-         "PermRow(\"忽略电池优化\", batOk,", "fun permRow(\"忽略电池优化\", batOk,"),
+         "PermRow(UiIcon.SHIELD, \"忽略电池优化\", batOk,", "fun permRow(\"忽略电池优化\", batOk,"),
         ("电池优化引导被摘", "main", "KeepAlive.requestIgnoreBattery(c)", ""),
         ("浮窗引导被摘", "main", "KeepAlive.requestOverlay(c)", ""),
         ("应用详情兜底被摘", "main", "KeepAlive.openAppDetails(c)", ""),

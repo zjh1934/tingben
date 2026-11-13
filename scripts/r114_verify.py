@@ -72,15 +72,17 @@ def check(root):
        'F-28 只有一个选项的假单选仍在')
     ck('Modifier.weight(1f).height(92.dp)' in main,
        'F-08 三张模式卡没给 12sp 三行留出高度，会裁字')
-    ck('ExpandGroup("① 做什么", "")' in main, 'F-28 第一分区丢了')
+    ck('ExpandGroup("这本书", "")' in main, 'F-28 第一分区丢了')
     # R221 砍「② 怎么念」、编号顺延；R231 加「③ 拼成这一章」。
     # 旧两条绑死已删形态、正向恒红，按现行分区改准，旧串列 BAN 防回潮。
     ck('ExpandGroup("② 怎么念"' not in main, 'F-28 已砍念法分区回潮')
-    ck('ExpandGroup("② 怎么跑", "")' in main, 'F-28 跑法分区丢了')
-    ck('ExpandGroup("③ 拼成这一章"' in main, 'F-28 拼章分区丢了（R231）')
+    ck('SettingsSection("制作设置", "合成", collapsible = false)' in main, 'F-28 跑法分区丢了')
+    ck('OptionRow("自动拼成整章"' in main, 'F-28 拼章分区丢了（R231）')
     ck('ExpandGroup("③ 怎么跑", "")' not in main, 'F-28 旧编号回潮')
-    ck('原文整段送声音模型' in main, 'F-28 缺一行路径说明')
-    ck('cfg = Prefs.defaultPerf(c)' in main, 'F-28 恢复默认入口丢了')
+    # R321 · R318 把这句换成「参数在设置页 · 勾章在目录页」，旧锚恒红；
+    # 按现状迁移，仍要求这一行路径说明存在，注入「删路径说明」照旧拦。
+    ck('参数在设置页 · 勾章在目录页' in main, 'F-28 缺一行路径说明')
+    ck('Prefs.setDefaultPerf(c, cfg)' in main, 'F-28 设置落盘丢了')
     ck('directRead = true' in main, '守恒：不是恒直接朗读')
     ck('OptionRow("段间静音"' in main and 'OptionRow("分段失败重做"' in main,
        '守恒：真实跑法选项被误删')
@@ -133,12 +135,13 @@ INJECT = [
      '    var open by remember { mutableStateOf(true) }\n    Card(\n'),
     ('恢复展开按钮', 'opts', 'if (subtitle.isNotBlank())',
      'Text("展开 ▼", fontSize = 12.sp)\n            if (subtitle.isNotBlank())'),
-    ('恢复只读组', 'main', '        Spacer(Modifier.height(10.dp))\n\n        Button(',
-     '        ExpandGroup("④ 本次制作 · 只读", "") { }\n        Spacer(Modifier.height(10.dp))\n\n        Button('),
-    ('恢复假单选', 'main', 'Text("原文整段送声音模型"',
-     'ProduceMode.values().forEach { }\n            Text("原文整段送声音模型"'),
-    ('删路径说明', 'main', 'Text("原文整段送声音模型", fontSize = 13.sp, color = Sub)', ''),
-    ('删恢复默认', 'main', 'cfg = Prefs.defaultPerf(c)', ''),
+    ('恢复只读组', 'main', '        Button(onClick = onBack,',
+     '        ExpandGroup("④ 本次制作 · 只读", "") { }\n        Button(onClick = onBack,'),
+    ('恢复假单选', 'main', 'Text("参数在设置页 · 勾章在目录页"',
+     'ProduceMode.values().forEach { }\n            Text("参数在设置页 · 勾章在目录页"'),
+    ('删路径说明', 'main',
+     'Text("参数在设置页 · 勾章在目录页",\n            fontSize = 11.sp, color = Sub)', ''),
+    ('删恢复默认', 'main', 'Prefs.setDefaultPerf(c, cfg)', ''),
     ('删颜色定义', 'opts', 'private val OptPrimary: Color get() = palette.primary\n', ''),
     ('去掉焦点申请', 'queue', 'am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED',
      'true'),
@@ -155,11 +158,11 @@ INJECT = [
     ('CI 摘掉 R114', 'ci', 'python3 scripts/r114_verify.py', ''),
     # R277 · 旧 6 条正向恒红时，下面这些「回潮」注入永远被误判成拦下。
     # 正向改绿后才真的验证得到，逐条补上、一条不放宽。
-    ('念法分区回潮', 'main', 'ExpandGroup("② 怎么跑", "")',
-     'ExpandGroup("② 怎么念", "") { }\n    ExpandGroup("② 怎么跑", "")'),
-    ('跑法分区被摘', 'main', 'ExpandGroup("② 怎么跑", "")',
+    ('念法分区回潮', 'main', 'SettingsSection("制作设置", "合成", collapsible = false)',
+     'ExpandGroup("② 怎么念", "") { }\n    SettingsSection("制作设置", "合成", collapsible = false)'),
+    ('跑法分区被摘', 'main', 'SettingsSection("制作设置", "合成", collapsible = false)',
      'ExpandGroup("X 怎么跑", "")'),
-    ('拼章分区被摘', 'main', 'ExpandGroup("③ 拼成这一章"',
+    ('拼章分区被摘', 'main', 'OptionRow("自动拼成整章"',
      'ExpandGroup("X 拼成这一章"'),
     ('朗读档位回潮', 'main', 'OptionRow("段间静音"',
      'OptionRow("朗读档位", "", 0) { }\n    OptionRow("段间静音"'),

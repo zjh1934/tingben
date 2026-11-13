@@ -137,8 +137,8 @@ def main():
             'private enum class Screen {',
             'private enum class Screen { PROGRESS,'))),
         ('界面旧说法回潮', lambda: check(
-            main=MAIN.replace('Text("原文整段送声音模型",', 'Text("语言模型设置 ›",'),
-            allkt=ALL_KT.replace('Text("原文整段送声音模型",', 'Text("语言模型设置 ›",'))),
+            main=MAIN.replace('Text("参数在设置页 · 勾章在目录页",', 'Text("语言模型设置 ›",'),
+            allkt=ALL_KT.replace('Text("参数在设置页 · 勾章在目录页",', 'Text("语言模型设置 ›",'))),
         ('制作入口分叉回潮', lambda: check(pipe=PIPE.replace(
             'run(c, book, onlyChapters, true, thinkOverride, config)',
             'run(c, book, onlyChapters, directRead, thinkOverride, config)'))),

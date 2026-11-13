@@ -184,9 +184,14 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                     val t = runningTask
                     if (t == null) {
                         item(key = "running_empty") {
-                            EmptyHint("现在没有在合成的书") {
-                                TextButton(onClick = { tab = 1 }) {
-                                    Text("看队列 ›", fontSize = 13.sp, color = Primary)
+                            EmptyHint("现在没有在合成的音频") {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = { tab = 1 }) {
+                                        Text("看队列 ›", fontSize = 13.sp, color = Primary)
+                                    }
+                                    TextButton(onClick = onLibrary) {
+                                        Text("去挑一本 ›", fontSize = 13.sp, color = Primary)
+                                    }
                                 }
                             }
                         }
@@ -195,11 +200,15 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                             val total = maxOf(t.total, st.total, 1)
                             val doneNow = st.done.coerceIn(0, total)
                             CardBox {
-                                SectionLabel("合成中")
+                                SectionLabel("这一份音频")
                                 Spacer(Modifier.height(8.dp))
                                 // R308 · 这里管的是「正在合成的这一章音频」，
-                                // 不是整本书；书名退到副标题，章号才是主体。
+                                // 不是整本书；R316 · 进度只给章号、阶段与百分比，
+                                // 不再把 26678 这类内部小块数甩给用户。
                                 val curCh = st.chapterProgress.keys.maxOrNull()?.let { it + 1 }
+                                val pct = (doneNow * 100 / total).coerceIn(0, 100)
+                                val stageLabel =
+                                    if (st.stage.isBlank()) "正在合成" else st.stage
                                 Text(curCh?.let { "第 $curCh 章音频" } ?: "章节音频",
                                     fontSize = 16.sp, fontWeight = FontWeight.Bold)
                                 Text("${t.title} · ${modeText(t.modeId)} · ${scopeText(t)}",
@@ -209,7 +218,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                                     progress = { doneNow.toFloat() / total.toFloat() },
                                     modifier = Modifier.fillMaxWidth().height(7.dp))
                                 Spacer(Modifier.height(6.dp))
-                                Text("已做好 $doneNow/$total 块 · ${st.stage}",
+                                Text("第 ${curCh ?: 1} 章 · $stageLabel · $pct%",
                                     fontSize = 12.sp, color = Sub)
                                 Spacer(Modifier.height(6.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -217,7 +226,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                                         Text("看进度 ›", fontSize = 12.sp, color = Primary)
                                     }
                                     TextButton(onClick = { onOpenTask(t.bookId) }) {
-                                        Text("打开这本书 ›", fontSize = 12.sp, color = Primary)
+                                        Text("去这一章 ›", fontSize = 12.sp, color = Primary)
                                     }
                                     Spacer(Modifier.weight(1f))
                                     TextButton(onClick = {
@@ -246,7 +255,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                             CardBox(Modifier.padding(bottom = 8.dp)) {
                                 SectionLabel("队列已暂停")
                                 Spacer(Modifier.height(6.dp))
-                                Text("点「接着做」或下面任意一本继续。",
+                                Text("点「接着做」，或从下面任意一条继续。",
                                     fontSize = 12.sp, color = Sub)
                                 TextButton(onClick = {
                                     EventLog.ui("TASK_QUEUE_RESUME", "from=tasks")
@@ -257,7 +266,13 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                         }
                     }
                     if (pending.isEmpty() && !qPaused) {
-                        item(key = "queue_empty") { EmptyHint("队列里没有待做的书") }
+                        item(key = "queue_empty") {
+                            EmptyHint("队列里没有待做的音频") {
+                                TextButton(onClick = onLibrary) {
+                                    Text("去挑一本 ›", fontSize = 13.sp, color = Primary)
+                                }
+                            }
+                        }
                     }
                     items(pending, key = { it.bookId }) { t ->
                         val inQ = isQueued(t.bookId)
@@ -273,12 +288,22 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                         val warn = warnMap[t.bookId]
                         CardBox(Modifier.padding(bottom = 10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(t.title, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                Text(unitText(t), fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f))
-                                Text(badge, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                                    color = if (inQ) Primary else Warn)
+                                // R316 · 四种状态统一形状，颜色只表达语义，
+                                // 不再让右上角散着三种裸字。
+                                Box(Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (inQ) PrimarySoft
+                                        else Warn.copy(alpha = 0.12f))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)) {
+                                    Text(badge, fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (inQ) Primary else Warn)
+                                }
                             }
-                            Text("${modeText(t.modeId)} · ${scopeText(t)}",
+                            Text("《${t.title}》 · ${modeText(t.modeId)}",
                                 fontSize = 12.sp, color = Sub)
                             if (t.bookId !in books) {
                                 Text("书已从书架删掉，成品仍在「我的音频」",
@@ -290,21 +315,33 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                                 LinearProgressIndicator(
                                     progress = { real.toFloat() / total.toFloat() },
                                     modifier = Modifier.fillMaxWidth().height(6.dp))
-                                Text("已做好 $real/$total 块", fontSize = 12.sp, color = Sub)
+                                val qPct = (real * 100 / total).coerceIn(0, 100)
+                                Text("已做 $qPct% · 接着做不用重来",
+                                    fontSize = 12.sp, color = Sub)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (!inQ) {
                                     // R172 · 重新分章后旧 only 是旧章号，不能拿它直接开跑
-                                    TextButton(onClick = {
-                                        EventLog.ui("TASK_RESUME", "id=${t.bookId.take(8)}")
-                                        onResume(t)
-                                    }, enabled = t.phase != "reconfirm" && !Producer.isBusy()) {
-                                        Text(if (t.phase == "reconfirm") "需重新选章"
-                                             else "继续制作", fontSize = 12.sp, color = Primary)
+                                    if (t.phase == "reconfirm") {
+                                        // R316 · 原来只摆一个禁用的「需重新选章」，
+                                        // 点不动、死路一条；改成点进目录页重新勾章。
+                                        TextButton(onClick = {
+                                            EventLog.ui("TASK_RECONFIRM", "id=${t.bookId.take(8)}")
+                                            onOpenTask(t.bookId)
+                                        }) {
+                                            Text("重新选章 ›", fontSize = 12.sp, color = Primary)
+                                        }
+                                    } else {
+                                        TextButton(onClick = {
+                                            EventLog.ui("TASK_RESUME", "id=${t.bookId.take(8)}")
+                                            onResume(t)
+                                        }, enabled = t.phase != "reconfirm" && !Producer.isBusy()) {
+                                            Text("继续制作", fontSize = 12.sp, color = Primary)
+                                        }
                                     }
                                 }
                                 TextButton(onClick = { onOpenTask(t.bookId) }) {
-                                    Text("打开书 ›", fontSize = 12.sp, color = Primary)
+                                    Text("去这一章 ›", fontSize = 12.sp, color = Primary)
                                 }
                                 Spacer(Modifier.weight(1f))
                                 TextButton(onClick = {
@@ -326,7 +363,13 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                 // R308 · 不再按「整本书」列任务记录，贴回软件真正管的东西。
                 2 -> {
                     if (audioRows.isEmpty()) {
-                        item(key = "done_empty") { EmptyHint("还没有做好的音频") }
+                        item(key = "done_empty") {
+                            EmptyHint("还没有做好的音频") {
+                                TextButton(onClick = onLibrary) {
+                                    Text("去挑一本 ›", fontSize = 13.sp, color = Primary)
+                                }
+                            }
+                        }
                     }
                     items(audioRows, key = { it.key }) { a ->
                         CardBox(Modifier.padding(bottom = 10.dp)) {
@@ -435,6 +478,10 @@ internal fun modeText(id: String): String = when (id) {
 internal fun scopeText(t: TaskInfo): String =
     if (t.only == null) "整本" else "选中 ${t.only!!.size} 章"
 
+/** R316 · 任务卡主体写「一份音频」，书名退到副行，不再拿整本书当条目。 */
+internal fun unitText(t: TaskInfo): String =
+    if (t.only == null) "整本章音频" else "选中 ${t.only!!.size} 章音频"
+
 /** R287 · 分组小标题：主色小字 + 一根细竖条，不摆彩色徽标框。 */
 @Composable
 internal fun SectionLabel(text: String) {
@@ -448,8 +495,16 @@ internal fun SectionLabel(text: String) {
 
 @Composable
 internal fun EmptyHint(text: String, action: @Composable ColumnScope.() -> Unit = {}) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 34.dp),
+    Column(Modifier.fillMaxWidth().padding(vertical = 26.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
+        // R316 · 空态也给两条槽位轮廓，和主页/书架一致；不再只摆一块大白卡。
+        repeat(2) {
+            Box(Modifier.fillMaxWidth().height(72.dp)
+                .padding(bottom = 10.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .border(1.dp, Line, RoundedCornerShape(18.dp)))
+        }
+        Spacer(Modifier.height(6.dp))
         Text(text, fontSize = 13.sp, color = Sub)
         action()
     }

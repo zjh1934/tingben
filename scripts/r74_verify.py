@@ -28,7 +28,7 @@ POS = [
     ("固定列网格", HUB, "chunked(SEG_GRID_COLUMNS)"),
     ("阅读位置落盘", HUB, "ReadingState.save(c, book.id, i)"),
     ("翻章也写位置", HUB, "{ next -> openReader(next) }"),
-    ("整本条纯色", HUB, "modifier = Modifier.fillMaxWidth().height(22.dp),"),
+    ("整本条纯色", HUB, "modifier = Modifier.fillMaxWidth().height(18.dp),"),
     ("重新分章入口", HUB, 'resplitRequest > 0'),
     ("三列分发", HUB, "LazyColumn(Modifier.fillMaxSize(),"),
     ("停滞态集合", HUB, 'listOf("没完成", "已停止", "出错了")'),

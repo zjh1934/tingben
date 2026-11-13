@@ -65,7 +65,7 @@ def check(f):
               "onCancel = { PlayQueue.stopPreview(); refClip = null }",
               "onUse = { s, e -> PlayQueue.stopPreview(); applyRefClip(d, s, e) }",
               "internal fun RefClipDialog(",
-              "Text(\"导入并裁剪 ›\""]:
+              "Text(\"导入一段人声并裁剪 ›\""]:
         if k not in m: e.append("导入链路缺: " + k[:60])
     if "private fun RefClipDialog(" in m:
         e.append("顶层 composable 用了 private，UI 片段跨文件不可见")

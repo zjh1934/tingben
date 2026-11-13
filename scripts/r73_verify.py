@@ -41,8 +41,8 @@ NEED = [
     ('试听文本可保存', 'MainActivity.kt', 'Prefs.setTrialText(c, trialText)'),
     # R242 · R238 把「本机数据」+「成品文件」两张同 badge 碎卡合并成一张，
     # 旧标题已删、判据恒红；按现状迁移，仍要求一张「本机」卡常驻，不放宽。
-    ('本机数据常驻', 'MainActivity.kt', 'SettingsSection("文件与数据", "本机", collapsible = false)'),
-    ('两枚试听按钮', 'MainActivity.kt', 'Text("试听 · 已保存"'),
+    ('本机文件分组常驻', 'MainActivity.kt', 'SettingsSection("音频文件", "本机", collapsible = false)'),
+    ('两枚试听按钮', 'MainActivity.kt', 'Text("试听 · 已存配置"'),
     ('主题键', 'Prefs.kt', 'KEY_THEME_MODE = "themeMode"'),
     ('字号键', 'Prefs.kt', 'KEY_FONT_SCALE = "readerFontScale"'),
     ('主题读写', 'Prefs.kt', 'fun setThemeMode(c: Context, v: Int)'),
@@ -84,7 +84,7 @@ KEEP = [
     ('抽屉推走', 'ALLKT', 'DismissibleNavigationDrawer'),
     ('三列目录', 'ChapterHub.kt', 'private fun ChapterRow('),
     ('唯一提交', 'ALLKT', 'commitAll()'),
-    ('恒直接朗读', 'ALLKT', 'Producer.start(c, book, sel, directRead = true'),
+    ('恒直接朗读', 'ALLKT', 'Producer.start(ctx, b, t.only, directRead = true'),
     ('悬浮条', 'ALLKT', 'PlayQueue'),
     ('底部安全区', 'ALLKT', 'navigationBarsPadding()'),
     ('采样真到引擎', 'ALLKT', 'qt_tts_params'),

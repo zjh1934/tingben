@@ -46,34 +46,34 @@ def check(f):
     # ① 四个组件签名仍在合并视图（老守门靠它定位）
     for sig in ["private fun OverlayProgressRow(c: Context)",
                 "private fun AutoResumeRow(c: Context)",
-                "private fun PermEntryRow(title: String, hint: String, go: () -> Unit)",
-                "private fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Unit)"]:
+                "private fun PermEntryRow(icon: UiIcon, title: String, hint: String, go: () -> Unit)",
+                "private fun PermRow(icon: UiIcon, title: String, granted: Boolean,"]:
         if sig not in m: e.append("顶层组件签名丢了: " + sig[:52])
     # ② 四个组件内部都走 SettingLine，且不再手搓 Column(weight)
     for name, sig in [("悬浮", "internal fun OverlayProgressRow(c: Context)"),
                       ("续跑", "internal fun AutoResumeRow(c: Context)"),
-                      ("应用详情", "internal fun PermEntryRow(title: String, hint: String, go: () -> Unit)"),
-                      ("权限", "internal fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Unit)")]:
+                      ("应用详情", "internal fun PermEntryRow(icon: UiIcon, title: String, hint: String, go: () -> Unit)"),
+                      ("权限", "internal fun PermRow(icon: UiIcon, title: String, granted: Boolean,")]:
         b = body(s, sig)
         if not b: e.append(name + "组件没圈出函数体"); continue
         if "SettingLine(" not in b: e.append(name + "组件没走统一行")
         if "Column(Modifier.weight(1f))" in b: e.append(name + "组件还在手搓 Column(weight)")
     # ③ 关键逻辑一条不丢
-    for k in ['SettingLine("浮", "悬浮进度"', "danger = on && !permOk",
+    for k in ['SettingLine(UiIcon.PROGRESS, "悬浮进度"', "danger = on && !permOk",
               "if (!it) OverlayProgress.hide(c)",
               'EventLog.ui("OVERLAY_SETTING"',
-              'SettingLine("续", "打开软件自动续跑"',
+              'SettingLine(UiIcon.RESUME, "打开软件自动续跑"',
               'EventLog.ui("RESUME_SETTING"',
-              "SettingLine(title.take(1), title, hint)",
+              "SettingLine(icon, title, hint)",
               'Text(if (granted) "已打开" else "去打开"',
-              'Text("去打开", fontSize = 12.sp',
+              'Text("打开设置 ›", fontSize = 12.sp',
               "containerColor = if (granted) Good else Primary",
-              'SettingLine("铃", "通知权限"']:
+              'SettingLine(UiIcon.BELL, "通知权限"']:
         if k not in s: e.append("关键逻辑缺: " + k[:56])
-    if s.count("SettingLine(title.take(1), title, hint)") != 2:
-        e.append("PermRow/PermEntryRow 徽标首字不是正好两处")
+    if s.count("SettingLine(icon, title, hint)") != 2:
+        e.append("PermRow/PermEntryRow 矢量图标参数不是正好两处")
     # ④ 主题：徽标槽对齐、选择器仍独占整行
-    if 'SettingLine("主", "主题", "外观基调") { }' not in s:
+    if 'SettingLine(UiIcon.PALETTE, "主题", "外观基调") { }' not in s:
         e.append("主题标题行没对齐徽标槽")
     if 'listOf("跟随系统" to 0, "浅色" to 1, "深色" to 2)' not in s:
         e.append("主题三段选择器被摘")
@@ -109,9 +109,9 @@ def check(f):
                    "日志可能含书名和正文片段"]:
         if banned in s: e.append("旧形态回潮: " + banned[:52])
     i_dev = s.find('SettingsSection("开发者工具"')
-    i_file = s.find('SettingsSection("文件与数据"')
+    i_file = s.find('SettingsSection("音频文件"')
     if i_dev < 0 or i_file < 0 or i_dev < i_file:
-        e.append("低频排查项没排在文件与数据之后")
+        e.append("低频排查项没排在音频文件之后")
     # ⑧ 登记
     for name, src, needle in [("CI", f["ci"], "python3 scripts/r239_verify.py --selftest"),
                               ("清单", f["r135"], '"r239_verify.py"'),
@@ -128,21 +128,21 @@ def selftest():
     assert not check(f), "基线自己就红了"
     cuts = [
         ("悬浮组件被摘", "settings", "internal fun OverlayProgressRow(c: Context)", ""),
-        ("悬浮行退回手搓", "settings", 'SettingLine("浮", "悬浮进度"',
+        ("悬浮行退回手搓", "settings", 'SettingLine(UiIcon.PROGRESS, "悬浮进度"',
          'Row(Modifier.fillMaxWidth()) { Text("悬浮进度")'),
         ("警示色被摘", "settings", "danger = on && !permOk", ""),
         ("停止收起被摘", "settings", "if (!it) OverlayProgress.hide(c)", ""),
         ("续跑组件被摘", "settings", "internal fun AutoResumeRow(c: Context)", ""),
-        ("续跑行退回手搓", "settings", 'SettingLine("续", "打开软件自动续跑"',
+        ("续跑行退回手搓", "settings", 'SettingLine(UiIcon.RESUME, "打开软件自动续跑"',
          'Row(Modifier.fillMaxWidth()) { Text("打开软件自动续跑")'),
         ("续跑日志被摘", "settings", 'EventLog.ui("RESUME_SETTING"', ""),
-        ("权限首字徽标被摘", "settings", "SettingLine(title.take(1), title, hint)",
+        ("权限首字徽标被摘", "settings", "SettingLine(icon, title, hint)",
          'SettingLine("权", title, hint)'),
         ("绿底状态被摘", "settings", "containerColor = if (granted) Good else Primary",
          "containerColor = Primary"),
         ("权限按钮文案被摘", "settings", 'Text(if (granted) "已打开" else "去打开"', ""),
-        ("通知行被摘", "settings", 'SettingLine("铃", "通知权限"', ""),
-        ("主题徽标被摘", "settings", 'SettingLine("主", "主题", "外观基调") { }',
+        ("通知行被摘", "settings", 'SettingLine(UiIcon.BELL, "通知权限"', ""),
+        ("主题徽标被摘", "settings", 'SettingLine(UiIcon.PALETTE, "主题", "外观基调") { }',
          'Text("主题", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)'),
         ("主题选择器被摘", "settings", 'listOf("跟随系统" to 0, "浅色" to 1, "深色" to 2)', ""),
         ("冗余间距回潮", "settings", "            OverlayProgressRow(c)",

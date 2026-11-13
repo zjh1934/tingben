@@ -620,6 +620,10 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      - name: 生成 Release 说明
+        if: github.ref == 'refs/heads/main'
+        run: python3 scripts/release_notes.py | tee release-notes.md > /dev/null
+
       - name: 发布 Release（固定最新版直链）
         # R177 · 只允许 main 发版：验证分支用 workflow_dispatch 跑真编译时，
         # 编译通过也不许提前覆盖 v1.1.5 的 Release 与固定直链。
@@ -628,10 +632,7 @@ jobs:
         with:
           tag_name: v${{ steps.ver.outputs.v }}
           name: 听本 ${{ steps.ver.outputs.v }}
-          body: |
-            本地离线把小说变成能听的音频。
-            模型后导入、无 INTERNET 权限、仅 arm64-v8a、APK < 100MB。
-            版本 ${{ steps.ver.outputs.v }} · 构建 run ${{ github.run_number }} · 源码提交 ${{ github.sha }}。
+          body_path: release-notes.md
           files: app/build/outputs/apk/debug/*.apk
           make_latest: true
         env:

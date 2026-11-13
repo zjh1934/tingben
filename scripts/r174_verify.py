@@ -70,9 +70,9 @@ def checks(f):
     perm_grp = group_of(m, PERM_CARD)
     if "R303 · 权限单独成块" not in m:
         e.append("权限板块口径被摘")
-    for n in ('PermRow("忽略电池优化", batOk,',
-              'PermRow("显示在其他应用上层", ovOk,',
-              'PermEntryRow("应用详情", "系统设置")'):
+    for n in ('PermRow(UiIcon.SHIELD, "忽略电池优化", batOk,',
+              'PermRow(UiIcon.PROGRESS, "显示在其他应用上层", ovOk,',
+              'PermEntryRow(UiIcon.SETTINGS, "应用详情", "系统设置")'):
         if n not in perm_grp:
             e.append("权限卡里缺: " + n[:48])
 
@@ -100,7 +100,7 @@ def selftest():
          lambda t: t.replace(SYS_CARD,
              SYS_CARD + ' { }\n        SettingsSection("后台运行与权限", "系统", collapsible = false)')),
         ("权限行被摘", "main",
-         lambda t: t.replace('PermRow("忽略电池优化", batOk,',
+         lambda t: t.replace('PermRow(UiIcon.SHIELD, "忽略电池优化", batOk,',
                              'PermRow("已移除", batOk,')),
         ("权限单独板块被摘", "main",
          lambda t: t.replace(PERM_CARD,

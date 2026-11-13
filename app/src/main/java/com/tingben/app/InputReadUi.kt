@@ -80,6 +80,12 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
     LaunchedEffect(Unit) { clips = ClipLibrary.list(c) }
     fun refresh() { clips = ClipLibrary.list(c) }
 
+    // R313 · 第一类（主页 01–05）：已经有片段、又没在写新的一段时，
+    // 0.26 屏高的输入卡收成一行，把空间还给片段列表；点一行或直接粘贴就展开。
+    // 正在合成 / 已经打了字 / 列表还空着，一律保持完整输入卡，能力一条不删。
+    var inputForceExpand by rememberSaveable { mutableStateOf(false) }
+    val fullInput = !asHome || clips.isEmpty() || text.isNotEmpty() || busy > 0 || inputForceExpand
+
     // 单条另存：用系统保存界面自选位置；批量导出走设置里记住的目录树。
     var pendingSave by remember { mutableStateOf<ClipLibrary.Item?>(null) }
     val saveOne = rememberLauncherForActivityResult(
@@ -224,7 +230,7 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
         }
         // R307 · 主页重绘：输入区收成一张卡（标题 + 字数 + 正文 + 两枚胶囊）。
         // 口径不变：贴一段 → 点合成 → 产物进下方留白列表，空槽位不写「还没有片段」。
-        if (asHome) {
+        if (asHome && fullInput) {
             Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("念点什么", fontSize = 15.sp,
@@ -233,7 +239,7 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                 Text("${text.length} 字", fontSize = 12.sp, color = Sub)
             }
         }
-        Box(Modifier.fillMaxWidth().fillMaxHeight(0.26f)
+        if (fullInput) Box(Modifier.fillMaxWidth().fillMaxHeight(0.26f)
             .clip(RoundedCornerShape(20.dp))
             .background(palette.card)
             .border(1.dp, Line, RoundedCornerShape(20.dp))) {
@@ -242,7 +248,7 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                 modifier = Modifier.fillMaxSize()
                     .padding(16.dp).padding(bottom = 36.dp),
                 textStyle = TextStyle(fontSize = 14.sp, color = palette.text,
-                    lineHeight = 22.sp),
+                    lineHeight = 20.sp),
                 decorationBox = { inner ->
                     Box(Modifier.fillMaxSize()) {
                         if (text.isEmpty()) Text("粘贴或输入要念的正文",
@@ -273,9 +279,32 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                     Text("清除", fontSize = 12.sp, color = Primary)
                 }
             }
+        } else {
+            // R313 · 一行紧凑入口：点开写新的一段，或直接把剪贴板贴进来。
+            // 与下方卡片同宽同圆角，看起来是「收起来的输入框」而不是第三条片段。
+            Row(Modifier.fillMaxWidth().height(52.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(palette.card)
+                .border(1.dp, Line, RoundedCornerShape(16.dp))
+                .clickable { inputForceExpand = true }
+                .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("＋ 念一段", fontSize = 14.sp, color = Primary,
+                    fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text("粘贴", fontSize = 12.sp, color = Primary,
+                    modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                        .background(palette.primarySoft)
+                        .clickable {
+                            val got = clipboard.getText()?.text ?: ""
+                            if (got.isNotBlank()) { text = got; inputForceExpand = true }
+                            else Toast.makeText(c, "剪贴板里没有文字",
+                                Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 14.dp, vertical = 7.dp))
+            }
         }
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (fullInput) Row(verticalAlignment = Alignment.CenterVertically) {
             if (asHome) {
                 Button(enabled = text.isNotBlank(), onClick = {
                     if (text.isBlank()) {
@@ -357,7 +386,12 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
         // R276 · 下方留白 = 片段常驻列表。每条前 10 字名 + 状态，点一下走播放条。
         if (asHome) {
             Spacer(Modifier.height(18.dp))
-            Text("合成好的音频", fontSize = 13.sp, color = Sub)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("合成好的音频", fontSize = 13.sp, color = Sub)
+                Spacer(Modifier.weight(1f))
+                // R313 · 进度停在哪一眼看得见，别只靠悬浮球那个百分比猜
+                if (busy > 0) Text("还有 $busy 段在合成", fontSize = 11.sp, color = Warn)
+            }
             Spacer(Modifier.height(10.dp))
             Box(Modifier.weight(1f)) {
                 if (clips.isEmpty()) {
@@ -385,7 +419,12 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                                         .background(palette.sub.copy(alpha = 0.10f)))
                                 }
                                 Box(Modifier.size(28.dp)
-                                    .border(1.5.dp, Line, RoundedCornerShape(14.dp)))
+                                    .border(1.5.dp, Line, RoundedCornerShape(14.dp)),
+                                    contentAlignment = Alignment.Center) {
+                                    // R313 · 空槽位不是渲染坏了的白框：淡播放位说明「以后这里能播」
+                                    UiIconGlyph(UiIcon.PLAY,
+                                        palette.sub.copy(alpha = 0.30f), glyphSize = 13.dp)
+                                }
                             }
                         }
                     }
@@ -486,11 +525,18 @@ internal fun ClipRow(
         else -> palette.warn
     }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+        Modifier.fillMaxWidth().heightIn(min = 64.dp)
+            // R313 · 与空槽位骨架同构：圆角卡片 + 描边，有片段就是「填进槽位」。
+            .clip(RoundedCornerShape(14.dp))
+            .background(palette.card)
+            .border(1.dp, Line, RoundedCornerShape(14.dp))
             .combinedClickable(onClick = {
-                if (item.isDone) onPlay()
+                when {
+                    item.isDone -> onPlay()
+                    !item.isRunning -> onRedo()   // 失败态点整行就重做，别点了没反应
+                }
             }, onLongClick = onMenu)
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         SelectBox(checked, modifier = Modifier.size(22.dp).clickable { onToggle() })
@@ -500,23 +546,38 @@ internal fun ClipRow(
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(state, fontSize = 11.sp, color = tint)
         }
-        if (item.isDone) {
-            Box(Modifier.size(36.dp).clickable { onPlay() },
+        when {
+            item.isDone -> Box(Modifier.size(36.dp).clickable { onPlay() },
                 contentAlignment = Alignment.Center) {
                 UiIconGlyph(UiIcon.PLAY, palette.primary, glyphSize = 18.dp)
             }
+            // R313 · 合成中给转圈，别让用户盯着「合成中」三个字猜是不是卡住
+            item.isRunning -> CircularProgressIndicator(
+                modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Warn)
+            else -> Box(Modifier.clip(RoundedCornerShape(14.dp))
+                .background(palette.warn.copy(alpha = 0.12f))
+                .clickable { onRedo() }
+                .padding(horizontal = 12.dp, vertical = 7.dp)) {
+                Text("重做", fontSize = 12.sp, color = palette.warn)
+            }
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = onDismissMenu) {
+            // R313 · 先亮出是哪一条、什么状态，再给操作；播放是主操作、删除是危险操作
+            DropdownMenuItem(enabled = false, onClick = { },
+                text = { Text("${item.name} · $state", fontSize = 11.sp,
+                    color = Sub, maxLines = 1, overflow = TextOverflow.Ellipsis) })
             DropdownMenuItem(text = { Text("勾选此条", fontSize = 13.sp) },
                 onClick = { onDismissMenu(); onToggle() })
             if (item.isDone) {
-                DropdownMenuItem(text = { Text("播放", fontSize = 13.sp) },
+                DropdownMenuItem(text = { Text("播放", fontSize = 13.sp,
+                    color = Primary, fontWeight = FontWeight.Bold) },
                     onClick = { onDismissMenu(); onPlay() })
                 DropdownMenuItem(text = { Text("导出", fontSize = 13.sp) },
                     onClick = onExport)
             }
             DropdownMenuItem(text = { Text("重做", fontSize = 13.sp) }, onClick = onRedo)
-            DropdownMenuItem(text = { Text("删除", fontSize = 13.sp) }, onClick = onDelete)
+            DropdownMenuItem(text = { Text("删除", fontSize = 13.sp,
+                color = palette.warn) }, onClick = onDelete)
         }
     }
 }

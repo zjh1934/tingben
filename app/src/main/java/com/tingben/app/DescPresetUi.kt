@@ -2,6 +2,8 @@ package com.tingben.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -29,7 +31,8 @@ internal fun DescPresetRow(
     label: String,
     slot: String,
     onPick: (String) -> Unit,
-    onClear: (() -> Unit)? = null
+    onClear: (() -> Unit)? = null,
+    current: String = ""
 ) {
     val ctx = LocalContext.current
     var items by remember { mutableStateOf(DescPresetStore.list(ctx, slot)) }
@@ -85,10 +88,15 @@ internal fun DescPresetRow(
             onDismissRequest = { showPick = false },
             title = { Text("选一个「$label」预设", fontSize = 14.sp) },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("列表里只显示简短描述；点一下把详细描述填进输入框。",
+                        fontSize = 11.sp, color = Sub)
+                    Spacer(Modifier.height(8.dp))
                     if (items.isEmpty()) {
-                        Text("还没有预设，先点「＋添加」存一个",
-                            fontSize = 12.sp, color = Sub)
+                        Text("还没有预设，先存一个", fontSize = 12.sp, color = Sub)
+                        TextButton(onClick = { showPick = false; showAdd = true }) {
+                            Text("＋添加预设 ›", fontSize = 12.sp)
+                        }
                     } else {
                         items.forEach { p ->
                             // R307 · 列表只显示简短描述；点条子把「详细描述」交给调用方，
@@ -98,8 +106,22 @@ internal fun DescPresetRow(
                                 TextButton(
                                     onClick = { onPick(p.long); showPick = false },
                                     modifier = Modifier.weight(1f)
-                                ) { Text(p.short, fontSize = 13.sp,
-                                    color = palette.text) }
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(p.short, fontSize = 13.sp,
+                                            color = palette.text)
+                                        if (current.isNotBlank() && p.long == current) {
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("在用", fontSize = 11.sp,
+                                                color = palette.primary,
+                                                modifier = Modifier
+                                                    .background(palette.primarySoft,
+                                                        RoundedCornerShape(6.dp))
+                                                    .padding(horizontal = 6.dp,
+                                                        vertical = 2.dp))
+                                        }
+                                    }
+                                }
                                 // R307 · 右侧垃圾桶：点一下直接删，不弹「确定删除吗」。
                                 Box(Modifier.size(36.dp)
                                     .clip(RoundedCornerShape(9.dp))
@@ -134,7 +156,7 @@ internal fun DescPresetRow(
                         onValueChange = { shortText = it },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("简短描述", fontSize = 11.sp) },
+                        label = { Text("简短描述（列表里显示）", fontSize = 11.sp) },
                         textStyle = TextStyle(fontSize = 13.sp)
                     )
                     Spacer(Modifier.height(8.dp))
@@ -144,13 +166,18 @@ internal fun DescPresetRow(
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                         maxLines = 6,
-                        label = { Text("详细描述", fontSize = 11.sp) },
+                        label = { Text("详细描述（真正喂给模型）", fontSize = 11.sp) },
                         textStyle = TextStyle(fontSize = 13.sp)
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Text("两份都要填：简短的给你认，详细的才送进模型。",
+                        fontSize = 11.sp, color = Sub)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(
+                    enabled = shortText.isNotBlank() && longText.isNotBlank(),
+                    onClick = {
                     if (DescPresetStore.save(ctx, slot, shortText, longText)) {
                         items = DescPresetStore.list(ctx, slot)
                         showAdd = false

@@ -50,7 +50,7 @@ POS = {
         "items(chapterSegs.chunked(SEG_GRID_COLUMNS),",
         "onLong = { if (!multiMode) menuChapter = r.index },",
         "item(key = \"ch_${r.index}\")",
-        "继续队列",
+        "R315 · 目录页就地任务浮窗整段撤掉",
         "队列 ${queued.size}",
         "按顺序播放",
         "AudioLibrary.playableItems(c, book.id)",
@@ -106,7 +106,7 @@ def selftest():
         "目录页不接初始列参数": ("hub", "internal fun ChapterHubScreen("),
         "初始列不生效": ("hub", "private fun ChapterRow("),
         "第二列不承接任务": ("hub", "item(key = \"ch_${r.index}\")"),
-        "续跑入口被摘": ("hub", "继续队列"),
+        "续跑入口被摘": ("hub", "R315 · 目录页就地任务浮窗整段撤掉"),
         "任务队列入口被摘": ("hub", "队列 ${queued.size}"),
         "第三列不承接音频": ("hub", "按顺序播放"),
     }

@@ -83,7 +83,7 @@ HUB_POS = [
     "\"按顺序播放\"",
     "AudioLibrary.playableItems(c, book.id)",
     "TaskResume.queue(c)",
-    "TaskResume.dequeue(c, t.bookId)",
+    "队列 ${queued.size} · 去任务页看",
     # R243 · 「继续队列」按钮砍掉，底层能力仍在 Producer；这里判同源数据，
     # 按钮回潮由 HUB_BAN 拦，不放宽能力判据。
     "制作选中章节",
@@ -143,7 +143,7 @@ MAIN_POS = [
     'StopIcon(',
     'PlayIcon(',
     'TasksIcon(',
-    'Text("⚙", fontSize = 16.sp',
+    'UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)',
     'EventLog.ui("HUB_STOP"',
     'EventLog.ui("HUB_RESUME"',
     'EventLog.ui("HOME_TASKS", "open:global")',
@@ -273,5 +273,5 @@ def injections():
         ("全局任务入口被摘", "main",
          lambda t: t.replace("nav.push(Screen.TASKS)", "")),
         ("目录页看板回潮", "hub",
-         lambda t: t.replace("任务队列 · ${queued.size} 个", "TaskBoardDialog(")),
+         lambda t: t.replace("R315 · 目录页就地任务浮窗整段撤掉", "TaskBoardDialog(")),
     ]

@@ -138,3 +138,41 @@ internal fun IconResume(tint: Color, modifier: Modifier = Modifier) {
         drawPath(tri, tint)
     }
 }
+
+/** R319 · 播放模式三态图标：顺序 / 随机 / 循环。只用 drawLine，不引图标库。
+ *  配 ModeChip 一起用，让「点一下切一态」不像「展开 ›」那样被误认成菜单。 */
+@Composable
+internal fun IconMode(ord: Int, tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val sw = (w * 0.10f).coerceAtLeast(1.5f)
+        fun ln(x1: Float, y1: Float, x2: Float, y2: Float) =
+            drawLine(tint, Offset(w * x1, h * y1), Offset(w * x2, h * y2),
+                strokeWidth = sw, cap = StrokeCap.Round)
+        when (ord) {
+            1 -> {  // 随机：两条交叉线 + 两端小箭头
+                ln(0.16f, 0.28f, 0.82f, 0.70f)
+                ln(0.16f, 0.70f, 0.82f, 0.28f)
+                ln(0.66f, 0.62f, 0.84f, 0.70f)
+                ln(0.84f, 0.70f, 0.78f, 0.52f)
+                ln(0.66f, 0.36f, 0.84f, 0.28f)
+                ln(0.84f, 0.28f, 0.78f, 0.46f)
+            }
+            2 -> {  // 循环：三边 + 回折箭头
+                ln(0.22f, 0.34f, 0.78f, 0.34f)
+                ln(0.78f, 0.34f, 0.78f, 0.62f)
+                ln(0.78f, 0.62f, 0.30f, 0.62f)
+                ln(0.30f, 0.62f, 0.22f, 0.70f)
+                ln(0.30f, 0.62f, 0.22f, 0.54f)
+            }
+            else -> {  // 顺序：三条横线 + 末端箭头
+                ln(0.16f, 0.26f, 0.84f, 0.26f)
+                ln(0.16f, 0.50f, 0.84f, 0.50f)
+                ln(0.16f, 0.74f, 0.66f, 0.74f)
+                ln(0.66f, 0.74f, 0.76f, 0.64f)
+                ln(0.66f, 0.74f, 0.76f, 0.84f)
+            }
+        }
+    }
+}

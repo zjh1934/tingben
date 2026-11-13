@@ -77,9 +77,12 @@ internal fun ResumeAskDialog(
                     Text("上次没做完", fontSize = 16.sp, fontWeight = FontWeight.Bold,
                         color = palette.text)
                     Spacer(Modifier.weight(1f))
+                    // R320 · 图 45：右上角 chip 原来直接塞 label（可能是百分比），
+                    // 和下面按 done/total 算出来的百分比互相打架。这里只写状态，
+                    // 整张卡只留一个百分比数字。
                     Box(Modifier.background(palette.primarySoft, RoundedCornerShape(50))
                             .padding(horizontal = 10.dp, vertical = 4.dp)) {
-                        Text(label, fontSize = 11.sp, color = palette.primary)
+                        Text("未完成", fontSize = 11.sp, color = palette.primary)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -95,9 +98,15 @@ internal fun ResumeAskDialog(
                             .clip(RoundedCornerShape(3.dp)).background(palette.primary))
                 }
                 Spacer(Modifier.height(8.dp))
+                // R320 · 「385 / 26678 块」是调试数字，用户看不懂也不该看；
+                // 换成一句状态说明，百分比仍由同一份 frac 算，全卡只出现一次。
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("$done / $total 块", fontSize = 12.sp, color = palette.sub)
-                    Spacer(Modifier.weight(1f))
+                    Text(if (label.isNotBlank() && !label.contains("%")) label
+                         else "接着上次继续，不会从头再来",
+                        fontSize = 12.sp, color = palette.sub,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
                     Text("${(frac * 100).toInt()}%", fontSize = 12.sp,
                         fontWeight = FontWeight.Bold, color = palette.primary)
                 }

@@ -285,7 +285,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                 Button(onClick = { commitAll() },
                     modifier = Modifier.height(32.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-                    Text("保存", fontSize = 12.sp)
+                    Text("保存设置", fontSize = 12.sp)
                 }
             }
             // R304 · 用户要的就是一枚红叉，不要「关闭 ✕」那枚胶囊。
@@ -371,7 +371,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                     modifier = Modifier.height(48.dp),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)) {
-                    Text("保存", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("存文本", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -392,7 +392,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Primary, contentColor = palette.onPrimary)
-                ) { Text("试听 · 已保存", fontSize = 12.sp) }
+                ) { Text("试听 · 已存配置", fontSize = 12.sp) }
                 Button(
                     enabled = !synthBlocked && !busyTrial,
                     onClick = { trial("未保存", draft, trialText, "mixer_trial_draft.wav") },
@@ -400,7 +400,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = PrimarySoft, contentColor = Primary)
-                ) { Text("试听 · 当前", fontSize = 12.sp) }
+                ) { Text("试听 · 当前改动", fontSize = 12.sp) }
             }
             if (trialMsg.isNotBlank()) {
                 Text(trialMsg, fontSize = 12.sp,
@@ -423,7 +423,13 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                     Text("全部恢复默认", fontSize = 12.sp, color = Sub)
                 }
             } else {
-                Text("沿用全局设置", fontSize = 12.sp, color = Sub)
+                // R317 · 原来这行「沿用全局设置」是句死话：九项采样只在
+                // 「描述造音色」里能调，不给入口等于断路。
+                Text("这九项跟着「描述造音色」走", fontSize = 12.sp,
+                    color = palette.text)
+                TextButton(onClick = { switchMode(ModelStore.Mode.VOICE_DESIGN) }) {
+                    Text("切过去调这九项 ›", fontSize = 12.sp, color = Primary)
+                }
             }
 
             Spacer(Modifier.height(14.dp))
@@ -443,18 +449,35 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
     }
 
     if (showLeave) {
+        // R317 · 原来只有「丢弃 / 继续编辑」两条路：想保存得先关弹窗再点顶栏。
+        // 补第三条「保存并离开」，并把会丢掉的改动逐项列出来，不再是一句空话。
         AlertDialog(
             onDismissRequest = { showLeave = false },
             title = { Text("改动还没保存", fontSize = 14.sp) },
-            text = { Text("离开会丢掉这次改动。", fontSize = 12.sp) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showLeave = false; discardAll(); (onClose ?: onBack)()
-                }) {
-                    Text("丢弃并离开", fontSize = 12.sp, color = Warn)
+            text = {
+                Column {
+                    Text("离开会丢掉这次改动。", fontSize = 12.sp, color = palette.text)
+                    Spacer(Modifier.height(4.dp))
+                    changes.take(4).forEach {
+                        Text("· " + it.label, fontSize = 12.sp, color = Sub)
+                    }
+                    if (changes.size > 4)
+                        Text("还有 ${changes.size - 4} 项…", fontSize = 12.sp, color = Sub)
                 }
             },
-            dismissButton = { TextButton(onClick = { showLeave = false }) { Text("继续编辑") } }
+            confirmButton = {
+                TextButton(onClick = {
+                    showLeave = false; commitAll(); (onClose ?: onBack)()
+                }) { Text("保存并离开", fontSize = 12.sp, color = Primary) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showLeave = false }) { Text("继续编辑") }
+                    TextButton(onClick = {
+                        showLeave = false; discardAll(); (onClose ?: onBack)()
+                    }) { Text("丢弃并离开", fontSize = 12.sp, color = Warn) }
+                }
+            }
         )
     }
 }
@@ -502,7 +525,8 @@ internal fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit,
         label = "声音描述",
         slot = "voice_design",
         onPick = { onDraft(draft.copy(voice = it)); onApplyVoice(it) },
-        onClear = { onDraft(draft.copy(voice = "")) }
+        onClear = { onDraft(draft.copy(voice = "")) },
+        current = draft.voice
     )
     Spacer(Modifier.height(6.dp))
     OutlinedTextField(
@@ -513,7 +537,7 @@ internal fun VoiceDesignPane(draft: MixerDraft, onDraft: (MixerDraft) -> Unit,
     )
     // R223 · 默认已是青年女声；留空可回到升级前的中性声并认领回旧音频
     Spacer(Modifier.height(4.dp))
-    Text("留空 = 旧默认中性声，可切回旧音频",
+    Text("留空就用原来的中性声；填了才会变",
         fontSize = 11.sp, color = Sub)
 }
 
@@ -559,24 +583,45 @@ internal fun CustomVoicePane(
             Text(if (speakerBusy) "正在读模型…" else "读取模型自带的音色表 ›", fontSize = 12.sp)
         }
     } else {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            speakerList.forEach { name ->
-                FilterChip(
-                    selected = draft.speaker == name,
-                    onClick = { onDraft(draft.copy(speaker = name)) },
-                    // R304 · 模型自带的英文名在界面显示中文，送进引擎的仍用原名。
-                    label = { Text(speakerCn(name), fontSize = 12.sp) }
-                )
+        // R317 · 九种音色按「女声 / 男声 / 少年音」分组，不再一排混着摆；
+        // 送进引擎的仍是模型原名，只在这里显示中文。
+        val groups = linkedMapOf<String, MutableList<String>>()
+        speakerList.forEach { n ->
+            val cn = speakerCn(n)
+            val g = when {
+                "女声" in cn -> "女声"
+                "男声" in cn -> "男声"
+                "少年" in cn -> "少年音"
+                else -> "其它音色"
             }
+            groups.getOrPut(g) { mutableListOf() }.add(n)
         }
+        groups.forEach { (g, names) ->
+            Text(g, fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                names.forEach { name ->
+                    FilterChip(
+                        selected = draft.speaker == name,
+                        onClick = { onDraft(draft.copy(speaker = name)) },
+                        // R304 · 模型自带的英文名在界面显示中文，送进引擎的仍用原名。
+                        label = { Text(speakerCn(name), fontSize = 12.sp) }
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        Text("已选：" + (if (draft.speaker.isBlank()) "还没选" else speakerCn(draft.speaker)),
+            fontSize = 11.sp, color = Sub)
     }
     Spacer(Modifier.height(12.dp))
     // R304 · 标签从「自定义」改成「风格描述」，右边同样带选预设 / 添加预设。
     DescPresetRow(
         label = "风格描述",
         slot = "cv_style",
-        onPick = { onDraft(draft.copy(cvStyle = it)); onApplyStyle(it) }
+        onPick = { onDraft(draft.copy(cvStyle = it)); onApplyStyle(it) },
+        current = draft.cvStyle
     )
     Spacer(Modifier.height(6.dp))
     OutlinedTextField(
@@ -608,7 +653,12 @@ internal fun BasePane(
         }
     }
     Spacer(Modifier.height(6.dp))
-    TextButton(onClick = onPick) { Text("导入并裁剪 ›", fontSize = 12.sp) }
+    Button(onClick = onPick, modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp)) {
+        Text("导入一段人声并裁剪 ›", fontSize = 13.sp)
+    }
+    Spacer(Modifier.height(4.dp))
+    Text("选 3~10 秒干净人声", fontSize = 11.sp, color = Sub)
     Spacer(Modifier.height(12.dp))
     Text("这段录音念的是什么（可留空）", fontSize = 12.sp,
         fontWeight = FontWeight.Bold, color = palette.text)
@@ -653,6 +703,11 @@ internal fun ParamLine(spec: ParamSpec, cur: String, onValue: (String) -> Unit) 
                 Text("↺", fontSize = 17.sp, color = Primary)
             }
         }
+        // R317 · 种子是整数、长度按 token、核采样 0~1，一根裸滑块 + 一个数
+        // 看不出拖到哪合适。补范围 / 默认 / 单位，并说明点数字可手填、↺ 复原。
+        Text("范围 ${spec.rangeLabel} · 默认 ${spec.def}${spec.unit} · 点数字可手填 · ↺ 复原",
+            fontSize = 10.sp, color = Sub,
+            modifier = Modifier.padding(start = 2.dp, bottom = 2.dp))
         // R158b · 种子语义不进 UI（那是教程）。结论留在沙盒工作卡，界面只给滑块。
         Slider(
             value = sv,
@@ -744,6 +799,7 @@ internal fun RefClipDialog(
             Column(Modifier.fillMaxWidth()) {
                 Text("按住波形两端拖，选一小段干净人声", fontSize = 12.sp,
                     color = palette.text)
+                Text("选 3~10 秒最稳", fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.height(8.dp))
                 Canvas(
                     modifier = Modifier
@@ -795,13 +851,13 @@ internal fun RefClipDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            Button(onClick = {
                 onUse((totalMs * startFrac).toLong(), (totalMs * endFrac).toLong())
-            }) {
+            }, shape = RoundedCornerShape(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    UiIconGlyph(UiIcon.AUDIO, Primary)
+                    UiIconGlyph(UiIcon.AUDIO, palette.onPrimary)
                     Spacer(Modifier.width(4.dp))
-                    Text("用这一段", fontSize = 13.sp, color = Primary)
+                    Text("用这一段", fontSize = 13.sp, color = palette.onPrimary)
                 }
             }
         },

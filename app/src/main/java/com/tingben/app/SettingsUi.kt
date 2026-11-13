@@ -81,7 +81,7 @@ internal fun OverlayProgressRow(c: Context) {
     }
     // R239 · 统一行：缺「显示在其他应用上层」权限时整行染警示色，
     // 不再只是副标题一小截灰字里藏着一句提示。
-    SettingLine("浮", "悬浮进度",
+    SettingLine(UiIcon.PROGRESS, "悬浮进度",
         if (!on) "关闭" else if (!permOk) "还需允许「显示在其他应用上层」"
         else "打开即显示预览 · 制作时自动更新 · 停止即收起",
         danger = on && !permOk) {
@@ -109,7 +109,7 @@ internal fun OverlayProgressRow(c: Context) {
 @Composable
 internal fun AutoResumeRow(c: Context) {
     var on by remember { mutableStateOf(Prefs.autoResumeOnStart(c)) }
-    SettingLine("续", "打开软件自动续跑", "回到软件时接着上次没做完的") {
+    SettingLine(UiIcon.RESUME, "打开软件自动续跑", "只接着没做完的，做完的不重跑") {
         Switch(checked = on, onCheckedChange = {
             on = it
             Prefs.setAutoResumeOnStart(c, it)
@@ -118,15 +118,18 @@ internal fun AutoResumeRow(c: Context) {
     }
 }
 
-/** R171 · 「应用详情」是入口不是权限，原来复用 PermRow 会显示「已开启 · 查看」。 */
+/** R171 · 「应用详情」是入口不是权限，原来复用 PermRow 会显示「已开启 · 查看」。
+ *  R320 · 前导图标由调用方指定，不再拿标题首字放大顶数。 */
 @Composable
-internal fun PermEntryRow(title: String, hint: String, go: () -> Unit) {
-    SettingLine(title.take(1), title, hint) {
+internal fun PermEntryRow(icon: UiIcon, title: String, hint: String, go: () -> Unit) {
+    SettingLine(icon, title, hint) {
         Button(onClick = go,
             modifier = Modifier.height(34.dp),
             shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PrimarySoft, contentColor = Primary),
             contentPadding = PaddingValues(horizontal = 14.dp)) {
-            Text("去打开", fontSize = 12.sp)
+            Text("打开设置 ›", fontSize = 12.sp)
         }
     }
 }
@@ -136,10 +139,12 @@ internal fun PermEntryRow(title: String, hint: String, go: () -> Unit) {
  * 副标题 / 尾部控件」层级，用项目调色板自绘，不引图标库、不加依赖。
  * 以前每行都手搓一遍 Column(weight) + Text + Spacer(2.dp) + 小字，
  * 行高与左右对齐全靠运气；现在所有行等高、副标题可省、危险项单独色。
+ * R320 · 前导槽不再用 title.take(1) 放大一个汉字冒充图标：改成 UiIcons.kt
+ * 里相对坐标自绘的矢量图形，每项各配一枚有语义的 icon，深浅主题随 tint。
  */
 @Composable
 internal fun SettingLine(
-    mark: String,
+    icon: UiIcon,
     title: String,
     hint: String = "",
     danger: Boolean = false,
@@ -155,8 +160,7 @@ internal fun SettingLine(
                     RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text(mark, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                color = if (danger) Warn else Primary)
+            UiIconGlyph(icon, if (danger) Warn else Primary, 18.dp)
         }
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
@@ -222,9 +226,10 @@ internal fun SettingsSection(
  *  R165 · 用户实证「权限如果已经有了，应该是变绿，不是还跟原来一样去开启」：
  *  已开启换成绿底，未开启维持主色；绿底前景按主题取，保证深浅都读得清。 */
 @Composable
-internal fun PermRow(title: String, granted: Boolean, hint: String, go: () -> Unit) {
+internal fun PermRow(icon: UiIcon, title: String, granted: Boolean,
+                     hint: String, go: () -> Unit) {
     val goodFg = if (appThemeDark) Color(0xFF0E1117) else Color(0xFFFFFFFF)
-    SettingLine(title.take(1), title, hint) {
+    SettingLine(icon, title, hint) {
         Button(onClick = go,
             modifier = Modifier.height(34.dp),
             shape = RoundedCornerShape(50),
@@ -243,7 +248,6 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                            onLibrary: () -> Unit,
                            onMixer: () -> Unit) {
     val missing = remember(refresh) { ModelStore.missing(c) }
-    val modeCount = remember(refresh) { ModelStore.installedModes(c).size }
     var themeMode by remember { mutableStateOf(Prefs.themeMode(c)) }
     // R171 · 开发者工具默认收起，普通用户打开设置不再先看到两枚排查按钮。
     var devOpen by remember { mutableStateOf(false) }
@@ -266,7 +270,6 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     val ovOk = remember(permTick) { KeepAlive.overlayGranted(c) }
     var expTreeLabel by remember { mutableStateOf(AudioExport.treeLabel(c)) }
     var expCount by remember { mutableStateOf(0) }
-    var segTotal by remember { mutableStateOf(0) }
     // 中间小块按书分组：bookId → 书名，避免把 UUID 当分组名露给用户
     var bookTitles by remember { mutableStateOf(emptyMap<String, String>()) }
     // R268 · 导出以前只有一闪而过的 Toast：点完没反应、结果也回看不了。
@@ -275,18 +278,14 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
     var exportResult by remember { mutableStateOf("") }
     LaunchedEffect(refresh) {
         expCount = withContext(Dispatchers.IO) { AudioExport.collect(c).size }
-        segTotal = withContext(Dispatchers.IO) {
-            File(c.filesDir, "work").walkTopDown()
-                .count { it.isFile && it.name.endsWith(".wav") }
-        }
         bookTitles = withContext(Dispatchers.IO) {
             BookStore.list(c).associate { it.id to it.title }
         }
     }
     // 两个本机目录在设置里可达：私有目录第三方文件管理器进不去，
     // 所以应用内列清单，点一个文件另存到用户自己挑的位置。
-    var browseRoot by remember { mutableStateOf<File?>(null) }
-    var browseLabel by remember { mutableStateOf("") }
+    // R320 · 两个本机目录合成一个浏览入口，弹层里用页签切，不再各占一行
+    var browseOpen by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<File?>(null) }
     val saveOne = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
@@ -377,9 +376,10 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     }
                 }
                 Spacer(Modifier.height(5.dp))
-                Text(if (missing.isEmpty()) "$modeCount 个模式可用"
-                     else "还差：" + missing.joinToString("、"),
-                    fontSize = 12.sp, color = Sub)
+                Text(if (missing.isEmpty()) "4 份已就绪"
+                     else "还差 ${missing.size} 份 · 共 4 份：" + missing.joinToString("、"),
+                    fontSize = 12.sp, color = Sub, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(6.dp))
                 // R238 · 设备型号 / ABI 是诊断日志的内容（r141 仍在那里守），
                 // 摆到设置首页只是调试噪声；这里只留软件版本。
@@ -391,7 +391,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         SettingsSection("外观与显示", "软件", collapsible = false) {
             // R239 · 主题是三段选择器，不是「一行 + 尾部控件」；但标题行也走
             // SettingLine 的徽标槽，和下面「悬浮进度」左右对齐，trailing 留空。
-            SettingLine("主", "主题", "外观基调") { }
+            SettingLine(UiIcon.PALETTE, "主题", "外观基调") { }
             Row(Modifier.fillMaxWidth()
                 .background(PrimarySoft, RoundedCornerShape(10.dp))
                 .padding(3.dp)) {
@@ -413,10 +413,62 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 }
             }
             OverlayProgressRow(c)
+            // R320 · 图 46：不透明浅底的双球是「上＝整本、下＝这一章」，
+            // 旧图里两个环叠在一起没有说明，谁也认不出哪个是哪个。浮窗本体
+            // 仍按 R214 口径不写字，图例只放设置页里。
+            Row(Modifier.fillMaxWidth()
+                    .padding(start = 43.dp, top = 2.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                UiIconGlyph(UiIcon.PROGRESS, Primary, 14.dp)
+                Text(" 整本", fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.width(12.dp))
+                UiIconGlyph(UiIcon.PROGRESS, Sub, 14.dp)
+                Text(" 这一章", fontSize = 11.sp, color = Sub)
+                Spacer(Modifier.weight(1f))
+                Text("不透明浅底", fontSize = 10.sp, color = Sub)
+            }
         }
 
         SettingsSection("运行与通知", "系统", collapsible = false) {
             AutoResumeRow(c)
+        }
+        // R320 · 埋的雷兑现：段间静音 / 失败重做 / 自动拼章 / 接缝处理本来就是
+        // 全局偏好（写 Prefs，与哪一本书无关），却一直挂在带 bookId 的独立
+        // 「制作设置」页里，用户想改一次参数还得先开一本书。现在统一收进设置页，
+        // 点一下即落盘；那张独立页降级成只管「这本书」的操作页，不再定参数。
+        SettingsSection("制作设置", "合成", collapsible = false) {
+            var cfg by remember { mutableStateOf(Prefs.defaultPerf(c)) }
+            var autoMerge by remember { mutableStateOf(Prefs.autoMergeChapter(c)) }
+            var declickMs by remember { mutableStateOf(Prefs.mergeDeclickMs(c)) }
+            OptionRow("段间静音", "两小段之间的停顿",
+                ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) {
+                cfg = cfg.copy(gapMs = it)
+                Prefs.setDefaultPerf(c, cfg)
+            }
+            OptionRow("分段失败重做", "某一段没出来时再试几次",
+                ProduceConfig.RETRY_OPTIONS.map { it to "${it}次" }, cfg.gateRetries) {
+                cfg = cfg.copy(gateRetries = it)
+                Prefs.setDefaultPerf(c, cfg)
+            }
+            OptionRow("自动拼成整章", "一章的小块齐了就拼，验过才删内部 WAV",
+                listOf(true to "开", false to "关"), autoMerge) {
+                autoMerge = it
+                Prefs.setAutoMergeChapter(c, it)
+            }
+            OptionRow("接缝处理", "相邻小块淡入淡出，压掉咔哒声",
+                listOf(0 to "直接接", 15 to "轻", 30 to "标准"), declickMs) {
+                declickMs = it
+                Prefs.setMergeDeclickMs(c, it)
+            }
+            TextButton(onClick = {
+                cfg = ProduceConfig()
+                Prefs.setDefaultPerf(c, cfg)
+                autoMerge = true
+                Prefs.setAutoMergeChapter(c, true)
+                declickMs = 30
+                Prefs.setMergeDeclickMs(c, 30)
+                Toast.makeText(c, "已恢复默认制作设置", Toast.LENGTH_SHORT).show()
+            }) { Text("恢复默认", fontSize = 12.sp, color = Sub) }
         }
         // R303 · 权限单独成块：每行按真实状态显示「已打开」/「去打开」，
         // 点一下都直接落到安卓系统对应的权限设置页，应用里不写教程。
@@ -424,8 +476,8 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         SettingsSection("权限", "权限", collapsible = false) {
             val notifOk = remember(permTick) { NotifPerm.granted(c) }
             val goodFg = if (appThemeDark) Color(0xFF0E1117) else Color(0xFFFFFFFF)
-            SettingLine("铃", "通知权限",
-                if (notifOk) "已允许，制作与播放进度会显示在通知栏" else "还没允许，点右边去打开") {
+            SettingLine(UiIcon.BELL, "通知权限",
+                if (notifOk) "制作进度会显示在通知栏" else "还没允许") {
                 Button(onClick = {
                         try {
                             val i = android.content.Intent(
@@ -447,44 +499,33 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
             // R158b · 用户明确「教程不要塞进应用里」：长说明、图文步骤、
             // 箭头流程全部撤掉，只留按钮 + 状态。说明放沙盒方案文档，不进 APK。
-            PermRow("忽略电池优化", batOk, "后台限制") {
+            PermRow(UiIcon.SHIELD, "忽略电池优化", batOk, "后台不被系统掐断") {
                 if (!KeepAlive.requestIgnoreBattery(c))
                     Toast.makeText(c, "打不开设置页，请手动到应用详情里找",
                         Toast.LENGTH_SHORT).show()
             }
-            PermRow("显示在其他应用上层", ovOk, "可选") {
+            PermRow(UiIcon.PROGRESS, "显示在其他应用上层", ovOk, "悬浮进度需要") {
                 if (!KeepAlive.requestOverlay(c))
                     Toast.makeText(c, "打不开设置页，请手动到应用详情里找",
                         Toast.LENGTH_SHORT).show()
             }
-            PermEntryRow("应用详情", "系统设置") {
+            PermEntryRow(UiIcon.SETTINGS, "应用详情", "系统设置") {
                 if (!KeepAlive.openAppDetails(c))
                     Toast.makeText(c, "这台机器打不开应用详情", Toast.LENGTH_SHORT).show()
             }
         }
-        // R238 · 「本机数据」只放一行、「成品文件」又一张卡，两张都标「本机」，
-        // 正是 R174 修过的同类碎片。合并成一张，行全部走 SettingLine 统一层级。
-        SettingsSection("文件与数据", "本机", collapsible = false) {
-            ClearSegmentsRow(c)
-            Spacer(Modifier.height(2.dp))
-            SettingLine("导", "导出位置", expTreeLabel) {
-                Button(onClick = {
-                        try { treeLauncher.launch(AudioExport.treeUri(c)) }
-                        catch (_: Throwable) {
-                            Toast.makeText(c, "这台机器打不开文件夹选择", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.height(34.dp),
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Text("选择", fontSize = 12.sp)
-                }
-            }
-            SettingLine("成", "整章成品", "已做好 $expCount 个 · 按书名分文件夹 · WAV") {
+        // R320 · 图 37 / 旧「文件与数据」重设计：五行把「选导出位置 / 导出全部 /
+        // 看临时小块 / 看整章成品目录 / 清理临时段」平铺；「整章成品」和
+        // 「整章成品目录」几乎同名，只读查看与破坏性清理还挤在同一层。
+        // 收成三件事：导出成品（位置并进副行）、浏览本机音频（成品/小块切换）、
+        // 清理临时段（警示色 + 二次确认）。四种能力一条没丢，行从 5 压到 3。
+        SettingsSection("音频文件", "本机", collapsible = false) {
+            SettingLine(UiIcon.M4A, "整章成品",
+                "已做好 $expCount 个 · M4A · 拼好即转码") {
                 Button(enabled = expCount > 0 && !exporting, onClick = {
                         val tree = AudioExport.treeUri(c)
                         if (tree == null) {
-                            Toast.makeText(c, "先点「选择」挑一个文件夹",
+                            Toast.makeText(c, "先点「更改」挑一个文件夹",
                                 Toast.LENGTH_SHORT).show()
                         } else {
                             exporting = true
@@ -519,32 +560,35 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     Text(if (exporting) "正在导出…" else "导出全部", fontSize = 12.sp)
                 }
             }
+            Row(Modifier.fillMaxWidth().padding(start = 43.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("导出到 " + expTreeLabel, fontSize = 11.sp, color = Sub,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                        try { treeLauncher.launch(AudioExport.treeUri(c)) }
+                        catch (_: Throwable) {
+                            Toast.makeText(c, "这台机器打不开文件夹选择",
+                                Toast.LENGTH_SHORT).show()
+                        }
+                    }, modifier = Modifier.height(30.dp)) {
+                    Text("更改", fontSize = 11.sp, color = Primary)
+                }
+            }
             if (exportResult.isNotEmpty()) {
                 Text(exportResult, fontSize = 11.sp, color = Sub,
-                    modifier = Modifier.padding(start = 40.dp, top = 2.dp, bottom = 4.dp))
+                    modifier = Modifier.padding(start = 43.dp, bottom = 4.dp))
             }
-            SettingLine("块", "中间小块 $segTotal 个", "合成中的临时音频 · 拼成整章后清") {
-                Button(onClick = {
-                        browseLabel = "中间小块"
-                        browseRoot = File(c.filesDir, "work")
-                    },
+            SettingLine(UiIcon.FOLDER, "本机音频",
+                "章成品 / 中间小块 · 按书分组 · 点一个另存") {
+                Button(onClick = { browseOpen = true },
                     modifier = Modifier.height(34.dp),
                     shape = RoundedCornerShape(50),
                     contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Text("查看", fontSize = 12.sp)
+                    Text("浏览", fontSize = 12.sp)
                 }
             }
-            SettingLine("章", "整章成品目录", "按书名分文件夹 · WAV") {
-                Button(onClick = {
-                        browseLabel = "整章成品"
-                        browseRoot = AudioLibrary.dir(c)
-                    },
-                    modifier = Modifier.height(34.dp),
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Text("查看", fontSize = 12.sp)
-                }
-            }
+            ClearSegmentsSettingLine(c)
         }
         SettingsSection("开发者工具", "排查", open = devOpen,
                         onToggle = { devOpen = it }) {
@@ -594,8 +638,11 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
-        browseRoot?.let { root ->
-            LocalFilesDialog(root, browseLabel, bookTitles,
+        if (browseOpen) {
+            LocalFilesDialog(
+                roots = listOf("整章成品" to AudioLibrary.dir(c),
+                               "中间小块" to File(c.filesDir, "work")),
+                bookTitles = bookTitles,
                 onSave = { f ->
                     pendingSave = f
                     try {
@@ -604,7 +651,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         else saveOne.launch(f.name)
                     } catch (_: Throwable) { pendingSave = null }
                 },
-                onDismiss = { browseRoot = null })
+                onDismiss = { browseOpen = false })
         }
 
     }
@@ -637,11 +684,65 @@ internal fun browseGroups(root: File, bookTitles: Map<String, String>): List<Pai
         .sortedBy { it.first }
 }
 
-/** 本机音频目录的应用内浏览：按书分组列 WAV，点一个另存到用户挑的位置。 */
+/** R320 · 清理临时段改成统一设置行 + 警示色 + 二次确认：
+ *  以前它和「查看目录」这种只读动作平铺在同一张卡里，点错一下就删一堆文件。
+ *  逻辑与 ModelUi.ClearSegmentsRow 一致，IO 删、只清 work/ 下的 WAV。 */
 @Composable
-internal fun LocalFilesDialog(root: File, label: String,
+internal fun ClearSegmentsSettingLine(c: Context) {
+    var confirm by remember { mutableStateOf(false) }
+    val clearScope = rememberCoroutineScope()
+    SettingLine(UiIcon.BROOM, "清理中间小块",
+        "只删制作过程的临时 WAV，成品和模型不动", danger = true) {
+        Button(onClick = { confirm = true },
+            modifier = Modifier.height(34.dp),
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Warn.copy(alpha = 0.14f), contentColor = Warn),
+            contentPadding = PaddingValues(horizontal = 14.dp)) {
+            Text("清理", fontSize = 12.sp)
+        }
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("清理中间小块？", fontSize = 14.sp) },
+            text = { Text("只删制作过程里生成的分段 WAV（会连留着的其他音色缓存一起清掉），" +
+                    "书架原书、成品和模型文件都不动。", fontSize = 12.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirm = false
+                    clearScope.launch {
+                        val n = withContext(Dispatchers.IO) {
+                            var k = 0
+                            try {
+                                File(c.filesDir, "work").walkTopDown()
+                                    .filter { it.isFile && it.name.endsWith(".wav") }
+                                    .forEach { if (it.delete()) k++ }
+                            } catch (_: Throwable) { }
+                            k
+                        }
+                        Toast.makeText(c, "已清理 $n 个分段音频",
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("确认清理", fontSize = 13.sp, color = Warn) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = false }) {
+                    Text("取消", fontSize = 13.sp)
+                }
+            }
+        )
+    }
+}
+
+/** 本机音频目录的应用内浏览：按书分组列 M4A / WAV，点一个另存到用户挑的位置。
+ *  R320 · 两个目录收进同一个弹层，用页签切，不再在设置页各占一行。 */
+@Composable
+internal fun LocalFilesDialog(roots: List<Pair<String, File>>,
                               bookTitles: Map<String, String>,
                               onSave: (File) -> Unit, onDismiss: () -> Unit) {
+    var tab by remember { mutableStateOf(0) }
+    val (label, root) = roots[tab]
     val groups = remember(root.absolutePath) { browseGroups(root, bookTitles) }
     val total = groups.sumOf { it.second.size }
     val segRe = Regex("""^(?:chunk|direct)_(\d{4})\.wav$""")
@@ -651,9 +752,26 @@ internal fun LocalFilesDialog(root: File, label: String,
             Column(Modifier.padding(14.dp)) {
                 Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(3.dp))
-                Text("${groups.size} 组 · $total 个音频 · 点一个另存",
+                Text("按书分组 · $total 个 · 可另存",
                     fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth()
+                    .background(PrimarySoft, RoundedCornerShape(10.dp))
+                    .padding(3.dp)) {
+                    roots.forEachIndexed { i, (name, _) ->
+                        val on = i == tab
+                        Box(Modifier.weight(1f).height(32.dp)
+                            .background(if (on) palette.card else Color.Transparent,
+                                RoundedCornerShape(8.dp))
+                            .clickable { tab = i },
+                            contentAlignment = Alignment.Center) {
+                            Text(name, fontSize = 12.sp,
+                                fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                color = if (on) Primary else Sub)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 if (groups.isEmpty()) {
                     Text("这里现在没有音频文件", fontSize = 12.sp, color = Sub)
                 } else {
