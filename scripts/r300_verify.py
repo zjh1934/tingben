@@ -48,6 +48,12 @@ def check(f):
     # R270 已拔的 holdChapters 不许借新形态回潮
     if "holdChapters" in p:
         e.append("R300 holdChapters 回潮")
+    # R329 · 清重做标记必须在拼章成功之后：拼接 / 登记 / 章状态任一步
+    # 失败都会保留小块，提前清掉等于抹掉「这段要重做」的证据。
+    mi = p.find("val r = AudioOps.mergeChapterAuto(")
+    ci = p.find('chapterSegIndices[ci].orEmpty().forEach { j -> SegPlan.clearRedo')
+    if mi < 0 or ci < 0 or ci < mi:
+        e.append("R329 清重做标记退回拼章之前")
     return e
 
 def selftest():
@@ -80,6 +86,10 @@ def selftest():
         ("章边界索引被删",
          "val chapterAtBoundary = chapterLastIndex.entries.associate { (ch, last) -> last to ch }", ""),
         ("收尾补漏网被删", "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,", ""),
+        ("清标记退回拼章前",
+         "val r = AudioOps.mergeChapterAuto(app, book.id, book.title, ci, parts,",
+         'chapterSegIndices[ci].orEmpty().forEach { j -> SegPlan.clearRedo(work, "seg:$j") }\n'
+         "            val r = AudioOps.mergeChapterAuto(app, book.id, book.title, ci, parts,"),
     ]
     bad = 0
     for name, needle, repl in cuts:

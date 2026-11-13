@@ -48,16 +48,19 @@ def check(f):
     for k in ['fun markSegs(work: File, segs: Collection<Int>)',
               'private val redoLock = Any()', 'synchronized(redoLock)']:
         if k not in sg: e.append("R297 批量标记/并发锁缺: " + k[:56])
-    for banned in ['rows.forEach { SegPlan.markSeg(work, it.index) }']:
-        if banned in h: e.append("R297 逐段 fsync 旧形态回潮: " + banned)
+    for banned in ['rows.forEach { SegPlan.markSeg(work, it.index) }',
+                   '"block:${sg.block}" in redoKeys']:
+        if banned in h: e.append("R297/R329 旧形态回潮: " + banned)
     for k in ['val busyHere = Producer.isBusy()',
               'if (!busyHere && ch != null)',
-              'if (!busyHere) Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))',
+              # R329 · 整章重做：空闲起新任务、制作中才就地标记，不往旧分桶写孤儿
+              'if (busyHere) segsHere.forEach { SegPlan.markSeg(work, it.index) }',
+              'else Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))',
               '"第 ${ch + 1} 章已标记重做：当前这段做完就逐段接上"']:
         if k not in h: e.append("R266 制作中不排队列缺: " + k[:56])
     # 重做标记轻量观察：只秒读 redo.json，格子转黄/转绿不靠 stage 合并
     for k in ['var redoKeys by remember(book.id) { mutableStateOf(emptySet<String>()) }',
-              'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys ||',
+              'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)',
               'redoKeys = if (w == null) emptySet()',
               'SegPlan.pending(w)']:
         if k not in h: e.append("R266 重做标记观察缺: " + k[:56])
@@ -147,10 +150,13 @@ def selftest():
         ("批量写回主线程", "hub", 'withContext(Dispatchers.IO) {', ""),
         ("制作中又排整章队列", "hub", "if (!busyHere && ch != null)", "if (ch != null)"),
         ("整章重做制作中又排队列", "hub",
-         "if (!busyHere) Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))",
+         "if (busyHere) segsHere.forEach { SegPlan.markSeg(work, it.index) }",
          "Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))"),
         ("重做标记观察被摘", "hub",
-         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys ||', ""),
+         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)', ""),
+        ("整块标记回潮", "hub",
+         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)',
+         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys || "block:${sg.block}" in redoKeys)'),
         ("心跳不读 redo", "hub", "SegPlan.pending(w)", "emptySet()"),
         ("回头重做被摘", "producer", "val nextRedo = SegPlan.pending(work)", ""),
         ("回头重做不清标记", "producer", 'SegPlan.clearRedo(work, "seg:$nextRedo")', ""),

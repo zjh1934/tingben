@@ -303,7 +303,7 @@ internal fun AppDrawerSheet(
     }
 }
 
-/** 书架那条小横条：按住往下拖一段刷新。R155 查实全软件只有这一处刷新手势。 */
+/** 抽屉书单那条小横条：按住往下拖一段刷新。R155 查实全软件只有这一处刷新手势。 */
 @Composable
 internal fun RefreshStrip(
     onRefresh: () -> Unit,
@@ -317,8 +317,8 @@ internal fun RefreshStrip(
             .fillMaxWidth()
             .height(if (pulled) 30.dp else 22.dp)
             .background(if (pulled) primarySoft else Color.Transparent, RoundedCornerShape(12.dp))
-            // R178 · 主页改成输入框后书列表搬进抽屉，compact 模式原来不渲染这条
-            // 刷新热区，等于把全软件唯一的刷新入口弄丢了。现在常显，且下拉之外
+            // R328 · 主页改成输入框后书列表搬进抽屉，原来刷新热区被页面开关挡着
+            // 不渲染，等于把全软件唯一的刷新入口弄丢了。现在常显，且下拉之外
             // 点一下也能刷新：整页下拉手势与 LazyColumn 滚动抢事件，风险高于收益，
             // 不硬上；「刷新能力不丢」这条按可见热区 + 双触发方式兑现。
             .clickable { onRefresh() }

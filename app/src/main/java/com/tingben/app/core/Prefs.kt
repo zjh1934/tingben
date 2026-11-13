@@ -1,6 +1,7 @@
 package com.tingben.app.core
 
 import android.content.Context
+import com.tingben.app.diag.EventLog
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -184,8 +185,17 @@ object Prefs {
 
     fun modelMode(c: Context): String =
         sp(c).getString(KEY_MODEL_MODE, "voice_design") ?: "voice_design"
-    fun setModelMode(c: Context, v: String) =
+    // R327 · 只放行三种合法模式，非法值不再写进设置，避免下次读取时静默
+    // 兜回模式一。合法写入全部来自调音台切模式 / 模型页「启用」「改用」按钮。
+    fun setModelMode(c: Context, v: String) {
+        if (ModelStore.Mode.values().none { it.id == v }) {
+            EventLog.log(EventLog.Kind.MODEL, "MODEL_MODE_REJECT",
+                "不认识的模式值没写进设置 · raw=${EventLog.safe(v)}",
+                level = EventLog.Level.WARN)
+            return
+        }
         sp(c).edit().putString(KEY_MODEL_MODE, v).apply()
+    }
 
     fun speakerName(c: Context): String = sp(c).getString(KEY_SPEAKER, "") ?: ""
     fun setSpeakerName(c: Context, v: String) =

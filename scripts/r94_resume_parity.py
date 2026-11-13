@@ -92,10 +92,10 @@ def main():
     w5["mode_stamp.txt"] = expected_mode(BASE)
     cases.append(case("旧版 voice 指纹：升级不误删", w5, dict(BASE), 3, None))
 
-    w6 = dict(W); w6["chunk_0002.wav"] = 30; w6["ann_0001.json"] = 120
+    w6 = dict(W); w6["chunk_0002.wav"] = 30; w6["segmap.json"] = 120
     w6["voice_stamp.txt"] = expected_voice(BASE)
     w6["mode_stamp.txt"] = expected_mode(BASE)
-    cases.append(case("坏 WAV + 分段文件：只数 2", w6, dict(BASE), 3, None))
+    cases.append(case("坏 WAV + 段表：只数 2", w6, dict(BASE), 3, None))
 
     wA = dict(W); wA["voice_stamp.txt"] = expected_voice(BASE)
     wA["mode_stamp.txt"] = expected_mode(BASE)

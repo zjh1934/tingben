@@ -87,11 +87,24 @@ def check(f):
     for k in ['val c = appCtx',
               'val byCh = LinkedHashMap<Int, MutableList<File>>()',
               "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,",
-              "gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)",
+              "gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = false)",
               'val merged = if (c != null)',
               "AudioLibrary.bookDir(c, book.id, book.title).absolutePath",
               'chapters=$totalMade immediate=$chaptersMade late=${merged.first}']:
         if k not in pr: e.append("R272 收尾按章拼缺: " + k[:56])
+    # R330 · 收尾不许绕过自动开关强制拼章：关掉开关是用户要留着小块先重做，
+    # 再亲手点目录页的「拼接并转码」，收尾偷拼会把手动入口变成摆设。
+    if "force = true)" in pr:
+        e.append("R330 收尾绕过自动开关强拼回潮")
+    # R330 · 手动「拼接并转码」：章名下一行 / 小块格子上一行；有坏块没重做完、
+    # 还在制作中、或没小块时都不许拼；点下去复用同一条拼章→转码→校验链。
+    for k in ["@Composable\nprivate fun MergeChapterBar(",
+              'item(key = "merge_bar_${r.index}")',
+              'label = if (hasDone) "重新拼接并转码" else "拼接并转码"',
+              "val canMerge = readyHere > 0 && redoHere == 0 && !busyHere",
+              "r.index, parts,",
+              "AudioOps.mergeChapter(c, book.id, book.title,"]:
+        if k not in f["hub"]: e.append("R330 手动拼接并转码缺: " + k[:56])
     for k in ["WavMerger.merge(wavs, outFile, config.gapMs)",
               "AudioLibrary.bookWholeFile(", "AudioLibrary.scopeFile(",
               "AudioLibrary.dropWholeBook(", '"AUDIO_REGISTER"',
@@ -217,7 +230,12 @@ def selftest():
         # 换成摘掉「先写章状态」与「失败保留」两处真约束。
         ("清小块没写章状态", "ops", "AudioTree.markDone(it, chapter, enc.file)", ""),
         ("章状态失败没兜底", "ops", "if (!marked) {", "if (false) {"),
-        ("收尾不强制拼章", "producer", "force = true)", "force = false)"),
+        ("收尾绕过开关强拼", "producer", "force = false)", "force = true)"),
+        ("手动拼章按钮被摘", "hub", 'item(key = "merge_bar_${r.index}")', ""),
+        ("坏块没重做完仍可拼", "hub",
+         "val canMerge = readyHere > 0 && redoHere == 0 && !busyHere",
+         "val canMerge = readyHere > 0"),
+        ("手动拼章没走拼章链路", "hub", "r.index, parts,", ""),
         ("按章拼调用被摘", "producer",
          "AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,", ""),
         ("回溯补齐被摘", "hub",

@@ -56,21 +56,26 @@ import kotlinx.coroutines.Job
 import java.io.File
 
 // @ui-part: LibraryUi
+/**
+ * R328 · 这里只是抽屉里的一份书单，不再是「书架页」。
+ * 主页早就改成输入框（Screen.LIBRARY 渲染 InputReadScreen），独立书架页
+ * 以及那套 compact 开关全撤了：原来 compact 恒为 true，导入失败提示、
+ * 空态槽位、当前书高亮全被 !compact 挡在死分支里，真机上根本看不到。
+ */
 @Composable
 internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
-                           onModels: () -> Unit, onImportBook: () -> Unit,
+                           onImportBook: () -> Unit,
                            onChanged: () -> Unit,
+                           currentId: String? = null,
                            importError: String? = null,
-                           onDismissImportError: () -> Unit = {},
-                           compact: Boolean = false,
-                           currentId: String? = null) {
+                           onDismissImportError: () -> Unit = {}) {
     val books = remember(refresh) { BookStore.list(c) }
     var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }
-    // H1 · 书架上的进度条：一眼看出这本书合成到哪了。
+    // H1 · 书单上的进度条：一眼看出这本书合成到哪了。
     // 用户实证「统计字数和本地离线对用户没有任何价值」→ 换成真实进度。
     // 章节表已落盘（R138 批次 B），resolve 命中后不再重扫整本；全部走 IO。
     var progress by remember { mutableStateOf(emptyMap<String, Pair<Int, Int>>()) }
-    // R298 · 抽屉书名下的进度条跟着制作实时动：原来只在 refresh / books 变化时
+    // R298 · 书名下的进度条跟着制作实时动：原来只在 refresh / books 变化时
     // 按「已做好的章数」算一次，制作中每完成一段都不重算，看着像卡住不动。
     val prodState by Producer.state.collectAsState()
     val liveTask by Producer.resume.collectAsState()
@@ -169,8 +174,6 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
     ) {
-        // R178 · 书列表搬进抽屉（compact=true）后，原来这个 item 被 if (!compact)
-        // 挡掉，刷新入口整个消失。现在抽屉里也常显，配合 RefreshStrip 的下拉 + 点按。
         item(key = "head") {
             RefreshStrip(
                 onRefresh = onChanged,
@@ -180,7 +183,9 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             )
             Spacer(Modifier.height(6.dp))
         }
-        if (!compact && importError != null) {
+        // R328 · 原来这整块被 if (!compact) 挡着，导入失败后错误只在 Toast
+        // 里一闪而过，抽屉里永远看不到；现在跟着书单常显，能关也能重选一次。
+        if (importError != null) {
             item(key = "import-error") {
                 CardBox(Modifier.padding(bottom = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -201,12 +206,6 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
         }
 
         if (books.isNotEmpty()) {
-            if (!compact) {
-                item(key = "count") {
-                    Text("共 ${books.size} 本", fontSize = 12.sp, color = Sub)
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
             items(books, key = { it.id }) { b ->
                 val lastRead = lastReads[b.id]
                 val (done, total) = progress[b.id] ?: (0 to 0)
@@ -225,7 +224,7 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     // R320 · 图 47：抽屉里三本书长得一模一样，不知道当前开的是
                     // 哪一本。当前书顶部给一条主色横条，书名也转主色；不写
                     // 「正在看」这类字，进度条下面依旧只有一条跟着动的条。
-                    if (compact && currentId != null && b.id == currentId) {
+                    if (currentId != null && b.id == currentId) {
                         Box(Modifier.fillMaxWidth().height(3.dp)
                             .background(Primary, RoundedCornerShape(50)))
                         Spacer(Modifier.height(8.dp))
@@ -241,8 +240,8 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                                 }
                                 Text(b.title, fontWeight = FontWeight.Bold, fontSize = 16.sp,
                                     maxLines = 1,
-                                    color = if (compact && currentId != null &&
-                                        b.id == currentId) Primary else palette.text,
+                                    color = if (currentId != null && b.id == currentId)
+                                        Primary else palette.text,
                                     modifier = Modifier.weight(1f))
                             }
                             // 书名后面紧跟一条颜色条：已做好的章数 / 总章数。
@@ -272,11 +271,12 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     }
                 }
             }
-        } else if (!compact) {
+        } else {
             // R291 · 抽屉顶部已经有「＋ 导入一本书」那枚实心按钮，这里原来的
             // 「导入第一本 ›」是第二个入口，已删。R314 · 但整页留白让新装 /
             // 清干净后对着白屏不知道去哪，按主页片段空槽的样子补 3 个骨架：
             // 不写「还没有书」这类废话，也不再加任何导入按钮（顶部那枚是唯一入口）。
+            // R328 · 原来挂在 !compact 死分支上，抽屉里根本画不出来，现在常显。
             items(3, key = { "empty-slot-$it" }) {
                 Box(Modifier
                     .fillMaxWidth()
@@ -291,7 +291,7 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
 }
 
 /**
- * R176 · 粘贴 / 分享进来的文字原来一律叫「粘贴的文字」，书架里几本同名书
+ * R176 · 粘贴 / 分享进来的文字原来一律叫「粘贴的文字」，书单里几本同名书
  * 根本分不清。取首行前 18 字当书名；空文本退回旧名。不写说明、不加 label。
  */
 internal fun autoBookTitle(text: String, fallback: String): String {
@@ -300,4 +300,3 @@ internal fun autoBookTitle(text: String, fallback: String): String {
     val clean = line.replace(Regex("[\r\n\t]"), " ").trim()
     return if (clean.length <= 18) clean else clean.take(18) + "…"
 }
-

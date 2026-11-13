@@ -259,7 +259,7 @@ object AudioTree {
 
         return byBook.map { (bookId, chMap) ->
             val b = books[bookId]
-            val bookTitle = nameOf(o, bookKey(bookId)) ?: b?.title ?: "不在书架上的音频"
+            val bookTitle = nameOf(o, bookKey(bookId)) ?: b?.title ?: "未归属的音频"
             val chapters = chMap.toSortedMap().map { (ch, segs) ->
                 val ordered = segs.sortedWith(compareBy({ it.file.parentFile?.absolutePath ?: "" }, { it.file.name }))
                 val numbered = ordered.mapIndexed { i, s -> s.copy(seq = i + 1) }

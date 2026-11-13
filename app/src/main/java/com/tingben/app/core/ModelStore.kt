@@ -134,10 +134,32 @@ object ModelStore {
     fun modeFile(c: Context, m: Mode) = pickFor(c, m)
     fun modeFiles(c: Context): Map<Mode, File?> = Mode.values().associateWith { pickFor(c, it) }
     fun installedModes(c: Context): List<Mode> = Mode.values().filter { pickFor(c, it) != null }
-    fun currentMode(c: Context): Mode =
-        Mode.values().firstOrNull { it.id == Prefs.modelMode(c) } ?: Mode.VOICE_DESIGN
+    @Volatile private var lastBadModeRaw: String? = null
 
-    fun talker(c: Context): File? = pickFor(c, currentMode(c)) ?: pickFor(c, Mode.VOICE_DESIGN)
+    /**
+     * R327 · 设置值非法 / 旧版本残留时兜回第一种，是「模式看着自己回退」的
+     * 唯一自动路径。以前完全静默，事后查不到原因；现在按进程内去重记一条
+     * WARN（主循环每跑一段都会调这个函数，绝不能刷屏）。
+     */
+    fun currentMode(c: Context): Mode {
+        val raw = Prefs.modelMode(c)
+        val hit = Mode.values().firstOrNull { it.id == raw }
+        if (hit != null) return hit
+        synchronized(this) {
+            if (lastBadModeRaw != raw) {
+                lastBadModeRaw = raw
+                EventLog.log(EventLog.Kind.MODEL, "MODEL_MODE_FALLBACK",
+                    "设置里的模式值不认识，已兜回「描述造音色」 · raw=${EventLog.safe(raw)}",
+                    level = EventLog.Level.WARN)
+            }
+        }
+        return Mode.VOICE_DESIGN
+    }
+
+    // R327 · 原来当前模式缺主文件会静默退回模式一的主文件：界面仍显示当前
+    // 模式、参数也按当前模式喂，绕过缺件守卫的调用方就会拿错模型出声。
+    // 只给当前模式的文件，没有就 null，由调用方按 synthesisBlockReason 判。
+    fun talker(c: Context): File? = pickFor(c, currentMode(c))
     fun tokenizer(c: Context) = pick(c, TOKENIZER, "tokenizer", "12hz")
 
     fun synthesisBlockReason(c: Context): String? {
@@ -146,8 +168,14 @@ object ModelStore {
         if (tokenizer(c) == null)
             return "共用底座（12Hz）还没导入。到「模型」页导入再合成。"
         val m = currentMode(c)
-        if (modeFile(c, m) == null)
-            return "「${m.label}」的模式主文件还没导入。到「模型」页导入，或切回「描述造音色」。"
+        if (modeFile(c, m) == null) {
+            // R327 · 三种模式本来就能各自合成，这句旧文案会哄着用户手动切回
+            // 模式一，看起来就像「模式自己回退了」。按真实口径给两条路：
+            // 补齐这一份，或换到任意一个已装好的模式。
+            val other = installedModes(c).firstOrNull()?.label
+            return "「${m.label}」的模式主文件还没导入。到「模型」页导入这一份" +
+                (if (other != null) "，或换用已装好的「$other」。" else "。")
+        }
         return when (m) {
             Mode.VOICE_DESIGN -> null
             Mode.CUSTOM_VOICE -> {

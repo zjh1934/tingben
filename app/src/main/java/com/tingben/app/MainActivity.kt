@@ -385,7 +385,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         }
                         Toast.makeText(ctx,
                             if (added != null) "已加入书架：${r.title}（${r.kind}）"
-                            else "这本书没加进来，去书架看看",
+                            else "这本书没加进来，打开左边抽屉再导入一次",
                             Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -528,9 +528,9 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     refresh++
                     val left = ModelStore.missing(ctx)
                     if (left.isEmpty()) {
-                        // R148 · 用户实证：刚导完模型就被拽回书架，手里的页面和按钮全变了。
-                        // 留在模型页，把「齐了」当成本页状态，去书架交给用户自己点。
-                        Toast.makeText(ctx, "模型都齐了，回书架导入一本书就能开始", Toast.LENGTH_LONG).show()
+                        // R148 · 用户实证：刚导完模型就被拽回主页，手里的页面和按钮全变了。
+                        // 留在模型页，把「齐了」当成本页状态，导入交给用户自己点。
+                        Toast.makeText(ctx, "模型都齐了，在左边抽屉导入一本书就能开始", Toast.LENGTH_LONG).show()
                     } else {
                         val leftText = left.joinToString("、")
                         Toast.makeText(ctx, "已导入，还差 ${left.size} 个：$leftText",
@@ -636,16 +636,15 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 primary = Primary,
                 sub = Sub
             ) {
-                // R162 · 书架页没有消失，只是搬进抽屉：进度色条、置顶、删除一个不少。
+                // R328 · 抽屉里只挂书单，独立书架页和 compact 开关都撤了：
+                // 进度条、置顶、删除一个不少，导入失败提示与空态也真正生效。
                 LibraryScreen(ctx, refresh,
-                    compact = true,
                     currentId = bookId,
                     onOpen = { id ->
                         bookId = id
                         nav.push(Screen.CHAPTERS)
                         scope.launch { drawerState.close() }
                     },
-                    onModels = { modelsFrom = Screen.LIBRARY; nav.push(Screen.MODELS) },
                     onImportBook = { openBookPicker() },
                     onChanged = { refresh++ },
                     importError = bookImportError,

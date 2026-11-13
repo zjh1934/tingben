@@ -287,7 +287,7 @@ object Producer {
             return why
         }
         val book = BookStore.list(c).find { it.id == t.bookId }
-            ?: return "这本书已从书架删掉，没法续跑"
+            ?: return "这本书已从抽屉删掉，没法续跑"
         start(c, book, t.only, true, t.think, t.config)
         if (lastStartError != null) return lastStartError
         EventLog.log(EventLog.Kind.PIPELINE, "TASK_AUTO_RESUME",
@@ -822,6 +822,14 @@ object Producer {
             if (ci in mergedThisRun || cancelRequested || spaceStopped) return
             if (chapterRedoLeft(ci)) { deferredChapters.add(ci); return }
             val app = appCtx
+            // R330 · 用户口径：听着不对的小块要能先重做，再亲手点「拼接并转码」。
+            // 拼了就清小块、旧声音会被固化进成品，坏块再改只能整章重来。
+            // 所以关掉「自动拼成整章」后章边界不再抢着拼，小块原样留着；
+            // 开关开时行为不变：这一章小块做完立刻拼成这一章音频、接着做下一章。
+            if (app == null || !Prefs.autoMergeChapter(app)) {
+                deferredChapters.add(ci)
+                return
+            }
             val already = doneChapterFiles[ci]?.let { it.isFile && it.length() > 44 } == true ||
                 (app != null && AudioLibrary.hasChapterAudio(app, book.id, ci))
             if (already) {
@@ -844,11 +852,14 @@ object Producer {
                     "ch=${ci + 1} · 有段还没好，先留着小块等收尾补")
                 return
             }
-            // 拼好即清标记：这一章已合成，就没有「小块重做」这回事了
-            chapterSegIndices[ci].orEmpty().forEach { j -> SegPlan.clearRedo(work, "seg:$j") }
+            // R329 · 清标记必须等拼章真的成功：拼接 / 登记 / 章状态任一步
+            // 失败都会保留小块，提前清掉等于把「这段要重做」的证据抹了，
+            // 旧声音会被下次补拼固化进成品，再也修不回来。
             val r = AudioOps.mergeChapterAuto(app, book.id, book.title, ci, parts,
                 gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c))
             if (r.ok) {
+                // 拼好即清标记：这一章已合成，就没有「小块重做」这回事了
+                chapterSegIndices[ci].orEmpty().forEach { j -> SegPlan.clearRedo(work, "seg:$j") }
                 mergedThisRun.add(ci); deferredChapters.remove(ci); chaptersMade++
                 emit("正在生成声音", at + 1, annotated.size, gateFails + synthFails,
                     "第 ${ci + 1} 章已拼好，接着做下一章",
@@ -1079,6 +1090,10 @@ object Producer {
                         EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_DONE",
                             "seg=${nextRedo + 1} · ${wj.length()} 字节")
                     } else {
+                        // R329 · 失败就不能算「已消化」：章边界靠 handledRedo
+                        // 判断还有没有重做没做完，留着它会把旧声音拼进章成品、
+                        // 连标记一起清掉，这段就永远改不回来了。
+                        handledRedo.remove(nextRedo)
                         // 失败保留旧 wav 与标记，不删能听的那一份
                         EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_FAIL",
                             "seg=${nextRedo + 1} code=$code 留待下次续跑")
@@ -1116,8 +1131,9 @@ object Producer {
             "正在把各章的小块拼成章音频…")
         // R272 · 用户口径：一本书拼成一份整本.wav 会把手机撑爆，不要整本大文件。
         // 唯一成品形态是「一章一个音频」：主循环已在每章边界 mergeChapterAuto
-        // 逐章拼好（R300），这里只补漏——边界没拼成的章才进 byCh，
-        // force=true 保证关掉「自动拼成整章」也必须出章成品。
+        // 逐章拼好（R300），这里只补漏——边界没拼成的章才进 byCh。
+        // R330 · 不再用 force=true 绕过开关：关掉「自动拼成整章」是用户主动要
+        // 留着小块先重做，收尾若偷偷拼掉，手动「拼接并转码」就没意义了。
         // 旧版已落在磁盘的整本.wav 不主动删、list() 仍兼容读取，只是不再新生成。
         val c = appCtx
         val byCh = LinkedHashMap<Int, MutableList<File>>()
@@ -1129,11 +1145,14 @@ object Producer {
             if (ci < 0) continue
             // R300 · 这章已在边界拼好并清了小块，收尾不再重复扫它
             if (ci in mergedThisRun) continue
+            // R329 · 还有小块重做没消化的章不补拼：留着标记与小块，
+            // 下次续跑重做完再拼，不让旧声音被固化进成品。
+            if (chapterRedoLeft(ci)) continue
             byCh.getOrPut(ci) { mutableListOf() }
                 .add(File(work, wavName))
         }
         val merged = if (c != null) AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,
-            gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)
+            gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = false)
         else 0 to 0
         // R300 · 章边界即时拼的 + 收尾补漏的，才是本次真正做出的章音频数
         val totalMade = chaptersMade + merged.first

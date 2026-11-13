@@ -450,7 +450,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 cfg = cfg.copy(gateRetries = it)
                 Prefs.setDefaultPerf(c, cfg)
             }
-            OptionRow("自动拼成整章", "一章的小块齐了就拼，验过才删内部 WAV",
+            OptionRow("自动拼成整章", "关掉后小块先留着，去目录页点「拼接并转码」",
                 listOf(true to "开", false to "关"), autoMerge) {
                 autoMerge = it
                 Prefs.setAutoMergeChapter(c, it)

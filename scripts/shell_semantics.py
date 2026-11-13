@@ -38,7 +38,7 @@ ANCHORS = {
         'title = ""',
         "onSettings = {",
         "TOP_SETTINGS",
-        "compact = true",
+        "LibraryScreen(ctx, refresh,",
         "asHome = true",
         'Screen.LIBRARY  -> ChromeSpec("",',
         "chapterMixerOpen = true",
@@ -61,6 +61,8 @@ BANNED = {
         'title = "我的书"',
         'Text("去书架 ›"',
         'EventLog.Kind.CRASH, "MIXER_TRIAL_FAIL"',
+        # R328 · 独立书架页的页面级 compact 开关不许回来
+        'compact = true',
     ],
 }
 
@@ -76,7 +78,7 @@ def nav_ids_present(chrome: str) -> bool:
 
 
 def drawer_is_booklist(main: str, chrome: str) -> bool:
-    return ('title = ""' in main and "compact = true" in main
+    return ('title = ""' in main and "LibraryScreen(ctx, refresh," in main
             and "internal fun AppDrawerSheet(" in chrome
             and not old_menu_items(chrome))
 
@@ -203,7 +205,10 @@ def injections():
          lambda t: t.replace('listOf(src.speaker, Prefs.speakerName(c))',
                              'listOf(src.speaker)')),
         ("抽屉丢了书列表", "main",
-         lambda t: t.replace('                    compact = true,', '                    compact = false,')),
+         lambda t: t.replace('LibraryScreen(ctx, refresh,', 'NoBookList(ctx, refresh,')),
+        ("页面级 compact 回潮", "main",
+         lambda t: t.replace('LibraryScreen(ctx, refresh,',
+                             'LibraryScreen(ctx, refresh,\n                    compact = true,')),
         ("调音台入口被摘", "main",
          lambda t: re.sub(r"onMixer\s*=\s*\{[^}]*\}",
                           "onMixer = { nav.push(Screen.SETTINGS) }", t)),

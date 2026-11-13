@@ -27,7 +27,9 @@ POS = [
     'var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }',
     'ReadingState.allLast(c)',
     'items(books, key = { it.id })',
-    'Text("共 ${books.size} 本"',
+    # R328 · 独立书架页撤掉，「共 N 本」总数行一起退役；
+    # 改守原来被 compact 挡死、现在恒显示的导入失败提示。
+    'if (importError != null) {',
     'onTap = { onOpen(b.id) }',            # R230 点书名开书、长按弹菜单
     'BookStore.pinned(c)',
     'Text("删除"',
@@ -45,6 +47,8 @@ BAN = [
     '上次读到 第 ${lastRead + 1} 章',
     # R291 · 抽屉里只留一枚导入入口，空态「导入第一本 ›」不许回来
     'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)',
+    # R328 · 抽屉书单不再写总数废话
+    'Text("共 ${books.size} 本"',
 ]
 KEEP = [
     'RefreshStrip(', 'BookStore.list(c)', 'ModelStore.missing(c)',

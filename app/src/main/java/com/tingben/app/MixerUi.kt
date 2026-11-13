@@ -306,6 +306,14 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
             Spacer(Modifier.height(12.dp))
 
             ModeTabs(mode, installed) { switchMode(it) }
+            // R326 · 模式是全局即时生效的（切一下就写进设置并一直用），
+            // 顶栏「保存设置」只存音色描述与参数、不含模式。写清楚免得用户
+            // 以为「没点保存＝模式没存」或「保存时把它改回第一种」。
+            // R327 · 压成短标签：口径不变（模式全局即时生效、保存设置不含模式），
+            // 不再摆一句 16 字以上的教程式长说明进界面。
+            Text("模式全局生效 · 保存设置不改模式",
+                fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(8.dp))
             if (mode.id !in installed) {
                 Text("「${mode.label}」未导入", fontSize = 12.sp, color = Warn)
                 Spacer(Modifier.height(8.dp))
@@ -410,26 +418,21 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                 Text("当前模式缺模型，去「模型」页导入。", fontSize = 12.sp, color = Warn)
             }
             Spacer(Modifier.height(14.dp))
-            if (mode == ModelStore.Mode.VOICE_DESIGN) {
-                Text("采样参数 · 9 项", fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold, color = palette.text)
-                Spacer(Modifier.height(6.dp))
-                ParamCatalog.SAMPLING.forEach { spec ->
-                    ParamLine(spec = spec, cur = spec.read(draft.knobs)) { s ->
-                        spec.withValue(draft.knobs, s)?.let { draft = draft.copy(knobs = it) }
-                    }
+            // R326 · 九项采样是全局参数（三种模式都原样传给引擎），原来只在
+            // 「描述造音色」里露出，另外两种模式给的是一枚「切过去调这九项」——
+            // 点一下就把全局模式改成第一种且不切回，看着像「模式自动回退」。
+            // 现在三种模式都能直接调，删掉那枚会改模式的入口。
+            Text("采样参数 · 9 项", fontSize = 12.sp,
+                fontWeight = FontWeight.Bold, color = palette.text)
+            Text("采样参数三种模式共用", fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(6.dp))
+            ParamCatalog.SAMPLING.forEach { spec ->
+                ParamLine(spec = spec, cur = spec.read(draft.knobs)) { s ->
+                    spec.withValue(draft.knobs, s)?.let { draft = draft.copy(knobs = it) }
                 }
-                TextButton(onClick = { draft = draft.copy(knobs = TtsKnobs()) }) {
-                    Text("全部恢复默认", fontSize = 12.sp, color = Sub)
-                }
-            } else {
-                // R317 · 原来这行「沿用全局设置」是句死话：九项采样只在
-                // 「描述造音色」里能调，不给入口等于断路。
-                Text("这九项跟着「描述造音色」走", fontSize = 12.sp,
-                    color = palette.text)
-                TextButton(onClick = { switchMode(ModelStore.Mode.VOICE_DESIGN) }) {
-                    Text("切过去调这九项 ›", fontSize = 12.sp, color = Primary)
-                }
+            }
+            TextButton(onClick = { draft = draft.copy(knobs = TtsKnobs()) }) {
+                Text("全部恢复默认", fontSize = 12.sp, color = Sub)
             }
 
             Spacer(Modifier.height(14.dp))

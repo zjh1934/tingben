@@ -294,9 +294,18 @@ internal fun ChapterHubScreen(
     // R266 · 重做标记单独轻量观察：只秒读 redo.json（几 KB），不重扫 2 万段。
     // 标记后转黄、Producer 清标记后转绿，都不必等整本做完或 stage 合并。
     var redoKeys by remember(book.id) { mutableStateOf(emptySet<String>()) }
+    // R330 · 哪些章还有可拼的音频小块（磁盘实存份数）：「拼接并转码」按钮
+    // 的显示与副行段数都读它。一次 AudioTree.load 扫完，不逐章 stat 2 万段。
+    var mergeReady by remember(book.id) { mutableStateOf<Map<Int, Int>>(emptyMap()) }
     // R297 · 批量标记放 IO，主线程只管界面反馈，勾几十段也不卡。
     val redoScope = rememberCoroutineScope()
     val pqSeg by PlayQueue.previewState.collectAsState()
+    LaunchedEffect(book.id, st.running, localTick, task?.bookId) {
+        mergeReady = withContext(Dispatchers.IO) {
+            AudioTree.load(c).firstOrNull { it.bookId == book.id }
+                ?.chapters?.associate { it.chapter to it.segments.size } ?: emptyMap()
+        }
+    }
     LaunchedEffect(book.id, st.running, localTick, task?.bookId, liveChapter) {
         hubByChapter = withContext(Dispatchers.IO) {
             val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
@@ -325,6 +334,9 @@ internal fun ChapterHubScreen(
                 t.phase == "stopped" || t.phase == "blocked" || t.phase == "reconfirm")
             if (hasAudio && !pendingPhase) return@withContext 0
             val (all, map) = Workbench.segments(c, t) to Workbench.segChapters(c, t)
+            // R329 · 只做选中章时工作目录是带 only 分桶的子目录，硬拼
+            // work/{bookId} 会指到别的桶甚至认错同名文件。
+            val w = Workbench.workDir(c, t)
             val drops = SegDrops.snapshot(c, book.id)
             val byCh = LinkedHashMap<Int, MutableList<File>>()
             for (sg in all) {
@@ -332,7 +344,7 @@ internal fun ChapterHubScreen(
                 if (ch < 0) continue
                 if (SegDrops.matches(drops, sg.wavName, sg.text.take(200))) continue
                 byCh.getOrPut(ch) { mutableListOf() }
-                    .add(sg.wav ?: File(c.filesDir, "work/${book.id}/${sg.wavName}"))
+                    .add(sg.wav ?: File(w ?: File(c.filesDir, "work/${book.id}"), sg.wavName))
             }
             AudioOps.ensureChapterAudios(c, book.id, book.title, byCh,
                 gapMs = Prefs.defaultPerf(c).gapMs,
@@ -347,8 +359,7 @@ internal fun ChapterHubScreen(
         if (ch == null) emptyList()
         else (liveSegs.takeIf { liveSegsFor == ch } ?: hubByChapter[ch] ?: emptyList())
             .map { sg ->
-                sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys ||
-                    "block:${sg.block}" in redoKeys)
+                sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)
             }
     }
     // R220 · 小段编号每章从 1 重新开始，不再接着前一章的一堆大数字。
@@ -462,7 +473,15 @@ internal fun ChapterHubScreen(
     fun filesOf(i: Int): Pair<List<File>, File?> {
         val ch = AudioTree.load(c).firstOrNull { it.bookId == book.id }
             ?.chapters?.firstOrNull { it.chapter == i }
-        val segs = ch?.segments?.map { it.file } ?: emptyList()
+        // R329 · 整本做过又单独重做过某章时，work 下会并存多个 only 分桶，
+        // AudioTree.load 会把各桶同章的小块全扫进来，手动「拼成整章」就
+        // 把两套声音拼一起。优先用当前任务的按章索引（只来自本次任务的
+        // segmap + seg_chapters），并现 stat 一遍，不拿到已删的旧块。
+        val cur = hubByChapter[i]?.mapNotNull {
+            it.wav?.takeIf { f -> f.isFile && f.length() > 44 }
+        }
+        val segs = if (!cur.isNullOrEmpty()) cur
+            else ch?.segments?.map { it.file } ?: emptyList()
         return segs to ch?.merged?.takeIf { it.isFile }
     }
     fun srcOf(i: Int): File? {
@@ -614,10 +633,13 @@ internal fun ChapterHubScreen(
         }
         // R270 · 只撤「已拼好的章」的旧成品；制作中的章没有成品，不走这条。
         invalidateChapterAudio(ch)
-        segsHere.forEach { SegPlan.markSeg(work, it.index) }
         // R266 · 制作中同样只标记，让主循环逐段回头重做；排整章任务进队列会等整本跑完。
         val busyHere = Producer.isBusy()
-        if (!busyHere) Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))
+        // R329 · 空闲时新任务按 only={ch} 落在另一个工作分桶，旧目录没有
+        // 小块可复用、本来就会整章重合成；往旧分桶写标记只会留下无人消费的
+        // 孤儿，目录页还会把它当成「永远在重做」。制作中才需要就地标记。
+        if (busyHere) segsHere.forEach { SegPlan.markSeg(work, it.index) }
+        else Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))
         EventLog.ui("CH_REDO", "ch=$ch n=${segsHere.size} running=$busyHere")
         localTick++
         Toast.makeText(c, if (busyHere)
@@ -773,6 +795,50 @@ internal fun ChapterHubScreen(
                             busyLabel = mergeBusy
                                 ?.takeIf { it.bookId == book.id && it.chapter == r.index }
                                 ?.phase)
+                    }
+                    // R330 · 「拼接并转码」常驻章名下一行、小块格子上一行。
+                    // 关掉「自动拼成整章」后小块不会被自动拼掉：先勾坏块重做，
+                    // 再点这一枚把这一章拼成 WAV → 转 M4A → 校验 → 删内部 WAV。
+                    val readyHere = mergeReady[r.index] ?: 0
+                    val hasDone = r.audio != null || r.playable
+                    if (readyHere > 0 || hasDone) {
+                        item(key = "merge_bar_${r.index}") {
+                            val redoHere = hubByChapter[r.index].orEmpty()
+                                .count { "seg:${it.index}" in redoKeys }
+                            val busyHere = st.running && r.index == liveChapter
+                            val canMerge = readyHere > 0 && redoHere == 0 && !busyHere
+                            val status = when {
+                                busyHere -> "这一章还在制作中，做完再拼"
+                                redoHere > 0 -> "还有 $redoHere 段待重做，先重做完再拼"
+                                readyHere == 0 -> "这一章还没有音频小块"
+                                else -> "$readyHere 段就绪"
+                            }
+                            MergeChapterBar(
+                                label = if (hasDone) "重新拼接并转码" else "拼接并转码",
+                                status = status, enabled = canMerge,
+                                onClick = {
+                                    redoScope.launch {
+                                        val parts = withContext(Dispatchers.IO) {
+                                            filesOf(r.index).first
+                                        }
+                                        if (parts.isEmpty()) {
+                                            Toast.makeText(c, "这一章还没有可拼的音频小块",
+                                                Toast.LENGTH_SHORT).show()
+                                            return@launch
+                                        }
+                                        val rr = withContext(Dispatchers.IO) {
+                                            AudioOps.mergeChapter(c, book.id, book.title,
+                                                r.index, parts,
+                                                gapMs = Prefs.defaultPerf(c).gapMs,
+                                                declickMs = Prefs.mergeDeclickMs(c))
+                                        }
+                                        Toast.makeText(c,
+                                            if (rr.ok) rr.reason.ifBlank { "已拼接并转码" }
+                                            else rr.reason, Toast.LENGTH_LONG).show()
+                                        localTick++
+                                    }
+                                })
+                        }
                     }
                     // R264 · 只给制作中的那一章生成小段区，恒定展开、无收起入口；
                     // 没在制作的章连 item 都不生成：不组合、不渲染、不计算。
@@ -1311,6 +1377,28 @@ private fun HeadphoneIcon(tint: Color) {
             3.dp.toPx(), StrokeCap.Round)
         drawLine(tint, Offset(w * 0.86f, h * 0.54f), Offset(w * 0.86f, h * 0.86f),
             3.dp.toPx(), StrokeCap.Round)
+    }
+}
+
+/** R330 · 章名下一行、小块格子上一行的手动「拼接并转码」按钮。
+ *  整行主按钮 + 一行真实状态；有坏块没重做完、还在制作中、或没小块时置灰，
+ *  不弹确认窗，也不静默把旧声音拼进成品。 */
+@Composable
+private fun MergeChapterBar(label: String, status: String,
+                            enabled: Boolean, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(HubSoft)
+        .padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Box(Modifier.fillMaxWidth().height(42.dp)
+            .background(if (enabled) HubPrimary else HubGrey.copy(alpha = 0.35f),
+                RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled) { onClick() },
+            contentAlignment = Alignment.Center) {
+            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                color = if (enabled) Color.White else HubSub)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(status, fontSize = 11.sp, maxLines = 1,
+            color = if (enabled) HubSub else HubWarn)
     }
 }
 

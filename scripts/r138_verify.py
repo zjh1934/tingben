@@ -75,7 +75,7 @@ POS = {
         "const val SPLIT_RULE = 3", "fun migrateSplit(c: Context, bookId: String): Boolean",
         "ChapterPlan.resolve(c, book)", "ChapterPlan.currentRuleId(c, t.bookId)",
         "rid == TocRules.LEGACY || rid == ChapterPlan.EPUB",
-        "SPLIT_MIGRATE", '"这本书已从书架删掉，没法续跑"',
+        "SPLIT_MIGRATE", '"这本书已从抽屉删掉，没法续跑"',
     ],
     "hub": [
         # I3 · 目录页一次读盘后复用 text，走 resolve 的带文本重载，

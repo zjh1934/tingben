@@ -306,7 +306,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                             Text("《${t.title}》 · ${modeText(t.modeId)}",
                                 fontSize = 12.sp, color = Sub)
                             if (t.bookId !in books) {
-                                Text("书已从书架删掉，成品仍在「我的音频」",
+                                Text("书已从抽屉删掉，成品还在",
                                     fontSize = 12.sp, color = Warn)
                             }
                             if (warn != null) Text(warn, fontSize = 12.sp, color = Warn)
@@ -336,7 +336,11 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                                             EventLog.ui("TASK_RESUME", "id=${t.bookId.take(8)}")
                                             onResume(t)
                                         }, enabled = t.phase != "reconfirm" && !Producer.isBusy()) {
-                                            Text("继续制作", fontSize = 12.sp, color = Primary)
+                                            // R327 · 点停止后还要等当前那一小段推理收尾，
+                                            // 这段时间按钮本来就禁用；写明在收尾，别让人
+                                            // 对着一个点不动的「继续制作」一脸懵。
+                                            Text(if (Producer.isStopping()) "正在收尾…" else "继续制作",
+                                                fontSize = 12.sp, color = Primary)
                                         }
                                     }
                                 }
@@ -415,7 +419,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
             title = { Text("删掉这条任务？", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Text("只删《${t.title}》这条任务记录，已做好的音频不会删；" +
-                    "书还在书架里，随时可以重新选章制作。",
+                    "书还在，随时可以重新选章制作。",
                     fontSize = 13.sp, color = Sub)
             },
             confirmButton = {

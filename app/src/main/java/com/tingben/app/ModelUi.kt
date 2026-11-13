@@ -315,8 +315,11 @@ internal fun ModelScreen(c: Context, refresh: Int,
             if (allReady) {
                 Text("4 份都在 · 当前是「${current.label}」", fontSize = 13.sp,
                     fontWeight = FontWeight.Bold)
-                Text(current.label + " 是当前模式。" + (if (current == ModelStore.Mode.VOICE_DESIGN)
-                    "可以合成音频了。" else "切回「描述造音色」后即可继续。"),
+                // R326 · 旧文案说「切回描述造音色后即可继续」，可三种模式本来就能
+                // 各自合成（缺什么由 synthesisBlockReason 判）。这句会诱导用户手动
+                // 切回第一种，看起来就像「模式自己回退了」。按真实口径写。
+                Text("当前是「" + current.label + "」，合成就用这一模式，不用切回；" +
+                    "缺音色或参考音频时按调音台提示补齐即可。",
                     fontSize = 11.sp, color = Sub)
                 if (current != ModelStore.Mode.VOICE_DESIGN) {
                     TextButton(onClick = {
@@ -325,7 +328,8 @@ internal fun ModelScreen(c: Context, refresh: Int,
                             onChanged()
                         }
                     }, enabled = !st.running) {
-                        Text("切回「描述造音色」 ›", fontSize = 11.sp, color = Primary)
+                        Text("改用「描述造音色」（会换掉当前模式） ›",
+                            fontSize = 11.sp, color = Primary)
                     }
                     if (st.running)
                         Text("正在制作，跑完前不能切", fontSize = 10.sp, color = Warn)
@@ -373,7 +377,7 @@ internal fun ModelScreen(c: Context, refresh: Int,
                     fontWeight = FontWeight.Bold) },
                 text = {
                     Text("会删掉本机 ${ModelStore.files(c).size} 个模型文件。" +
-                            "书架里的书、已做好的音频和分段缓存都不动；" +
+                            "抽屉里的书、已做好的音频和分段缓存都不动；" +
                             "卸载后要重新导入才能再合成。",
                         fontSize = 13.sp, color = Sub)
                 },

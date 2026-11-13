@@ -282,7 +282,7 @@ object TaskResume {
         if (t.stage in listOf("没完成", "出错了", "已停止"))
             return "上次没做完（${t.stage}），没自动续跑；在任务页点「继续制作」"
         val book = BookStore.list(c).find { it.id == t.bookId }
-            ?: return "这本书已从书架删掉，没法续跑"
+            ?: return "这本书已从抽屉删掉，没法续跑"
         if (t.splitRule != SPLIT_RULE) {
             // 先确保章节表存在：有成品/任务的老书会锁 legacy_v2，章号不变 → 安全迁移
             ChapterPlan.resolve(c, book)
@@ -334,7 +334,6 @@ object TaskResume {
             val (_, chunks) = ChapterPlan.resolve(c, book)
             val selected = if (t.only == null) chunks.size else chunks.count { it.chapter in t.only!! }
             val w = AnnCache.dirFor(c, t.bookId, t.only)
-            val ann = AnnCache.count(w)
             val wav = w.listFiles()?.count { f ->
                 f.isFile && (f.name.startsWith("chunk_") || f.name.startsWith("direct_")) &&
                         f.name.endsWith(".wav") && f.length() > 44
@@ -350,7 +349,9 @@ object TaskResume {
                     (0 until a.length()).count { a.optInt(it, -1) in doneMap }
                 } catch (_: Throwable) { 0 }
             }
-            val base = minOf(selected, if (wav > 0) maxOf(wav, ann) else ann)
+            // R328 · ann_*.json 是早期标注产物，写入侧早退场、恒为 0，
+            // 原来 maxOf(wav, ann) 里的 ann 纯属死逻辑，进度只按真实落盘 WAV 算。
+            val base = minOf(selected, wav)
             minOf(selected, base + covered)
         } catch (_: Throwable) { t.done }
     }

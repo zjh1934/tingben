@@ -72,7 +72,7 @@ MAIN = [
     "var adding by rememberSaveable",
     "Button(enabled = !adding",
     "text = \"\"   // 失败时正文原样留着，不丢用户输入",
-    '"这段已经在书架里了"',
+    '"这段已经导入过了"',
 ]
 MAIN_BAN = [
     'BookStore.add(c, "粘贴的文字", text',

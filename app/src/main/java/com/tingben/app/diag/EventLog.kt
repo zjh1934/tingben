@@ -347,8 +347,9 @@ object EventLog {
     @JvmStatic
     fun nativeNote(kind: String, action: String, detail: String) {
         val k = try { Kind.valueOf(kind) } catch (_: Throwable) { Kind.ENGINE }
-        val lv = if (action.startsWith("NATIVE_DECODE_STEP") || action.startsWith("NATIVE_PREFILL") ||
-            action.startsWith("ANN_WAIT")) Level.TRACE else Level.INFO
+        // R328 · ANN_WAIT 是早期「等语言模型标 JSON」时代留下的事件，早就不再产生。
+        val lv = if (action.startsWith("NATIVE_DECODE_STEP") || action.startsWith("NATIVE_PREFILL"))
+            Level.TRACE else Level.INFO
         log(k, action, detail, level = lv)
     }
 }

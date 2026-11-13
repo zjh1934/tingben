@@ -30,8 +30,6 @@ POS = {
         'item(key = "import-error") {',
         'if (books.isNotEmpty()) {',
         'private fun InputReadScreen(',
-        'item(key = "count") {',
-        'Text("共 ${books.size} 本"',
         'items(books, key = { it.id }) { b ->',
         # R291 · 空态不再画第二枚导入入口，empty item 与那行字一起退役
         'val lastRead = lastReads[b.id]',
@@ -55,7 +53,7 @@ KEEP = {
         'BookStore.list(c)', 'ModelStore.installedModes(c)', 'ModelStore.missing(c)',
         'RefreshStrip(', 'AlertDialog(', 'onOpen(b.id)', 'refresh++',
         'BookStore.add(c, autoBookTitle(snapshot,', # R176 自动标题；守恒的是「粘贴会建书」
-        'Text("共 ${books.size} 本"', 'private fun InputReadScreen(', '再选一次文件 ›',
+        'private fun InputReadScreen(', '再选一次文件 ›',
     ],
     "reading": [
         'reading_state.json',
@@ -132,12 +130,15 @@ def check(f):
             e.append('AlertDialog 又塞回列表 DSL 内')
         if body.find('LaunchedEffect(refresh, books)') > body.find('LazyColumn('):
             e.append('后台加载塞回列表 DSL 内')
-        if not (body.find('item(key = "head")') < body.find('item(key = "count")')
+        if not (body.find('item(key = "head")') < body.find('item(key = "import-error")')
                 < body.find('items(books, key = { it.id })')):
             e.append('item 顺序错乱')
-        # R291 · 抽屉顶部是唯一导入入口，空态 empty item 已退役：固定 3 个
-        if body.count('item(key = ') != 3:
-            e.append('固定 item 数不是 3')
+        # R328 · 独立书架页撤掉后「共 N 本」总数行也删了：抽屉书单只剩
+        # 刷新条 + 导入失败提示两个固定 item，空态骨架走 items(3)。
+        if body.count('item(key = ') != 2:
+            e.append('固定 item 数不是 2')
+        if 'Text("共 ${books.size} 本"' in body:
+            e.append('R328 回潮：抽屉书单又写总数废话')
         if 'item(key = "empty")' in body or 'Text("导入第一本 ›"' in body:
             e.append('R291 回潮：书架空态又冒出第二枚导入入口')
     return e
@@ -193,7 +194,11 @@ def selftest():
                               '        confirmDelete?.let { id -> AlertDialog(onDismissRequest = {}) }\n'
                               '        item(key = "head") {', 1)),
         ('头部顺序破坏', 'main',
-         lambda t: t.replace('item(key = "head")', 'item(key = "count")', 1)),
+         lambda t: t.replace('item(key = "head")', 'item(key = "headx")', 1)),
+        ('总数废话回潮', 'main',
+         lambda t: t.replace('        if (books.isNotEmpty()) {',
+                             '        Text("共 ${books.size} 本", fontSize = 12.sp, color = Sub)\n'
+                             '        if (books.isNotEmpty()) {', 1)),
         ('第二导入入口回潮', 'main',
          lambda t: t.replace('items(books, key = { it.id }) { b ->',
                              'item(key = "empty") { Text("导入第一本 ›", fontSize = 14.sp, color = Primary) }\n'

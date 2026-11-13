@@ -11,7 +11,7 @@ import java.security.MessageDigest
  * **旧套留一份副本归档，根目录的段原样认领为新套起点** —— 已做好的
  * 段与整章成品都不丢，点继续只把剩下的段按新参数合成（Producer 本来
  * 就跳过已有 wav）。切回用过的设置时，先把当前混合套归档、再从那套
- * 搬回，仍能精确还原。切分产物（ann_/segmap/章号索引/stamp）始终共享。
+ * 搬回，仍能精确还原。切分产物（segmap/章号索引/stamp）始终共享。
  *
  * 为什么不直接改文件名带 hash：现有工程到处是 `direct_%04d.wav` 与
  * `listFiles { it.isFile && endsWith(".wav") }` 的约定，改命名要动十几处，
@@ -28,7 +28,7 @@ object VoiceCache {
      *   chapter_done.json —— 整章另存后的成品索引（AudioTree.readDone），
      *     续跑时靠它跳过整章。留在根目录会让新音色复用旧音色成品 → 混音。
      *   redo.json —— 看台手动标记「这几段/块要重做」，同样是段级状态。
-     * segmap.json / chapters.json / seg_chapters.json / flag_* / ann_* 是
+     * segmap.json / chapters.json / seg_chapters.json / redo.json 是
      * 切分与章号索引，换音色不用重切，继续留根目录共享。
      */
     private val SIDECARS = listOf("chapter_done.json", "redo.json")

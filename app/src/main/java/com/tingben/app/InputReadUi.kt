@@ -368,7 +368,7 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                                     onAdded(added.id)
                                     Toast.makeText(c, "书加好了", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(c, "这段已经在书架里了",
+                                    Toast.makeText(c, "这段已经导入过了",
                                         Toast.LENGTH_SHORT).show()
                                 }
                             }

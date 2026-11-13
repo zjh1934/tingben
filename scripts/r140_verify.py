@@ -72,7 +72,10 @@ POS = {
         "分段计划没写进磁盘，看台会改用兜底推算",
         "删书时分段缓存没清干净",
     ],
-    "segplan": ["已按原文逐段朗读", "fun writeMap(work: File, segs: List<SegMeta>)"],
+        # R328 · 旧 Verdict.label（含「已按原文逐段朗读」）随无人调用的审计结论一起撤掉；
+    # 改守段表读写两条真锚，BAN 里那句旧缓存误判文案照旧拦回潮。
+    "segplan": ["fun readMap(work: File): List<SegMeta>?",
+                "fun writeMap(work: File, segs: List<SegMeta>)"],
     "workbench": ["val mapped = SegPlan.readMap(work)", "if (mapped != null)",
                  "(0..upTo)", "兜底"],
     "main": [

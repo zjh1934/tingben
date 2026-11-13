@@ -351,7 +351,7 @@ object AudioLibrary {
         return latest to playable
     }
 
-    /** R287 · 书架页原来每本书各扫一遍全盘算可播章数，改成一次 list() 分组统计。 */
+    /** R287 · 抽屉书单原来每本书各扫一遍全盘算可播章数，改成一次 list() 分组统计。 */
     fun playableCountByBook(c: Context): Map<String, Int> =
         list(c).filter { it.bookId != null && it.chaptersKnown }
             .groupBy { it.bookId!! }

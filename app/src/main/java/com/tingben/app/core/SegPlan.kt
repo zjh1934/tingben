@@ -21,44 +21,10 @@ object SegPlan {
 
     private const val MAP = "segmap.json"
     private const val REDO = "redo.json"
-    private const val FLAG = "flag_%04d.json"
 
     private fun atomic(f: File, s: String) {
         val ok = AtomicJson.write(f, s)
         lastWriteError = if (ok) null else "制作记录写入失败：" + f.name
-    }
-
-    fun writeFlags(work: File, block: Int, flags: List<Boolean>) {
-        try {
-            val a = JSONArray(); flags.forEach { a.put(it) }
-            atomic(File(work, FLAG.format(block)), a.toString())
-        } catch (_: Throwable) { }
-    }
-
-    fun readFlags(work: File, block: Int): List<Boolean>? {
-        val body = when (val r = AtomicJson.read(File(work, FLAG.format(block)))) {
-            is AtomicJson.Read.Ok -> r.text
-            else -> return null
-        }
-        return try {
-            val a = JSONArray(body)
-            (0 until a.length()).map { a.getBoolean(it) }
-        } catch (_: Throwable) { null }
-    }
-
-    private fun blockSrc(work: File, block: Int): Boolean? = try {
-        val f = File(work, "ann_%04d.src".format(block))
-        if (!f.exists()) null else when (f.readText().trim().uppercase()) {
-            "MODEL" -> true
-            "FILL" -> false
-            else -> null
-        }
-    } catch (_: Throwable) { null }
-
-    fun sourceOf(work: File, block: Int, ann: Int): Boolean? {
-        val fl = readFlags(work, block)
-        if (fl != null) return fl.getOrNull(ann)
-        return blockSrc(work, block)
     }
 
     fun writeMap(work: File, segs: List<SegMeta>) {
@@ -104,7 +70,10 @@ object SegPlan {
         }
         try {
             val a = JSONArray(body)
-            (0 until a.length()).map { a.getString(it) }.toMutableSet()
+            // R329 · 只认段级标记：早期「整块重做」写的 block:N 写入侧早退场，
+            // 旧 redo.json 里若还留着，谁也不会消费它，格子会永久转黄。
+            (0 until a.length()).map { a.getString(it) }
+                .filter { it.startsWith("seg:") }.toMutableSet()
         } catch (_: Throwable) { mutableSetOf() }
     }
 
@@ -122,55 +91,12 @@ object SegPlan {
         val r = readRedo(work); segs.forEach { r.add("seg:$it") }; writeRedo(work, r)
     }
 
-    fun markBlock(work: File, block: Int) = synchronized(redoLock) {
-        val r = readRedo(work); r.add("block:$block"); writeRedo(work, r)
-    }
-
     fun clearRedo(work: File, key: String) = synchronized(redoLock) {
         val r = readRedo(work); if (r.remove(key)) writeRedo(work, r)
     }
 
     fun pending(work: File): Set<String> = synchronized(redoLock) { readRedo(work) }
 
-    fun redoSynthesize(work: File, s: SegMeta): Boolean {
-        val w = File(work, s.wavName)
-        try { if (w.exists() && !w.delete()) return false } catch (_: Throwable) { return false }
-        markSeg(work, s.seg)
-        return true
-    }
-
-    fun redoBlock(work: File, block: Int, segs: List<SegMeta>): Int {
-        var killed = 0
-        segs.filter { it.block == block }.forEach { s ->
-            val w = File(work, s.wavName)
-            try { if (w.exists() && w.delete()) killed++ } catch (_: Throwable) { }
-        }
-        listOf("ann_%04d.json".format(block), "ann_%04d.src".format(block),
-            FLAG.format(block), "ann_%04d.json.part".format(block)).forEach { n ->
-            try { File(work, n).delete() } catch (_: Throwable) { }
-        }
-        markBlock(work, block)
-        return killed
-    }
-
-    data class Verdict(val model: Int, val fill: Int, val unknown: Int, val total: Int) {
-        val effective: Boolean get() = model > 0
-        val label: String
-            get() = when {
-                total == 0 -> "还没落盘，跑起来后这里会给出结论"
-                model == 0 && fill > 0 -> "文本处理没起作用：${fill} 段全是按原文直读"
-                // R140 · 软件已恒「原文照读」，segmap 里 fromModel 全 null 是常态，
-                // 不是数据损坏。别再显示「旧缓存 / 无法判定」这种误导文案。
-                model == 0 && unknown > 0 -> "已按原文逐段朗读 · ${unknown} 段"
-                model > 0 -> "文本处理已生效：${model}/${total} 段用了模型分段"
-                else -> "暂无数据"
-            }
-    }
-
-    fun verdict(segs: List<SegMeta>): Verdict = Verdict(
-        segs.count { it.fromModel == true },
-        segs.count { it.fromModel == false },
-        segs.count { it.fromModel == null },
-        segs.size
-    )
+    // R329 · 早期「整块重做 / 标注块」留下的 redoSynthesize / redoBlock /
+    // markBlock 全工程零调用，写入侧早已退场，连同 block: 标记一起清掉。
 }

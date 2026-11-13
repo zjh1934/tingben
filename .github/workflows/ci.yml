@@ -60,7 +60,7 @@ jobs:
       - name: R77 指纹迁移 8 组对拍
         run: python3 scripts/r77_stamp_migration.py
 
-      - name: R78 书架首屏重排验证（空态主卡 / 整卡可点 / 上次读到 / 守恒 / 反向注入）
+      - name: R78 抽屉书单验证（空态主卡 / 整卡可点 / 上次读到 / 守恒 / 反向注入）
         run: python3 scripts/r78_verify.py --selftest
 
 
@@ -89,7 +89,7 @@ jobs:
       - name: R96 阅读位置批量读对拍（8 组：逐本一致 / 读盘 1 次 / 共用 decode）
         run: python3 scripts/r96_read_parity.py
 
-      - name: R96 书架长列表验证（LazyColumn / 一次异步读 / 结构 / 反向注入 / 守恒）
+      - name: R96 抽屉书单长列表验证（LazyColumn / 一次异步读 / 结构 / 反向注入 / 守恒）
         run: python3 scripts/r96_verify.py --selftest
       - name: R98 调音台重写
         run: python3 scripts/r98_verify.py --selftest
@@ -171,7 +171,7 @@ jobs:
         run: python3 scripts/r150_verify.py --selftest
       - name: R151 收掉最后一张卡片验证（三入口落第二列 / 完整分段看台 / 删段闭环 / 反向注入）
         run: python3 scripts/r151_verify.py --selftest
-      - name: R152 三页重设计验证（书架精简+进度+置顶 / 模型页卸载 / 设置页排版 / 反向注入）
+      - name: R152 三页重设计验证（抽屉书单精简+进度+置顶 / 模型页卸载 / 设置页排版 / 反向注入）
         run: python3 scripts/r152_verify.py --selftest
       - name: R153 I批收口验证（调音台顺序 / 深色对比度 / 首章前文本只诊断不并入 / 反向注入）
         run: python3 scripts/r153_verify.py --selftest

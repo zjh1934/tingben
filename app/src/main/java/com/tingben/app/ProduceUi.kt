@@ -133,7 +133,7 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
     if (snapshot == null) {
         Column(Modifier.padding(16.dp)) {
             Text(loadError ?: "这本书不在了")
-            TextButton(onClick = onBack) { Text("返回书架") }
+            TextButton(onClick = onBack) { Text("返回") }
         }
         return
     }

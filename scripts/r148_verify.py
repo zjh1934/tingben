@@ -55,7 +55,7 @@ POS = {
         "var chapterMixerOpen by rememberSaveable",
         "onMixer = { chapterMixerOpen = true",
         "if (chapterMixerOpen) {", "MixerDialog(ctx, onClose = {",
-        "if (onClose == null) {", "模型都齐了，回书架导入一本书就能开始",
+        "if (onClose == null) {", "模型都齐了，在左边抽屉导入一本书就能开始",
     ],
     "ci": ["python3 scripts/r148_verify.py --selftest"],
 }
@@ -191,7 +191,7 @@ def selftest():
         ("切分代际被摘", "split", "const val SPLIT_EPOCH = 3", ""),
         ("站点清洗接线被摘", "pipe", "SiteNoise.clean(text)", "TextSplitter.split(text)"),
         ("站点清洗对象被摘", "noise", "object SiteNoise", "object Noise"),
-        ("模型导入又跳书架", "main", "模型都齐了，回书架导入一本书就能开始",
+        ("模型导入又跳书架", "main", "模型都齐了，在左边抽屉导入一本书就能开始",
          "screen = Screen.LIBRARY"),
         ("调音又跳独立页", "main", "onMixer = { chapterMixerOpen = true",
          "onMixer = { drawerReturn = Screen.CHAPTERS; nav.push(Screen.MIXER) }"),

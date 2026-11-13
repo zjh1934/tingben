@@ -4,11 +4,12 @@ import android.content.Context
 import java.io.File
 
 // @core-part: AnnCache
+/**
+ * R328 · 名字是历史遗留（早期标注缓存），现在它只负责工作目录。
+ * 旧 count() 数 ann_*.json，而这套 JSON 早就不再写入、恒为 0，
+ * hasProgress 里的 ann 分支和 realProgress 里的 maxOf(wav, ann) 都是死逻辑，撤掉。
+ */
 object AnnCache {
-
-    fun count(work: File): Int = try {
-        work.listFiles()?.count { it.isFile && it.name.startsWith("ann_") && it.name.endsWith(".json") } ?: 0
-    } catch (_: Throwable) { 0 }
 
     fun cleanup(work: File) {
         try { work.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() } }
@@ -27,13 +28,11 @@ object AnnCache {
 
     fun hasProgress(c: Context, bookId: String, only: Set<Int>?): Boolean {
         val w = File(c.filesDir, "work/${bookId}/${bucket(only)}")
-        val ann = count(w)
-        val wav = try {
-            w.listFiles()?.count { it.isFile &&
+        return try {
+            w.listFiles()?.any { it.isFile &&
                 (it.name.startsWith("chunk_") || it.name.startsWith("direct_")) &&
-                it.name.endsWith(".wav") && it.length() > 44 } ?: 0
-        } catch (_: Throwable) { 0 }
-        return ann > 0 || wav > 0
+                it.name.endsWith(".wav") && it.length() > 44 } == true
+        } catch (_: Throwable) { false }
     }
 
     // R148 · 这是 1.1.3 日志里两个毛病的同一个根因。选中章一多，
@@ -58,4 +57,3 @@ object AnnCache {
     fun dirFor(c: Context, bookId: String, only: Set<Int>?) =
         File(c.filesDir, "work/${bookId}/${bucket(only)}").apply { mkdirs() }
 }
-

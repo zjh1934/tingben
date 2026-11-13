@@ -344,9 +344,9 @@ object AudioOps {
                             byChapter: Map<Int, List<File>>,
                             gapMs: Int = 0, declickMs: Int = 30,
                             force: Boolean = false): Pair<Int, Int> {
-        // R272 · 收尾必须无条件拼章：整本大文件已不再生成，章成品是唯一成品形态，
-        // 拼好才清中间小块。开关只管「目录页回溯补齐」要不要自动做，
-        // 不能让一次正常制作跑完却一个可播文件都没有。
+        // R330 · 口径：开关开着时，章边界即时拼（R300），收尾只补边界漏网的章；
+        // 开关关着时，章边界与收尾都不拼，小块原样留着给用户先重做坏块，
+        // 再由目录页「拼接并转码」手动固化。force 只留给真正的强制补漏调用。
         if (!force && !Prefs.autoMergeChapter(c)) return 0 to 0
         var made = 0
         var skipped = 0
