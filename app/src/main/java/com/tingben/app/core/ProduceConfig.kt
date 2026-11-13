@@ -67,20 +67,6 @@ data class ProduceConfig(
         val RETRY_OPTIONS = listOf(0, 1, 2)
         val GAP_RANGE = 0..5000
         val RETRY_RANGE = 0..10
-        const val EXTRA_SEP = "｜"
-        val EXTRA_KEYS = listOf("朗读", "语速", "情绪")
-
-        fun packExtra(m: Map<String, String>): String = EXTRA_KEYS.mapNotNull { k ->
-            m[k]?.trim()?.takeIf { it.isNotEmpty() }?.let { "$k:$it" }
-        }.joinToString(EXTRA_SEP)
-
-        fun unpackExtra(s: String): Map<String, String> = s.split(EXTRA_SEP)
-            .mapNotNull { part ->
-                val i = part.indexOf(':')
-                if (i <= 0 || part.substring(0, i) !in EXTRA_KEYS) null
-                else part.substring(0, i) to part.substring(i + 1)
-            }.toMap()
-
         fun fromJson(o: JSONObject?): ProduceConfig {
             if (o == null) return ProduceConfig()
             fun <T : Enum<T>> pick(key: String, values: Array<T>, default: T): T {

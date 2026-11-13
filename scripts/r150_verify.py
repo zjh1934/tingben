@@ -44,7 +44,7 @@ POS = {
     "hub": [
         "val liveChapter: Int? = if (bookRunning) makingChapter else null",
         "var hubByChapter by remember(book.id)",
-        "val chapterSegs = remember(liveChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)",
+        "val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)",
         "val pqSeg by PlayQueue.previewState.collectAsState()",
         "Workbench.segments(c, t) to Workbench.segChapters(c, t)",
         "hubByChapter[ch] ?: emptyList()",
@@ -195,6 +195,8 @@ def selftest():
     assert not check(f), "基线自己就红了"
     logic_bad = len(logic_cases(f))
     cuts = [
+        ("R333 按展开章取段被摘", "hub",
+         "val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)", ""),
         ("制作章默认展开被摘", "hub",
          "val liveChapter: Int? = if (bookRunning) makingChapter else null", ""),
         ("一次读盘被摘", "hub", "var hubByChapter by remember(book.id)", ""),

@@ -186,6 +186,8 @@ object ChapterPlan {
      * 现在换表同时：任务标成「需重新确认」、队列项移除、work 下旧分段与
      * chapter_done / seg_chapters / chapters 索引一并作废（否则 direct_0000.wav
      * 会按段号复用成完全不同的内容）。成品整章音频不删，仍可听。
+     * R334 · 阅读位置也是按「章 index」落盘的，换规则后章号全变，旧位置会
+     * 把人送到完全不同的章；抽屉「读到第几章」同理。一并清掉，下次进书从头读。
      */
     private fun invalidateForResplit(c: Context, bookId: String) {
         try {
@@ -199,6 +201,13 @@ object ChapterPlan {
         } catch (t: Throwable) {
             EventLog.log(EventLog.Kind.MODEL, "RESPLIT_TASK_FAIL",
                 "任务作废失败 book=${bookId.take(8)} msg=${EventLog.safe(t.message ?: "")}")
+        }
+        try {
+            // R334 · 章节表换了，旧章 index 不再指同一段文字；留着阅读位置会跳错章。
+            ReadingState.remove(c, bookId)
+        } catch (t: Throwable) {
+            EventLog.log(EventLog.Kind.MODEL, "RESPLIT_READ_FAIL",
+                "阅读位置没清干净 book=${bookId.take(8)} msg=${EventLog.safe(t.message ?: "")}")
         }
         try {
             val work = File(c.filesDir, "work/$bookId")

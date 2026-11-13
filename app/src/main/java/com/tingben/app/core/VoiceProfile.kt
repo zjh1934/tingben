@@ -28,8 +28,6 @@ object VoiceProfile {
         return s.trim().removeSuffix("。").removeSuffix("，") to hits
     }
 
-    fun hasIdentityTerms(s: String): Boolean = IDENTITY_TERMS.any { s.contains(it) }
-
     private fun occurrences(s: String, sub: String): Int {
         var n = 0
         var i = s.indexOf(sub)
@@ -51,7 +49,4 @@ object VoiceProfile {
 
     fun build(global: String, roleStyle: String?, block: String): String =
         buildWithReport(global, roleStyle, block).first
-
-    fun identity(global: String, roleStyle: String?): String =
-        build(global, roleStyle, "").ifBlank { DEFAULT_IDENTITY }
 }

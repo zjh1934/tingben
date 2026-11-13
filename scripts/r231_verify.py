@@ -96,15 +96,30 @@ def check(f):
     # 再亲手点目录页的「拼接并转码」，收尾偷拼会把手动入口变成摆设。
     if "force = true)" in pr:
         e.append("R330 收尾绕过自动开关强拼回潮")
-    # R330 · 手动「拼接并转码」：章名下一行 / 小块格子上一行；有坏块没重做完、
-    # 还在制作中、或没小块时都不许拼；点下去复用同一条拼章→转码→校验链。
-    for k in ["@Composable\nprivate fun MergeChapterBar(",
-              'item(key = "merge_bar_${r.index}")',
-              'label = if (hasDone) "重新拼接并转码" else "拼接并转码"',
+    # R333 · 手动「拼接并转码」重做：收尾条移到这一章小块格子末尾、跟格子同一视觉块；
+    # 不再是章名下一行整行大蓝条，已完成章也不再常驻；坏块没重做完 / 制作中 /
+    # 没小块仍不许拼；点下去当场锁章防连点，复用同一条拼章→转码→校验链。
+    for k in ["@Composable\nprivate fun MergeChapterFooter(",
+              'item(key = "merge_footer_${r.index}")',
+              "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
+              "var mergingChapter by remember(book.id)",
               "val canMerge = readyHere > 0 && redoHere == 0 && !busyHere",
               "r.index, parts,",
               "AudioOps.mergeChapter(c, book.id, book.title,"]:
-        if k not in f["hub"]: e.append("R330 手动拼接并转码缺: " + k[:56])
+        if k not in f["hub"]: e.append("R333 手动拼接并转码收尾条缺: " + k[:56])
+    # R333 · 旧形态零回潮：这是换严，不是放宽。
+    for k in ["private fun MergeChapterBar(", 'item(key = "merge_bar_${r.index}")',
+              "Box(Modifier.fillMaxWidth().height(42.dp)"]:
+        if k in f["hub"]: e.append("R333 旧大蓝条回潮: " + k[:56])
+    # R335 · 两处手动拼章协程（收尾条 / 长按菜单）异常也必须解锁：
+    # 磁盘或转码抛异常时若不清 mergingChapter，这一章会永久转圈，
+    # 且 mergingChapter == null 的守卫会把别章的拼章入口一起锁死。
+    for tag in ["MERGE_MANUAL_FAIL", "MERGE_MENU_FAIL"]:
+        i = f["hub"].find(tag)
+        seg = f["hub"][max(0, i - 400):i + 700] if i >= 0 else ""
+        if i < 0 or "} catch (t: Throwable)" not in seg or "} finally {" not in seg \
+                or "mergingChapter = null" not in seg:
+            e.append("R335 " + tag + " 没在 finally 里解锁")
     for k in ["WavMerger.merge(wavs, outFile, config.gapMs)",
               "AudioLibrary.bookWholeFile(", "AudioLibrary.scopeFile(",
               "AudioLibrary.dropWholeBook(", '"AUDIO_REGISTER"',
@@ -231,7 +246,17 @@ def selftest():
         ("清小块没写章状态", "ops", "AudioTree.markDone(it, chapter, enc.file)", ""),
         ("章状态失败没兜底", "ops", "if (!marked) {", "if (false) {"),
         ("收尾绕过开关强拼", "producer", "force = false)", "force = true)"),
-        ("手动拼章按钮被摘", "hub", 'item(key = "merge_bar_${r.index}")', ""),
+        ("收尾条被摘", "hub", 'item(key = "merge_footer_${r.index}")', ""),
+        ("旧大蓝条回潮", "hub",
+         'item(key = "merge_footer_${r.index}")', 'item(key = "merge_bar_${r.index}")'),
+        ("防连点被摘", "hub", "var mergingChapter by remember(book.id)", ""),
+        ("R335 异常时没解锁", "hub",
+         "mergingChapter = null\n                                                localTick++",
+         "localTick++"),
+        ("R335 异常日志被摘", "hub", '"MERGE_MANUAL_FAIL"', '"MERGE_MANUAL_OK"'),
+        ("回看章被摘", "hub",
+         "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
+         "val shownChapter: Int? = liveChapter"),
         ("坏块没重做完仍可拼", "hub",
          "val canMerge = readyHere > 0 && redoHere == 0 && !busyHere",
          "val canMerge = readyHere > 0"),

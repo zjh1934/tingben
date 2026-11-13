@@ -53,7 +53,7 @@ POS = {
         "private fun SegGridHead(",
         "private fun ChapterSegGrid(",
         "val liveChapter: Int? = if (bookRunning) makingChapter else null",
-        "if (r.index == liveChapter) {",
+        "if (r.index == shownChapter) {",
         # ③ 阅读页可复制
         "SelectionContainer {",
         "SegGridHead(chapterSegs, segMulti",

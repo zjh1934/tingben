@@ -26,6 +26,12 @@ jobs:
         id: ver
         run: echo "v=$(cat version.txt)" >> "$GITHUB_OUTPUT"
 
+      # R337 · release-notes.md 是 CI 生成物（.gitignore 不进版本管理），但认知索引里
+      # 登记了这个对象。只在 main 生成时，rc 验证分支跑 aoci_check 正向会报
+      # 「索引对象不存在」而整批静态红。这里所有分支先生成一份，内容与 main 同源。
+      - name: 生成 Release 说明（所有分支，供治理自检）
+        run: python3 scripts/release_notes.py | tee release-notes.md > /dev/null
+
       - name: 源码完整性（防 selftest 注入残留）
         run: python3 scripts/source_integrity.py
       - name: 源码完整性反向注入

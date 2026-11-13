@@ -107,8 +107,6 @@ object EventLog {
         if (f != null && f.exists()) f.readText() else ""
     } catch (_: Throwable) { "" }
 
-    fun clearCrash() { try { crashFile?.delete() } catch (_: Throwable) { } }
-
     private fun appendCapped(f: File?, line: String, maxBytes: Long, keepLines: Int) {
         val t = f ?: return
         try {

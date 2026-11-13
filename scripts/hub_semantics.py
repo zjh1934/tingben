@@ -31,7 +31,9 @@ HUB_POS = [
     "private fun SegGridHead(",
     # R264 · 制作中的那一章自动展开，没有展开/收起状态与切换箭头
     "val liveChapter: Int? = if (bookRunning) makingChapter else null",
-    "if (r.index == liveChapter) {",
+    # R333 · 制作中显示制作章；停下后允许回看留着小块的一章，仍只展开一个章
+    "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
+    "if (r.index == shownChapter) {",
     "private fun ChapterSegGrid(",
     # 章行：默认点进阅读、长按进多选；R171 起常态只有听 / 展开两枚图标
     "onRead = { openReader(r.index) }",
@@ -48,7 +50,12 @@ HUB_POS = [
     # 勾选框只在多选态：ChapterRow 里 if (multi) 分支
     "SelectBox(checked = checked, tint = HubPrimary",
     # 章级操作（原第三列能力，删列不丢）
-    "AudioOps.mergeChapter(c, book.id, book.title, i, segs)",
+    # R334 · 收尾条与长按菜单两处拼章统一：坏块闸 / 忙态 / 连点锁 / IO，
+    # 不再绑死旧版「主线程直调」的那一串字面量。
+    "AudioOps.mergeChapter(c, book.id,",
+    "val pendingHere = hubByChapter[i].orEmpty()",
+    "mergingChapter = i",
+    "还有 $pendingHere 段待重做，先重做完再拼",
     "saveWav.launch(\"chapter.wav\")",
     "saveM4a.launch(\"chapter.m4a\")",
     "confirmChDel = selected.associateWith { filesOf(it) }",
@@ -216,6 +223,12 @@ def checks(hub: str, main: str = "") -> list:
 def injections():
     """供 r163 与各历史脚本复用的反向注入：[(名字, 改哪个文件, mutate)]。"""
     return [
+        ("R333 单一展开章被摘", "hub",
+         lambda t: t.replace("if (r.index == shownChapter) {",
+                             "if (r.index == liveChapter) {")),
+        ("R333 回看章状态被摘", "hub",
+         lambda t: t.replace("val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
+                             "val shownChapter: Int? = liveChapter")),
         ("三列分页回潮", "hub",
          lambda t: t.replace("internal fun ChapterHubScreen(",
                              "private val HubTitles = listOf(\"章节\", \"合成\", \"可播\")\n"
@@ -236,8 +249,13 @@ def injections():
         ("章级转 M4A 丢失", "hub",
          lambda t: t.replace('saveM4a.launch("chapter.m4a")', '// lost')),
         ("章级拼整章丢失", "hub",
-         lambda t: t.replace("AudioOps.mergeChapter(c, book.id, book.title, i, segs)",
-                             "AudioOps.deleteAll(emptyList())")),
+         lambda t: t.replace("AudioOps.mergeChapter(c, book.id,",
+                             "AudioOps.deleteAll(emptyList()) //")),
+        ("R334 拼章坏块闸被摘", "hub",
+         lambda t: t.replace("val pendingHere = hubByChapter[i].orEmpty()",
+                             "val pendingHere = 0")),
+        ("R334 拼章连点锁被摘", "hub",
+         lambda t: t.replace("mergingChapter = i", "// no lock")),
         ("格子不再整块居中", "hub",
          lambda t: t.replace("contentAlignment = Alignment.Center",
                              "contentAlignment = Alignment.TopStart")),

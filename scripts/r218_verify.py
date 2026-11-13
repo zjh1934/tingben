@@ -73,7 +73,7 @@ def check(f):
               "LinearProgressIndicator(progress = { chapterPctNow }",
               "modifier = Modifier.fillMaxWidth().height(18.dp),",
               'item(key = "seg_head_${r.index}")',
-              "if (r.index == liveChapter) {",
+              "if (r.index == shownChapter) {",
               "items(chapterSegs.chunked(SEG_GRID_COLUMNS),"]:
         if k not in hb: e.append("进度/展开缺: " + k[:60])
     for k in ['"本章 ${segs.size} 小段"', "小段已生成", "还没有小段",
@@ -114,7 +114,7 @@ def selftest():
         ("点章名又进阅读", "hub", "onRead = { openReader(r.index) }",
          "onTap = { openReader(r.index) }"),
         ("本章进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
-        ("制作章恒定展开被摘", "hub", "if (r.index == liveChapter) {", ""),
+        ("制作章恒定展开被摘", "hub", "if (r.index == shownChapter) {", ""),
         ("展开收起态回潮", "hub",
          "val liveChapter: Int? = if (bookRunning) makingChapter else null",
          "var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }"),

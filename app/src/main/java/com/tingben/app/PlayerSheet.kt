@@ -120,8 +120,12 @@ private fun ModeChip(ord: Int, label: String, onClick: () -> Unit) {
  * 砍掉睡眠定时与 ±15/30s 跳转；快进快退的位置换成播放模式三态按钮；
  * 播放列表从顶栏挪到右下角，显示的是「当前播放的音频列表」而不是整本书的章节表。
  *
- * R319 · pullFraction 由外层按 sheetY 实时给：下滑时进度/倍速/控制/列表胶囊先淡出，
- * 半收起态只剩封面与标题，不再整层平移叠成一团；列表展开时控制行压成细条。
+ * R319 · 下滑收起时进度/倍速/控制/列表胶囊先淡出，半收起态只剩封面与标题，
+ * 不再整层平移叠成一团；列表展开时控制行压成细条。
+ *
+ * R332 · pullFraction 只认「从展开态往下拉收起」这一路，点开 / 上扒进入时恒 0：
+ * 展开过程控件全程可见，不再先漏一片透明再突然全亮。顶部补一条收起把手，
+ * 与常驻条顶部那条上扒把手同款、方向各异，两态不再抢同一块位置。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,6 +158,8 @@ internal fun PlayerSheet(
     val frac = if (dur > 0) (st.positionMs.toFloat() / dur.toFloat()).coerceIn(0f, 1f) else 0f
     val left = (dur - st.positionMs).coerceAtLeast(0L)
     val chrome = chromeAlpha(pullFraction)
+    // R332 · 下拉收起时把手一直可见，拖起来变色变长；这层不跟着 chrome 淡出。
+    var dragging by remember { mutableStateOf(false) }
     // R319 · 列表展开时主控制行让位，不再占掉半屏。
     val barPad = if (showList) 2.dp else 10.dp
     val playSize = if (showList) 44.dp else 62.dp
@@ -163,9 +169,9 @@ internal fun PlayerSheet(
         .pointerInput(Unit) {
             var acc = 0f
             detectVerticalDragGestures(
-                onDragStart = { acc = 0f },
-                onDragEnd = { onPullSettle() },
-                onDragCancel = { onPullSettle() },
+                onDragStart = { acc = 0f; dragging = true },
+                onDragEnd = { dragging = false; onPullSettle() },
+                onDragCancel = { dragging = false; onPullSettle() },
                 // 正负都传，手指往回带时页面也跟着回，位移由外层夹在 [0, 屏高]
                 onVerticalDrag = { _, dy ->
                     acc = (acc + dy).coerceAtLeast(0f)
@@ -173,6 +179,14 @@ internal fun PlayerSheet(
                 }
             )
         }) {
+        // R332 · 收起把手：和常驻条顶部那条上扒把手同款，展开态从这一带往下拉就收起；
+        // 上下两态各有一条、方向各异，不再让「小横条」和上扒位置互相打架。
+        Box(Modifier.fillMaxWidth().height(20.dp),
+            contentAlignment = Alignment.Center) {
+            Box(Modifier.width(if (dragging) 48.dp else 36.dp).height(4.dp)
+                .background(if (dragging) palette.primary else palette.primary.copy(alpha = 0.35f),
+                    RoundedCornerShape(50)))
+        }
 
         Row(Modifier.fillMaxWidth().alpha(chrome)
             .padding(horizontal = 8.dp, vertical = 8.dp),

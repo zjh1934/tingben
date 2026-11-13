@@ -195,7 +195,11 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         LocalConfiguration.current.screenHeightDp.dp.toPx()
     }
     val sheetY = remember(sheetH) { Animatable(sheetH) }
+    // R332 · 只有「从展开态往下拖收起」才让控件按位移淡出；点开 / 上扒进入时控件全程可见。
+    // 旧写法把 sheetY 直接当淡出比例，上扒刚起手页面是整片透明的，到位才「啪」地全亮。
+    var sheetDismissing by remember { mutableStateOf(false) }
     fun hidePlayer() {
+        sheetDismissing = false
         scope.launch {
             sheetY.animateTo(sheetH, tween(180))
             playerOpen = false
@@ -771,19 +775,26 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         }
 
         MiniPlayBar(ctx, miniBook,
-            onExpand = { playerOpen = true; EventLog.ui("OVERLAY_PLAYER", "open")
+            onExpand = { playerOpen = true; sheetDismissing = false;
+                EventLog.ui("OVERLAY_PLAYER", "open")
                 scope.launch { sheetY.snapTo(sheetH); sheetY.animateTo(0f, tween(220)) } },
             onGoBook = { id ->
                 bookId = id
                 nav.push(Screen.CHAPTERS)
             },
-            onPullUp = { px ->
+            onPullUp = { pull ->
                 if (!playerOpen) playerOpen = true
-                scope.launch { sheetY.snapTo((sheetH - px).coerceIn(0f, sheetH)) }
+                sheetDismissing = false
+                // R332 · 行程按「小条往上带一小段」算，不再拿整屏高当行程：
+                // 旧写法扒 100px 只把整页抬 100px，松手却要过半屏才肯展开，几乎每次都弹回去。
+                val range = sheetH * 0.28f
+                val progress = (pull / range).coerceIn(0f, 1f)
+                scope.launch { sheetY.snapTo(sheetH * (1f - progress)) }
             },
             onPullEnd = {
                 scope.launch {
-                    if (sheetY.value < sheetH * 0.5f) sheetY.animateTo(0f, tween(180))
+                    // 扒过 28% 行程就补一段弹簧到展开位；净位移退回 0 则弹回收起。
+                    if (sheetY.value < sheetH * 0.72f) sheetY.animateTo(0f, spring())
                     else { sheetY.animateTo(sheetH, tween(180)); playerOpen = false }
                 }
             })
@@ -795,15 +806,16 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             Box(Modifier.fillMaxSize()
                 .offset { IntOffset(0, sheetY.value.roundToInt()) }) {
                 PlayerSheet(ctx, miniBook ?: bookId,
-                    // R319 · 读 Animatable.value 会随每帧订阅重组，
-                    // 下滑时页面控件按这个比例淡出，不再整层平移叠成一团。
-                    pullFraction = (sheetY.value / sheetH).coerceIn(0f, 1f),
+                    // R332 · 淡出只认「从展开态往下拖收起」这一路；点开 / 上扒进入时恒 0，
+                    // 控件全程可见，不再先漏一片透明再突然全亮。
+                    pullFraction = if (sheetDismissing) (sheetY.value / sheetH).coerceIn(0f, 1f) else 0f,
                     onClose = { hidePlayer() },
                     onGoBook = { id ->
                         bookId = id
                         nav.push(Screen.CHAPTERS)
                     },
                     onPullDown = { px ->
+                        sheetDismissing = true
                         scope.launch { sheetY.snapTo(px.coerceIn(0f, sheetH)) }
                     },
                     onPullSettle = {
@@ -811,8 +823,12 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                             if (sheetY.value > sheetH * 0.35f) {
                                 sheetY.animateTo(sheetH, tween(180))
                                 playerOpen = false
+                                sheetDismissing = false
                                 EventLog.ui("OVERLAY_PLAYER", "close:drag")
-                            } else sheetY.animateTo(0f, spring())
+                            } else {
+                                sheetY.animateTo(0f, spring())
+                                sheetDismissing = false
+                            }
                         }
                     })
             }

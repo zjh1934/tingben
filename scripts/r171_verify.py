@@ -39,7 +39,11 @@ HUB_MUST = [
     "R315 · 目录页就地任务浮窗整段撤掉",
     "队列 ${queued.size} · 去任务页看",
     "val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }",
-    "AudioOps.mergeChapter(c, book.id, book.title, i, segs)",
+    # R334 · 收尾条 / 长按菜单两处拼章统一坏块闸 + 连点锁 + IO，
+    # 不再绑死旧版主线程直调的那串字面量。
+    "AudioOps.mergeChapter(c, book.id,",
+    "val pendingHere = hubByChapter[i].orEmpty()",
+    "mergingChapter = i",
     "if (queued.isNotEmpty()) {",
     # R243 · 「继续队列」按钮三处全砍，底层 resumeQueue 仍在 Producer。
     # 这里改判「队列数据同源」，按钮回潮由 HUB_BAN 拦，不放宽能力判据。
@@ -158,6 +162,10 @@ def selftest():
             'PermEntryRow(UiIcon.SETTINGS, "应用详情", "系统设置")', 'PermRow("应用详情", true, "系统设置")')),
         ("CI 漏挂", "ci", lambda t: t.replace(
             "python3 scripts/r171_verify.py --selftest", "")),
+        ("R334 拼章坏块闸被摘", "hub", lambda t: t.replace(
+            "val pendingHere = hubByChapter[i].orEmpty()", "val pendingHere = 0")),
+        ("R334 拼章连点锁被摘", "hub", lambda t: t.replace(
+            "mergingChapter = i", "// no lock")),
     ]
     bad = 0
     for name, key, mut in cases:

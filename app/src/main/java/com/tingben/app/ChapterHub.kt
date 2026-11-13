@@ -294,9 +294,18 @@ internal fun ChapterHubScreen(
     // R266 · 重做标记单独轻量观察：只秒读 redo.json（几 KB），不重扫 2 万段。
     // 标记后转黄、Producer 清标记后转绿，都不必等整本做完或 stage 合并。
     var redoKeys by remember(book.id) { mutableStateOf(emptySet<String>()) }
-    // R330 · 哪些章还有可拼的音频小块（磁盘实存份数）：「拼接并转码」按钮
-    // 的显示与副行段数都读它。一次 AudioTree.load 扫完，不逐章 stat 2 万段。
+    // R330 · 哪些章还有可拼的音频小块（磁盘实存份数）：「拼接并转码」状态行
+    // 的显示与段数都读它。一次 AudioTree.load 扫完，不逐章 stat 2 万段。
     var mergeReady by remember(book.id) { mutableStateOf<Map<Int, Int>>(emptyMap()) }
+    // R333 · 回看章：关掉自动开关后小块留着、制作已走到下一章，点章行上的
+    // 「待拼」标签把这一章的小块区摊开；仍最多只展开一章，不会整本铺格子。
+    var peekChapter by remember(book.id) { mutableStateOf<Int?>(null) }
+    // R333 · 手动拼章进行中：点下去当场锁这一章，不等 mergeBusy 回流，
+    // 防止连点把同一章重复拼 / 转码、重复删内部 WAV。
+    var mergingChapter by remember(book.id) { mutableStateOf<Int?>(null) }
+    // R333 · 制作中永远显示正在做的那一章，回看不抢它；停下来才允许回看
+    // 上一章留着的小块，避免把制作中的格子突然顶掉、把软件改坏。
+    val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)
     // R297 · 批量标记放 IO，主线程只管界面反馈，勾几十段也不卡。
     val redoScope = rememberCoroutineScope()
     val pqSeg by PlayQueue.previewState.collectAsState()
@@ -354,8 +363,8 @@ internal fun ChapterHubScreen(
         if (made > 0) localTick++
     }
     // R287 · 组合层只处理当前章几百行，不再每次重组都 filter 26678 段。
-    val chapterSegs = remember(liveChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys) {
-        val ch = liveChapter
+    val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys) {
+        val ch = shownChapter
         if (ch == null) emptyList()
         else (liveSegs.takeIf { liveSegsFor == ch } ?: hubByChapter[ch] ?: emptyList())
             .map { sg ->
@@ -370,8 +379,9 @@ internal fun ChapterHubScreen(
     // R308 · 制作中这一章，第一个还没生成的小块就是「正在合成」的那一格；
     // 重做中的格子由 pendingRedo 单独认。两者都在格子内转圈，不再让用户
     // 对着一片灰格子猜进度走到哪了。
-    val segBusyIndex = remember(chapterSegs, st.running, st.done) {
-        if (!st.running || chapterSegs.isEmpty()) null
+    val segBusyIndex = remember(chapterSegs, st.running, st.done, shownChapter, liveChapter) {
+        // R333 · 回看的是上一章待固化小块时，不该把「正在合成」套在它头上。
+        if (!st.running || chapterSegs.isEmpty() || shownChapter != liveChapter) null
         else chapterSegs.firstOrNull { !it.hasAudio }?.index
     }
     var beatTick by remember { mutableStateOf(0) }
@@ -794,55 +804,26 @@ internal fun ChapterHubScreen(
                             canRedo = r.audio != null || r.playable,
                             busyLabel = mergeBusy
                                 ?.takeIf { it.bookId == book.id && it.chapter == r.index }
-                                ?.phase)
+                                ?.phase,
+                            // R333 · 有待固化小块的章，章行右侧给一枚「待拼 N 段」小标签；
+                            // 点它把这一章的小块区摊开，拼章收尾条就在那堆格子下面。
+                            peekHint = (mergeReady[r.index] ?: 0)
+                                .takeIf { it > 0 && r.index != shownChapter }
+                                ?.let { "待拼 $it 段" },
+                            onPeek = {
+                                if (!bookRunning) {
+                                    exitSegMulti()
+                                    peekChapter = r.index
+                                }
+                            })
                     }
-                    // R330 · 「拼接并转码」常驻章名下一行、小块格子上一行。
-                    // 关掉「自动拼成整章」后小块不会被自动拼掉：先勾坏块重做，
-                    // 再点这一枚把这一章拼成 WAV → 转 M4A → 校验 → 删内部 WAV。
-                    val readyHere = mergeReady[r.index] ?: 0
-                    val hasDone = r.audio != null || r.playable
-                    if (readyHere > 0 || hasDone) {
-                        item(key = "merge_bar_${r.index}") {
-                            val redoHere = hubByChapter[r.index].orEmpty()
-                                .count { "seg:${it.index}" in redoKeys }
-                            val busyHere = st.running && r.index == liveChapter
-                            val canMerge = readyHere > 0 && redoHere == 0 && !busyHere
-                            val status = when {
-                                busyHere -> "这一章还在制作中，做完再拼"
-                                redoHere > 0 -> "还有 $redoHere 段待重做，先重做完再拼"
-                                readyHere == 0 -> "这一章还没有音频小块"
-                                else -> "$readyHere 段就绪"
-                            }
-                            MergeChapterBar(
-                                label = if (hasDone) "重新拼接并转码" else "拼接并转码",
-                                status = status, enabled = canMerge,
-                                onClick = {
-                                    redoScope.launch {
-                                        val parts = withContext(Dispatchers.IO) {
-                                            filesOf(r.index).first
-                                        }
-                                        if (parts.isEmpty()) {
-                                            Toast.makeText(c, "这一章还没有可拼的音频小块",
-                                                Toast.LENGTH_SHORT).show()
-                                            return@launch
-                                        }
-                                        val rr = withContext(Dispatchers.IO) {
-                                            AudioOps.mergeChapter(c, book.id, book.title,
-                                                r.index, parts,
-                                                gapMs = Prefs.defaultPerf(c).gapMs,
-                                                declickMs = Prefs.mergeDeclickMs(c))
-                                        }
-                                        Toast.makeText(c,
-                                            if (rr.ok) rr.reason.ifBlank { "已拼接并转码" }
-                                            else rr.reason, Toast.LENGTH_LONG).show()
-                                        localTick++
-                                    }
-                                })
-                        }
-                    }
+                    // R333 · 旧形态作废：章名下一行那条整行实心大蓝条，对已完成的章
+                    // 也常驻，下面却常常没有小块格子，看着不知道在管哪一章的哪堆声音。
+                    // 收尾条改到「这一章的小块区」末尾，跟它要处理的格子同一个视觉块。
                     // R264 · 只给制作中的那一章生成小段区，恒定展开、无收起入口；
-                    // 没在制作的章连 item 都不生成：不组合、不渲染、不计算。
-                    if (r.index == liveChapter) {
+                    // R333 · 回看章（关掉自动开关后留着小块、制作已走下一章）也摊开，
+                    // 但 shownChapter 仍只取一个，绝不会整本几百章一起铺格子。
+                    if (r.index == shownChapter) {
                     item(key = "seg_head_${r.index}") {
                         Box(Modifier.fillMaxWidth().background(HubSoft)) {
                                 SegGridHead(chapterSegs, segMulti, segChecked.size,
@@ -853,7 +834,8 @@ internal fun ChapterHubScreen(
                                         val t = task?.takeIf { it.bookId == book.id }
                                             ?: TaskResume.byBook(c, book.id)
                                         val work = Workbench.workDir(c, t)
-                                        val ch = liveChapter
+                                        // R333 · 回看章的小块也能勾坏块重做，修完再点收尾条固化。
+                                        val ch = shownChapter
                                         when {
                                             rows.isEmpty() -> Toast.makeText(c,
                                                 "先勾几个已生成的小块",
@@ -954,6 +936,68 @@ internal fun ChapterHubScreen(
                                 onTap = { sg -> tapSeg(sg) })
                         }
                     }
+                    // R333 · 收尾条跟上面那一堆小块同一个视觉块（HubSoft 连续），
+                    // 不再是章名下一行孤零零一整条实心主按钮；只在真有小块 / 正在拼时出。
+                    val readyHere = mergeReady[r.index] ?: 0
+                    val hasDone = r.audio != null || r.playable
+                    val redoHere = hubByChapter[r.index].orEmpty()
+                        .count { "seg:${it.index}" in redoKeys }
+                    val phaseHere = mergeBusy
+                        ?.takeIf { it.bookId == book.id && it.chapter == r.index }
+                        ?.phase
+                    val busyHere = (st.running && r.index == liveChapter)
+                        || mergingChapter == r.index || phaseHere != null
+                    val canMerge = readyHere > 0 && redoHere == 0 && !busyHere
+                    val status = when {
+                        phaseHere != null -> phaseHere
+                        mergingChapter == r.index -> "正在拼这一章…"
+                        busyHere -> "这一章还在制作中，做完再拼"
+                        redoHere > 0 -> "还有 $redoHere 段待重做，先重做完再拼"
+                        readyHere == 0 -> "这一章还没有音频小块"
+                        else -> "$readyHere 段就绪 · 把上面这些小块做成一个章音频"
+                    }
+                    if (readyHere > 0 || hasDone || busyHere) {
+                        item(key = "merge_footer_${r.index}") {
+                            MergeChapterFooter(
+                                label = if (hasDone) "重新拼接并转码" else "拼接并转码",
+                                status = status, enabled = canMerge, busy = busyHere,
+                                onClick = {
+                                    // R333 · 点下去当场锁这一章，不等状态回流，防连点
+                                    // 把同一章重复拼 / 转码、重复删内部 WAV。
+                                    if (mergingChapter == null) {
+                                        mergingChapter = r.index
+                                        redoScope.launch {
+                                            // R335 · 磁盘 / 转码抛异常时也必须解锁，否则这一章
+                                            // 永久转圈，连别章的拼章入口都被这把锁挡住。
+                                            try {
+                                                val parts = withContext(Dispatchers.IO) {
+                                                    filesOf(r.index).first
+                                                }
+                                                val rr = if (parts.isEmpty()) null
+                                                else withContext(Dispatchers.IO) {
+                                                    AudioOps.mergeChapter(c, book.id, book.title,
+                                                        r.index, parts,
+                                                        gapMs = Prefs.defaultPerf(c).gapMs,
+                                                        declickMs = Prefs.mergeDeclickMs(c))
+                                                }
+                                                Toast.makeText(c,
+                                                    if (rr == null) "这一章还没有可拼的音频小块"
+                                                    else if (rr.ok) rr.reason.ifBlank { "已拼接并转码" }
+                                                    else rr.reason, Toast.LENGTH_LONG).show()
+                                            } catch (t: Throwable) {
+                                                EventLog.log(EventLog.Kind.MODEL, "MERGE_MANUAL_FAIL",
+                                                    "ch=${r.index} msg=${EventLog.safe(t.message ?: "")}")
+                                                Toast.makeText(c, "拼接没走完，小块都留着，可以再试一次",
+                                                    Toast.LENGTH_LONG).show()
+                                            } finally {
+                                                mergingChapter = null
+                                                localTick++
+                                            }
+                                        }
+                                    }
+                                })
+                        }
+                    }
                     }
                 }
             }
@@ -1004,11 +1048,57 @@ internal fun ChapterHubScreen(
                                     text = { Text("拼成整章", fontSize = 13.sp) },
                                     onClick = {
                                         exportMenu = false
-                                        val (segs, _) = filesOf(i)
-                                        val rr = AudioOps.mergeChapter(c, book.id, book.title, i, segs)
-                                        Toast.makeText(c, if (rr.ok) rr.reason.ifBlank { "已拼成整章" }
-                                            else rr.reason, Toast.LENGTH_LONG).show()
-                                        exitMulti(); localTick++
+                                        // R334 · 和收尾条同一个闸：待重做的坏块没消化、
+                                        // 正在制作 / 正在拼、刚点过，都不许再固化；
+                                        // 拼接 + 转码是重活，一律进 IO，别卡住界面线程。
+                                        val pendingHere = hubByChapter[i].orEmpty()
+                                            .count { "seg:${it.index}" in redoKeys }
+                                        val busyHere = (st.running && i == liveChapter)
+                                            || mergingChapter == i
+                                            || mergeBusy?.takeIf {
+                                                it.bookId == book.id && it.chapter == i
+                                            } != null
+                                        when {
+                                            busyHere -> Toast.makeText(c,
+                                                "这一章还在制作 / 拼接中，做完再拼",
+                                                Toast.LENGTH_SHORT).show()
+                                            pendingHere > 0 -> Toast.makeText(c,
+                                                "还有 $pendingHere 段待重做，先重做完再拼",
+                                                Toast.LENGTH_SHORT).show()
+                                            mergingChapter == null -> {
+                                                mergingChapter = i
+                                                redoScope.launch {
+                                                    // R335 · 与收尾条同一条兜底：异常也要解锁并退出多选，
+                                                    // 不能让一章的失败把整本拼章入口锁死。
+                                                    try {
+                                                        val parts = withContext(Dispatchers.IO) {
+                                                            filesOf(i).first
+                                                        }
+                                                        val rr = if (parts.isEmpty()) null
+                                                        else withContext(Dispatchers.IO) {
+                                                            AudioOps.mergeChapter(c, book.id,
+                                                                book.title, i, parts,
+                                                                gapMs = Prefs.defaultPerf(c).gapMs,
+                                                                declickMs = Prefs.mergeDeclickMs(c))
+                                                        }
+                                                        Toast.makeText(c,
+                                                            if (rr == null) "这一章还没有可拼的音频小块"
+                                                            else if (rr.ok) rr.reason.ifBlank { "已拼成整章" }
+                                                            else rr.reason, Toast.LENGTH_LONG).show()
+                                                    } catch (t: Throwable) {
+                                                        EventLog.log(EventLog.Kind.MODEL,
+                                                            "MERGE_MENU_FAIL",
+                                                            "ch=$i msg=${EventLog.safe(t.message ?: "")}")
+                                                        Toast.makeText(c,
+                                                            "拼接没走完，小块都留着，可以再试一次",
+                                                            Toast.LENGTH_LONG).show()
+                                                    } finally {
+                                                        mergingChapter = null
+                                                        exitMulti(); localTick++
+                                                    }
+                                                }
+                                            }
+                                        }
                                     })
                                 // R308 · 成品形态按真实文件来：M4A 只给「另存 M4A」，
                                 // 转码失败回落的 WAV 仍保留「另存 WAV / 转 M4A」手动兜底。
@@ -1247,7 +1337,8 @@ private fun ChapterRow(
     onRead: () -> Unit, onListen: () -> Unit,
     menuExpanded: Boolean, onDismissMenu: () -> Unit, onMenuSelect: () -> Unit,
     onMenuRedo: () -> Unit, canRedo: Boolean,
-    busyLabel: String? = null
+    busyLabel: String? = null,
+    peekHint: String? = null, onPeek: () -> Unit = {}
 ) {
     val p = r.synthesized?.coerceIn(0f, 1f)
     Box(Modifier.fillMaxWidth()) {
@@ -1274,6 +1365,18 @@ private fun ChapterRow(
             Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
                 color = palette.text,
                 modifier = Modifier.weight(1f))
+            // R333 · 有待固化小块的章给一枚回看入口，点开就摊开那一章的小块，
+            // 收尾条就在格子下面；不再让按钮孤零零挂在章名下一行。
+            if (peekHint != null) {
+                Box(Modifier.height(26.dp)
+                    .background(HubSoft, RoundedCornerShape(50))
+                    .clickable { onPeek() }
+                    .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center) {
+                    Text(peekHint, fontSize = 10.sp, maxLines = 1, color = HubPrimary)
+                }
+                Spacer(Modifier.width(4.dp))
+            }
             IconButton(onClick = onRead, modifier = Modifier.size(36.dp)) {
                 EyeIcon(HubPrimary)
             }
@@ -1380,25 +1483,36 @@ private fun HeadphoneIcon(tint: Color) {
     }
 }
 
-/** R330 · 章名下一行、小块格子上一行的手动「拼接并转码」按钮。
- *  整行主按钮 + 一行真实状态；有坏块没重做完、还在制作中、或没小块时置灰，
- *  不弹确认窗，也不静默把旧声音拼进成品。 */
+/** R333 · 小块区末尾的收尾条：跟它要处理的格子同一个视觉块。
+ *  不再整行实心大蓝条；左边说清这一章现在能不能拼、还差什么，
+ *  右边只留一枚小圆角按钮。忙碌时按钮位转圈，阶段文字直接亮出来。 */
 @Composable
-private fun MergeChapterBar(label: String, status: String,
-                            enabled: Boolean, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(HubSoft)
-        .padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Box(Modifier.fillMaxWidth().height(42.dp)
-            .background(if (enabled) HubPrimary else HubGrey.copy(alpha = 0.35f),
-                RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled) { onClick() },
-            contentAlignment = Alignment.Center) {
-            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                color = if (enabled) Color.White else HubSub)
+private fun MergeChapterFooter(label: String, status: String,
+                               enabled: Boolean, busy: Boolean,
+                               onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().background(HubCard)
+        .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(status, fontSize = 12.sp, maxLines = 2,
+                color = if (busy) HubPrimary
+                        else if (enabled) palette.text else HubWarn)
         }
-        Spacer(Modifier.height(4.dp))
-        Text(status, fontSize = 11.sp, maxLines = 1,
-            color = if (enabled) HubSub else HubWarn)
+        Spacer(Modifier.width(10.dp))
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
+                color = HubPrimary)
+        } else {
+            Box(Modifier.height(34.dp)
+                .background(if (enabled) HubPrimary else HubGrey.copy(alpha = 0.35f),
+                    RoundedCornerShape(50))
+                .clickable(enabled = enabled) { onClick() }
+                .padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center) {
+                Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    color = if (enabled) Color.White else HubSub)
+            }
+        }
     }
 }
 
@@ -1660,30 +1774,35 @@ internal fun MiniPlayBar(
         st.durationMs / 60000, st.durationMs / 1000 % 60)
     // R319 · 副标题给真实播放状态，不再写「上滑展开 · 下滑收起」这类操作指引。
     val statusText = (if (st.isPlaying) "正在播放" else "已暂停") + " · " + timeText
+    // R332 · 点击与拖拽分到不同节点：轻扒不再被 clickable 吞成「点了直接跳」，
+    // 上扒也只在把手那一带给反馈，不再出现「扒的位置和小横条打架」。
+    var dragging by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
         .background(HubCard, RoundedCornerShape(20.dp))
-        .clickable { onExpand() }
-        // R272 · 音乐播放器式：上滑这条小栏展开全屏播放器。手势只挂在小栏本身，
-        // 不铺到外层页面，免得跟章节列表滚动抢事件；点击展开照旧保留。
+        // R272 / R332 · 上扒只挂这条小栏本身，不铺到外层页面免得抢列表滚动。
+        // 净位移双向累计：往上扒加、往回带减，跟手不再只增不减。
         .pointerInput(Unit) {
             var acc = 0f
             detectVerticalDragGestures(
-                onDragStart = { acc = 0f },
-                onDragEnd = { onPullEnd(); acc = 0f },
-                onDragCancel = { onPullEnd(); acc = 0f },
-                // R303 · 累计向上位移实时交给外层，整页跟着手指往上走
+                onDragStart = { acc = 0f; dragging = true },
+                onDragEnd = { dragging = false; onPullEnd(); acc = 0f },
+                onDragCancel = { dragging = false; onPullEnd(); acc = 0f },
                 onVerticalDrag = { _, dy ->
-                    if (dy < 0f) { acc -= dy; onPullUp(acc) }
+                    acc = (acc - dy).coerceAtLeast(0f)
+                    onPullUp(acc)
                 }
             )
         }
         .padding(horizontal = 12.dp, vertical = 10.dp)) {
-        // R319 · 顶部把手：音乐播放器通用语言，不写文字教程也知道能上滑。
-        Box(Modifier.width(36.dp).height(4.dp)
-            .align(Alignment.CenterHorizontally)
-            .background(HubLine, RoundedCornerShape(50)))
-        Spacer(Modifier.height(9.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // R319 / R332 · 顶部把手不再是纯装饰：按住这一带往上扒就是展开，
+        // 拖起来变色变长，和全屏页顶部那条收起把手上下呼应。
+        Box(Modifier.fillMaxWidth().height(20.dp),
+            contentAlignment = Alignment.Center) {
+            Box(Modifier.width(if (dragging) 48.dp else 36.dp).height(4.dp)
+                .background(if (dragging) HubPrimary else HubLine, RoundedCornerShape(50)))
+        }
+        Row(Modifier.fillMaxWidth().clickable { onExpand() },
+            verticalAlignment = Alignment.CenterVertically) {
             PlayerCover(HubPrimary, 44.dp, st.isPlaying)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -1722,8 +1841,10 @@ internal fun MiniPlayBar(
             }
         }
         Spacer(Modifier.height(9.dp))
+        // R332 · 点卡片主体（内容行 / 进度条）仍展开；上扒由整条的 pointerInput 统一处理。
         Box(Modifier.fillMaxWidth().height(3.dp)
-            .background(HubLine, RoundedCornerShape(50))) {
+            .background(HubLine, RoundedCornerShape(50))
+            .clickable { onExpand() }) {
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight()
                 .background(HubPrimary, RoundedCornerShape(50)))
         }

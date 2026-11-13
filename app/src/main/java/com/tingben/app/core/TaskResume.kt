@@ -78,8 +78,6 @@ object TaskResume {
         } catch (_: Throwable) { }
     }
 
-    fun clearQueue(c: Context) { AtomicJson.delete(queueFile(c)) }
-
     // 暂停状态落盘：进程被杀后重开软件，不会把用户主动停掉的队列又跑起来。
     // R213 · AtomicJson.legal 只放行 { / [ 开头的 JSON，原来这里写纯 "1"
     // 被静默拒写：1.1.22 真机日志 05:07:38 记了「QUEUE_PAUSE 队列停在原地」，
@@ -297,19 +295,6 @@ object TaskResume {
         ModelStore.synthesisBlockReason(c)?.let { return "模型没齐（$it），没自动续跑" }
         invalidationReason(c, t)?.let { return "$it，没自动续跑；请在任务页手动确认" }
         return null
-    }
-
-    fun currentChapter(c: Context, t: TaskInfo): Int? {
-        val body = when (val r = AtomicJson.read(File(AnnCache.dirFor(c, t.bookId, t.only),
-            "seg_chapters.json"))) {
-            is AtomicJson.Read.Ok -> r.text
-            else -> return null
-        }
-        return try {
-            val a = JSONArray(body)
-            if (a.length() == 0) null else
-                a.getInt(realProgress(c, t).coerceIn(0, a.length() - 1))
-        } catch (_: Throwable) { null }
     }
 
     /**

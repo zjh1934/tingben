@@ -50,9 +50,6 @@ object Prefs {
     private const val FILE = "tingben_settings"
     private const val KEY_SCHEMA = "schema"
 
-    private const val KEY_NCTX = "nCtx"
-    private const val KEY_THREADS = "threads"
-    private const val KEY_TEMPERATURE = "temperature"
     private const val KEY_NONVERBAL = "nonVerbal"
 
     private const val KEY_VOICE_DESC = "voiceDesc"
@@ -66,8 +63,6 @@ object Prefs {
     private const val KEY_TTS_SUBTOPK = "ttsSubTopK"
     private const val KEY_TTS_SUBTOPP = "ttsSubTopP"
     private const val KEY_DEFAULT_PERF = "defaultPerf"
-    private const val KEY_MIXER_OPEN = "mixerOpenSections"
-    private const val KEY_RECENT_VOICES = "mixerRecentVoices"
     private const val KEY_THEME_MODE = "themeMode"
     private const val KEY_FONT_SCALE = "readerFontScale"
     private const val KEY_MODEL_MODE = "modelMode"
@@ -111,15 +106,6 @@ object Prefs {
     fun mergeDeclickMs(c: Context) = sp(c).getInt(KEY_MERGE_DECLICK, 30).coerceIn(0, 60)
     fun setMergeDeclickMs(c: Context, v: Int) =
         sp(c).edit().putInt(KEY_MERGE_DECLICK, v.coerceIn(0, 60)).apply()
-
-    fun nCtx(c: Context) = sp(c).getInt(KEY_NCTX, 4096)
-    fun setNCtx(c: Context, v: Int) = sp(c).edit().putInt(KEY_NCTX, v).apply()
-
-    fun threads(c: Context) = sp(c).getInt(KEY_THREADS, 4)
-    fun setThreads(c: Context, v: Int) = sp(c).edit().putInt(KEY_THREADS, v).apply()
-
-    fun temperature(c: Context) = sp(c).getFloat(KEY_TEMPERATURE, 0f)
-    fun setTemperature(c: Context, v: Float) = sp(c).edit().putFloat(KEY_TEMPERATURE, v).apply()
 
     fun nonVerbal(c: Context) = sp(c).getBoolean(KEY_NONVERBAL, true)
     fun setNonVerbal(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_NONVERBAL, v).apply()
@@ -176,13 +162,6 @@ object Prefs {
     fun setDefaultPerf(c: Context, v: ProduceConfig) =
         sp(c).edit().putString(KEY_DEFAULT_PERF, v.toJson().toString()).apply()
 
-    fun mixerOpenSections(c: Context): Set<String> =
-        (sp(c).getString(KEY_MIXER_OPEN, null) ?: "")
-            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-
-    fun setMixerOpenSections(c: Context, keys: Set<String>) =
-        sp(c).edit().putString(KEY_MIXER_OPEN, keys.sorted().joinToString(",")).apply()
-
     fun modelMode(c: Context): String =
         sp(c).getString(KEY_MODEL_MODE, "voice_design") ?: "voice_design"
     // R327 · 只放行三种合法模式，非法值不再写进设置，避免下次读取时静默
@@ -231,15 +210,6 @@ object Prefs {
 
     fun setReaderFontScale(c: Context, v: Float) =
         sp(c).edit().putFloat(KEY_FONT_SCALE, v.coerceIn(12f, 24f)).apply()
-
-    fun recentVoices(c: Context): List<String> =
-        (sp(c).getString(KEY_RECENT_VOICES, "") ?: "")
-            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(4)
-
-    fun pushRecentVoice(c: Context, id: String) {
-        val next = (listOf(id) + recentVoices(c).filter { it != id }).distinct().take(4)
-        sp(c).edit().putString(KEY_RECENT_VOICES, next.joinToString(",")).apply()
-    }
 
     fun voiceStamp(c: Context): String = sha(listOf(
         INSTRUCT_TEMPLATE_VERSION.toString(),

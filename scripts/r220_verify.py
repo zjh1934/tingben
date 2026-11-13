@@ -60,7 +60,7 @@ def check(f):
     # ③ R264 · 制作中的章恒定展开，不再有「展开/收起」；小块区只在 bookRunning 渲染
     for k in ["val liveChapter: Int? = if (bookRunning) makingChapter else null",
               "val bookRunning = st.running && task?.bookId == book.id",
-              "if (r.index == liveChapter) {",
+              "if (r.index == shownChapter) {",
               "Box(Modifier.fillMaxWidth().background(HubSoft)) {",
               "top = 0.dp, bottom = 2.dp"]:
         if k not in hb: e.append("恒定展开/零留白缺: " + k[:56])
@@ -99,8 +99,8 @@ def selftest():
         ("制作外仍渲染小块区", "hub",
          "val liveChapter: Int? = if (bookRunning) makingChapter else null",
          "val liveChapter: Int? = makingChapter"),
-        ("旧展开形态回潮", "hub", "if (r.index == liveChapter) {",
-         "if (generated || making) { if (r.index == liveChapter) {"),
+        ("旧展开形态回潮", "hub", "if (r.index == shownChapter) {",
+         "if (generated || making) { if (r.index == shownChapter) {"),
         ("顶部又留白", "hub", "top = 0.dp, bottom = 2.dp",
          "vertical = 8.dp"),
         ("展开底色被摘", "hub", "Box(Modifier.fillMaxWidth().background(HubSoft)) {",

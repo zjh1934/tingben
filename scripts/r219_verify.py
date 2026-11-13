@@ -78,7 +78,7 @@ def check(f):
         if b in mg: e.append("目录页旧任务入口回潮: " + b[:40])
     # ④ R264 · 制作中的那一章恒定展开，没在制作的章连 seg_body 都不生成
     for k in ["val liveChapter: Int? = if (bookRunning) makingChapter else null",
-              "if (r.index == liveChapter) {",
+              "if (r.index == shownChapter) {",
               "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
               "multiMode = next.isNotEmpty()",
               "if (multi) {",
@@ -112,7 +112,7 @@ def selftest():
         ("目录页旧入口回潮", "merged", "nav.push(Screen.TASKS)", "hubTasksTick++"),
         ("顶栏按钮不齐", "merged", "trailing = when (screen)", ""),
         ("停止按钮被摘", "merged", 'IconButton(onClick = { hubStop() }', ""),
-        ("空章又弹块", "hub", "if (r.index == liveChapter) {", "if (true) {"),
+        ("空章又弹块", "hub", "if (r.index == shownChapter) {", "if (true) {"),
         ("左侧勾被摘", "hub", "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }", ""),
         ("点勾不进多选", "hub", "multiMode = next.isNotEmpty()", ""),
         ("展开头部留白回潮", "hub", "padding(horizontal = 16.dp, vertical = 4.dp)", ""),

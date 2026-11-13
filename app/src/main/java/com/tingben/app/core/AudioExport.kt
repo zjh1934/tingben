@@ -71,8 +71,6 @@ object AudioExport {
         prefs(c).edit().putString(KEY_TREE, uri.toString()).apply()
     }
 
-    fun clearTree(c: Context) = saveTree(c, null)
-
     private fun safeName(s: String): String = AudioLibrary.safeName(s)
 
     /**

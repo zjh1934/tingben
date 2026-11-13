@@ -32,9 +32,8 @@ object NativeEngine {
     external fun nativeCancel()
     external fun nativeCancelReset()
 
-    external fun llmLoad(modelPath: String, nCtx: Int, nThreads: Int): Long
-    external fun llmGenerate(handle: Long, prompt: String, maxTokens: Int, temperature: Float): String
-    external fun llmFree(handle: Long)
+    // R335 · 早期「语言模型标 JSON 给书打标记」那套的 JNI 入口，Java 侧早已零调用。
+    // 声明先撤；native 侧实现 / CMake 链接 / CI 构建链是一整条，单独一轮带真编译拆。
 
     external fun ttsLoad(talkerPath: String, codecPath: String, device: String?): Long
 

@@ -119,7 +119,9 @@ for sym in ["NATIVE_JSON_CLOSE", "jsonDepth", "jsonStarted"]:
 
 R68_GONE_C = ["JsonSalvage", "Adoption", "RawDump", "ANN_RAW_DUMP", "ANN_ADOPT_DETAIL",
               "复制最近一块模型原始产出", "cleanInstruct", "THINK_UNCLOSED",
-              "bracket", "DEFAULT_INSTRUCT", "ModelStore.llm", "NativeEngine.llmLoad"]
+              "bracket", "DEFAULT_INSTRUCT", "ModelStore.llm", "NativeEngine.llmLoad",
+              # R335 · Java 侧零调用的早期 LLM 标注 JNI 声明已撤，不许回潮
+              "external fun llmLoad", "external fun llmGenerate", "external fun llmFree"]
 for sym in R68_GONE_C:
     if sym in all_src: errs.append("R68 回潮：旧移植件符号 " + sym)
 if "= raw.lastIndexOf(']')" in pipe_src:

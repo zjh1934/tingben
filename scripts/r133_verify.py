@@ -46,6 +46,13 @@ POS = {
         "onExpand = { playerOpen = true",
         "if (playerOpen) {",
         "PlayerSheet(ctx, miniBook ?: bookId,",
+        # R332 · 上扒行程归一 / 只认收起时淡出 / 松手阈值不再按半屏
+        "var sheetDismissing by remember { mutableStateOf(false) }",
+        "val range = sheetH * 0.28f",
+        "val progress = (pull / range).coerceIn(0f, 1f)",
+        "if (sheetY.value < sheetH * 0.72f) sheetY.animateTo(0f, spring())",
+        "pullFraction = if (sheetDismissing)",
+        "sheetDismissing = true",
     ],
     "hub": [
         "if (st.preview) return",
@@ -54,6 +61,11 @@ POS = {
         "IconSkip(false, HubPrimary",
         "IconSkip(true, HubPrimary",
         "IconPlayPause(st.isPlaying, palette.onPrimary",
+        # R332 · 上扒净位移双向累计、把手拖拽反馈、点击与拖拽分节点
+        "var dragging by remember { mutableStateOf(false) }",
+        "acc = (acc - dy).coerceAtLeast(0f)",
+        "onDragStart = { acc = 0f; dragging = true }",
+        "if (dragging) 48.dp else 36.dp",
     ],
     "player": [
         "internal fun PlayerSheet(",
@@ -69,6 +81,10 @@ POS = {
         "IconChevronDown(palette.primary",
         "IconQueue(palette.primary",
         'PlayQueue.playFrom(list.indexOfFirst { it.first == idx }, id = q)',
+        # R332 · 全屏页收起把手、拖拽反馈；上下两态各一条把手
+        "var dragging by remember { mutableStateOf(false) }",
+        "onDragStart = { acc = 0f; dragging = true }",
+        "if (dragging) 48.dp else 36.dp",
     ],
     "icons": [
         "internal fun IconPlayPause(",
@@ -90,10 +106,18 @@ BAN = {
         'Text(if (st.isPlaying) "⏸" else "▶", fontSize = 14.sp',
         'Text("›", fontSize = 16.sp)',
         "var showList by remember { mutableStateOf(false) }",
+        # R332 · 只增不减的「为了跟手而跟手」不许回来
+        "if (dy < 0f) { acc -= dy; onPullUp(acc) }",
     ],
     "player": [
         'Text("⏸"',
         'Text("▶"',
+    ],
+    # R332 · 整屏当行程 / 半屏阈值 / 进入也淡出，三处旧手感零回潮
+    "main": [
+        "sheetY.snapTo((sheetH - px).coerceIn(0f, sheetH))",
+        "if (sheetY.value < sheetH * 0.5f) sheetY.animateTo(0f, tween(180))",
+        "pullFraction = (sheetY.value / sheetH).coerceIn(0f, 1f)",
     ],
 }
 
@@ -131,6 +155,15 @@ def selftest():
         "常驻条不展开": ("main", "onExpand = { playerOpen = true"),
         "常驻条不隔离试听": ("hub", "if (st.preview) return"),
         "条幅不可点": ("hub", ".clickable { onExpand() }"),
+        # R332 · 新形态逐条反向注入
+        "上扒行程归一被摘": ("main", "val range = sheetH * 0.28f"),
+        "上扒进度被摘": ("main", "val progress = (pull / range).coerceIn(0f, 1f)"),
+        "松手阈值被摘": ("main", "if (sheetY.value < sheetH * 0.72f) sheetY.animateTo(0f, spring())"),
+        "淡出只认收起被摘": ("main", "pullFraction = if (sheetDismissing)"),
+        "收起标记被摘": ("main", "sheetDismissing = true"),
+        "上扒回带被摘": ("hub", "acc = (acc - dy).coerceAtLeast(0f)"),
+        "上扒把手反馈被摘": ("hub", "if (dragging) 48.dp else 36.dp"),
+        "收起把手反馈被摘": ("player", "if (dragging) 48.dp else 36.dp"),
         "上一首退回字符": ("hub", "IconSkip(false, HubPrimary"),
         # I2 · 图标前景改成随主题取色（深色下白字在浅紫主色底上只有 1.99:1）。
         # 这里守「仍是代码绘制图标且随主题取色」，不守写死的白字。

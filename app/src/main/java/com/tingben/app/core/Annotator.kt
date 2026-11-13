@@ -9,7 +9,5 @@ object Annotator {
         val (segs, st) = TextSplitter.split(SiteNoise.clean(text))
         return segs.map { Ann(it, "旁白", "平稳、清晰地叙述，句间自然停顿") } to st
     }
-
-    fun directSegments(text: String): List<Ann> = directWithStats(text).first
 }
 

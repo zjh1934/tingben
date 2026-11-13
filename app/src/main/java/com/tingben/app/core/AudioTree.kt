@@ -50,24 +50,6 @@ object AudioTree {
     private fun metaWritable(c: Context): Boolean =
         AtomicJson.read(metaFile(c)) !is AtomicJson.Read.Corrupt
 
-    fun setName(c: Context, key: String, name: String): Boolean {
-        if (!metaWritable(c)) return false
-        val o = meta(c)
-        val n = o.optJSONObject("names") ?: JSONObject()
-        if (name.isBlank()) n.remove(key) else n.put(key, name.trim())
-        o.put("names", n)
-        return save(c, o)
-    }
-
-    fun moveSegment(c: Context, path: String, bookId: String, chapter: Int): Boolean {
-        if (!metaWritable(c)) return false
-        val o = meta(c)
-        val m = o.optJSONObject("moves") ?: JSONObject()
-        m.put(path, JSONObject().put("book", bookId).put("chapter", chapter))
-        o.put("moves", m)
-        return save(c, o)
-    }
-
     fun forget(c: Context, paths: List<String>) {
         if (paths.isEmpty() || !metaWritable(c)) return
         val o = meta(c)
@@ -135,11 +117,6 @@ object AudioTree {
             out
         } catch (_: Throwable) { null }
     }
-
-    fun mergedFile(c: Context, bookId: String, chapter: Int): File? =
-        chapterOnlyItems(c)
-            .filter { it.bookId == bookId && chapter in it.chapters }
-            .maxByOrNull { it.createdAt }?.file
 
     fun chapterOnlyItems(c: Context): List<AudioItem> =
         AudioLibrary.list(c).filter {
@@ -281,17 +258,4 @@ object AudioTree {
     private fun segIndexOf(f: File): Int =
         segRe.matchEntire(f.name)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
-    fun allSegments(b: BookAudio): List<SegAudio> = b.chapters.flatMap { it.segments }
-
-    fun chapterSegments(ch: ChapterAudio): List<File> = ch.segments.map { it.file }
-
-    fun chapterTracks(c: Context, ch: ChapterAudio): List<Track> {
-        val merged = ch.merged
-        if (merged != null && merged.isFile) {
-            return listOf(Track(merged, "${ch.title} · 整章", id = "merged:${merged.absolutePath}"))
-        }
-        return ch.segments.map { s ->
-            Track(s.file, "${ch.title} · ${s.name}", id = "seg:${s.file.absolutePath}")
-        }
-    }
 }
