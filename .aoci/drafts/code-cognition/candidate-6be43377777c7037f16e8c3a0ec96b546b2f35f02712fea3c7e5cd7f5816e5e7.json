@@ -1,0 +1,141 @@
+{
+  "version": "code-cognition-batch/v1",
+  "plan_id": "d5660ec15256d7189a05b50a2bc82719fd749141bf06c3b05c67de176a80ab9e",
+  "batch_id": "6be43377777c7037f16e8c3a0ec96b546b2f35f02712fea3c7e5cd7f5816e5e7",
+  "composite_identity": "07d54609ce11fbeb48f886c6c9295879a80249197d7ffc0ee71220619429ceec",
+  "scope_policy_identity": "2992d2c0efa2955e80cd4793f2e002700182fbdb43be384849dfb1dfc9776168",
+  "code_volume_path": "aoci.code.txt",
+  "code_volume_sha256": "d4a1677178d8b483a62ec1ddb15a3afca160ed3373cb90127a28b9a25cc415e3",
+  "all_targets": [
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "path": "app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "change": "update",
+      "source_sha256": "85a23b89318449fba4e3622ca28a594312eedc1f4cc39e5b44a3bcf2a6eaea85",
+      "existing_entry": "ChapterHub.kt[AU9L]: F:一本书的主页，单列承载章节、双进度、可播汇总与分段格子；右侧小眼睛进阅读，长按出勾选框与小菜单，制作中的章恒定展开小段区 | R:code:app/src/main/java/com/tingben/app/core/ChapterPlan.kt,code:app/src/main/java/com/tingben/app/core/Workbench.kt,code:app/src/main/java/com/tingben/app/core/PlayQueue.kt | A:ChapterHubScreen / ChapterSegGrid / SEG_GRID_COLUMNS | S:R224 勾选态动作全 ActionChip；R226 撤单独一排操作、tasksRequest 开看板；R233 删段不参与合成与拼接；R235 段级重做标记即排队、startAction 读全局默认；R243 打开书回溯补齐章节成品；R247 底部条与任务弹窗配图标、文字保留；R252 导出回调切 IO 防 ANR；R253 长按小菜单（勾选/整章重做）、redoWholeChapter 撤旧成品、撤两段顶部废话；R255 长按菜单与底部条互斥、只剩两条纯色进度；R257 脱敏补漏、拼章补齐拆出 st.done；R264 制作章恒定展开（liveChapter 派生自 bookRunning/makingChapter），删 expandedChapter 状态、点章名切换、HUB_CH_EXPAND、ChevronIcon、AnimatedVisibility 与 liveChapters，7 个守门按新语义迁移并把旧形态列 BAN；R265 整章重做删旧成品改 chapterOnlyFor，不误删整本；R266 制作中只 markSeg 不排队列，redoKeys 秒读驱动格子转黄绿；R270 小块/章成品互斥、失效只给整章重做；R272 播放小条上滑展开全屏播放器"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "path": "app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "change": "update",
+      "source_sha256": "4a5507862a4c51a1926e3ba4608e6a96a2af97cd89ab892c651afbc981768b7c",
+      "existing_entry": "InputReadUi.kt[AG9L]: F:首页贴一段→点合成→片段进下方留白列表（R276；不是粘上就响、不建书）；asHome=false 的分享页仍可建书 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/ClipLibrary.kt | A:InputReadScreen / ClipRow | S:合成要等几分钟，产物落 filesDir/clips 常驻、走主播放条，绝不进 trial 试听通道；展示名取正文前 10 字，文件名缀短 id 防重名；合成互斥串行、重做先写 .redo.wav 成功再覆盖，失败留旧音频；勾选+底部条与长按就地菜单互斥、返回键优先关菜单；片段动作只有删除/导出/重做，不带整章重做/拼章；1500 字上限中文提示、失败时正文原样留着；R267 浮窗 update 标 CLIP、收起条件 hide 不误删制作球"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/LibraryUi.kt",
+      "path": "app/src/main/java/com/tingben/app/LibraryUi.kt",
+      "change": "update",
+      "source_sha256": "8db7a6ba35d38b8603f3f6b45ee9048acf6df79c6aa8abadfcfc5d0b7bb98f6d",
+      "existing_entry": "LibraryUi.kt[AG9M]: F:书架页与粘贴建书标题 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/BookStore.kt | A:LibraryScreen / autoBookTitle | S:空架必须有「导入第一本」入口；建书名取正文首行，不要一律叫「粘贴的文字」；刷新入口在抽屉模式常显；R230 长按书名弹置顶/删除菜单、撤上次读到、撤右侧常驻动作列，进度条保留；R257 BOOK_PIN_TAP 的 id 改 take(8)"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/MainActivity.kt",
+      "path": "app/src/main/java/com/tingben/app/MainActivity.kt",
+      "change": "update",
+      "source_sha256": "87cd8f69f3048e5aed96557c29bf8ab264e488ef6cac232d7825afd668cce810",
+      "existing_entry": "MainActivity.kt[AG9L]: F:应用唯一入口，装配导航栈、抽屉、顶栏、所有浮层与设置/书架/模型/任务/输入朗读等页面 | R:code:app/src/main/java/com/tingben/app/ChapterHub.kt,code:app/src/main/java/com/tingben/app/AppChrome.kt,code:app/src/main/java/com/tingben/app/PlayerSheet.kt,code:app/src/main/java/com/tingben/app/core/Pipeline.kt | A:MainActivity / Screen 枚举 / goBack / openBook / chromeOf | S:R210 resumeTask 是唯一生产启动 lambda，收尾窗口判断必须在这里，不能只在目录页按钮；RESUME_ASK_SKIP 按 reason 变化才记；R215 LIBRARY 分支 onAdded 置空，首页不再把建书结果跳 CHAPTERS；R217 App 层持有 overlayOn，首页开关切换落盘、关时收浮窗、开时无权限直接拉授权页并给中文提示；R224 抽屉左滑限定 screen == Screen.LIBRARY，其它页不被边缘手势误触；R225 RESUME_* 日志改用 bookId 前 8 位；R226 目录页三按钮上移系统顶栏（hubProd/hubTask 算态、tasksRequest 计数器开看板、onResumeTask 收尾保护）；R230 抽屉 onSettings 接线、trailing 改 when（LIBRARY 调音/任务、CHAPTERS 三按钮）、删 App 层 overlayOn；R243 主页任务通 Screen.TASKS 全局页、抽屉 title 置空；R244 顶栏 5 处 TextButton→IconButton 接自绘图标，⚙ 保留；R257 日志脱敏；R272 目录页顶栏补调音入口"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/MixerUi.kt",
+      "path": "app/src/main/java/com/tingben/app/MixerUi.kt",
+      "change": "update",
+      "source_sha256": "50590a6fbad1629fd6833b81820fa9be6664bdeee8894f445303acf371f5f40f",
+      "existing_entry": "MixerUi.kt[AG9L]: F:调音弹层与调音台整组页面（MixerDialog / MixerScreen / ModeTabs / VoiceDesignPane / CustomVoicePane / BasePane / ParamLine） | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:app/src/main/java/com/tingben/app/core/Mixer.kt,code:scripts/ui_sources.py | A:MixerDialog / MixerScreen / ParamLine | S:占位行 // @ui-insert: MixerUi 不许删；R212 弹窗略微上下收小，别遮下面内容、别遮手机导航（当前 Surface fillMaxSize + statusBars/navigationBarsPadding，R155 只避让手势区，视觉仍全屏）；R214 已落地：Dialog Surface 改 fillMaxHeight(0.86f)，statusBars/navigationBars 避让保留；R215 试听合成主体下沉 ClipSynth，本文件只管状态/播放/UI 文案；另一处 ttsLoadGated 是读模型音色表(ttsSpeakers)，不是合成；R223 声音描述框下加「留空 = 旧默认中性声，可切回旧音频」；R234 参考音频导入改 VoiceRef.saveFromUri，不再只读 WAV 字节；R236 导入改「解码→波形裁剪弹层→选区落盘」，RefClipDialog 内部可见；R237 裁剪弹层加试听选中，clipWav 临时 wav 走 trial preview 通道；R243 裁剪试听改试听/停止切换、关窗与用这一段都 stopPreview；R247 裁剪弹层用这一段/试听/取消配图标+文字；R256 裁剪试听 ref_clip_trial.wav 改走 TrialFiles.file"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/ModelUi.kt",
+      "path": "app/src/main/java/com/tingben/app/ModelUi.kt",
+      "change": "update",
+      "source_sha256": "cbbdd3be721ab339090416cf76f3c9d8c929bcb85fab202738e1531d64eb04d5",
+      "existing_entry": "ModelUi.kt[AG9L]: F:模型页与清理分段行 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/ModelStore.kt | A:ModelScreen / ClearSegmentsRow | S:三卡固定等高、详情统一弹层，完整文件名点一下可复制；残件由 ModelStore 的 GGUF 魔数校验拦住，界面不显示「已导入 ✓」"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/MultiSelect.kt",
+      "path": "app/src/main/java/com/tingben/app/MultiSelect.kt",
+      "change": "update",
+      "source_sha256": "24c737ed1c7f635a7c73d6a06ddc059ce09029329b7b842653dc20a21d4d61b9",
+      "existing_entry": "MultiSelect.kt[AU7S]: F:统一多选组件，代码绘制勾选方块与底部胶囊操作条 | R:code:app/src/main/java/com/tingben/app/ChapterHub.kt | A:SelectBox / MultiSelectBar | S:R171 底部条取消入口从裸 × 换成看得见的「取消」文字，图标保留作辅助；R224 新增 ActionChip（底色/圆角/可点/危险色），全选与取消一并按钮化；R247 ActionChip 加可选 icon 槽、全选/取消配图标，旧调用签名兼容；R253 动作条放大：ActionChip 最小高 44dp/13sp/图标 18dp、卡片 elevation 12"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/core/AudioOps.kt",
+      "path": "app/src/main/java/com/tingben/app/core/AudioOps.kt",
+      "change": "update",
+      "source_sha256": "d49d2270537caee6c0889dc152b2bf4c78dfb07db75c4f2eab98b3b7d2958045",
+      "existing_entry": "AudioOps.kt[KB5M]: F:WAV 拼接与 PCM 读写，把逐段小音频拼成整章成品 | R:code:app/src/main/java/com/tingben/app/core/AudioLibrary.kt | A:mergeChapter / pcmOf | S:R231 mergeChapterAuto 登单章成品；R243 ensure 缺块跳过、日志无书名；R252 toM4a 切 IO 防 ANR；R255 先 markDone 再删小块、失败保留；R265 去重改 hasChapterAudio（多章整本不占章），旧 audioFor 致补拼全跳过；R270 撤 holdChapters；R272 ensure 加 force，收尾强制按章拼"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/core/ModelStore.kt",
+      "path": "app/src/main/java/com/tingben/app/core/ModelStore.kt",
+      "change": "update",
+      "source_sha256": "4e0f24fa1a81a5474020c496ef88a234adbbfe9ee35e616f07dc562cb48a68bb",
+      "existing_entry": "ModelStore.kt[DC9S]: F:本地模型文件管理，GGUF 魔数校验、按模式挑主文件、就绪检查与缺件原因 | R:code:app/src/main/java/com/tingben/app/core/Pipeline.kt,code:app/src/main/java/com/tingben/app/engine/NativeEngine.kt,code:scripts/core_sources.py | A:ModelStore.import / modeFile / synthesisBlockReason / missing / ready | S:R175 起导入校验 GGUF 魔数与最小尺寸，下载残件不许一路进 native、界面也不显示「已导入 ✓」；pickFor 靠文件名子串认主文件，改名规则改动要连synthesisBlockReason 一起改；R204 从 Pipeline.kt 搬出，头部自带 Context / File / EventLog import"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:scripts/r224_verify.py",
+      "path": "scripts/r224_verify.py",
+      "change": "update",
+      "source_sha256": "457967bd576eb68cc1a61c86349b834471e29720194299876c59dabb785bbe7c",
+      "existing_entry": "r224_verify.py[TQ8S]: F:批次1 多选动作按钮化 / 抽屉手势仅主页守门 | R:code:app/src/main/java/com/tingben/app/MultiSelect.kt,code:app/src/main/java/com/tingben/app/ChapterHub.kt | A:--selftest（14 组反向注入） | S:ActionChip 带底色圆角可点、删除用危险色；勾选态零 TextButton；gesturesEnabled 限定 LIBRARY、反守全局 true；自主推进首批不改版本不发包"
+    }
+  ],
+  "targets": [
+    {
+      "candidate_id": "1c769938f1770647995042332464e56bd035666ead2634967ad1794e4a6ddba9",
+      "object_ref": "code:app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "path": "app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "change": "update",
+      "source_sha256": "85a23b89318449fba4e3622ca28a594312eedc1f4cc39e5b44a3bcf2a6eaea85",
+      "existing_entry": "ChapterHub.kt[AU9L]: F:一本书的主页，单列承载章节、双进度、可播汇总与分段格子；右侧小眼睛进阅读，长按出勾选框与小菜单，制作中的章恒定展开小段区 | R:code:app/src/main/java/com/tingben/app/core/ChapterPlan.kt,code:app/src/main/java/com/tingben/app/core/Workbench.kt,code:app/src/main/java/com/tingben/app/core/PlayQueue.kt | A:ChapterHubScreen / ChapterSegGrid / SEG_GRID_COLUMNS | S:R224 勾选态动作全 ActionChip；R226 撤单独一排操作、tasksRequest 开看板；R233 删段不参与合成与拼接；R235 段级重做标记即排队、startAction 读全局默认；R243 打开书回溯补齐章节成品；R247 底部条与任务弹窗配图标、文字保留；R252 导出回调切 IO 防 ANR；R253 长按小菜单（勾选/整章重做）、redoWholeChapter 撤旧成品、撤两段顶部废话；R255 长按菜单与底部条互斥、只剩两条纯色进度；R257 脱敏补漏、拼章补齐拆出 st.done；R264 制作章恒定展开（liveChapter 派生自 bookRunning/makingChapter），删 expandedChapter 状态、点章名切换、HUB_CH_EXPAND、ChevronIcon、AnimatedVisibility 与 liveChapters，7 个守门按新语义迁移并把旧形态列 BAN；R265 整章重做删旧成品改 chapterOnlyFor，不误删整本；R266 制作中只 markSeg 不排队列，redoKeys 秒读驱动格子转黄绿；R270 小块/章成品互斥、失效只给整章重做；R272 播放小条上滑展开全屏播放器"
+    },
+    {
+      "candidate_id": "a2e6106047ce77fa8c6afe4f704c8ee93e5b50b21418d0e47d3fbf20a552d63e",
+      "object_ref": "code:app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "path": "app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "change": "update",
+      "source_sha256": "4a5507862a4c51a1926e3ba4608e6a96a2af97cd89ab892c651afbc981768b7c",
+      "existing_entry": "InputReadUi.kt[AG9L]: F:首页贴一段→点合成→片段进下方留白列表（R276；不是粘上就响、不建书）；asHome=false 的分享页仍可建书 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/ClipLibrary.kt | A:InputReadScreen / ClipRow | S:合成要等几分钟，产物落 filesDir/clips 常驻、走主播放条，绝不进 trial 试听通道；展示名取正文前 10 字，文件名缀短 id 防重名；合成互斥串行、重做先写 .redo.wav 成功再覆盖，失败留旧音频；勾选+底部条与长按就地菜单互斥、返回键优先关菜单；片段动作只有删除/导出/重做，不带整章重做/拼章；1500 字上限中文提示、失败时正文原样留着；R267 浮窗 update 标 CLIP、收起条件 hide 不误删制作球"
+    },
+    {
+      "candidate_id": "6d2b517c0eac38168c65db18cf4d3666d08b1728f1ebd24daba308b1cd15a30a",
+      "object_ref": "code:app/src/main/java/com/tingben/app/LibraryUi.kt",
+      "path": "app/src/main/java/com/tingben/app/LibraryUi.kt",
+      "change": "update",
+      "source_sha256": "8db7a6ba35d38b8603f3f6b45ee9048acf6df79c6aa8abadfcfc5d0b7bb98f6d",
+      "existing_entry": "LibraryUi.kt[AG9M]: F:书架页与粘贴建书标题 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/BookStore.kt | A:LibraryScreen / autoBookTitle | S:空架必须有「导入第一本」入口；建书名取正文首行，不要一律叫「粘贴的文字」；刷新入口在抽屉模式常显；R230 长按书名弹置顶/删除菜单、撤上次读到、撤右侧常驻动作列，进度条保留；R257 BOOK_PIN_TAP 的 id 改 take(8)"
+    },
+    {
+      "candidate_id": "81aaf647453c2369107fddb0e4f2f211e782fafa2174122a7e13c885d79ba128",
+      "object_ref": "code:app/src/main/java/com/tingben/app/MainActivity.kt",
+      "path": "app/src/main/java/com/tingben/app/MainActivity.kt",
+      "change": "update",
+      "source_sha256": "87cd8f69f3048e5aed96557c29bf8ab264e488ef6cac232d7825afd668cce810",
+      "existing_entry": "MainActivity.kt[AG9L]: F:应用唯一入口，装配导航栈、抽屉、顶栏、所有浮层与设置/书架/模型/任务/输入朗读等页面 | R:code:app/src/main/java/com/tingben/app/ChapterHub.kt,code:app/src/main/java/com/tingben/app/AppChrome.kt,code:app/src/main/java/com/tingben/app/PlayerSheet.kt,code:app/src/main/java/com/tingben/app/core/Pipeline.kt | A:MainActivity / Screen 枚举 / goBack / openBook / chromeOf | S:R210 resumeTask 是唯一生产启动 lambda，收尾窗口判断必须在这里，不能只在目录页按钮；RESUME_ASK_SKIP 按 reason 变化才记；R215 LIBRARY 分支 onAdded 置空，首页不再把建书结果跳 CHAPTERS；R217 App 层持有 overlayOn，首页开关切换落盘、关时收浮窗、开时无权限直接拉授权页并给中文提示；R224 抽屉左滑限定 screen == Screen.LIBRARY，其它页不被边缘手势误触；R225 RESUME_* 日志改用 bookId 前 8 位；R226 目录页三按钮上移系统顶栏（hubProd/hubTask 算态、tasksRequest 计数器开看板、onResumeTask 收尾保护）；R230 抽屉 onSettings 接线、trailing 改 when（LIBRARY 调音/任务、CHAPTERS 三按钮）、删 App 层 overlayOn；R243 主页任务通 Screen.TASKS 全局页、抽屉 title 置空；R244 顶栏 5 处 TextButton→IconButton 接自绘图标，⚙ 保留；R257 日志脱敏；R272 目录页顶栏补调音入口"
+    },
+    {
+      "candidate_id": "5903ce0ce36a5628e90464d39641ae9a9b50daae0c76f0e8bef82590947a79c6",
+      "object_ref": "code:app/src/main/java/com/tingben/app/MixerUi.kt",
+      "path": "app/src/main/java/com/tingben/app/MixerUi.kt",
+      "change": "update",
+      "source_sha256": "50590a6fbad1629fd6833b81820fa9be6664bdeee8894f445303acf371f5f40f",
+      "existing_entry": "MixerUi.kt[AG9L]: F:调音弹层与调音台整组页面（MixerDialog / MixerScreen / ModeTabs / VoiceDesignPane / CustomVoicePane / BasePane / ParamLine） | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:app/src/main/java/com/tingben/app/core/Mixer.kt,code:scripts/ui_sources.py | A:MixerDialog / MixerScreen / ParamLine | S:占位行 // @ui-insert: MixerUi 不许删；R212 弹窗略微上下收小，别遮下面内容、别遮手机导航（当前 Surface fillMaxSize + statusBars/navigationBarsPadding，R155 只避让手势区，视觉仍全屏）；R214 已落地：Dialog Surface 改 fillMaxHeight(0.86f)，statusBars/navigationBars 避让保留；R215 试听合成主体下沉 ClipSynth，本文件只管状态/播放/UI 文案；另一处 ttsLoadGated 是读模型音色表(ttsSpeakers)，不是合成；R223 声音描述框下加「留空 = 旧默认中性声，可切回旧音频」；R234 参考音频导入改 VoiceRef.saveFromUri，不再只读 WAV 字节；R236 导入改「解码→波形裁剪弹层→选区落盘」，RefClipDialog 内部可见；R237 裁剪弹层加试听选中，clipWav 临时 wav 走 trial preview 通道；R243 裁剪试听改试听/停止切换、关窗与用这一段都 stopPreview；R247 裁剪弹层用这一段/试听/取消配图标+文字；R256 裁剪试听 ref_clip_trial.wav 改走 TrialFiles.file"
+    },
+    {
+      "candidate_id": "253c45646f4c8e8d8d6fcebd5d5090ba31b35a1c38d29ce84c4c494900d221a3",
+      "object_ref": "code:app/src/main/java/com/tingben/app/ModelUi.kt",
+      "path": "app/src/main/java/com/tingben/app/ModelUi.kt",
+      "change": "update",
+      "source_sha256": "cbbdd3be721ab339090416cf76f3c9d8c929bcb85fab202738e1531d64eb04d5",
+      "existing_entry": "ModelUi.kt[AG9L]: F:模型页与清理分段行 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/ModelStore.kt | A:ModelScreen / ClearSegmentsRow | S:三卡固定等高、详情统一弹层，完整文件名点一下可复制；残件由 ModelStore 的 GGUF 魔数校验拦住，界面不显示「已导入 ✓」"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "version": "code-cognition-batch/v1",
+  "plan_id": "bc7f2050a1a9a21398e20507d2569e83bd63045c168aa6dcfe30932eacf844f5",
+  "batch_id": "88cdea768a15b6a9e257cdf67bff4666bfcb38910bccd9beebfd96177e5eb56f",
+  "composite_identity": "07d54609ce11fbeb48f886c6c9295879a80249197d7ffc0ee71220619429ceec",
+  "scope_policy_identity": "2992d2c0efa2955e80cd4793f2e002700182fbdb43be384849dfb1dfc9776168",
+  "code_volume_path": "aoci.code.txt",
+  "code_volume_sha256": "d4a1677178d8b483a62ec1ddb15a3afca160ed3373cb90127a28b9a25cc415e3",
+  "all_targets": [
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/MultiSelect.kt",
+      "path": "app/src/main/java/com/tingben/app/MultiSelect.kt",
+      "change": "update",
+      "source_sha256": "24c737ed1c7f635a7c73d6a06ddc059ce09029329b7b842653dc20a21d4d61b9",
+      "existing_entry": "MultiSelect.kt[AU7S]: F:统一多选组件，代码绘制勾选方块与底部胶囊操作条 | R:code:app/src/main/java/com/tingben/app/ChapterHub.kt | A:SelectBox / MultiSelectBar | S:R171 底部条取消入口从裸 × 换成看得见的「取消」文字，图标保留作辅助；R224 新增 ActionChip（底色/圆角/可点/危险色），全选与取消一并按钮化；R247 ActionChip 加可选 icon 槽、全选/取消配图标，旧调用签名兼容；R253 动作条放大：ActionChip 最小高 44dp/13sp/图标 18dp、卡片 elevation 12"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/core/AudioOps.kt",
+      "path": "app/src/main/java/com/tingben/app/core/AudioOps.kt",
+      "change": "update",
+      "source_sha256": "d49d2270537caee6c0889dc152b2bf4c78dfb07db75c4f2eab98b3b7d2958045",
+      "existing_entry": "AudioOps.kt[KB5M]: F:WAV 拼接与 PCM 读写，把逐段小音频拼成整章成品 | R:code:app/src/main/java/com/tingben/app/core/AudioLibrary.kt | A:mergeChapter / pcmOf | S:R231 mergeChapterAuto 登单章成品；R243 ensure 缺块跳过、日志无书名；R252 toM4a 切 IO 防 ANR；R255 先 markDone 再删小块、失败保留；R265 去重改 hasChapterAudio（多章整本不占章），旧 audioFor 致补拼全跳过；R270 撤 holdChapters；R272 ensure 加 force，收尾强制按章拼"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/core/ModelStore.kt",
+      "path": "app/src/main/java/com/tingben/app/core/ModelStore.kt",
+      "change": "update",
+      "source_sha256": "4e0f24fa1a81a5474020c496ef88a234adbbfe9ee35e616f07dc562cb48a68bb",
+      "existing_entry": "ModelStore.kt[DC9S]: F:本地模型文件管理，GGUF 魔数校验、按模式挑主文件、就绪检查与缺件原因 | R:code:app/src/main/java/com/tingben/app/core/Pipeline.kt,code:app/src/main/java/com/tingben/app/engine/NativeEngine.kt,code:scripts/core_sources.py | A:ModelStore.import / modeFile / synthesisBlockReason / missing / ready | S:R175 起导入校验 GGUF 魔数与最小尺寸，下载残件不许一路进 native、界面也不显示「已导入 ✓」；pickFor 靠文件名子串认主文件，改名规则改动要连synthesisBlockReason 一起改；R204 从 Pipeline.kt 搬出，头部自带 Context / File / EventLog import"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:scripts/r224_verify.py",
+      "path": "scripts/r224_verify.py",
+      "change": "update",
+      "source_sha256": "457967bd576eb68cc1a61c86349b834471e29720194299876c59dabb785bbe7c",
+      "existing_entry": "r224_verify.py[TQ8S]: F:批次1 多选动作按钮化 / 抽屉手势仅主页守门 | R:code:app/src/main/java/com/tingben/app/MultiSelect.kt,code:app/src/main/java/com/tingben/app/ChapterHub.kt | A:--selftest（14 组反向注入） | S:ActionChip 带底色圆角可点、删除用危险色；勾选态零 TextButton；gesturesEnabled 限定 LIBRARY、反守全局 true；自主推进首批不改版本不发包"
+    }
+  ],
+  "targets": [
+    {
+      "candidate_id": "ebce82bd0747ecaf2b70005c87c9980874c1e1f4dcbb360dc22385e4592908c3",
+      "object_ref": "code:app/src/main/java/com/tingben/app/MultiSelect.kt",
+      "path": "app/src/main/java/com/tingben/app/MultiSelect.kt",
+      "change": "update",
+      "source_sha256": "24c737ed1c7f635a7c73d6a06ddc059ce09029329b7b842653dc20a21d4d61b9",
+      "existing_entry": "MultiSelect.kt[AU7S]: F:统一多选组件，代码绘制勾选方块与底部胶囊操作条 | R:code:app/src/main/java/com/tingben/app/ChapterHub.kt | A:SelectBox / MultiSelectBar | S:R171 底部条取消入口从裸 × 换成看得见的「取消」文字，图标保留作辅助；R224 新增 ActionChip（底色/圆角/可点/危险色），全选与取消一并按钮化；R247 ActionChip 加可选 icon 槽、全选/取消配图标，旧调用签名兼容；R253 动作条放大：ActionChip 最小高 44dp/13sp/图标 18dp、卡片 elevation 12"
+    },
+    {
+      "candidate_id": "832060d627a9fedca8fe3e9e04eff9804a5903e806bd167bb52936db0af80ae4",
+      "object_ref": "code:app/src/main/java/com/tingben/app/core/AudioOps.kt",
+      "path": "app/src/main/java/com/tingben/app/core/AudioOps.kt",
+      "change": "update",
+      "source_sha256": "d49d2270537caee6c0889dc152b2bf4c78dfb07db75c4f2eab98b3b7d2958045",
+      "existing_entry": "AudioOps.kt[KB5M]: F:WAV 拼接与 PCM 读写，把逐段小音频拼成整章成品 | R:code:app/src/main/java/com/tingben/app/core/AudioLibrary.kt | A:mergeChapter / pcmOf | S:R231 mergeChapterAuto 登单章成品；R243 ensure 缺块跳过、日志无书名；R252 toM4a 切 IO 防 ANR；R255 先 markDone 再删小块、失败保留；R265 去重改 hasChapterAudio（多章整本不占章），旧 audioFor 致补拼全跳过；R270 撤 holdChapters；R272 ensure 加 force，收尾强制按章拼"
+    },
+    {
+      "candidate_id": "883fc4d992c7007a10914e19103f2577fc949e78ce4a87c9388f6b5218c9d4d0",
+      "object_ref": "code:app/src/main/java/com/tingben/app/core/ModelStore.kt",
+      "path": "app/src/main/java/com/tingben/app/core/ModelStore.kt",
+      "change": "update",
+      "source_sha256": "4e0f24fa1a81a5474020c496ef88a234adbbfe9ee35e616f07dc562cb48a68bb",
+      "existing_entry": "ModelStore.kt[DC9S]: F:本地模型文件管理，GGUF 魔数校验、按模式挑主文件、就绪检查与缺件原因 | R:code:app/src/main/java/com/tingben/app/core/Pipeline.kt,code:app/src/main/java/com/tingben/app/engine/NativeEngine.kt,code:scripts/core_sources.py | A:ModelStore.import / modeFile / synthesisBlockReason / missing / ready | S:R175 起导入校验 GGUF 魔数与最小尺寸，下载残件不许一路进 native、界面也不显示「已导入 ✓」；pickFor 靠文件名子串认主文件，改名规则改动要连synthesisBlockReason 一起改；R204 从 Pipeline.kt 搬出，头部自带 Context / File / EventLog import"
+    },
+    {
+      "candidate_id": "11fdf9a282394717d2874b3f92d3efd03f17047567ff513e1c45b2d80521d34e",
+      "object_ref": "code:scripts/r224_verify.py",
+      "path": "scripts/r224_verify.py",
+      "change": "update",
+      "source_sha256": "457967bd576eb68cc1a61c86349b834471e29720194299876c59dabb785bbe7c",
+      "existing_entry": "r224_verify.py[TQ8S]: F:批次1 多选动作按钮化 / 抽屉手势仅主页守门 | R:code:app/src/main/java/com/tingben/app/MultiSelect.kt,code:app/src/main/java/com/tingben/app/ChapterHub.kt | A:--selftest（14 组反向注入） | S:ActionChip 带底色圆角可点、删除用危险色；勾选态零 TextButton；gesturesEnabled 限定 LIBRARY、反守全局 true；自主推进首批不改版本不发包"
+    }
+  ]
+}

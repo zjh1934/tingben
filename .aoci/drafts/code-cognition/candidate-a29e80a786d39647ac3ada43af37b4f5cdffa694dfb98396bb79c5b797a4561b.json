@@ -1,0 +1,77 @@
+{
+  "version": "code-cognition-batch/v1",
+  "plan_id": "f71a0021cac17b73245363a1d6aade723af9536fc708fbb3bec9698043f9d986",
+  "batch_id": "a29e80a786d39647ac3ada43af37b4f5cdffa694dfb98396bb79c5b797a4561b",
+  "composite_identity": "bdd0e02bf2df3a6d6c091fffd67f644480af7728e740ef9447ab496167183c7e",
+  "scope_policy_identity": "2992d2c0efa2955e80cd4793f2e002700182fbdb43be384849dfb1dfc9776168",
+  "code_volume_path": "aoci.code.txt",
+  "code_volume_sha256": "b95c72742672d116915f44ff3a37f04cda586458520082101fa920dd91413f0b",
+  "all_targets": [
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "path": "app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "change": "update",
+      "source_sha256": "6668f041b36db4f3d15c951188fd91a7027f08594010365568a193e794bb52a5",
+      "existing_entry": "ChapterHub.kt[AU9L]: F:一本书的主页，单列承载章节、双进度、可播汇总与分段格子；右侧小眼睛进阅读，长按出勾选框与小菜单，制作中的章恒定展开小段区 | R:code:app/src/main/java/com/tingben/app/core/ChapterPlan.kt,code:app/src/main/java/com/tingben/app/core/Workbench.kt,code:app/src/main/java/com/tingben/app/core/PlayQueue.kt | A:ChapterHubScreen / ChapterSegGrid / SEG_GRID_COLUMNS | S:R224 勾选态动作全 ActionChip；R226 撤单独一排操作、tasksRequest 开看板；R233 删段不参与合成与拼接；R235 段级重做标记即排队、startAction 读全局默认；R243 打开书回溯补齐章节成品；R247 底部条与任务弹窗配图标、文字保留；R252 导出回调切 IO 防 ANR；R253 长按小菜单（勾选/整章重做）、redoWholeChapter 撤旧成品、撤两段顶部废话；R255 长按菜单与底部条互斥、只剩两条纯色进度；R257 脱敏补漏、拼章补齐拆出 st.done；R264 制作章恒定展开（liveChapter 派生自 bookRunning/makingChapter），删 expandedChapter 状态、点章名切换、HUB_CH_EXPAND、ChevronIcon、AnimatedVisibility 与 liveChapters，7 个守门按新语义迁移并把旧形态列 BAN；R265 整章重做删旧成品改 chapterOnlyFor，不误删整本；R266 制作中只 markSeg 不排队列，redoKeys 秒读驱动格子转黄绿；R270 小块/章成品互斥、失效只给整章重做；R272 播放小条上滑展开全屏播放器"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "path": "app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "change": "update",
+      "source_sha256": "7018aff964f64d1a383762e59d906f32fff634f710ba41d1fafc169a948066a8",
+      "existing_entry": "InputReadUi.kt[AG9L]: F:首页贴一段→点合成→片段进下方留白列表（R276；不是粘上就响、不建书）；asHome=false 的分享页仍可建书 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/ClipLibrary.kt | A:InputReadScreen / ClipRow | S:合成要等几分钟，产物落 filesDir/clips 常驻、走主播放条，绝不进 trial 试听通道；展示名取正文前 10 字，文件名缀短 id 防重名；合成互斥串行、重做先写 .redo.wav 成功再覆盖，失败留旧音频；勾选+底部条与长按就地菜单互斥、返回键优先关菜单；片段动作只有删除/导出/重做，不带整章重做/拼章；1500 字上限中文提示、失败时正文原样留着；R267 浮窗 update 标 CLIP、收起条件 hide 不误删制作球"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:scripts/r215_verify.py",
+      "path": "scripts/r215_verify.py",
+      "change": "update",
+      "source_sha256": "e0e3070808aba0874be617893ae18590723448619a93f4797448ff867ff08241",
+      "existing_entry": "r215_verify.py[TQ8M]: F:R215/R276 首页片段 / 合成真源唯一 / 独立目录 / 老守门视图迁移守门 | R:code:app/src/main/java/com/tingben/app/core/ClipSynth.kt,code:app/src/main/java/com/tingben/app/core/ClipLibrary.kt,code:app/src/main/java/com/tingben/app/InputReadUi.kt | A:--selftest（22 组反向注入 + 字数闸门对拍） | S:首页分支不许出现 BookStore.add/onAdded/text=\"\"/nav.push；分享页建书能力不许误删；试听不许再长一份 SynthInput.Params；R276 片段不许退回 trial 通道，独立目录/前 10 字命名/登记+文件存在双判不许被摘；判据按现状迁移、不放宽"
+    },
+    {
+      "candidate_id": "",
+      "object_ref": "code:scripts/r231_verify.py",
+      "path": "scripts/r231_verify.py",
+      "change": "update",
+      "source_sha256": "b09f751c00a6fb768a442a89ec76aae57ef97d2af7fdff9c9848ab54292c3387",
+      "existing_entry": "r231_verify.py[TQ8M]: F:按章拼成品 / 拼接设置 / 格式前置校验守门 | R:code:app/src/main/java/com/tingben/app/core/WavMerger.kt,code:app/src/main/java/com/tingben/app/core/AudioOps.kt | A:--selftest（反向注入） | S:拼这一章非整本；Prefs 两偏好不进 ProduceConfig；fmtOf 校验一致且等于 24k/1/16；mergeChapterAuto 只增不删；Producer 整本成品后按章拼；③ 拼接设置；借鉴同行无损路线；R255 旧「不许动小块」约束改判为先写章状态后删的顺序与兜底，注入重写；R265 去重改 hasChapterAudio，加整本/章级分流、输出分流、重做不删整本判据，28 组注入按现状迁移；R270 判据守真实模型（onRedo 禁失效、holdChapters 禁回潮）；R272 判据改守只按章拼/导出不收整本，R268/R271 伪判据连根拔，注入按现状迁移"
+    }
+  ],
+  "targets": [
+    {
+      "candidate_id": "6fe9ba600c7876746da9d06ffcc9bc40db3e7ad1ab6e5971e7238b9325a5040a",
+      "object_ref": "code:app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "path": "app/src/main/java/com/tingben/app/ChapterHub.kt",
+      "change": "update",
+      "source_sha256": "6668f041b36db4f3d15c951188fd91a7027f08594010365568a193e794bb52a5",
+      "existing_entry": "ChapterHub.kt[AU9L]: F:一本书的主页，单列承载章节、双进度、可播汇总与分段格子；右侧小眼睛进阅读，长按出勾选框与小菜单，制作中的章恒定展开小段区 | R:code:app/src/main/java/com/tingben/app/core/ChapterPlan.kt,code:app/src/main/java/com/tingben/app/core/Workbench.kt,code:app/src/main/java/com/tingben/app/core/PlayQueue.kt | A:ChapterHubScreen / ChapterSegGrid / SEG_GRID_COLUMNS | S:R224 勾选态动作全 ActionChip；R226 撤单独一排操作、tasksRequest 开看板；R233 删段不参与合成与拼接；R235 段级重做标记即排队、startAction 读全局默认；R243 打开书回溯补齐章节成品；R247 底部条与任务弹窗配图标、文字保留；R252 导出回调切 IO 防 ANR；R253 长按小菜单（勾选/整章重做）、redoWholeChapter 撤旧成品、撤两段顶部废话；R255 长按菜单与底部条互斥、只剩两条纯色进度；R257 脱敏补漏、拼章补齐拆出 st.done；R264 制作章恒定展开（liveChapter 派生自 bookRunning/makingChapter），删 expandedChapter 状态、点章名切换、HUB_CH_EXPAND、ChevronIcon、AnimatedVisibility 与 liveChapters，7 个守门按新语义迁移并把旧形态列 BAN；R265 整章重做删旧成品改 chapterOnlyFor，不误删整本；R266 制作中只 markSeg 不排队列，redoKeys 秒读驱动格子转黄绿；R270 小块/章成品互斥、失效只给整章重做；R272 播放小条上滑展开全屏播放器"
+    },
+    {
+      "candidate_id": "4ef0498101afc7f4051b935a99e3decf5913177281fb910f1866c45b6a94d0b1",
+      "object_ref": "code:app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "path": "app/src/main/java/com/tingben/app/InputReadUi.kt",
+      "change": "update",
+      "source_sha256": "7018aff964f64d1a383762e59d906f32fff634f710ba41d1fafc169a948066a8",
+      "existing_entry": "InputReadUi.kt[AG9L]: F:首页贴一段→点合成→片段进下方留白列表（R276；不是粘上就响、不建书）；asHome=false 的分享页仍可建书 | R:code:app/src/main/java/com/tingben/app/MainActivity.kt,code:scripts/ui_sources.py,code:app/src/main/java/com/tingben/app/core/ClipLibrary.kt | A:InputReadScreen / ClipRow | S:合成要等几分钟，产物落 filesDir/clips 常驻、走主播放条，绝不进 trial 试听通道；展示名取正文前 10 字，文件名缀短 id 防重名；合成互斥串行、重做先写 .redo.wav 成功再覆盖，失败留旧音频；勾选+底部条与长按就地菜单互斥、返回键优先关菜单；片段动作只有删除/导出/重做，不带整章重做/拼章；1500 字上限中文提示、失败时正文原样留着；R267 浮窗 update 标 CLIP、收起条件 hide 不误删制作球"
+    },
+    {
+      "candidate_id": "1ef8d3fe113b9e60cd0e5c8d94383fe2395b3b8d9664580ddc965dc2fdda2d8d",
+      "object_ref": "code:scripts/r215_verify.py",
+      "path": "scripts/r215_verify.py",
+      "change": "update",
+      "source_sha256": "e0e3070808aba0874be617893ae18590723448619a93f4797448ff867ff08241",
+      "existing_entry": "r215_verify.py[TQ8M]: F:R215/R276 首页片段 / 合成真源唯一 / 独立目录 / 老守门视图迁移守门 | R:code:app/src/main/java/com/tingben/app/core/ClipSynth.kt,code:app/src/main/java/com/tingben/app/core/ClipLibrary.kt,code:app/src/main/java/com/tingben/app/InputReadUi.kt | A:--selftest（22 组反向注入 + 字数闸门对拍） | S:首页分支不许出现 BookStore.add/onAdded/text=\"\"/nav.push；分享页建书能力不许误删；试听不许再长一份 SynthInput.Params；R276 片段不许退回 trial 通道，独立目录/前 10 字命名/登记+文件存在双判不许被摘；判据按现状迁移、不放宽"
+    },
+    {
+      "candidate_id": "b6f74e258f7eb5bfff682a91aaab915a811582541ef8687b6a13bae99d4d6a18",
+      "object_ref": "code:scripts/r231_verify.py",
+      "path": "scripts/r231_verify.py",
+      "change": "update",
+      "source_sha256": "b09f751c00a6fb768a442a89ec76aae57ef97d2af7fdff9c9848ab54292c3387",
+      "existing_entry": "r231_verify.py[TQ8M]: F:按章拼成品 / 拼接设置 / 格式前置校验守门 | R:code:app/src/main/java/com/tingben/app/core/WavMerger.kt,code:app/src/main/java/com/tingben/app/core/AudioOps.kt | A:--selftest（反向注入） | S:拼这一章非整本；Prefs 两偏好不进 ProduceConfig；fmtOf 校验一致且等于 24k/1/16；mergeChapterAuto 只增不删；Producer 整本成品后按章拼；③ 拼接设置；借鉴同行无损路线；R255 旧「不许动小块」约束改判为先写章状态后删的顺序与兜底，注入重写；R265 去重改 hasChapterAudio，加整本/章级分流、输出分流、重做不删整本判据，28 组注入按现状迁移；R270 判据守真实模型（onRedo 禁失效、holdChapters 禁回潮）；R272 判据改守只按章拼/导出不收整本，R268/R271 伪判据连根拔，注入按现状迁移"
+    }
+  ]
+}
