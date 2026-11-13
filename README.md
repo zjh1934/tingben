@@ -9,17 +9,15 @@
 [![版本](https://img.shields.io/badge/version-1.1.38-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
-[![网络权限](https://img.shields.io/badge/INTERNET-无-2E7D32)](https://github.com/zjh1934/tingben/blob/main/app/src/main/AndroidManifest.xml)
-[![架构](https://img.shields.io/badge/arm64--v8a-607D8B)](https://github.com/zjh1934/tingben)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[下载](#下载) · [看看界面](#看看界面) · [功能](#功能) · [30-秒开始](#30-秒开始) · [文档](#文档) · [更新记录](#更新记录) · [参与](#参与) · [许可](#许可)
+[下载](#下载) · [看看界面](#看看界面) · [功能](#功能) · [30-秒开始](#30-秒开始) · [模型文件](#模型文件后导入不进包) · [技术栈](#技术栈与架构) · [文档](#文档) · [更新记录](#更新记录) · [如实说](#如实说) · [参与](#参与) · [许可](#许可)
 
 ## 为什么做这个
 
 想听一本本地的小说，不想把正文上传到任何服务器、也不想装几个 G 的模型进 APK。
 听本把整条链路都放在手机里：导入书 → 勾要做的章 → 逐段端侧合成 → 这一章的小块一做完就拼成这一章的音频。
-没有账号、没有联网、没有文本改写，正文一个字都不动。
+没有账号、没有联网、没有文本改写，正文一个字都不动。App 不含 `INTERNET` 权限，只支持 arm64-v8a 机型。
 
 ## 下载
 
@@ -48,6 +46,10 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 <p align="center">
   <img src="docs/screenshots/tasks.png" alt="任务页" width="38%">
   <img src="docs/screenshots/player.png" alt="播放器" width="38%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/mixer.png" alt="调音台" width="38%">
+  <img src="docs/screenshots/settings.png" alt="设置页" width="38%">
 </p>
 
 更多形态（书架、制作中的小块、调音台三模式、设置、模型、播放列表等）在 [`docs/screenshots/`](docs/screenshots/) 与 [`docs/界面形态清单.md`](docs/界面形态清单.md)。
