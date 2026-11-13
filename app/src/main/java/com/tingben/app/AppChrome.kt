@@ -281,18 +281,24 @@ internal fun AppDrawerSheet(
                 Text("＋ 导入一本书", fontSize = 13.sp)
             }
             Box(Modifier.weight(1f)) { content() }
-            // R230 · 设置入口收进抽屉左下角
-            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+            // R320 · 图 47：设置原来是一枚小胶囊孤零零飘在左下角，中间一大片
+            // 空白，像没画完。底部收成一整块：分隔线 + 满宽设置行 + 版本，
+            // 和上面书列表同宽对齐；齿轮换成与设置页前导槽同一套矢量图标。
+            Box(Modifier.fillMaxWidth().height(1.dp)
+                .background(sub.copy(alpha = 0.18f)))
+            Row(Modifier.fillMaxWidth()
+                    .clickable { onSettings() }
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onSettings) {
-                    // R247 · ⚙ 字符换成 R162 就画好的真齿轮，文字保留
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        GearIcon(primary)
-                        Spacer(Modifier.width(6.dp))
-                        Text("设置", fontSize = 13.sp, color = primary)
-                    }
-                }
+                UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)
+                Spacer(Modifier.width(10.dp))
+                Text("设置", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    color = primary, modifier = Modifier.weight(1f))
+                Text("›", fontSize = 16.sp, color = sub)
             }
+            Text("听本 · " + com.tingben.app.BuildConfig.VERSION_NAME,
+                fontSize = 10.sp, color = sub,
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 10.dp))
         }
     }
 }

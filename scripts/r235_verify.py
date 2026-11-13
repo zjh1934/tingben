@@ -21,7 +21,7 @@ def files():
         "hub": rd(APP / "ChapterHub.kt"),
         "producer": core_sources.source(ROOT).read_text(encoding="utf-8"),
         "segplan": rd(APP / "core/SegPlan.kt"),
-        "produce": rd(APP / "ProduceUi.kt"),
+        "produce": rd(APP / "ProduceUi.kt") + "\n" + rd(APP / "SettingsUi.kt"),
         "r95": rd(ROOT / "scripts/r95_verify.py"),
         "parity": rd(ROOT / "scripts/r95_space_parity.py"),
         "agents": rd(ROOT / "AGENTS.md"),
@@ -41,7 +41,7 @@ def check(f):
               'Producer.enqueueOrStart(c, book, setOf(ch),',
               '"已标记 $n 段，按当前调音台重新合成"',
               '"已标记 $n 段（格子转黄）：当前这段做完马上重做，做完变回绿色"',
-              '"重做选中" to onRedo',
+              'ActionChip("重做选中", onClick = onRedo',
               'onAll: () -> Unit, onTrial: () -> Unit, onRedo: () -> Unit, onDelete: () -> Unit']:
         if k not in h: e.append("段级重做 UI 缺: " + k[:56])
     # R297 · 勾 N 段只写一次盘、放 IO；逐段 fsync 会卡死主线程
@@ -137,7 +137,7 @@ def selftest():
     f = files()
     assert not check(f), "基线自己就红了"
     cuts = [
-        ("重做按钮被摘", "hub", '"重做选中" to onRedo', ""),
+        ("重做按钮被摘", "hub", 'ActionChip("重做选中", onClick = onRedo', ""),
         ("不标记 redo", "hub", 'SegPlan.markSegs(w, idxs)', ""),
         ("重做不启动", "hub", 'Producer.enqueueOrStart(c, book, setOf(ch),', ""),
         ("排队反馈被摘", "hub",

@@ -39,3 +39,5 @@ opencode.json
 .secrets/
 *_token
 
+# CI 生成的结构化 Release 说明，不进版本管理
+release-notes.md

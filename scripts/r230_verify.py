@@ -33,7 +33,7 @@ def check(f):
     # ① 抽屉：标题单独一行、导入独占一排、设置收进左下角
     for k in ['Text("＋ 导入一本书", fontSize = 13.sp)',
               'Button(\n                onClick = onImport,',
-              'GearIcon(primary)\n                        Spacer(Modifier.width(6.dp))',
+              'UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)',
               "Box(Modifier.weight(1f)) { content() }"]:
         if k not in ch: e.append("抽屉布局缺: " + k[:52])
     # AppTopBar 与 AppDrawerSheet 各有一处；抽屉那处被摘就只剩 1
@@ -107,7 +107,7 @@ def selftest():
          'TextButton(onClick = onImport)'),
         ("导入整排被摘", "chrome", 'Text("＋ 导入一本书", fontSize = 13.sp)', ""),
         ("抽屉左下设置被摘", "chrome",
-         'GearIcon(primary)\n                        Spacer(Modifier.width(6.dp))', ""),
+         'UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)', ""),
         ("抽屉设置没接线", "main", 'EventLog.ui("DRAWER_SETTINGS", "open")', ""),
         ("主页加号回潮", "shell", "Screen.LIBRARY  -> ChromeSpec(\"\", TAB_LIBRARY, showMenu = true)",
          'Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY, showMenu = true,\n        showImport = true)'),

@@ -36,11 +36,11 @@ HUB_MUST = [
     "if (multiMode && menuChapter == null) {",
     # 任务看板就地：与独立任务页同源，不另造状态口径
     "制作选中章节",
-    "任务队列 · ${queued.size} 个",
-    "queued.forEach { t ->",
+    "R315 · 目录页就地任务浮窗整段撤掉",
+    "队列 ${queued.size} · 去任务页看",
     "val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }",
     "AudioOps.mergeChapter(c, book.id, book.title, i, segs)",
-    "TaskResume.dequeue(c, t.bookId)",
+    "if (queued.isNotEmpty()) {",
     # R243 · 「继续队列」按钮三处全砍，底层 resumeQueue 仍在 Producer。
     # 这里改判「队列数据同源」，按钮回潮由 HUB_BAN 拦，不放宽能力判据。
     "TaskResume.queue(c)",
@@ -75,7 +75,7 @@ MAIN_MUST = [
     "var devOpen by remember { mutableStateOf(false) }",
     'SettingsSection("运行与通知", "系统", collapsible = false)',
     "private fun PermEntryRow(",
-    'PermEntryRow("应用详情", "系统设置")',
+    'PermEntryRow(UiIcon.SETTINGS, "应用详情", "系统设置")',
     # R291 · 抽屉只留一枚导入入口；这里守「导入能力仍接到调用方」
     'onImportBook = { openBookPicker() }',
 ]
@@ -142,7 +142,7 @@ def selftest():
         ("制作按钮被摘", "hub",
          lambda t: t.replace("制作选中章节", "")),
         ("看板回潮", "hub",
-         lambda t: t.replace("任务队列 · ${queued.size} 个", "TaskBoardDialog(")),
+         lambda t: t.replace("R315 · 目录页就地任务浮窗整段撤掉", "TaskBoardDialog(")),
         ("取消按钮被摘", "multi", lambda t: t.replace('ActionChip("取消"', 'Text("×"')),
         ("首页空态提示被摘", "main", lambda t: t.replace(
             'if (text.isEmpty()) Text("粘贴或输入要念的正文",', "")),
@@ -155,7 +155,7 @@ def selftest():
             'SettingsSection("运行与通知", "系统", collapsible = false)',
             'SettingsSection("启动行为", "系统", collapsible = false)\n        SettingsSection("通知与权限", "系统", collapsible = false)')),
         ("应用详情又冒充权限", "main", lambda t: t.replace(
-            'PermEntryRow("应用详情", "系统设置")', 'PermRow("应用详情", true, "系统设置")')),
+            'PermEntryRow(UiIcon.SETTINGS, "应用详情", "系统设置")', 'PermRow("应用详情", true, "系统设置")')),
         ("CI 漏挂", "ci", lambda t: t.replace(
             "python3 scripts/r171_verify.py --selftest", "")),
     ]

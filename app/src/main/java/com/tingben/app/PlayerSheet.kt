@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -39,6 +40,15 @@ private fun modeLabel(ord: Int): String = when (ord) {
     2 -> "循环"
     else -> "顺序"
 }
+
+/** R319 · 队列里一条就是「一份音频」：章音频，或首页粘贴合成的一段。
+ *  不再叫「第 N 段」——段是内部小块，不该露给用户。 */
+private fun trackKind(label: String): String =
+    if (label.contains("片段") || label.contains("粘贴")) "粘贴片段" else "章音频"
+
+/** R319 · 下滑跟手：0 = 展开到位，1 = 完全滑出。控件先淡出，只留封面与标题，
+ *  半收起时倍速 / 模式 / 列表胶囊不再叠成一团。 */
+private fun chromeAlpha(pull: Float): Float = (1f - pull * 1.6f).coerceIn(0f, 1f)
 
 /**
  * R262 · 代码自绘的「书页 + 声波」封面。不引图标库、不进资源文件，
@@ -82,16 +92,21 @@ internal fun PlayerCover(tint: Color, coverSize: Dp = 180.dp, playing: Boolean =
     }
 }
 
-/** R303 · 播放模式单按钮：顺序 / 随机 / 循环三态，点一下切一态。 */
+/** R303 · 播放模式单按钮：顺序 / 随机 / 循环三态，点一下切一态。
+ *  R319 · 补一枚状态图标，不再像「展开 ›」那样让人以为是菜单。 */
 @Composable
-private fun ModeChip(label: String, onClick: () -> Unit) {
+private fun ModeChip(ord: Int, label: String, onClick: () -> Unit) {
     Box(Modifier.height(44.dp)
         .background(palette.primarySoft, RoundedCornerShape(50))
         .clickable(onClick = onClick)
         .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center) {
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            color = palette.primary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconMode(ord, palette.primary, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                color = palette.primary)
+        }
     }
 }
 
@@ -104,13 +119,17 @@ private fun ModeChip(label: String, onClick: () -> Unit) {
  * 下滑手势挂在整页 Column 上，子控件（列表滚动 / 进度条）先消费事件，不抢它们的手势。
  * 砍掉睡眠定时与 ±15/30s 跳转；快进快退的位置换成播放模式三态按钮；
  * 播放列表从顶栏挪到右下角，显示的是「当前播放的音频列表」而不是整本书的章节表。
+ *
+ * R319 · pullFraction 由外层按 sheetY 实时给：下滑时进度/倍速/控制/列表胶囊先淡出，
+ * 半收起态只剩封面与标题，不再整层平移叠成一团；列表展开时控制行压成细条。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PlayerSheet(
     c: Context, bookId: String?, onClose: () -> Unit, onGoBook: (String) -> Unit,
     onPullDown: (Float) -> Unit = {},
-    onPullSettle: () -> Unit = {}
+    onPullSettle: () -> Unit = {},
+    pullFraction: Float = 0f
 ) {
     val st by PlayQueue.state.collectAsState()
     val modeOrd by PlayQueue.modeState.collectAsState()
@@ -134,6 +153,10 @@ internal fun PlayerSheet(
     val dur = st.durationMs
     val frac = if (dur > 0) (st.positionMs.toFloat() / dur.toFloat()).coerceIn(0f, 1f) else 0f
     val left = (dur - st.positionMs).coerceAtLeast(0L)
+    val chrome = chromeAlpha(pullFraction)
+    // R319 · 列表展开时主控制行让位，不再占掉半屏。
+    val barPad = if (showList) 2.dp else 10.dp
+    val playSize = if (showList) 44.dp else 62.dp
 
     Column(Modifier.fillMaxSize().background(palette.bg)
         .statusBarsPadding().navigationBarsPadding()
@@ -151,7 +174,8 @@ internal fun PlayerSheet(
             )
         }) {
 
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+        Row(Modifier.fillMaxWidth().alpha(chrome)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) {
                 IconChevronDown(palette.primary, Modifier.size(24.dp))
@@ -159,24 +183,41 @@ internal fun PlayerSheet(
             Text("正在听", fontSize = 13.sp, fontWeight = FontWeight.Bold,
                 color = palette.text, modifier = Modifier.weight(1f),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            IconButton(onClick = {
-                PlayQueue.release()
-                onClose()
-            }) { IconClose(palette.sub, Modifier.size(20.dp)) }
+            // R319 · 右上不再是「又一个关闭」：写明是停止（会清队列），
+            // 左上下拉才是收起。两件事分开，能力一条没删。
+            Row(Modifier.height(40.dp)
+                .background(palette.card, RoundedCornerShape(50))
+                .clickable {
+                    PlayQueue.release()
+                    onClose()
+                }
+                .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("停止", fontSize = 11.sp, color = palette.sub)
+                Spacer(Modifier.width(4.dp))
+                IconClose(palette.sub, Modifier.size(16.dp))
+            }
         }
 
         if (showList) {
-            Text("当前播放的音频列表", fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                color = palette.primary, modifier = Modifier.padding(horizontal = 20.dp))
+            Text("播放队列 · ${list.size} 条", fontSize = 13.sp,
+                fontWeight = FontWeight.Bold, color = palette.primary,
+                modifier = Modifier.padding(horizontal = 20.dp).alpha(chrome))
             Spacer(Modifier.height(8.dp))
             if (list.isEmpty()) {
                 Text("现在没有在播的音频", fontSize = 13.sp,
                     color = palette.sub, modifier = Modifier.padding(horizontal = 20.dp))
+                if (!bookId.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { onClose(); onGoBook(bookId) }) {
+                        Text("去挑一本", fontSize = 12.sp, color = palette.primary)
+                    }
+                }
             } else {
                 // R285 · 选章列表与下方主控制行 / 功能行同在一个 Column：
                 // weight(1f) 已保证不被挤掉，再留 8dp 尾部余量，最后一条不贴控制行。
                 LazyColumn(
-                    Modifier.weight(1f).fillMaxWidth(),
+                    Modifier.weight(1f).fillMaxWidth().alpha(chrome),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
                     items(list) { (idx, t) ->
@@ -191,13 +232,25 @@ internal fun PlayerSheet(
                                 showList = false
                             }.padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            Text("第 ${idx + 1} 段", fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold, color = palette.text)
-                            Spacer(Modifier.width(10.dp))
-                            Text(t.label, fontSize = 12.sp, color = palette.sub,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f))
+                            // R319 · 一条 = 一份音频：序号 + 真实条目名 + 来源，
+                            // 正在播的那条给主色竖条。不再写「第 N 段」。
+                            if (idx == st.index) {
+                                Box(Modifier.width(3.dp).height(36.dp)
+                                    .background(palette.primary, RoundedCornerShape(50)))
+                                Spacer(Modifier.width(10.dp))
+                            } else {
+                                Text("%02d".format(idx + 1), fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold, color = palette.sub,
+                                    modifier = Modifier.width(26.dp))
+                                Spacer(Modifier.width(10.dp))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(t.label, fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold, color = palette.text,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text(trackKind(t.label), fontSize = 11.sp, color = palette.sub)
+                            }
                             if (idx == st.index) {
                                 Spacer(Modifier.width(6.dp))
                                 Text("正在播", fontSize = 11.sp, color = palette.primary)
@@ -215,38 +268,44 @@ internal fun PlayerSheet(
                 Text(st.label.ifBlank { "未在播放" }, fontSize = 20.sp,
                     fontWeight = FontWeight.Bold, color = palette.text, maxLines = 2)
                 Spacer(Modifier.height(6.dp))
-                Text(if (st.index >= 0) "第 ${st.index + 1} 段 · ${mmss(dur)}"
+                Text(if (st.index >= 0)
+                        (if (st.isPlaying) "正在播放" else "已暂停") +
+                            " · 第 ${st.index + 1}/${list.size} 条 · ${mmss(dur)}"
                      else "准备好就可以听了",
                     fontSize = 12.sp, color = palette.sub)
-                Spacer(Modifier.height(26.dp))
-                Slider(
-                    value = frac,
-                    onValueChange = { if (dur > 0) PlayQueue.seekTo((it * dur).toLong()) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(Modifier.fillMaxWidth()) {
-                    Text(mmss(st.positionMs), fontSize = 12.sp, color = palette.sub)
-                    Spacer(Modifier.weight(1f))
-                    Text("-" + mmss(left), fontSize = 12.sp, color = palette.sub)
-                }
-                Spacer(Modifier.height(18.dp))
-                Text("倍速", fontSize = 12.sp, color = palette.sub)
-                // K1 · 合成侧只有「慢/中/快」倾向，播放倍速才是可靠控制点。
-                // R158b · 这层关系不进 UI（教程），入口够得着就行。
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlayQueue.SPEED_STEPS.forEach { v ->
-                        val label = PlayQueue.speedLabel(v)
-                        val on = kotlin.math.abs(st.speed - v) < 0.01f
-                        TextButton(onClick = {
-                            PlayQueue.setSpeed(v)
-                            EventLog.ui("PLAY_SPEED", "x=$v")
-                        },
-                            modifier = Modifier.background(
-                                if (on) palette.primary else palette.card,
-                                RoundedCornerShape(50))) {
-                            Text(label, fontSize = 12.sp,
-                                color = if (on) palette.card else palette.sub)
+                // R319 · 下滑跟手时这一层先淡出，封面与标题留住，
+                // 倍速 / 进度 / 控制不再跟着整页平移叠成一团。
+                Column(Modifier.alpha(chrome)) {
+                    Spacer(Modifier.height(26.dp))
+                    Slider(
+                        value = frac,
+                        onValueChange = { if (dur > 0) PlayQueue.seekTo((it * dur).toLong()) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(Modifier.fillMaxWidth()) {
+                        Text(mmss(st.positionMs), fontSize = 12.sp, color = palette.sub)
+                        Spacer(Modifier.weight(1f))
+                        Text("-" + mmss(left), fontSize = 12.sp, color = palette.sub)
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    Text("倍速", fontSize = 12.sp, color = palette.sub)
+                    // K1 · 合成侧只有「慢/中/快」倾向，播放倍速才是可靠控制点。
+                    // R158b · 这层关系不进 UI（教程），入口够得着就行。
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PlayQueue.SPEED_STEPS.forEach { v ->
+                            val label = PlayQueue.speedLabel(v)
+                            val on = kotlin.math.abs(st.speed - v) < 0.01f
+                            TextButton(onClick = {
+                                PlayQueue.setSpeed(v)
+                                EventLog.ui("PLAY_SPEED", "x=$v")
+                            },
+                                modifier = Modifier.background(
+                                    if (on) palette.primary else palette.card,
+                                    RoundedCornerShape(50))) {
+                                Text(label, fontSize = 12.sp,
+                                    color = if (on) palette.card else palette.sub)
+                            }
                         }
                     }
                 }
@@ -255,19 +314,21 @@ internal fun PlayerSheet(
 
         // 主控制行：上一章 / 播放模式三态 / 播放 / 下一章。
         // R303 · ±15s / +30s 两枚跳转砍掉，位置让给顺序·随机·循环单按钮。
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+        // R319 · 列表展开时压成细条，把高度还给列表。
+        Row(Modifier.fillMaxWidth().alpha(chrome)
+            .padding(horizontal = 20.dp, vertical = barPad),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly) {
             IconButton(onClick = { PlayQueue.previous(); EventLog.ui("PLAY_PREV", "") },
                 modifier = Modifier.size(44.dp)) {
                 IconSkip(false, palette.primary, Modifier.size(24.dp))
             }
-            ModeChip(modeLabel(modeOrd)) {
+            ModeChip(modeOrd, modeLabel(modeOrd)) {
                 PlayQueue.cycleMode()
                 EventLog.ui("PLAY_MODE", "mode=$modeOrd")
             }
             IconButton(onClick = { PlayQueue.toggle(); EventLog.ui("PLAY_TOGGLE", "") },
-                modifier = Modifier.size(62.dp)
+                modifier = Modifier.size(playSize)
                     .background(palette.primary, RoundedCornerShape(50))) {
                 IconPlayPause(st.isPlaying, palette.card, Modifier.size(28.dp))
             }
@@ -278,7 +339,9 @@ internal fun PlayerSheet(
         }
 
         // 功能行：R303 睡眠定时整块砍掉，播放列表从顶栏挪到右下角。
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+        // R319 · 展开时这枚改「收起列表」，不再和上方标题同名抢戏。
+        Row(Modifier.fillMaxWidth().alpha(chrome)
+            .padding(horizontal = 20.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.End) {
             Row(Modifier.height(40.dp)
@@ -291,7 +354,7 @@ internal fun PlayerSheet(
                 verticalAlignment = Alignment.CenterVertically) {
                 IconQueue(palette.primary, Modifier.size(22.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("当前播放的音频列表", fontSize = 12.sp,
+                Text(if (showList) "收起列表" else "当前播放的音频列表", fontSize = 12.sp,
                     fontWeight = FontWeight.Bold, color = palette.primary)
             }
         }

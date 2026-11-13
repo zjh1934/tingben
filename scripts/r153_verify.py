@@ -45,7 +45,7 @@ POS = {
         'R158b · 种子语义不进 UI',
         '"风格补充（可留空）"',
         'OutlinedTextField(',
-        'Text("试听 · 已保存"', 'Text("试听 · 当前"',
+        'Text("试听 · 已存配置"', 'Text("试听 · 当前改动"',
         'Text("采样参数 · 9 项"',
         'Text("卸载模型", fontSize = 12.sp, color = palette.onWarn)',
         # J1 看图修复
@@ -153,7 +153,7 @@ def mixer_order(main):
     b = main.find("private fun ParamLine(", a)
     body = main[a:b if b > a else len(main)]
     i_trial = body.find('label = { Text("试听文本"')
-    i_buttons = body.find('Text("试听 · 已保存"')
+    i_buttons = body.find('Text("试听 · 已存配置"')
     i_params = body.find('Text("采样参数 · 9 项"')
     return i_trial, i_buttons, i_params
 
@@ -330,7 +330,7 @@ def selftest():
                              'label = { Text("参数占位"')
                     .replace('Text("采样参数 · 9 项"',
                              'label = { Text("试听文本" })\n            Text("采样参数 · 9 项"')),
-        ("双试听按钮被摘", "main", 'Text("试听 · 已保存"', ""),
+        ("双试听按钮被摘", "main", 'Text("试听 · 已存配置"', ""),
         ("采样参数标题被摘", "main", 'Text("采样参数 · 9 项"', ""),
         ("刷新键热区被摘", "main", None,
          lambda t: (lambda i: t[:i] + t[i:].replace("Box(Modifier.size(40.dp)",

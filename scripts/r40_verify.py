@@ -123,7 +123,7 @@ def main():
     print("=== 2) 反向注入（6 例，内存中改，不落盘）===")
     cases = {
         "删唯一出口": lambda s: s.replace("MixerCommit.commit(c, draft, n)", "0L"),
-        "恢复旧动词设定": lambda s: s.replace('Text("保存"', 'Text("设定"'),
+        "恢复旧动词设定": lambda s: s.replace('Text("保存设置"', 'Text("设定"'),
         "删离开确认": lambda s: s.replace("BackHandler(enabled = dirty)", "BackHandler(enabled = false)"),
         "删编辑态": lambda s: s.replace("var draft by remember", "var tmp by remember"),
         "注入第二写入口": lambda s: s.replace("fun commitAll() {", "fun commitAll() { Prefs.setTtsKnobs(c, draft.knobs)"),

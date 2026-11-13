@@ -58,7 +58,8 @@ import java.io.File
 internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> Unit,
                           onProgress: () -> Unit, onDone: () -> Unit,
                           onStarted: (Set<Int>?) -> Unit,
-                          onResplit: () -> Unit = {}) {
+                          onResplit: () -> Unit = {},
+                          onSettings: () -> Unit = {}) {
     val st by Producer.state.collectAsState()
     var selected by remember(id, refresh) { mutableStateOf<Set<Int>>(emptySet()) }
     var cacheTick by remember { mutableStateOf(0) }
@@ -67,6 +68,8 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
     var load by remember(id, refresh) { mutableStateOf<ProduceLoad?>(null) }
     // R142 · 调音是「点合成之前」的准备工作，不该是另一张一级页。
     var mixerOpen by remember { mutableStateOf(false) }
+    // R318 · 清进度是破坏性操作，先确认再动手
+    var confirmReset by remember { mutableStateOf(false) }
     var loadError by remember(id, refresh) { mutableStateOf<String?>(null) }
     var hasCached by remember(id, refresh) { mutableStateOf(false) }
     // R185 · 用户常调音色，旧实现一保存调优就把成果全删。现在分套留着，
@@ -74,9 +77,8 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
     var cacheInfo by remember(id, refresh) {
         mutableStateOf(VoiceCache.Summary(0, 0, 0, 0L))
     }
-    // R231 · 拼接设置是全局偏好，存 Prefs；用 state 让选项点了立刻亮
-    var autoMerge by remember { mutableStateOf(Prefs.autoMergeChapter(c)) }
-    var declickMs by remember { mutableStateOf(Prefs.mergeDeclickMs(c)) }
+    // R320 · 段间静音 / 失败重做 / 自动拼章 / 接缝处理都是全局偏好，
+    // 已统一收进设置页「制作设置」分组，这里不再各留一份 state 副本。
 
     // R139 · 组合期不再同步读整本 + 切块（原来 64MB 文本会卡主线程甚至 ANR）。
     // 与目录页同一套口径：IO 线程读落盘章节表，加载中给进度圈，出错给中文原因。
@@ -141,6 +143,9 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
         Text(book.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text("${chapters.size} 章 · ${book.chars} 字", fontSize = 13.sp, color = Sub)
+        Spacer(Modifier.height(4.dp))
+        Text("参数在设置页 · 勾章在目录页",
+            fontSize = 11.sp, color = Sub)
         Spacer(Modifier.height(10.dp))
         // R218 · 撤掉「合成前调音」入口卡片：调音在首页右上 / 目录页 / 设置页
         // 都够得到，制作设置页不该再塞一枚没用的入口。
@@ -158,9 +163,7 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
         // R221 · 「② 怎么念」整块砍掉：三个写死档位拼进 instruct 会跟自己填的
         // 音色描述 / 预设音色念法抢 prompt，base 模式还完全无效。
         // 这页只回答两件事：做什么、怎么跑；设置只对这本书接下来的合成生效。
-        ExpandGroup("① 做什么", "") {
-            Text("原文整段送声音模型", fontSize = 13.sp, color = Sub)
-            Spacer(Modifier.height(10.dp))
+        ExpandGroup("这本书", "") {
             Text("整本 · 预计约 $estimate 块", fontSize = 12.sp, color = Sub)
             // R183 · 真机实测每段 50~220 秒。只给一句量级，不写教程、不常驻解释。
             Text("每段约 1–3 分钟，块越多等得越久", fontSize = 11.sp, color = Sub)
@@ -181,60 +184,56 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
             }
         }
 
-        // R221 · ② 只留「怎么跑」：段间静音 / 失败重做不进 instruct，不打架
-        ExpandGroup("② 怎么跑", "") {
-            OptionRow("段间静音", "",
-                ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) { cfg = cfg.copy(gapMs = it) }
-            OptionRow("分段失败重做", "",
-                ProduceConfig.RETRY_OPTIONS.map { it to "${it}次" }, cfg.gateRetries) { cfg = cfg.copy(gateRetries = it) }
-            TextButton(onClick = { cfg = Prefs.defaultPerf(c) }) { Text("恢复默认", fontSize = 12.sp) }
-        }
-
-        // R231 · ③ 拼接设置：制作选项卡原来只有段间静音 / 失败重做两项，
-        // 拼成这一章的开关与接缝处理没处设。借鉴同行的「不二次编码 +
-        // 接缝淡入淡出」口径，补成可选项，不进 prompt、不改音色指纹。
-        ExpandGroup("③ 拼成这一章", "每章的小块齐了，单独接成这一章的音频") {
-            OptionRow("自动拼成整章", "小耳机直接播这一章的成品",
-                listOf(true to "开", false to "关"), autoMerge) {
-                autoMerge = it
-                Prefs.setAutoMergeChapter(c, it)
-            }
-            OptionRow("接缝处理", "相邻小块的接缝，淡入淡出压掉咔哒声",
-                listOf(0 to "直接接", 15 to "轻", 30 to "标准"), declickMs) {
-                declickMs = it
-                Prefs.setMergeDeclickMs(c, it)
+        // R320 · 「怎么跑」「怎么拼」两组已并进设置页的「制作设置」分组：
+        // 它们是全局偏好，写 Prefs 与哪一本书无关，不该挂在带 bookId 的页里。
+        // 这页只管这本书本身，给一条直达出口，不重复摆四组选项。
+        CardBox(Modifier.padding(bottom = 12.dp)) {
+            Text("怎么念 / 怎么跑 / 怎么拼，都在设置页", fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text("改一次对所有书生效",
+                fontSize = 11.sp, color = Sub)
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onSettings) {
+                Text("打开设置 ›", fontSize = 12.sp, color = Primary)
             }
         }
 
         Spacer(Modifier.height(10.dp))
 
-        Button(
-            onClick = {
-                // R235 · 制作设置页改完要落盘：原来只在本次 start 生效，
-                // 下次从目录页启动又回到写死默认值，段间静音/附加语气全丢。
-                Prefs.setDefaultPerf(c, cfg)
-                val sel = if (selected.isEmpty() || selected.size == chapters.size) null else selected
-                onStarted(sel)
-                Producer.start(c, book, sel, directRead = true, config = cfg)
-                onProgress()
-            },
-            enabled = !st.running,
-            modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) {
-            Text(
-                if (st.running) "正在制作…"
-                else if (hasCached) "继续合成"
-                else "合成音频",
-                fontSize = 16.sp
-            )
+        // R320 · 参数已不在这页，没有东西要保存；主按钮明确写「返回目录」，
+        // 不再留一枚名不副实的「保存设置」，也不再拿空选择整本开跑。
+        Button(onClick = onBack,
+            modifier = Modifier.fillMaxWidth().height(52.dp)) {
+            Text("返回目录", fontSize = 16.sp)
         }
 
         if (hasCached && !st.running) {
-            TextButton(onClick = {
-                Producer.clearProgress(c, book.id,
-                    if (selected.isEmpty() || selected.size == chapters.size) null else selected)
-                cacheTick++
-            }, Modifier.fillMaxWidth()) { Text("从头重做（清掉已做的块）", fontSize = 12.sp) }
+            TextButton(onClick = { confirmReset = true }, Modifier.fillMaxWidth()) {
+                Text("从头重做（清掉已做的块）", fontSize = 12.sp)
+            }
+        }
+        if (confirmReset) {
+            AlertDialog(
+                onDismissRequest = { confirmReset = false },
+                title = { Text("清掉已做的段，从头重做？", fontSize = 14.sp) },
+                text = { Text("只清制作进度，成品不动",
+                    fontSize = 12.sp) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmReset = false
+                        Producer.clearProgress(c, book.id,
+                            if (selected.isEmpty() || selected.size == chapters.size) null else selected)
+                        cacheTick++
+                        EventLog.ui("PRODUCE_RESET_ASK", "confirm")
+                    }) { Text("清掉重来", fontSize = 13.sp, color = Warn) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmReset = false }) {
+                        Text("取消", fontSize = 13.sp)
+                    }
+                }
+            )
         }
 
         if (st.message.isNotBlank()) {

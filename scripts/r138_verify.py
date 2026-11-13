@@ -89,7 +89,7 @@ POS = {
     ],
     "main": [
         "ChapterPlan.resolve(c, b)",
-        "会一起删掉这本书的章节表、已做好的音频、分段缓存、制作任务",
+        "只删这一本：音频、章节表、",
     ],
     "ci": ["python3 scripts/r138_verify.py --selftest"],
 }

@@ -95,7 +95,8 @@ internal fun chromeOf(s: Screen): ChromeSpec = when (s) {
     // R164 · 品牌名从顶栏撤掉。R230 · 右上角 ＋/齿轮 全部撤掉。
     // R272 · ☰ 只在首页；首页右侧「调音 / 任务」两枚由 App 层挂。
     Screen.LIBRARY  -> ChromeSpec("", TAB_LIBRARY, showMenu = true)
-    Screen.PRODUCE  -> ChromeSpec("制作设置", TAB_LIBRARY, canBack = true)
+    // R320 · 参数并进设置页后，这页只剩这本书的操作，标题不再写「制作设置」
+    Screen.PRODUCE  -> ChromeSpec("这本书", TAB_LIBRARY, canBack = true)
     // R218 · 目录页顶栏直接写书名，不写「目录」二字（都进这本书了）。
     // 标题由 App 层按 bookId 覆盖；这里留空串占位。
     Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)

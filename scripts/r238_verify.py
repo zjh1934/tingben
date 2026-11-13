@@ -35,7 +35,7 @@ def check(f):
     s, m = f["settings"], f["merged"]
     # ① 统一行组件
     for k in ["internal fun SettingLine(",
-              "mark: String,", "title: String,", 'hint: String = "",',
+              "icon: UiIcon,", "title: String,", 'hint: String = "",',
               "danger: Boolean = false,",
               "trailing: @Composable RowScope.() -> Unit",
               "Modifier.size(32.dp)",
@@ -50,22 +50,24 @@ def check(f):
     if "private fun SettingLine(" in s:
         e.append("SettingLine 用了 private，UI 片段跨文件不可见")
     # 至少三处统一行（通知权限 / 导出位置 / 导出全部）
-    for k in ['SettingLine("铃", "通知权限"',
-              'SettingLine("导", "导出位置", expTreeLabel)',
-              'SettingLine("成", "整章成品", "已做好 $expCount 个']:
+    # R321 · R320 把字标徽章换成画出来的 UiIcon，旧锚「成」恒红；按现状
+    # 改守真实副行文案，三条正向都指向当前源码，注入仍逐条拦，不放宽。
+    for k in ['SettingLine(UiIcon.BELL, "通知权限"',
+              'SettingLine(UiIcon.M4A, "整章成品",',
+              '已做好 $expCount 个 · M4A · 拼好即转码']:
         if k not in s: e.append("统一行没接上: " + k[:52])
     # ② 碎卡合并
-    if 'SettingsSection("文件与数据", "本机", collapsible = false)' not in s:
-        e.append("合并卡「文件与数据」不在")
+    if 'SettingsSection("音频文件", "本机", collapsible = false)' not in s:
+        e.append("合并卡「音频文件」不在")
     for old in ['SettingsSection("本机数据"', 'SettingsSection("成品文件"']:
         if old in s: e.append("旧碎卡回潮: " + old)
     # 「本机」badge 的卡只能有一张
     import re
     n = len(re.findall(r'SettingsSection\([^)]*"本机"', s))
     if n != 1: e.append("标「本机」的卡不是正好一张（实 %d）" % n)
-    card = s[s.find('SettingsSection("文件与数据"'):]
-    for k in ["ClearSegmentsRow(c)", "AudioExport.exportAll(c, tree)",
-              '"导出位置"', '"导出全部"', "treeLauncher.launch(AudioExport.treeUri(c))"]:
+    card = s[s.find('SettingsSection("音频文件"'):]
+    for k in ["ClearSegmentsSettingLine(c)", "AudioExport.exportAll(c, tree)",
+              '"音频文件"', '"导出全部"', "treeLauncher.launch(AudioExport.treeUri(c))"]:
         if k not in card: e.append("合并卡内容缺: " + k[:52])
     # ③ 顶部卡去调试串（诊断日志仍保留，r141 守，不是删信息）
     for banned in ['" · 本机 Android "', "android.os.Build.SUPPORTED_ABIS.firstOrNull()"]:
@@ -73,7 +75,7 @@ def check(f):
     if '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME' not in s:
         e.append("软件版本也没了")
     # ④ r156 按现状迁移，判据不放宽
-    if 'SettingsSection("文件与数据", "本机", collapsible = false)' not in f["r156"]:
+    if 'SettingsSection("音频文件", "本机", collapsible = false)' not in f["r156"]:
         e.append("r156 还绑旧标题，重设计后判据没接上")
     if 'SettingsSection("成品文件"' in f["r156"]:
         e.append("r156 旧标题残留")
@@ -102,20 +104,20 @@ def selftest():
         ("徽标槽被摘", "settings", "Modifier.size(32.dp)", "Modifier.size(0.dp)"),
         ("危险色被摘", "settings", "if (danger) Warn.copy(alpha = 0.14f) else PrimarySoft", "PrimarySoft"),
         ("统一行高被摘", "settings", "Modifier.fillMaxWidth().padding(vertical = 9.dp)", "Modifier.fillMaxWidth()"),
-        ("通知行没接", "settings", 'SettingLine("铃", "通知权限"', ""),
-        ("导出行没接", "settings", 'SettingLine("导", "导出位置", expTreeLabel)', ""),
-        ("成品行没接", "settings", 'SettingLine("成", "整章成品", "已做好 $expCount 个', ""),
-        ("合并卡被摘", "settings", 'SettingsSection("文件与数据", "本机", collapsible = false)', ""),
+        ("通知行没接", "settings", 'SettingLine(UiIcon.BELL, "通知权限"', ""),
+        ("导出行没接", "settings", 'SettingLine(UiIcon.M4A, "整章成品",', ""),
+        ("成品行没接", "settings", '已做好 $expCount 个 · M4A · 拼好即转码', ""),
+        ("合并卡被摘", "settings", 'SettingsSection("音频文件", "本机", collapsible = false)', ""),
         ("旧本机数据卡回潮", "settings", 'SettingsSection("运行与通知", "系统", collapsible = false)',
          'SettingsSection("本机数据", "本机", collapsible = false)\n        SettingsSection("运行与通知", "系统", collapsible = false)'),
-        ("旧成品卡回潮", "settings", 'SettingsSection("文件与数据", "本机", collapsible = false)',
+        ("旧成品卡回潮", "settings", 'SettingsSection("音频文件", "本机", collapsible = false)',
          'SettingsSection("成品文件", "本机", collapsible = false)'),
-        ("清缓存行被摘", "settings", "ClearSegmentsRow(c)", ""),
+        ("清缓存行被摘", "settings", "ClearSegmentsSettingLine(c)", ""),
         ("导出动作被摘", "settings", "AudioExport.exportAll(c, tree)", ""),
         ("调试串回潮", "settings", '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME',
          '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME + " · 本机 Android " + android.os.Build.VERSION.RELEASE'),
         ("软件版本被摘", "settings", '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME', '"版本"'),
-        ("r156 没迁移", "r156", 'SettingsSection("文件与数据", "本机", collapsible = false)',
+        ("r156 没迁移", "r156", 'SettingsSection("音频文件", "本机", collapsible = false)',
          'SettingsSection("成品文件", "本机", collapsible = false)'),
         ("AGENTS 官方口径被摘", "agents", "aoci verify", ""),
         ("AGENTS 官方口径被摘(board)", "board", "Baseline 由官方维护", ""),

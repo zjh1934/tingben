@@ -35,7 +35,7 @@ POS = [
     ("main", 'label = "风格描述"'),
     ("main", "value = draft.cvStyle"),
     ("main", "风格补充（可留空）"),
-    ("main", 'Text("保存", fontSize = 12.sp)'),
+    ("main", 'Text("保存设置", fontSize = 12.sp)'),
     ("main", 'Text("改动还没保存"'),
     ("main", 'Text("离开会丢掉这次改动。"'),
     ("draft", 'const val TIMING_NOW = "保存后新合成起生效'),
@@ -89,7 +89,7 @@ def selftest():
     cases = {
         "把折叠放回来": lambda x: x.replace('Text("采样参数 · 9 项"',
                                        'MixerFold("采样参数", "9 项", samplingOpen, {}) {'),
-        "把待提交话术放回来": lambda x: x.replace('Text("保存", fontSize = 12.sp)',
+        "把待提交话术放回来": lambda x: x.replace('Text("保存设置", fontSize = 12.sp)',
                                           'Text("提交变更", fontSize = 12.sp)'),
         "删掉自定义行": lambda x: x.replace('label = "风格描述"',
                                      'Text("念法 / 情绪（可留空）")'),

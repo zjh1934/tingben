@@ -20,7 +20,7 @@ MAIN = ui_sources.source(APP)
 CI = ROOT / ".github/workflows/ci.yml"
 
 MODEL_ANCHORS = [
-    "ModelStore.files(c)", "ModelStore.missing(c)", "ModelStore.installedModes(c)",
+    "ModelStore.files(c)", "ModelStore.missing(c)", "\"4 份已就绪\"",
     "ModelStore.currentMode(c)", "ModelStore.modeFiles(c)", "ModelStore.tokenizer(c)",
     "ModelStore.TOKENIZER", "ModelStore.delete(c, baseFile)",
     "ModelStore.delete(c, f)", "ModelStore.Mode.values()",
@@ -30,7 +30,7 @@ MODEL_ANCHORS = [
     "copyUrl(cnUrl(mode.file))", "copyUrl(hfUrl(mode.file))",
     "hf-mirror.com", "huggingface.co",
     "onPick", "onLibrary", "onChanged", "st.running", "importing == null",
-    "files.size", "missing.joinToString",
+    "files.size", "missing.forEach",
 ]
 
 ONE_SCREEN = [

@@ -68,8 +68,12 @@ object OverlayProgress {
         ).apply {
             // R214 · 改成 TOP|START，拖动时 x 增大就往右走，跟手指一致
             gravity = Gravity.TOP or Gravity.START
-            x = 16
-            y = 96
+            // R313 · 默认落在内容区右下：不再压住顶栏两枚入口，也不盖住输入提示。
+            // 球仍可拖动；松手只贴边、不缩进边缘，百分比数字永远看得全。
+            val dm = android.content.res.Resources.getSystem().displayMetrics
+            val box = (72 * dm.density).toInt()
+            x = (dm.widthPixels - box - (16 * dm.density).toInt()).coerceAtLeast(0)
+            y = (dm.heightPixels * 0.58f).toInt()
         }
 
     /** R217 · 0~1 比例 → 0~100 的纯数值文本；越界一律夹住，绝不露出段号。 */
@@ -154,14 +158,13 @@ object OverlayProgress {
         box.addView(bottom, LinearLayout.LayoutParams(size, size).apply {
             topMargin = -(size / 7)
         })
-        // R307 · 按住可拖；松手自动贴到最近的屏幕边缘，并缩进去一半（只露半块）。
-        // 贴边后一按就先拉回屏内，进度数字能看全，再拖继续跟手。
+        // R313 · 按住可拖；松手贴到最近边缘，但整块留在屏内，不缩进去一半。
+        // 默认位置由 lp() 给在内容区右下，不压顶栏也不盖输入提示。
         box.setOnTouchListener(object : View.OnTouchListener {
             private var downX = 0
             private var downY = 0
             private var originX = 0
             private var originY = 0
-            private var snapped = 0   // -1 贴左、1 贴右、0 未贴边
 
             private fun moveTo(v: View, x: Int, y: Int) {
                 val p = lp ?: return
@@ -181,10 +184,7 @@ object OverlayProgress {
                 val maxY = (sh - h).coerceAtLeast(0)
                 when (e.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        if (snapped != 0) {
-                            moveTo(v, if (snapped < 0) 0 else sw - w, params.y)
-                            snapped = 0
-                        }
+                        // R313 · 不再有「贴边缩进一半」的隐藏态，按下即可直接拖
                         downX = e.rawX.toInt(); downY = e.rawY.toInt()
                         originX = params.x; originY = params.y
                     }
@@ -193,10 +193,10 @@ object OverlayProgress {
                             (originY + e.rawY.toInt() - downY).coerceIn(0, maxY))
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        // R313 · 贴到最近边缘，但整块留在屏内：缩进一半会让百分比看不全
                         val left = params.x + w / 2 < sw / 2
-                        snapped = if (left) -1 else 1
-                        // 一半留在屏内、一半缩进边缘外
-                        moveTo(v, if (left) -(w / 2) else sw - w / 2,
+                        val maxX = (sw - w).coerceAtLeast(0)
+                        moveTo(v, (if (left) 0 else maxX).coerceIn(0, maxX),
                             params.y.coerceIn(0, maxY))
                     }
                 }

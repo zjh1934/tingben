@@ -54,7 +54,7 @@ def check(f):
               "state = chapterListState",
               '.clickable { scrollToMaking() }',
               "LinearProgressIndicator(progress = { chapterPctNow }",
-              "height(22.dp)", "height(18.dp)"]:
+              "height(18.dp)", "height(14.dp)"]:
         if k not in hb: e.append("进度/滚动缺: " + k[:56])
     for k in ['"可播 $finishedChapters/${ui.size} 章"',
               '"${chapters.size} 章 · ${ChapterPlan.ruleName(curRule)}"',
@@ -81,8 +81,8 @@ def check(f):
               "if (r.index == liveChapter) {",
               "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }",
               "multiMode = next.isNotEmpty()",
-              "if (!multi) return",
-              "padding(horizontal = 16.dp, vertical = 2.dp)"]:
+              "if (multi) {",
+              "padding(horizontal = 16.dp, vertical = 4.dp)"]:
         if k not in hb: e.append("章行/展开缺: " + k[:56])
     # ⑤ 登记
     if "python3 scripts/r219_verify.py --selftest" not in f["ci"]:
@@ -115,7 +115,7 @@ def selftest():
         ("空章又弹块", "hub", "if (r.index == liveChapter) {", "if (true) {"),
         ("左侧勾被摘", "hub", "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }", ""),
         ("点勾不进多选", "hub", "multiMode = next.isNotEmpty()", ""),
-        ("展开头部留白回潮", "hub", "if (!multi) return", ""),
+        ("展开头部留白回潮", "hub", "padding(horizontal = 16.dp, vertical = 4.dp)", ""),
         ("CI 漏挂", "ci", "python3 scripts/r219_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r219_verify.py"', ""),
     ]

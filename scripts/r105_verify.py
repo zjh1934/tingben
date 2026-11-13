@@ -80,7 +80,7 @@ errs += check(trial, '旧形态', [], absent=[
 ])
 
 errs += check(main, '守恒/界面', [
-    '试听 · 当前', '试听 · 已保存',
+    '试听 · 当前改动', '试听 · 已存配置',
     'commitAll(',
     'PlayQueue.setTracks(',
 ])

@@ -221,7 +221,7 @@ if "val playable = sg.hasAudio && segId.isNotEmpty()" not in _ui_src:
 mixer_src = (ROOT / "app/src/main/java/com/tingben/app/core/Mixer.kt").read_text(encoding="utf-8", errors="replace")
 R31_ALL = ["VoiceDimension", "VoicePresets", "SamplingPresets", "Mixer.snapshot",
            "MIXER_PROFILE", "MIXER_TRIAL", "ParamLine(", "调音台", "private fun SettingsSection(",
-           "12 维", "试听 · 已保存", "试听 · 当前",
+           "12 维", "试听 · 已存配置", "试听 · 当前改动",
            "MixerScreen", "MixerDialog(", "全部恢复默认"]
 for sym in R31_ALL:
     if sym not in all_src: errs.append("缺少 R31 控制台符号: " + sym)
@@ -373,7 +373,7 @@ if "statusBarsPadding()" not in main_src:
 
 R36_ALL = ["ModeTabs(", "MixerPresetStore", "MixerPreset(",
            "legacyVoiceStamp", "VOICE_STAMP_MIGRATE", "MIXER_PRESET", "MIXER_COMMIT",
-           "本机数据",
+           "音频文件",
            "单次音频长度上限", "TIMING_NEXT",
            "PRESET_SCHEMA", "safeName", "fun coverage()", "logPreset("]
 for sym in R36_ALL:
@@ -476,8 +476,8 @@ if '?: ""' not in prefs_src:
     errs.append("R45 回退：展开态默认值不是全部折叠")
 # R304 · 「自定义」标签已换成「风格描述」并改用 DescPresetRow；
 # 判据按现状迁到新标签，不放宽「调音台该有这一项」的守恒。
-R99_MUST = ['Text("采样参数 · 9 项"', 'label = "风格描述"', 'Text("保存"',
-            'Text("试听 · 已保存"', '改动还没保存', '离开会丢掉这次改动。',
+R99_MUST = ['Text("采样参数 · 9 项"', 'label = "风格描述"', 'Text("保存设置"',
+            'Text("试听 · 已存配置"', '改动还没保存', '离开会丢掉这次改动。',
             'val mode = remember(tick) { ModelStore.currentMode(c) }']
 for sym in R99_MUST:
     if sym not in main_src: errs.append("R99 回退：新调音台缺 " + sym)

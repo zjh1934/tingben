@@ -18,7 +18,7 @@ def files():
     return {
         "shell": rd(APP / "Shell.kt"),
         "hub": rd(APP / "ChapterHub.kt"),
-        "produce": rd(APP / "ProduceUi.kt"),
+        "produce": rd(APP / "ProduceUi.kt") + "\n" + rd(APP / "SettingsUi.kt"),
         "merged": ui_sources.read(ROOT),
         "ci": rd(ROOT / ".github/workflows/ci.yml"),
         "r135": rd(ROOT / "scripts/r135_verify.py"),
@@ -30,7 +30,7 @@ def check(f):
     sh, hb, pr, mg = f["shell"], f["hub"], f["produce"], f["merged"]
     # ① 顶栏写书名，不写「目录」
     for k in ['Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)',
-              'Screen.PRODUCE  -> ChromeSpec("制作设置"']:
+              'Screen.PRODUCE  -> ChromeSpec("这本书"']:
         if k not in sh: e.append("顶栏规格缺: " + k[:60])
     for k in ["val chapterBookTitle = remember(bookId, refresh)",
               "chrome.copy(title = chapterBookTitle)",
@@ -39,7 +39,7 @@ def check(f):
         if k not in mg: e.append("App 层书名覆盖缺: " + k[:60])
     # ② 重新分章不占顶栏、能力不丢
     for k in ["var resplitTick by rememberSaveable", "resplitRequest = resplitTick",
-              "onResplit = { nav.pop(); resplitTick++ })",
+              "onResplit = { nav.pop(); resplitTick++ },",
               "resplitRequest: Int = 0", "resplitRequest > 0)",
               'EventLog.ui("RESPLIT_OPEN"']:
         if k not in mg + hb: e.append("重分章链路缺: " + k[:60])
@@ -49,7 +49,7 @@ def check(f):
         e.append("制作设置页的重新分章次要入口被摘")
     # ③ 制作设置页收敛
     for k in ["onResplit: () -> Unit = {}", 'Text("← 目录")',
-              'ExpandGroup("① 做什么", "")', 'ExpandGroup("② 怎么跑", "")',
+              'ExpandGroup("这本书", "")', 'SettingsSection("制作设置", "合成", collapsible = false)',
               '"每段约 1–3 分钟，块越多等得越久"',
               '"从头重做（清掉已做的块）"']:
         if k not in pr: e.append("制作设置页缺: " + k[:60])
@@ -71,7 +71,7 @@ def check(f):
     # ⑤ 两条进度条常驻 + 制作章小段区常驻 + 段数文案撤掉
     for k in ["val chapterPctNow =", "LinearProgressIndicator(progress = { bookPct }",
               "LinearProgressIndicator(progress = { chapterPctNow }",
-              "modifier = Modifier.fillMaxWidth().height(22.dp),",
+              "modifier = Modifier.fillMaxWidth().height(18.dp),",
               'item(key = "seg_head_${r.index}")',
               "if (r.index == liveChapter) {",
               "items(chapterSegs.chunked(SEG_GRID_COLUMNS),"]:
@@ -84,7 +84,7 @@ def check(f):
     if hb.count('"制作设置 ›"') != 0:
         e.append("底部菜单不该再有制作设置入口")
     # R226 · 常态齿轮上移系统顶栏（合并视图）
-    if 'Text("⚙", fontSize = 16.sp' not in mg:
+    if 'UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)' not in mg:
         e.append("常态顶栏齿轮入口被摘")
     # ⑦ 登记
     if "python3 scripts/r218_verify.py --selftest" not in f["ci"]:
@@ -104,11 +104,11 @@ def selftest():
         ("顶栏又写目录", "shell",
          'Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)',
          'Screen.CHAPTERS -> ChromeSpec("目录", TAB_LIBRARY, canBack = true)'),
-        ("重新分章回顶栏", "merged", 'Text("⚙", fontSize = 16.sp',
+        ("重新分章回顶栏", "merged", 'UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)',
          'Text("重新分章 ›", fontSize = 12.sp, color = HubPrimary)'),
-        ("重分章链路断", "merged", "onResplit = { nav.pop(); resplitTick++ })", ""),
-        ("制作范围勾选回潮", "produce", 'ExpandGroup("① 做什么", "")',
-         'ExpandGroup("① 做什么", "") { Text("制作范围")'),
+        ("重分章链路断", "merged", "onResplit = { nav.pop(); resplitTick++ },", ""),
+        ("制作范围勾选回潮", "produce", 'ExpandGroup("这本书", "")',
+         'ExpandGroup("这本书", "") { Text("制作范围")'),
         ("调音卡片回潮", "produce", 'Text("← 目录")', 'Text("合成前调音")'),
         ("眼睛被摘", "hub", "IconButton(onClick = onRead", ""),
         ("点章名又进阅读", "hub", "onRead = { openReader(r.index) }",
@@ -119,7 +119,7 @@ def selftest():
          "val liveChapter: Int? = if (bookRunning) makingChapter else null",
          "var expandedChapter by remember(book.id) { mutableStateOf<Int?>(null) }"),
         ("段数文案回潮", "hub", 'item(key = "seg_head_${r.index}")', '"本章 12 小段"'),
-        ("齿轮被摘", "merged", 'Text("⚙", fontSize = 16.sp', ""),
+        ("齿轮被摘", "merged", 'UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)', ""),
         ("CI 漏挂", "ci", "python3 scripts/r218_verify.py --selftest", ""),
         ("现行清单漏登记", "r135", '"r218_verify.py"', ""),
     ]

@@ -82,10 +82,10 @@ POS = {
         "ActivityResultContracts.OpenDocumentTree()) { uri ->",
                 # R238 · 两张同 badge 碎卡合并成一张，卡片仍在、导出链路一条没少，
         # 判据按现状迁移、不放宽。
-'SettingsSection("文件与数据", "本机", collapsible = false)',
+'SettingsSection("音频文件", "本机", collapsible = false)',
         "导出位置",
         "AudioExport.exportAll(c, tree)",
-        "先点「选择」挑一个文件夹",
+        "先点「更改」挑一个文件夹",
         "AudioExport.exportAll(c, tree)",
         "withContext(Dispatchers.IO) { AudioExport.collect(c).size }",
         '"导出全部"',
@@ -285,30 +285,35 @@ def selftest():
          "ActivityResultContracts.OpenDocumentTree()", ""),
         ("记住位置被摘", "main", "AudioExport.saveTree(c, uri)", ""),
         ("文件与数据卡片被摘", "main",
-         'SettingsSection("文件与数据", "本机", collapsible = false)', ""),
-        ("私有目录教程回潮", "main", '"导出位置"',
-         '"导出位置；设置 → 应用管理，文件管理器进不去"'),
-        ("内部路径教程回潮", "main", '"导出位置"',
-         '"导出位置；内部暂存路径不开放修改"'),
+         'SettingsSection("音频文件", "本机", collapsible = false)', ""),
+        ("私有目录教程回潮", "main",
+         'Toast.makeText(c, "导出位置已记住", Toast.LENGTH_SHORT).show()',
+         'Toast.makeText(c, "导出位置已记住", Toast.LENGTH_SHORT).show()\n        Text("→ 文件管理器进不去")'),
+        ("内部路径教程回潮", "main",
+         'Toast.makeText(c, "导出位置已记住", Toast.LENGTH_SHORT).show()',
+         'Toast.makeText(c, "导出位置已记住", Toast.LENGTH_SHORT).show()\n        Text("内部暂存路径不开放修改")'),
         ("导出动作被摘", "main", "AudioExport.exportAll(c, tree)", ""),
         ("导出中可重复点", "main",
          "enabled = expCount > 0 && !exporting", "enabled = expCount > 0"),
         ("结果只剩 Toast", "main", "exportResult = msg", ""),
         ("IO 切换被摘", "main",
          "withContext(Dispatchers.IO) { AudioExport.collect(c).size }", ""),
-        ("没选位置提示被摘", "main", "先点「选择」挑一个文件夹", ""),
+        ("没选位置提示被摘", "main", "先点「更改」挑一个文件夹", ""),
         ("CI 漏挂 r156", "ci", "python3 scripts/r156_verify.py --selftest", ""),
         ("现行清单漏 r156", "r135", '"r156_verify.py"', ""),
     ]
     bad = 0
     # R268 · 同名探测串在 findChildDir / findChildFile 里各一处，
     # 只摘第一处判据仍成立、注入会漏放，须全量替换。
-    FULL = {"同名目录复用被摘"}
+    FULL = {"同名目录复用被摘", "私有目录教程回潮", "内部路径教程回潮"}
     for name, key, needle, repl in cuts:
         x = dict(f)
         x[key] = (f[key].replace(needle, repl) if name in FULL
                   else f[key].replace(needle, repl, 1))
-        if not check(x):
+        if x[key] == f[key]:
+            bad += 1
+            print("  注入锚失效:", name)
+        elif not check(x):
             bad += 1
             print("  反向注入漏放:", name)
     print("反向注入 %d/%d 全拦下" % (len(cuts) - bad, len(cuts)))

@@ -38,10 +38,14 @@ object DescPresetStore {
     fun save(c: Context, slot: String, short: String, long: String): Boolean {
         val s = short.trim()
         if (s.isEmpty()) return false
+        val l = long.trim()
+        // R317 · 详细描述才是喂给模型的那一份；空着存进去，选中这条预设
+        // 等于把音色 / 风格清空，用户会以为「设了不管用」。
+        if (l.isEmpty()) return false
         val item = DescPreset(
             id = (s.hashCode().toLong() and 0x7fffffffL).toString(36),
             short = s,
-            long = long.trim()
+            long = l
         )
         val next = list(c, slot).filter { it.short != s }.toMutableList()
         next.add(item)

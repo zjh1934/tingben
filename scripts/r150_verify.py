@@ -53,7 +53,7 @@ POS = {
         "val bookPct =", "val chPct =",
         "LinearProgressIndicator(progress = { bookPct }",
         "LinearProgressIndicator(progress = { chapterPctNow }",
-        "modifier = Modifier.fillMaxWidth().height(22.dp),",
+        "modifier = Modifier.fillMaxWidth().height(18.dp),",
         "onRead: () -> Unit,",
         "row: List<SegRow>, pq: PlaybackState,",
         "onRead = { openReader(r.index) }",

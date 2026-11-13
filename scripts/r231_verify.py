@@ -22,7 +22,7 @@ def files():
         "lib": rd(CORE / "AudioLibrary.kt"),
         "export": rd(CORE / "AudioExport.kt"),
         "producer": rd(CORE / "Producer.kt"),
-        "ui": rd(APP / "ProduceUi.kt"),
+        "ui": rd(APP / "ProduceUi.kt") + "\n" + rd(APP / "SettingsUi.kt"),
         "hub": rd(APP / "ChapterHub.kt"),
         "agents": rd(ROOT / "AGENTS.md"),
         "ci": rd(ROOT / ".github/workflows/ci.yml"),
@@ -142,7 +142,7 @@ def check(f):
     # ⑤ 制作选项卡补 ③ 拼接设置
     for k in ['var autoMerge by remember { mutableStateOf(Prefs.autoMergeChapter(c)) }',
               'var declickMs by remember { mutableStateOf(Prefs.mergeDeclickMs(c)) }',
-              'ExpandGroup("③ 拼成这一章"',
+              'OptionRow("自动拼成整章"',
               'OptionRow("自动拼成整章"',
               'OptionRow("接缝处理"',
               "Prefs.setAutoMergeChapter(c, it)", "Prefs.setMergeDeclickMs(c, it)"]:
@@ -237,7 +237,7 @@ def selftest():
          "AudioLibrary.audioFor(c, book.id, ch)?.let"),
         ("接缝配置没透传", "producer",
          "gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c)", "gapMs = 0, declickMs = 0"),
-        ("③ 分组被摘", "ui", 'ExpandGroup("③ 拼成这一章"', ""),
+        ("③ 分组被摘", "ui", 'OptionRow("自动拼成整章"', ""),
         ("自动拼选项被摘", "ui", 'OptionRow("自动拼成整章"', ""),
         ("接缝选项被摘", "ui", 'OptionRow("接缝处理"', ""),
         ("选项不落盘", "ui", "Prefs.setAutoMergeChapter(c, it)", ""),

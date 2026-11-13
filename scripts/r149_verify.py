@@ -95,7 +95,7 @@ POS = {
         "onAudio = { id -> openBook(id)",
         'EventLog.ui("TASK_RESUME"',
         'EventLog.ui("TASK_PLAY_AUDIO", "kind=${a.source}")',
-        '"打开这本书 ›"',
+        '"去这一章 ›"',   # R316 · 任务页按一份音频口径改名，锚等价迁移
         '"播放 ›"',
     ],
     "prefs": [
@@ -290,7 +290,7 @@ def selftest():
         ("三态按钮被摘", "main", 'Producer.ResumeAction.VIEW -> "查看任务"', ""),
         ("教程长句回潮", "main", '"稍后"',
          '"稍后 · 接着跑不会重算已做好的部分，也可以先去任务页看看"'),
-        ("巨大按钮回潮", "main", '"打开这本书 ›"', '"继续制作 · 接着已做好的块跑"'),
+        ("巨大按钮回潮", "main", '"去这一章 ›"', '"继续制作 · 接着已做好的块跑"'),
         ("删任务被摘", "main", 'EventLog.ui("TASK_DELETE"', ""),
         ("删任务不出队列", "main", "TaskResume.dequeue(c, t.bookId)", ""),
         ("二次确认被摘", "main", "confirmDelete?.let { t ->", ""),

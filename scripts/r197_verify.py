@@ -45,7 +45,7 @@ POS = {
         '"这套音色已做好 ${cacheInfo.current} 段，接着做不用重来"',
         '"从头重做（清掉已做的块）"',
         # R221 · 三档写死预设已整块砍掉，只守「怎么跑」
-        'ExpandGroup("② 怎么跑", "")',
+        'SettingsSection("制作设置", "合成", collapsible = false)',
         'OptionRow("段间静音"',
         'OptionRow("分段失败重做"',
     ],
@@ -96,7 +96,7 @@ def check(f):
     if n_entry != 0:
         e.append("底部菜单不该再有制作设置入口，实为 %d" % n_entry)
     # R226 · 常态齿轮上移系统顶栏（合并视图），勾选态仍留 hub
-    if 'Text("⚙", fontSize = 16.sp' not in f["main"]:
+    if 'UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)' not in f["main"]:
         e.append("常态顶栏齿轮入口被摘")
     if "nav.push(Screen.PRODUCE)" not in f["main"]:
         e.append("顶栏齿轮没跳制作设置")
@@ -115,7 +115,7 @@ def selftest():
     assert not check(f), "基线自己就红了，先修基线"
     cuts = [
         ("常态齿轮入口整块被摘", "main",
-         'Text("⚙", fontSize = 16.sp', ''),
+         'UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)', ''),
         ("全选 toggle 被摘", "hub", '"取消全选"', '"全选章节"'),
         ("两枚都没传 book.id", "hub", 'onProduceSetup: (String) -> Unit', 'onProduceSetup("")'),
         ("回调签名退化成无参", "hub", 'onProduceSetup: (String) -> Unit = {},',
@@ -126,7 +126,7 @@ def selftest():
         ("音色缓存摘要被摘", "main", '"这套音色已做好 ${cacheInfo.current} 段，接着做不用重来"', ""),
         ("从头重做被摘", "main", '"从头重做（清掉已做的块）"', ""),
         ("段间静音被摘", "main", 'OptionRow("段间静音"', ""),
-        ("停用三档回潮", "main", 'ExpandGroup("② 怎么跑", "")',
+        ("停用三档回潮", "main", 'SettingsSection("制作设置", "合成", collapsible = false)',
          'OptionRow("朗读档位"'),
         ("枚举值被删", "main", "PRODUCE, TASKS", "TASKS"),
         ("CI 漏挂", "ci", "python3 scripts/r197_verify.py --selftest", ""),

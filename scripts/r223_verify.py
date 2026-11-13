@@ -77,7 +77,7 @@ def check(f):
     if "MixerDraft.active(c)" not in f["clip"]:
         e.append("试听绕过了 MixerDraft.active 间接真源")
     # ⑤ 调音台给出回退说明（且不触发 r158 长文案判据）
-    if "留空 = 旧默认中性声，可切回旧音频" not in f["ui"]:
+    if "留空就用原来的中性声；填了才会变" not in f["ui"]:
         e.append("调音台没说清清空=切回旧音频")
     if 'onDraft(draft.copy(voice = ""))' not in f["ui"]:
         e.append("清空入口被摘，旧进度回不去")
@@ -113,7 +113,7 @@ def selftest():
         ("Producer 绕真源", "producer", "Prefs.voiceDescription(c)", '"硬编码"'),
         ("试听绕真源", "clip", "MixerDraft.active(c)", '"硬编码"'),
         ("清空入口被摘", "ui", 'onDraft(draft.copy(voice = ""))', ""),
-        ("回退说明被摘", "ui", "留空 = 旧默认中性声，可切回旧音频", ""),
+        ("回退说明被摘", "ui", "留空就用原来的中性声；填了才会变", ""),
         ("目录没标默认", "spec", "青年女声（R223 默认）", "（必填）"),
         ("CI 漏挂", "ci", "python3 scripts/r223_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r223_verify.py"', ""),

@@ -1,6 +1,7 @@
 package com.tingben.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,7 +17,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val OptCard: Color get() = palette.card
-private val OptChip: Color get() = palette.primarySoft
+// R320 · 原来选中与未选中底色都取 primarySoft，四个档位看着全一样，
+// 只能靠文字深浅猜选了哪个。现在未选中淡底、选中实底加一圈主色描边。
+private val OptChip: Color get() = palette.primarySoft.copy(alpha = 0.38f)
 private val OptChipOn: Color get() = palette.primarySoft
 private val OptPrimary: Color get() = palette.primary
 private val OptSub: Color get() = palette.sub
@@ -59,6 +62,8 @@ fun <T> OptionRow(
                 Box(
                     Modifier.weight(1f).padding(end = 5.dp)
                         .background(if (on) OptChipOn else OptChip, RoundedCornerShape(10.dp))
+                        .let { if (on) it.border(1.dp, OptPrimary,
+                            RoundedCornerShape(10.dp)) else it }
                         .clickable { onChange(v) }
                         .padding(vertical = 9.dp),
                     contentAlignment = Alignment.Center

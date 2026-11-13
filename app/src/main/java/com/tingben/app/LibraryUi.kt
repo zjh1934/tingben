@@ -62,7 +62,8 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                            onChanged: () -> Unit,
                            importError: String? = null,
                            onDismissImportError: () -> Unit = {},
-                           compact: Boolean = false) {
+                           compact: Boolean = false,
+                           currentId: String? = null) {
     val books = remember(refresh) { BookStore.list(c) }
     var lastReads by remember { mutableStateOf(emptyMap<String, Int>()) }
     // H1 · 书架上的进度条：一眼看出这本书合成到哪了。
@@ -101,22 +102,34 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
 
     menuBook?.let { id ->
         val b = books.find { it.id == id } ?: return@let
+        val isPinned = b.id in pinned
+        // R314 · 原来标题只写书名、正文写「置顶或删除」当提示，三个按钮还把
+        // 「置顶」和「取消置顶」同时摆出来。现在首行亮出书名与置顶状态，
+        // 置顶按状态只留一个，删除单独警示色，并把「连音频一起删」提前说清。
         AlertDialog(
             onDismissRequest = { menuBook = null },
-            title = { Text(b.title, fontSize = 15.sp, fontWeight = FontWeight.Bold) },
-            text = { Text("置顶或删除", fontSize = 12.sp, color = Sub) },
-            confirmButton = {
+            title = {
+                Column {
+                    Text(b.title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(3.dp))
+                    Text(if (isPinned) "已置顶" else "未置顶",
+                        fontSize = 12.sp, color = Sub)
+                }
+            },
+            text = { Text("删除会连已做好的音频一起删掉", fontSize = 12.sp, color = Sub) },
+            dismissButton = {
                 TextButton(onClick = {
-                    val next = !(b.id in pinned)
+                    val next = !isPinned
                     libScope.launch(Dispatchers.IO) {
                         BookStore.setPinned(c, b.id, next)
                         EventLog.ui("BOOK_PIN_TAP", "id=${b.id.take(8)} on=$next")
                         withContext(Dispatchers.Main) { onChanged() }
                     }
                     menuBook = null
-                }) { Text(if (b.id in pinned) "取消置顶" else "置顶", fontSize = 13.sp) }
+                }) { Text(if (isPinned) "取消置顶" else "置顶",
+                    fontSize = 13.sp, color = Primary) }
             },
-            dismissButton = {
+            confirmButton = {
                 TextButton(onClick = { menuBook = null; confirmDelete = b.id }) {
                     Text("删除", fontSize = 13.sp, color = Warn)
                 }
@@ -125,12 +138,15 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
     }
 
     confirmDelete?.let { id ->
+        val title = books.find { it.id == id }?.title ?: ""
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
-            title = { Text("删除这本书？") },
-            text = { Text((books.find { it.id == id }?.title ?: "") +
-                "\n\n会一起删掉这本书的章节表、已做好的音频、分段缓存、制作任务，" +
-                "以及收听与阅读位置。若正在播放或制作这本书，会一并停止；" +
+            title = { Text("删除《$title》？") },
+            // R314 · 书名挪进标题，框内只讲后果；重要说明不再散到蒙层外面。
+            // 首句短、以「只删」起头（R158b 后果告知放行），后续把位置 / 停机 /
+            // 收尾窗口说全，一条不省。
+            text = { Text("只删这一本：音频、章节表、" +
+                "收听与阅读位置会一起删掉；正在播放或制作会一并停止；" +
                 "还在收尾上一段时会先停，稍等再删一次。") },
             confirmButton = {
                 TextButton(onClick = {
@@ -141,7 +157,7 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     if (deleted) onChanged()
                     else Toast.makeText(c, "这本书还在收尾上一段，已点停止；稍等再删一次",
                         Toast.LENGTH_LONG).show()
-                }) { Text("删除", color = Warn) }
+                }) { Text("删除", color = Warn, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmDelete = null }) { Text("取消") }
@@ -206,6 +222,14 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                         onTap = { onOpen(b.id) },
                         onLongPress = { menuBook = b.id })
                 }) {
+                    // R320 · 图 47：抽屉里三本书长得一模一样，不知道当前开的是
+                    // 哪一本。当前书顶部给一条主色横条，书名也转主色；不写
+                    // 「正在看」这类字，进度条下面依旧只有一条跟着动的条。
+                    if (compact && currentId != null && b.id == currentId) {
+                        Box(Modifier.fillMaxWidth().height(3.dp)
+                            .background(Primary, RoundedCornerShape(50)))
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Row(Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -216,16 +240,31 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                                     Spacer(Modifier.width(6.dp))
                                 }
                                 Text(b.title, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                                    maxLines = 1, color = palette.text,
+                                    maxLines = 1,
+                                    color = if (compact && currentId != null &&
+                                        b.id == currentId) Primary else palette.text,
                                     modifier = Modifier.weight(1f))
                             }
                             // 书名后面紧跟一条颜色条：已做好的章数 / 总章数。
+                            // R314 · 原来三态都是同一根紫色条，制作中、已做完、
+                            // 还没开始根本分不出来。用颜色 + 制作中的小转圈区分，
+                            // 一个字都不加（进度条下面不写废话是定好的口径）。
                             Spacer(Modifier.height(7.dp))
-                            Box(Modifier.fillMaxWidth().height(5.dp)
-                                .background(PrimarySoft, RoundedCornerShape(50))) {
-                                Box(Modifier.fillMaxWidth(pct).fillMaxHeight()
-                                    .background(if (done > 0 && done >= total) Good else Primary,
-                                        RoundedCornerShape(50)))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f).height(5.dp)
+                                    .background(PrimarySoft, RoundedCornerShape(50))) {
+                                    Box(Modifier.fillMaxWidth(pct).fillMaxHeight()
+                                        .background(
+                                            if (total > 0 && done >= total && !live) Good else Primary,
+                                            RoundedCornerShape(50)))
+                                }
+                                if (live) {
+                                    Spacer(Modifier.width(10.dp))
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Primary)
+                                }
                             }
                             // R298 · 进度条下面不写「已做好 X/Y 章」这类废话，
                             // 书名下面只留这一条跟着制作动的进度条。
@@ -233,11 +272,20 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
                     }
                 }
             }
-        } else {
+        } else if (!compact) {
             // R291 · 抽屉顶部已经有「＋ 导入一本书」那枚实心按钮，这里原来的
-            // 「导入第一本 ›」是第二个入口。新装/清干净后书架为空，两枚同时
-            // 出现，看着像两套导入。只留顶部那一枚，空态整行不渲染。
-            // onImportBook 参数保留给调用方兼容，本页不再画按钮。
+            // 「导入第一本 ›」是第二个入口，已删。R314 · 但整页留白让新装 /
+            // 清干净后对着白屏不知道去哪，按主页片段空槽的样子补 3 个骨架：
+            // 不写「还没有书」这类废话，也不再加任何导入按钮（顶部那枚是唯一入口）。
+            items(3, key = { "empty-slot-$it" }) {
+                Box(Modifier
+                    .fillMaxWidth()
+                    .height(92.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(PrimarySoft.copy(alpha = 0.35f))
+                    .border(1.dp, Color(0xFFE7EAF2), RoundedCornerShape(18.dp)))
+                Spacer(Modifier.height(12.dp))
+            }
         }
     }
 }

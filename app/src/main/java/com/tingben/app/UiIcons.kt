@@ -24,7 +24,10 @@ import androidx.compose.ui.unit.dp
  */
 enum class UiIcon {
     MIXER, SETTINGS, SYNTH, MERGE, WAV, M4A, DELETE,
-    PLAY, STOP, LISTEN, EXPORT, CANCEL, ALL, AUDIO, TASKS
+    PLAY, STOP, LISTEN, EXPORT, CANCEL, ALL, AUDIO, TASKS,
+    // R320 · 设置页专用：原来每行用 title.take(1) 放大一个汉字冒充图标，
+    // 既没有语义也撑不起视觉层级。全部换成相对坐标自绘的矢量图形。
+    PROGRESS, RESUME, BELL, PALETTE, SHIELD, FOLDER, BROOM, BOOK
 }
 
 @Composable
@@ -192,6 +195,116 @@ internal fun UiIconGlyph(which: UiIcon, tint: Color, glyphSize: Dp = 15.dp) {
                     ring(0.18f, y, 0.05f)
                     ln(0.36f, y, 0.86f, y)
                 }
+            }
+            // R320 · 以下八个全部只用 ln / ring / drawPath 三种最稳重载，
+            // 不碰 drawArc 之类在 Compose 不同版本签名会漂移的 API。
+            UiIcon.PROGRESS -> {
+                // 底环 + 从 12 点起的实心进度弧 + 中心圆点
+                ring(0.50f, 0.50f, 0.36f)
+                val p = Path().apply {
+                    moveTo(w * 0.50f, h * 0.14f)
+                    lineTo(w * 0.50f, h * 0.50f)
+                    lineTo(w * 0.86f, h * 0.50f)
+                }
+                drawPath(p, color = tint, style = Stroke(width = sw * 1.4f, cap = StrokeCap.Round))
+                drawCircle(tint, radius = w * 0.08f, center = Offset(w * 0.50f, h * 0.50f))
+            }
+            UiIcon.RESUME -> {
+                // 两枚右向三角（继续 / 接着跑）
+                for (i in 0..1) {
+                    val x = 0.10f + 0.42f * i
+                    val p = Path().apply {
+                        moveTo(w * x, h * 0.20f)
+                        lineTo(w * (x + 0.34f), h * 0.50f)
+                        lineTo(w * x, h * 0.80f)
+                        close()
+                    }
+                    drawPath(p, color = tint)
+                }
+            }
+            UiIcon.BELL -> {
+                // 铃铛：罩体 + 顶钮 + 铃舌
+                val p = Path().apply {
+                    moveTo(w * 0.22f, h * 0.68f)
+                    lineTo(w * 0.28f, h * 0.42f)
+                    lineTo(w * 0.42f, h * 0.30f)
+                    lineTo(w * 0.58f, h * 0.30f)
+                    lineTo(w * 0.72f, h * 0.42f)
+                    lineTo(w * 0.78f, h * 0.68f)
+                    close()
+                }
+                drawPath(p, color = tint, style = Stroke(width = sw, cap = StrokeCap.Round))
+                ln(0.22f, 0.68f, 0.78f, 0.68f)
+                ring(0.50f, 0.22f, 0.06f)
+                ring(0.50f, 0.80f, 0.07f)
+            }
+            UiIcon.PALETTE -> {
+                // 调色盘：外轮廓 + 拇指孔 + 三个颜料点
+                val p = Path().apply {
+                    moveTo(w * 0.50f, h * 0.12f)
+                    lineTo(w * 0.84f, h * 0.24f)
+                    lineTo(w * 0.88f, h * 0.60f)
+                    lineTo(w * 0.62f, h * 0.88f)
+                    lineTo(w * 0.34f, h * 0.86f)
+                    lineTo(w * 0.14f, h * 0.58f)
+                    lineTo(w * 0.16f, h * 0.28f)
+                    close()
+                }
+                drawPath(p, color = tint, style = Stroke(width = sw))
+                ring(0.36f, 0.62f, 0.09f)
+                ring(0.60f, 0.34f, 0.06f)
+                ring(0.72f, 0.48f, 0.06f)
+                ring(0.52f, 0.70f, 0.06f)
+            }
+            UiIcon.SHIELD -> {
+                // 盾形 + 中间勾
+                val p = Path().apply {
+                    moveTo(w * 0.50f, h * 0.10f)
+                    lineTo(w * 0.84f, h * 0.24f)
+                    lineTo(w * 0.80f, h * 0.62f)
+                    lineTo(w * 0.50f, h * 0.90f)
+                    lineTo(w * 0.20f, h * 0.62f)
+                    lineTo(w * 0.16f, h * 0.24f)
+                    close()
+                }
+                drawPath(p, color = tint, style = Stroke(width = sw, cap = StrokeCap.Round))
+                ln(0.32f, 0.50f, 0.45f, 0.64f)
+                ln(0.45f, 0.64f, 0.70f, 0.36f)
+            }
+            UiIcon.FOLDER -> {
+                // 文件夹：带折角的底盒 + 盖片
+                val p = Path().apply {
+                    moveTo(w * 0.12f, h * 0.28f)
+                    lineTo(w * 0.40f, h * 0.28f)
+                    lineTo(w * 0.48f, h * 0.38f)
+                    lineTo(w * 0.88f, h * 0.38f)
+                    lineTo(w * 0.88f, h * 0.84f)
+                    lineTo(w * 0.12f, h * 0.84f)
+                    close()
+                }
+                drawPath(p, color = tint, style = Stroke(width = sw, cap = StrokeCap.Round))
+                ln(0.12f, 0.28f, 0.12f, 0.20f)
+                ln(0.12f, 0.20f, 0.36f, 0.20f)
+            }
+            UiIcon.BROOM -> {
+                // 扫帚：斜杆 + 三根刷毛 + 捆扎线
+                ln(0.72f, 0.14f, 0.38f, 0.60f)
+                ln(0.30f, 0.56f, 0.20f, 0.86f)
+                ln(0.42f, 0.62f, 0.38f, 0.90f)
+                ln(0.54f, 0.60f, 0.58f, 0.88f)
+                ln(0.26f, 0.66f, 0.62f, 0.66f)
+            }
+            UiIcon.BOOK -> {
+                // 摊开的书：书脊 + 左右页边 + 两道文字线
+                ln(0.50f, 0.18f, 0.50f, 0.86f)
+                ln(0.50f, 0.18f, 0.14f, 0.24f)
+                ln(0.14f, 0.24f, 0.14f, 0.80f)
+                ln(0.14f, 0.80f, 0.50f, 0.86f)
+                ln(0.50f, 0.18f, 0.86f, 0.24f)
+                ln(0.86f, 0.24f, 0.86f, 0.80f)
+                ln(0.86f, 0.80f, 0.50f, 0.86f)
+                ln(0.22f, 0.40f, 0.40f, 0.38f)
+                ln(0.60f, 0.38f, 0.78f, 0.40f)
             }
         }
     }

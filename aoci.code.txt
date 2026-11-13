@@ -10,6 +10,10 @@ settings.gradle.kts[FV3T]: F:仓库级插件仓库与依赖解析策略 | R:code
 gradle.properties[FV3T]: F:Gradle JVM 参数与 AndroidX/Compose 开关 | R:code:app/build.gradle.kts | A:构建属性 | S:jvmargs 的 UTF-8 是中文 KDoc 与自检脚本正常读盘的前提
 .gitignore[FV5T]: F:把模型权重、安装包、签名材料、本机宿主配置、令牌接收位与缓存挡在版本管理之外 | R:code:scripts/check_structure.py,code:scripts/aoci_check.py | A:Git 忽略规则 | S:AOCI 认知资产 aoci.txt、aoci.meta.txt、aoci.code.txt、AGENTS.md 绝不能加进忽略，否则受管范围会失效；宿主 MCP 配置含本机绝对路径，不提交；.secrets/ 在仓库外，这里再兜一层防误移
 AGENTS.md[SG8S]: F:给 AI Agent 的仓库入口规则，规定阅读顺序、噪声边界、硬口径、索引维护、每轮对话必做、验证/发版解耦、协作节奏与 UI 分家 | R:code:aoci.txt,code:aoci.meta.txt,code:aoci.code.txt,code:docs/00_现行契约.md | A:<!-- aoci:begin --> 托管块 | S:含 aoci 托管标记，装官方 CLI 后可被识别；本仓是协议级适配，不能照抄官方那份假设 MCP 九工具常驻的全文；每轮维护：两份认知（仓库内地图 + 仓库外任务看板.md），看板四段（待做置顶为大头/已做/在做/铁律，≤600 字，待做 3~5 条做完即删），每次回复贴看板全文；R203 验证与发版解耦：纯结构轮只 rc 真编译、不升版本不发包，攒批或有用户可感知改动才发版；R206 UI 分家遍历真文件须用 ui_sources.view_for；R204 协作节奏：沙盒攒批、不逐步 commit/push/跑 CI，该出包或发版才动 GitHub；R232 两档沟通/QUICK/无用自检连根拔/过时约束顺手删改/开源优先；R243 字数压回 600（R232 的 500~1000 作废）；R249 待办并回看板、删独立清单文件；R250 用户基线＝真机装的版本(1.1.30)，写板头、不确定顺口问；`.aoci/baseline.json` 是索引快照不叫基线、不进汇报；R251 看板铁律收敛到 3 条，其余工程口径归 AGENTS 不复述，纯离线/arm64 是工程现状不当铁律
+CHANGELOG.md[SG5T]: F: 按版本倒序记录用户能感知的变化，Release 说明从这里抽当前版本段 | R:code:version.txt,code:.github/workflows/ci.yml,code:scripts/release_notes.py | A:版本更新记录 | S:版本真值只在 version.txt，此处不另立版本串，纯文档轮不升版本
+CONTRIBUTING.md[SG5T]: F: 参与开发的开工顺序、守恒清单、发版流程与 PR 自查 | R:code:docs/00_现行契约.md,code:STATUS.md,code:ROADMAP.md | A:贡献指引 | S:禁 force、禁假链；真编译没绿不发包，改界面要附按代码绘制的形态图
+SECURITY.md[SG5T]: F: 说明无网络权限与日志脱敏边界，给出不含敏感信息的报告方式 | R:code:docs/THIRD_PARTY_NOTICES.md,code:docs/FAQ.md | A:安全与隐私说明 | S:日志与 Issue 都不收正文、书名、音色描述、令牌或密钥
+LICENSE[SG5T]: F: 主项目 MIT 许可全文 | R:code:docs/THIRD_PARTY_NOTICES.md,code:README.md | A:许可文件 | S:移植改写与上游模型的版权声明另在第三方声明里，别并进本文件
 # 卷资产元条目（保留认知，按 volumes-v1 不占 code 卷 Entry）：aoci.txt[SG7T]: F:AOCI Root 清单，声明 meta 与 code 两个认知卷及中文语言环境 | R:code:aoci.meta.txt,code:aoci.code.txt | A:cognition-volumes/v1 Root Manifest | S:Volume 路径必须是仓库相对路径；改 layout 前先读官方 spec/public/aoci-index-format-v1.txt
 # 卷资产元条目（保留认知，按 volumes-v1 不占 code 卷 Entry）：aoci.meta.txt[SG7T]: F:标签字典与 FRAS 规则，附带本仓不变量与噪声边界 | R:code:aoci.txt,code:aoci.code.txt | A:object-fras-v2 标签字典 | S:S 配额按重要度分级，C9-8≤600 字；# 开头的自定义行只作注释，不能替代官方字段
 # 卷资产元条目（保留认知，按 volumes-v1 不占 code 卷 Entry）：aoci.code.txt[SG9S]: F:逐文件认知索引，每个受管对象一条 F/R/A/S，是本仓给新会话的仓库地图 | R:code:scripts/aoci_check.py,code:.aoci/baseline.json | A:object-fras-v2 Code Volume | S:目录 section 头的 /tingben/ 是历史坐标而非运行路径，clone 后由读者逻辑重定位；禁止从路径、文件名、AST 或模板反推语义，条目必须由模型基于源码证据创作
@@ -52,8 +56,8 @@ ProduceService.kt[RR9M]: F:长任务前台服务，负责通知、唤醒锁、�
 OverlayProgress.kt[RU7M]: F:可选的悬浮进度圆环，纯 View 实现，默认关，不写字不挂停止 | R:code:app/src/main/java/com/tingben/app/ProduceService.kt,code:app/src/main/java/com/tingben/app/core/Prefs.kt,code:app/src/main/java/com/tingben/app/core/KeepAlive.kt | A:OverlayProgress.update / hide | S:R214 纯圆环+百分比数字，pctLabel 夹越界；R255 上球逐段刷新+postInvalidate+OVERLAY_PCT 纯数值日志；R267 单实例由 OverlaySource(PREVIEW<CLIP<PRODUCE)+Frame 仲裁：低来源只重绘不盖进度、hide(c,source) 不删高来源浮窗，双球只属 PRODUCE；停止/完成/关开关走无参 hide 强制清
 Theme.kt[AU5S]: F:浅深色色板与主题应用，深色下常规文字统一纯白，提供随主题变化的前景色 | R:code:app/src/main/java/com/tingben/app/AppChrome.kt | A:TingbenTheme / palette | S:白字压亮黄底 1.67:1、卡/底 1.13:1；写死 Color.White 会被守门拦，一律走 palette；R164 格子序号 2.93/2.87:1 改取 text；R167 纠正 R166：深色常规文字 text+sub 统一纯白，层次交给字号/字重/底色，不靠灰度；grey 是格子底色不许刷白；亮黄/主色按钮仍深字
 TingbenApp.kt[RR5T]: F:Application 入口，初始化日志与崩溃钩子、读上次进程退出原因、预热 native 引擎 | R:code:app/src/main/java/com/tingben/app/diag/EventLog.kt,code:app/src/main/java/com/tingben/app/engine/NativeEngine.kt | A:TingbenApp.onCreate | S:logExitReasons 必须紧跟 EventLog.init，放到后面会丢掉「上一轮怎么没的」这一定性证据；崩溃栈与环形缓冲要能进诊断导出，日志可能含书名和正文片段
-UiIcons.kt[AU8S]: F:代码自绘的小图标库（enum UiIcon + UiIconGlyph），给 chip 与弹层按钮配 15dp 图标，不引图标库、不进资源文件 | R:code:app/src/main/java/com/tingben/app/MultiSelect.kt,code:app/src/main/java/com/tingben/app/ChapterHub.kt,code:app/src/main/java/com/tingben/app/MixerUi.kt,code:app/src/main/java/com/tingben/app/TaskUi.kt | A:全相对坐标 0..1 的 Canvas 绘制，只用 drawLine/drawPath/drawCircle | S:R247 图标+文字并存保抽象动作可读性；局部 fun ln/ring 缩进 8 不标 @Composable（r142 已按现状放行）；Float×Int 必须 i.toFloat()（R169 真编译教训）
-DescPresetUi.kt[AG9S]: F:调音台描述预设的两枚按钮与弹窗 | R:code:app/src/main/java/com/tingben/app/MixerUi.kt | A:DescPresetRow / speakerCn | S:R304 声音描述与风格描述共用；列表显示简短描述，选中填详细描述
+UiIcons.kt[AU8M]: F:代码自绘的小图标库（enum UiIcon + UiIconGlyph），给 chip 与弹层按钮配 15dp 图标，不引图标库、不进资源文件 | R:code:app/src/main/java/com/tingben/app/MultiSelect.kt,code:app/src/main/java/com/tingben/app/ChapterHub.kt,code:app/src/main/java/com/tingben/app/MixerUi.kt,code:app/src/main/java/com/tingben/app/TaskUi.kt | A:全相对坐标 0..1 的 Canvas 绘制，只用 drawLine/drawPath/drawCircle | S:R247 图标+文字并存保抽象动作可读性；局部 fun ln/ring 缩进 8 不标 @Composable（r142 已按现状放行）；Float×Int 必须 i.toFloat()（R169 真编译教训）
+DescPresetUi.kt[AG9M]: F:调音台描述预设的两枚按钮与弹窗 | R:code:app/src/main/java/com/tingben/app/MixerUi.kt | A:DescPresetRow / speakerCn | S:R304 声音描述与风格描述共用；列表显示简短描述，选中填详细描述
 
 ===/tingben/app/src/main/java/com/tingben/app/core/===
 TrialFiles.kt[RB4T]: F:试听临时文件的唯一落点与清理口，cacheDir/trial，播完即丢 | R:code:app/src/main/java/com/tingben/app/core/ClipSynth.kt,code:app/src/main/java/com/tingben/app/MixerUi.kt,code:app/src/main/java/com/tingben/app/core/PlayQueue.kt | A:TrialFiles.file / sweep | S:R256 三层目录之一，只清试听；seg 小块在 work、成品在 audio 绝不碰
@@ -118,6 +122,9 @@ NativeEngine.kt[IH9T]: F:JNI 入口，加载 arm64 引擎 so、模型预热、TT
 修复清单_按优先级.md[SG7M]: F:修复项的唯一排期真源，P0~P4 按重要度 | R:code:ROADMAP.md,code:STATUS.md | A:问题清单与真机待验条目 | S:文首曾长期残留「当前基线 1.1.0+117」的过时口径；历史全文已搬 dev/，本文件只留现行清单
 THIRD_PARTY_NOTICES.md[SG3S]: F:第三方许可与归属声明 | R:code:docs/01_音频模型调教逻辑.md | A:第三方声明 | S:新增依赖要同步补，别只改代码
 源代码中文清理清单.md[SG3T]: F:源码中文命名与注释的清理记录 | R:code:docs/00_现行契约.md | A:清理清单 | S:属过程记录，不作现行行为依据
+FAQ.md[SG5T]: F: 装包后常见问题的问答：模型份数、制作入口、章边界、M4A、发热、日志 | R:code:docs/使用指南.md,code:README.md | A:常见问题 | S:资源解析失败是平台读不了二进制，不是坏链，别据此改直链
+使用指南.md[SG5T]: F: 从装包到导入模型、建书、定参数、勾章制作、听与导出的完整步骤 | R:code:docs/00_现行契约.md,code:STATUS.md,code:docs/FAQ.md | A:使用指南 | S:模型缺几份就逐份列，不合并算成 2 份；勾哪几章做哪几章，设置页不绕过勾章整本开跑
+界面形态清单.md[SG5T]: F: 登记 docs/screenshots 与 images 下每张图的页面含义 | R:code:README.md,code:docs/screenshots/home.png | A:界面资产索引 | S:图是按代码绘制的形态示意、数据为模拟，不是真机截屏
 
 ===/tingben/scripts/===
 aoci_check.py[TQ9L]: F:AOCI 协议级治理守门，校验索引格式、标签、受管覆盖、基线漂移与噪声边界，并提供 --lookup 让新会话一条命令读地图 | R:code:aoci.txt,code:aoci.meta.txt,code:aoci.code.txt,code:.aoci/config.json,code:.aoci/baseline.json | A:--check / --refresh / --selftest / --lookup <关键字> | S:官方 CLI 二进制在构建环境拿不到 Release 资产，本脚本只做等价治理，不假装跑过 aoci verify/check；语义由模型创作，程序只验结构与漂移；--lookup 查不到就说明该维护索引了，别直接翻全工程；R194 项目迁到跨对话目录后，PRIVATE_MARKERS 同时守新旧两根；索引里不写绝对路径，否则自己就会红
@@ -165,3 +172,12 @@ clip_view.py[TQ8T]: F:给老守门用的「UI 合并视图 + 合成真源」 | R
 r248_verify.py[TQ8S]: F:R248 播放通知锁控/进度条/去状态废话守门 | R:code:app/src/main/java/com/tingben/app/core/PlaySession.kt,code:app/src/main/java/com/tingben/app/core/PlayNotif.kt,code:app/src/main/java/com/tingben/app/core/PlayQueue.kt,code:.github/workflows/ci.yml | A:--selftest（20 组反向注入） | S:平台 MediaSession 三处接线 + MediaStyle.setMediaSession + setProgress + 状态废话禁回潮；CI/r135/config 三处登记成对改
 r257_verify.py[TQ8S]: F:R257 真机日志实证守门（用户内容零落盘 / 拼章去抖） | R:code:app/src/main/java/com/tingben/app/core/Producer.kt,code:app/src/main/java/com/tingben/app/ChapterHub.kt,code:scripts/ui_sources.py | A:--selftest（15 组反向注入） | S:禁 EventLog 直接插值书名/正文/音色/URI/完整 UUID，只许 safe 或 take(8)；补齐不得挂 st.done、制作中必须跳过；制作中判据两个 effect 各一句（补齐 + redoKeys 秒读），注入全量替换，修只摘一处恒不红
 r300_verify.py[TQ7S]: F:章边界即时拼章守门：这一章小块做完即拼成这一章音频、重做未清不拼、收尾只补漏 | R:code:app/src/main/java/com/tingben/app/core/Producer.kt,code:scripts/r231_verify.py,code:.github/workflows/ci.yml | A:--selftest（12 组反向注入） | S:不许退回整本跑完统一拼；章边界触发点两处（删段分支/段收尾）缺一即红；收尾 ensureChapterAudios 只作补漏网，不重烧条目
+release_notes.py[XV5T]: F: 从 CHANGELOG.md 抽当前版本段，生成结构化 Release 说明 | R:code:version.txt,code:CHANGELOG.md,code:.github/workflows/ci.yml | A:发版脚本 | S:版本只从 version.txt 读；抽不到当前版本段时留兜底文案，不编造改动
+
+===/tingben/.github/ISSUE_TEMPLATE/===
+bug_report.md[SG5T]: F: 问题反馈模板：版本机型、现象、复现、纯数值日志、截图 | R:code:docs/FAQ.md,code:SECURITY.md | A:Issue 模板 | S:模板里明确不收正文、书名、音色描述、令牌或密钥
+feature_request.md[SG5T]: F: 功能建议模板：只写场景与现在的绕法 | R:code:ROADMAP.md,code:docs/修复清单_按优先级.md | A:Issue 模板 | S:写场景不写实现方案，排期真源是修复清单
+config.yml[SG5T]: F: Issue 入口配置：关闭空 Issue、把使用问题导向 FAQ | R:code:docs/FAQ.md,code:.github/ISSUE_TEMPLATE/bug_report.md | A:Issue 入口 | S:blank_issues_enabled 必须关，否则问题会绕开模板丢掉版本信息
+
+===/tingben/.github/===
+PULL_REQUEST_TEMPLATE.md[SG5T]: F: PR 自查：改了什么、怎么验的、守恒与版本串 | R:code:CONTRIBUTING.md,code:version.txt | A:PR 模板 | S:版本串只在 version.txt 改，界面改动必须附形态图

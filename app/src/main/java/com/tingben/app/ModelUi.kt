@@ -64,7 +64,7 @@ internal fun ClearSegmentsRow(c: Context) {
             Text("清理分段音频", fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(3.dp))
-            Text("只删分段 WAV", fontSize = 11.sp, color = Sub)
+            Text("只删临时分段，成品和模型不动", fontSize = 11.sp, color = Sub)
         }
         Spacer(Modifier.width(8.dp))
         Button(onClick = { confirmClear = true },
@@ -114,7 +114,6 @@ internal fun ModelScreen(c: Context, refresh: Int,
     val st by Producer.state.collectAsState()
     val files = remember(refresh) { ModelStore.files(c) }
     val missing = remember(refresh) { ModelStore.missing(c) }
-    val installed = remember(refresh) { ModelStore.installedModes(c) }
     val current = remember(refresh) { ModelStore.currentMode(c) }
     val modeFiles = remember(refresh) { ModelStore.modeFiles(c) }
     val baseFile = remember(refresh) { ModelStore.tokenizer(c) }
@@ -145,7 +144,7 @@ internal fun ModelScreen(c: Context, refresh: Int,
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("模型", fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f))
-            Text(if (allReady) "已就绪 · ${installed.size} 个模式"
+            Text(if (allReady) "4 份已就绪"
                  else "还差 ${missing.size} 份模型",
                 fontSize = 12.sp, color = if (allReady) Good else Warn)
         }
@@ -254,7 +253,7 @@ internal fun ModelScreen(c: Context, refresh: Int,
                             if (baseFile != null) {
                                 TextButton(onClick = {
                                     ModelStore.delete(c, baseFile); onChanged(); toggle(key)
-                                }) { Text("删除重试", fontSize = 12.sp, color = Sub) }
+                                }) { Text("删这一份重导", fontSize = 12.sp, color = Warn) }
                             }
                         } else if (mode != null) {
                             Text(mode.id, fontSize = 11.sp, color = Sub)
@@ -284,7 +283,7 @@ internal fun ModelScreen(c: Context, refresh: Int,
                                     Spacer(Modifier.weight(1f))
                                     TextButton(onClick = {
                                         ModelStore.delete(c, f); onChanged(); toggle(key)
-                                    }) { Text("删除重试", fontSize = 11.sp, color = Sub) }
+                                    }) { Text("删这一份重导", fontSize = 11.sp, color = Warn) }
                                 }
                                 if (!isCurrent && st.running)
                                     Text("正在制作，跑完前不能切", fontSize = 11.sp, color = Warn)
@@ -314,7 +313,7 @@ internal fun ModelScreen(c: Context, refresh: Int,
 
         CardBox(Modifier.padding(bottom = 6.dp)) {
             if (allReady) {
-                Text("底座 + 3 个模式都在", fontSize = 13.sp,
+                Text("4 份都在 · 当前是「${current.label}」", fontSize = 13.sp,
                     fontWeight = FontWeight.Bold)
                 Text(current.label + " 是当前模式。" + (if (current == ModelStore.Mode.VOICE_DESIGN)
                     "可以合成音频了。" else "切回「描述造音色」后即可继续。"),
@@ -332,8 +331,12 @@ internal fun ModelScreen(c: Context, refresh: Int,
                         Text("正在制作，跑完前不能切", fontSize = 10.sp, color = Warn)
                 }
             } else {
-                Text("还差 " + missing.joinToString("、"), fontSize = 13.sp,
+                Text("还有 ${missing.size} 份没导入", fontSize = 13.sp,
                     fontWeight = FontWeight.Bold)
+                missing.forEach { m ->
+                    Text("· $m", fontSize = 11.sp, color = Warn,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             // H2 · 主按钮语义固定，不随就绪状态变形。
             Button(onClick = onPick, enabled = importing == null,
