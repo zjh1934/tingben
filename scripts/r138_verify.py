@@ -84,7 +84,10 @@ POS = {
         "ChapterPlan.currentRuleId(c, book.id)",
         "ChapterPlan.preview(c, book, null)", "ChapterPlan.refresh(c, book)",
         "showResplit", "resplitBusy", "planTick", "重新分章",
-        "章号会变，旧任务需重新确认；分段音频作废，成品仍可听；原书文字不动。",
+        # R340 · 后果长句拆成三行短句，语义一句没丢，锚跟着新形态改准
+        "分段音频作废，要重新做", "旧任务需重新选章",
+        "已拼好的章音频、原书文字不动", "确认重新分章",
+        "预览与确认用的是同一份章表", "先停稳才能重新分章",
         "已按${ChapterPlan.ruleName(rid)}重新分为 $n 章 · 旧任务请重新选章",
     ],
     "main": [

@@ -57,9 +57,11 @@ POS = {
         'STORAGE_PARTIAL',
         'STORAGE_PARTIAL_STOP',
         '清出空间后点「继续制作」',
-        # R272 · 整本大文件不再生成：收尾只按章拼（force 强制），不预留整本空间
+        # R330 · 收尾不再强制抢拼：自动开关关掉后，坏块能先重做、由用户亲手
+        # 点「拼接并转码」固化。旧 R272 的 force=true 早已随口径撤掉，
+        # 本轮把锚迁到现行 force=false，并把 force=true 列为回潮禁令。
         'val merged = if (c != null) AudioOps.ensureChapterAudios(',
-        'gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)',
+        'gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = false)',
         'chapters=$totalMade immediate=$chaptersMade late=${merged.first}',
         'for ((i, a) in toSpeak.withIndex())',
     ],
@@ -70,7 +72,8 @@ POS = {
 BAN = {
     "reading": ['optInt(bookId, -1)'],
     "hub": ['LazyColumn(Modifier.weight(1f).padding(horizontal = 18.dp)) {'],
-    "pipe": [],
+    # R330 · 收尾强制抢拼回潮即红（自动开关关掉时不能偷偷把坏块固化）
+    "pipe": ['gapMs = config.gapMs, declickMs = Prefs.mergeDeclickMs(c), force = true)'],
 }
 
 KEEP = {
@@ -138,7 +141,7 @@ if __name__ == '__main__':
             ('看书页不落盘', 'hub', lambda t: t.replace('ReadingState.save(c, book.id, i, p, off)', '// x')),
             ('退回无 state 列表', 'hub', lambda t: t.replace('LazyColumn(state = listState,', 'LazyColumn(')),
             ('删合成前预检', 'pipe', lambda t: t.replace('if (estimateBytes > budgetBytes)', 'if (false)')),
-            ('收尾不强制按章拼', 'pipe', lambda t: t.replace('force = true)', 'force = false)')),
+            ('收尾又强制抢拼', 'pipe', lambda t: t.replace('force = false)', 'force = true)')),
             ('空间提示塌回笼统', 'pipe', lambda t: t.replace('清出空间后点「继续制作」', '没能生成音频')),
             ('CI 摘验证', 'ci', lambda t: t.replace('scripts/r95_verify.py', 'x.py')),
             ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r95_space_parity.py', 'x.py')),

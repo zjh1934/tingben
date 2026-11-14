@@ -303,9 +303,34 @@ internal fun ChapterHubScreen(
     // R333 · 手动拼章进行中：点下去当场锁这一章，不等 mergeBusy 回流，
     // 防止连点把同一章重复拼 / 转码、重复删内部 WAV。
     var mergingChapter by remember(book.id) { mutableStateOf<Int?>(null) }
-    // R333 · 制作中永远显示正在做的那一章，回看不抢它；停下来才允许回看
-    // 上一章留着的小块，避免把制作中的格子突然顶掉、把软件改坏。
-    val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)
+    // R342 · 没拼成章音频的「中间态」章必须一直能摊开：制作走到下一章时，
+    // 上一章的小块、重做、收尾条、导出入口都不许被锁死。默认仍显示正在
+    // 做的那一章（实时进度不丢），用户点开的章优先；「制作中 · 返回」回默认。
+    // 仍最多只展开一章，不会整本几百章一起铺格子。
+    // R343 · 「中间态」＝还没拼成 / 没转码成章音频，但这一章已经动过：有实存
+    // 小块、有没消化完的重做标记，或逐章进度已经起来。只认 mergeReady 会漏掉
+    // 「重做中的段旧 WAV 已删、新 WAV 还没落」那一瞬——那时段数为 0，章行不给
+    // 展开入口，用户就会以为这一章点不开、里面的导出合成也找不到。
+    fun redoOf(i: Int): Int = hubByChapter[i].orEmpty()
+        .count { "seg:${it.index}" in redoKeys }
+    val unmergedChapters by remember(book.id) {
+        derivedStateOf {
+            ui.mapNotNull { r ->
+                val hasDone = r.audio != null || r.playable
+                val started = (r.synthesized ?: 0f) > 0f
+                if (!hasDone && (started || (mergeReady[r.index] ?: 0) > 0 || redoOf(r.index) > 0))
+                    r.index else null
+            }.toSet()
+        }
+    }
+    val shownChapter: Int? = peekChapter ?: liveChapter
+    // R343 · 这一章一旦固化成章音频，回看态自动收起，不摊着一片空格子。
+    val diskNow = disk
+    LaunchedEffect(peekChapter, localTick, diskNow) {
+        val ch = peekChapter ?: return@LaunchedEffect
+        if (ui.getOrNull(ch)?.let { it.audio != null || it.playable } == true)
+            peekChapter = null
+    }
     // R297 · 批量标记放 IO，主线程只管界面反馈，勾几十段也不卡。
     val redoScope = rememberCoroutineScope()
     val pqSeg by PlayQueue.previewState.collectAsState()
@@ -778,6 +803,10 @@ internal fun ChapterHubScreen(
                 contentPadding = PaddingValues(bottom = 100.dp)) {
                 ui.forEach { r ->
                     item(key = "ch_${r.index}") {
+                        // R342 · 回看中间态章时，制作章仍要有一键回默认的入口，
+                        // 不然实时进度被顶掉就找不回来了。
+                        val backToLive = bookRunning && r.index == liveChapter &&
+                            shownChapter != liveChapter
                         ChapterRow(
                             r = r, multi = multiMode, checked = r.index in selected,
                             // R264 · 章名不再承担展开/收起：制作中的那一章自动展开，
@@ -805,16 +834,31 @@ internal fun ChapterHubScreen(
                             busyLabel = mergeBusy
                                 ?.takeIf { it.bookId == book.id && it.chapter == r.index }
                                 ?.phase,
-                            // R333 · 有待固化小块的章，章行右侧给一枚「待拼 N 段」小标签；
-                            // 点它把这一章的小块区摊开，拼章收尾条就在那堆格子下面。
-                            peekHint = (mergeReady[r.index] ?: 0)
-                                .takeIf { it > 0 && r.index != shownChapter }
-                                ?.let { "待拼 $it 段" },
+                            // R342 · 中间态章给「待拼 N 段」回看入口；制作章在回看态
+                            // 给「制作中 · 返回」。两枚都只切换展开的那一章。
+                            peekHint = when {
+                                backToLive -> "制作中 · 返回"
+                                // R343 · 判定换成「没固化成章音频且这一章已经动过」，
+                                // 不再只看 mergeReady：重做中 / 没重做完时旧 WAV 已删、
+                                // 新 WAV 还没落，段数为 0 也必须能展开。
+                                r.index in unmergedChapters && r.index != shownChapter ->
+                                    when {
+                                        redoOf(r.index) > 0 ->
+                                            "待重做 ${redoOf(r.index)} 段 · 展开"
+                                        (mergeReady[r.index] ?: 0) > 0 ->
+                                            "待拼 ${mergeReady[r.index]} 段"
+                                        else -> "展开这一章的小块"
+                                    }
+                                else -> null
+                            },
+                            onTapName = if (r.index in unmergedChapters &&
+                                r.index != shownChapter) {
+                                { exitSegMulti(); peekChapter = r.index }
+                            } else null,
                             onPeek = {
-                                if (!bookRunning) {
-                                    exitSegMulti()
-                                    peekChapter = r.index
-                                }
+                                // R342 · 制作中也允许回看中间态章，不再把点击吞掉。
+                                exitSegMulti()
+                                peekChapter = if (backToLive) null else r.index
                             })
                     }
                     // R333 · 旧形态作废：章名下一行那条整行实心大蓝条，对已完成的章
@@ -947,16 +991,21 @@ internal fun ChapterHubScreen(
                         ?.phase
                     val busyHere = (st.running && r.index == liveChapter)
                         || mergingChapter == r.index || phaseHere != null
+                    val unmergedHere = r.index in unmergedChapters
                     val canMerge = readyHere > 0 && redoHere == 0 && !busyHere
                     val status = when {
                         phaseHere != null -> phaseHere
                         mergingChapter == r.index -> "正在拼这一章…"
                         busyHere -> "这一章还在制作中，做完再拼"
                         redoHere > 0 -> "还有 $redoHere 段待重做，先重做完再拼"
+                        // R343 · 重做中的段旧 WAV 已删、新 WAV 还没落时 readyHere 为 0，
+                        // 收尾条不能跟着消失：按钮置灰但写明在等什么，小块原样摊开。
+                        readyHere == 0 && unmergedHere ->
+                            "小块还在重做中，补齐后才能拼这一章"
                         readyHere == 0 -> "这一章还没有音频小块"
                         else -> "$readyHere 段就绪 · 把上面这些小块做成一个章音频"
                     }
-                    if (readyHere > 0 || hasDone || busyHere) {
+                    if (readyHere > 0 || hasDone || busyHere || unmergedHere) {
                         item(key = "merge_footer_${r.index}") {
                             MergeChapterFooter(
                                 label = if (hasDone) "重新拼接并转码" else "拼接并转码",
@@ -1139,9 +1188,31 @@ internal fun ChapterHubScreen(
                                         })
                                 }
                             } else {
-                                DropdownMenuItem(enabled = false,
-                                    text = { Text("选一章已做好的才能导出", fontSize = 12.sp,
-                                        color = HubSub) }, onClick = { })
+                                // R342 · 中间态章（小块还在、没拼没转码）不该只给一句死话：
+                                // 点一下摊开这一章的小块区，收尾条「拼接并转码」与
+                                // 小块重做 / 导出入口就都在了，不用满页找。
+                                val pending = i?.let { mergeReady[it] ?: 0 } ?: 0
+                                // R343 · 只看 pending 会在「重做中 / 没重做完」时把这一项
+                                // 变成一句点不动的死话；中间态章一律能展开去处理。
+                                val unmergedHere = i != null && i in unmergedChapters
+                                DropdownMenuItem(
+                                    enabled = pending > 0 || unmergedHere,
+                                    text = {
+                                        Text(if (pending > 0)
+                                            "这一章有 $pending 段小块 · 展开去拼接并转码"
+                                        else if (unmergedHere)
+                                            "这一章的小块还在重做中 · 展开去处理"
+                                        else "这一章还没有可导出的音频",
+                                            fontSize = 12.sp, color = HubSub)
+                                    },
+                                    onClick = {
+                                        exportMenu = false
+                                        if (i != null) {
+                                            exitMulti()
+                                            exitSegMulti()
+                                            peekChapter = i
+                                        }
+                                    })
                             }
                         }
                     }
@@ -1245,56 +1316,134 @@ internal fun ChapterHubScreen(
         }
 
         // 重新分章：先预览章数与头尾标题，确认才应用（成熟阅读器的闭环）。
+        // R340 · 图 18 重新设计。看一眼旧形态：标题「重新分章」+ 一行
+        // 「当前 3 章 → 识别 338 章」+ 三行灰点 + 一整块橙色长句 + 实心
+        // 「应用」主按钮 —— 章号重排、分段作废这么重的事，视觉权重跟
+        // 「保存」没区别；预览只列 3 条不说这是头尾样例；按钮禁用时没有
+        // 任何解释；识别阶段一行字加一大片空白。只重排呈现，逻辑一字没动。
         if (showResplit) {
             val pv = resplitPreview
+            val bookBusy = (st.running && task?.bookId == book.id) ||
+                Producer.isBusyForBook(book.id)
             AlertDialog(
                 onDismissRequest = { showResplit = false },
-                title = { Text("重新分章", fontSize = 15.sp) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // R340 · 警示三角画出来，不是把一个汉字放大当图标
+                        Canvas(Modifier.size(20.dp)) {
+                            val tri = Path().apply {
+                                moveTo(size.width / 2, 1.dp.toPx())
+                                lineTo(size.width - 1.dp.toPx(), size.height - 1.dp.toPx())
+                                lineTo(1.dp.toPx(), size.height - 1.dp.toPx())
+                                close()
+                            }
+                            drawPath(tri, color = HubWarn,
+                                style = Stroke(width = 2.dp.toPx(),
+                                    cap = StrokeCap.Round, join = StrokeJoin.Round))
+                            drawLine(HubWarn,
+                                Offset(size.width / 2, size.height * 0.38f),
+                                Offset(size.width / 2, size.height * 0.66f),
+                                2.dp.toPx(), StrokeCap.Round)
+                            drawCircle(HubWarn, 1.2f.dp.toPx(),
+                                Offset(size.width / 2, size.height * 0.80f))
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("重新分章", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("章号会重排，已做好的分段要重来",
+                                fontSize = 12.sp, color = HubWarn)
+                        }
+                    }
+                },
                 text = {
                     Column {
                         if (resplitBusy || pv == null) {
-                            // R315 · 图 18 识别阶段只一行字 + 一大片空白，
-                            // 看着像卡住；补转圈与「在按什么规则找」。
+                            // R340 · 识别阶段不再「一行字 + 一大片空白」
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(Modifier.size(16.dp),
                                     strokeWidth = 2.dp, color = HubPrimary)
                                 Spacer(Modifier.width(8.dp))
-                                Text("正在识别这本书的章节…", fontSize = 12.sp, color = HubSub)
+                                Text("正在按这本书的格式找章节…",
+                                    fontSize = 12.sp, color = HubSub)
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            listOf(0.92f, 0.72f, 0.84f).forEach { w ->
+                                Box(Modifier.padding(vertical = 4.dp)
+                                    .fillMaxWidth(w).height(12.dp)
+                                    .background(HubGrey.copy(alpha = 0.20f),
+                                        RoundedCornerShape(6.dp)))
                             }
                         } else {
-                            // R315 · 先把「现在几章 → 识别几章」摆出来，
-                            // 338 章对 3 章这种落差不该等点了应用才发现。
-                            Text("当前 ${chapters.size} 章 → 识别 ${pv.second.first} 章",
-                                fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                                color = palette.text)
-                            Text("自动识别：${ChapterPlan.ruleName(pv.first)}",
-                                fontSize = 12.sp, color = HubSub)
-                            Spacer(Modifier.height(6.dp))
-                            pv.second.second.forEach {
-                                Text("· $it", fontSize = 12.sp, color = HubSub, maxLines = 1)
+                            val newCount = pv.second.first
+                            // R340 ① 规则来源：R339 之后预览与确认是同一份章表
+                            Box(Modifier.fillMaxWidth()
+                                .background(HubSoft.copy(alpha = 0.50f), RoundedCornerShape(10.dp))
+                                .padding(10.dp)) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("识别依据", fontSize = 12.sp, color = HubSub,
+                                            modifier = Modifier.weight(1f))
+                                        Text(ChapterPlan.ruleName(pv.first), fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold, color = HubPrimary)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text("预览与确认用的是同一份章表",
+                                        fontSize = 12.sp, color = HubSub)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            // R340 ② 章数对比：现在几章 → 将变成几章，变化就明说
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("现在 ${chapters.size} 章", fontSize = 13.sp, color = HubSub)
+                                Text("  →  ", fontSize = 13.sp, color = HubSub)
+                                Text("将变成 $newCount 章", fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (newCount != chapters.size) HubWarn else palette.text)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            // R340 ③ 章表预览：说清只列头尾，行数跟真实章表走
+                            Box(Modifier.fillMaxWidth()
+                                .background(HubGrey.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                                .padding(10.dp)) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("按这份章表排下来", fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold, color = palette.text,
+                                            modifier = Modifier.weight(1f))
+                                        Text("只列开头和结尾", fontSize = 11.sp, color = HubSub)
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                    pv.second.second.forEach {
+                                        Text("· $it", fontSize = 12.sp,
+                                            color = palette.text, maxLines = 1)
+                                    }
+                                }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
-                        // R315 · 后果说明收进警示底色块里，不再像图 18 那样
-                        // 掉在蒙层外面几乎看不见；原文一句没删。
+                        Spacer(Modifier.height(10.dp))
+                        // R340 ④ 后果拆成三行短句，原文一句没丢：
+                        // 章号会变 / 分段作废 / 成品仍可听 / 原书文字不动。
                         Box(Modifier.fillMaxWidth()
-                            .background(HubWarn.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
-                            .padding(8.dp)) {
-                            // R172 · 说清真实后果：旧任务标待确认、分段作废、成品仍可听。
-                            Text("章号会变，旧任务需重新确认；分段音频作废，成品仍可听；原书文字不动。",
-                                fontSize = 12.sp, color = HubWarn)
+                            .background(HubWarn.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                            .padding(10.dp)) {
+                            Column {
+                                Text("分段音频作废，要重新做", fontSize = 12.sp, color = HubWarn)
+                                Text("旧任务需重新选章", fontSize = 12.sp, color = HubWarn)
+                                Text("已拼好的章音频、原书文字不动",
+                                    fontSize = 12.sp, color = HubGood)
+                            }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        // R193 · 别的书在制作不挡这本书；但本书正在制作或
-                        // 刚点停止还在收尾时，必须等停稳，否则会删掉正在写的分段。
-                        Text("这本书正在制作或收尾时先等它停稳；别的书在制作不影响。",
-                            fontSize = 12.sp, color = HubSub)
+                        // R340 ⑤ 按钮禁用时说清为什么，不再是一枚点不动的死按钮
+                        if (bookBusy) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("这本书正在制作或收尾时先等它停稳；别的书在制作不影响。",
+                                fontSize = 12.sp, color = HubSub)
+                            Text("先停稳才能重新分章", fontSize = 12.sp, color = HubWarn)
+                        }
                     }
                 },
                 confirmButton = {
-                    TextButton(enabled = pv != null &&
-                        !(st.running && task?.bookId == book.id) &&
-                        !Producer.isBusyForBook(book.id), onClick = {
+                    TextButton(enabled = pv != null && !bookBusy, onClick = {
                         showResplit = false
                         resplitScope.launch {
                             val rr = withContext(Dispatchers.IO) {
@@ -1314,10 +1463,15 @@ internal fun ChapterHubScreen(
                                     "书=${EventLog.safe(book.title)} 规则=$rid 章数=$n")
                             }
                         }
-                    }) { Text("应用", color = HubPrimary) }
+                    }) {
+                        Text("确认重新分章", fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold, color = HubWarn)
+                    }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showResplit = false }) { Text("取消") }
+                    TextButton(onClick = { showResplit = false }) {
+                        Text("取消", fontSize = 13.sp, color = HubSub)
+                    }
                 }
             )
         }
@@ -1338,7 +1492,8 @@ private fun ChapterRow(
     menuExpanded: Boolean, onDismissMenu: () -> Unit, onMenuSelect: () -> Unit,
     onMenuRedo: () -> Unit, canRedo: Boolean,
     busyLabel: String? = null,
-    peekHint: String? = null, onPeek: () -> Unit = {}
+    peekHint: String? = null, onPeek: () -> Unit = {},
+    onTapName: (() -> Unit)? = null
 ) {
     val p = r.synthesized?.coerceIn(0f, 1f)
     Box(Modifier.fillMaxWidth()) {
@@ -1347,7 +1502,12 @@ private fun ChapterRow(
             Modifier.fillMaxWidth().height(52.dp)
                 .pointerInput(r.index, multi, checked) {
                     // R264 · 只留长按菜单，点章名不再切换展开/收起
-                    detectTapGestures(onLongPress = { onLong() })
+                    // R343 · 中间态章例外：没拼没转码之前，点章名就摊开这一章的
+                    // 小块、重做、收尾条与导出入口，不再逼用户去找那枚小标签。
+                    detectTapGestures(
+                        onLongPress = { onLong() },
+                        onTap = { onTapName?.invoke() }
+                    )
                 }
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically

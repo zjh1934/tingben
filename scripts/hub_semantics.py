@@ -31,8 +31,12 @@ HUB_POS = [
     "private fun SegGridHead(",
     # R264 · 制作中的那一章自动展开，没有展开/收起状态与切换箭头
     "val liveChapter: Int? = if (bookRunning) makingChapter else null",
-    # R333 · 制作中显示制作章；停下后允许回看留着小块的一章，仍只展开一个章
-    "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
+    # R342 · 中间态章制作走到下一章也能摊开；点开的章优先，默认制作章
+    "val shownChapter: Int? = peekChapter ?: liveChapter",
+    "val backToLive = bookRunning && r.index == liveChapter &&",
+    '"制作中 · 返回"',
+    "peekChapter = if (backToLive) null else r.index",
+    '"这一章有 $pending 段小块 · 展开去拼接并转码"',
     "if (r.index == shownChapter) {",
     "private fun ChapterSegGrid(",
     # 章行：默认点进阅读、长按进多选；R171 起常态只有听 / 展开两枚图标
@@ -119,6 +123,8 @@ HUB_BAN = [
     "HUB_CH_EXPAND",
     "liveChapters",
     "AnimatedVisibility(",
+    # R342 · 制作中点回看被吞的旧形态不许回潮
+    "if (!bookRunning) {",
     "private fun ChevronIcon(",
     # R243 · 费解的「继续队列」按钮不许回潮
     'Text("继续队列 ›"',
@@ -226,9 +232,17 @@ def injections():
         ("R333 单一展开章被摘", "hub",
          lambda t: t.replace("if (r.index == shownChapter) {",
                              "if (r.index == liveChapter) {")),
-        ("R333 回看章状态被摘", "hub",
-         lambda t: t.replace("val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
-                             "val shownChapter: Int? = liveChapter")),
+        ("R342 中间态章锁死回潮", "hub",
+         lambda t: t.replace("val shownChapter: Int? = peekChapter ?: liveChapter",
+                             "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)")),
+        ("R342 制作中返回入口被摘", "hub",
+         lambda t: t.replace('"制作中 · 返回"', '"返回"')),
+        ("R342 onPeek 又被吞", "hub",
+         lambda t: t.replace("peekChapter = if (backToLive) null else r.index",
+                             "if (!bookRunning) { peekChapter = r.index }")),
+        ("R342 导出引导被摘", "hub",
+         lambda t: t.replace('"这一章有 $pending 段小块 · 展开去拼接并转码"',
+                             '"选一章已做好的才能导出"')),
         ("三列分页回潮", "hub",
          lambda t: t.replace("internal fun ChapterHubScreen(",
                              "private val HubTitles = listOf(\"章节\", \"合成\", \"可播\")\n"

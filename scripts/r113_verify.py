@@ -38,8 +38,10 @@ def check(root):
     ck('val stalled: Boolean = false' in hub, 'F-20 缺终态字段')
     ck('st.stage in listOf("没完成", "已停止", "出错了")' in hub, 'F-20 缺终态派生')
     ck('stalled = stalled' in hub, 'F-20 终态没传进每章')
-    # R246 · 停滞态改按现行状态派生判（旧文案随界面精简撤掉）
-    ck('t.phase == "stopped" -> "已停止"' in hub, 'F-20 停滞态文案丢了')
+    # R339 · R246 之后停滞态按任务 phase 派生，旧字面量随界面精简撤掉；
+    # 锚改到当前真实派生式，等价不放宽（注入见 INJECT）。
+    ck('t.phase == "stopped" || t.phase == "blocked" || t.phase == "reconfirm"' in hub,
+       'F-20 停滞态派生丢了')
     # 完成态 = 小耳机可点（audio/playable 任一有值），不再靠一句提示文案
     ck('enabled = r.audio != null || r.playable' in hub, 'F-20 完成态文案缺')
 
@@ -76,6 +78,8 @@ def check(root):
 
 INJECT = [
     ('F-20 终态字段被改', 'hub', 'val stalled: Boolean = false', 'val stalled: Boolean = true'),
+    ('F-20 停滞态派生被摘', 'hub',
+     't.phase == "stopped" || t.phase == "blocked" || t.phase == "reconfirm"', ''),
     ('F-13 分桶路径改掉', 'pipe', '"v11/direct/"', '"v12/annotated/"'),
     ('F-13 dirFor 恢复旧参数', 'pipe',
      'fun dirFor(c: Context, bookId: String, only: Set<Int>?)',

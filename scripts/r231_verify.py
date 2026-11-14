@@ -101,12 +101,21 @@ def check(f):
     # 没小块仍不许拼；点下去当场锁章防连点，复用同一条拼章→转码→校验链。
     for k in ["@Composable\nprivate fun MergeChapterFooter(",
               'item(key = "merge_footer_${r.index}")',
-              "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
+              "val shownChapter: Int? = peekChapter ?: liveChapter",
               "var mergingChapter by remember(book.id)",
               "val canMerge = readyHere > 0 && redoHere == 0 && !busyHere",
               "r.index, parts,",
               "AudioOps.mergeChapter(c, book.id, book.title,"]:
         if k not in f["hub"]: e.append("R333 手动拼接并转码收尾条缺: " + k[:56])
+    # R342 · 没拼成章音频的中间态章，制作走到下一章也必须能摊开：小块、
+    # 重做、收尾条、导出入口都不许被「制作中锁定制作章」吞掉。
+    for k in ["val backToLive = bookRunning && r.index == liveChapter &&",
+              '"制作中 · 返回"',
+              "peekChapter = if (backToLive) null else r.index",
+              '"这一章有 $pending 段小块 · 展开去拼接并转码"']:
+        if k not in f["hub"]: e.append("R342 中间态章展开缺: " + k[:56])
+    if "if (!bookRunning) {" in f["hub"]:
+        e.append("R342 制作中点回看又被吞")
     # R333 · 旧形态零回潮：这是换严，不是放宽。
     for k in ["private fun MergeChapterBar(", 'item(key = "merge_bar_${r.index}")',
               "Box(Modifier.fillMaxWidth().height(42.dp)"]:
@@ -254,9 +263,16 @@ def selftest():
          "mergingChapter = null\n                                                localTick++",
          "localTick++"),
         ("R335 异常日志被摘", "hub", '"MERGE_MANUAL_FAIL"', '"MERGE_MANUAL_OK"'),
-        ("回看章被摘", "hub",
-         "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)",
-         "val shownChapter: Int? = liveChapter"),
+        ("R342 中间态章锁死回潮", "hub",
+         "val shownChapter: Int? = peekChapter ?: liveChapter",
+         "val shownChapter: Int? = if (bookRunning) liveChapter else (peekChapter ?: liveChapter)"),
+        ("R342 制作中返回被摘", "hub", '"制作中 · 返回"', '"返回"'),
+        ("R342 onPeek 又被吞", "hub",
+         "peekChapter = if (backToLive) null else r.index",
+         "if (!bookRunning) { peekChapter = r.index }"),
+        ("R342 导出引导被摘", "hub",
+         '"这一章有 $pending 段小块 · 展开去拼接并转码"',
+         '"选一章已做好的才能导出"'),
         ("坏块没重做完仍可拼", "hub",
          "val canMerge = readyHere > 0 && redoHere == 0 && !busyHere",
          "val canMerge = readyHere > 0"),

@@ -46,8 +46,10 @@ NEED = {
         'throw IllegalStateException("这本书还在收尾上一段，等它停稳再重新分章")',
     ],
     "hub": [
-        "!(st.running && task?.bookId == book.id)",
-        "!Producer.isBusyForBook(book.id)",
+        # R340 · 按钮许可收成一个 bookBusy，语义与原来两个取反条件完全等价
+        "val bookBusy = (st.running && task?.bookId == book.id) ||",
+        "Producer.isBusyForBook(book.id)",
+        "enabled = pv != null && !bookBusy",
         "这本书正在制作或收尾时先等它停稳；别的书在制作不影响。",
     ],
     "main": [
@@ -139,13 +141,12 @@ def selftest():
              "        if (Producer.isBusyForBook(book.id))\n"
              "            throw IllegalStateException(\"这本书还在收尾上一段，等它停稳再重新分章\")")),
         ("按钮退回全局 !st.running", "hub",
-         lambda t: t.replace("enabled = pv != null &&\n"
-                             "                        !(st.running && task?.bookId == book.id) &&\n"
-                             "                        !Producer.isBusyForBook(book.id), onClick = {",
+         lambda t: t.replace("enabled = pv != null && !bookBusy, onClick = {",
                              "enabled = pv != null && !st.running, onClick = {")),
         ("按钮漏掉收尾守卫", "hub",
-         lambda t: t.replace("                        !Producer.isBusyForBook(book.id), onClick = {",
-                             "                        true, onClick = {")),
+         lambda t: t.replace("val bookBusy = (st.running && task?.bookId == book.id) ||\n"
+                             "                Producer.isBusyForBook(book.id)",
+                             "val bookBusy = st.running && task?.bookId == book.id")),
         ("弹窗不提收尾窗口", "hub",
          lambda t: t.replace("这本书正在制作或收尾时先等它停稳；别的书在制作不影响。",
                              "不管别的书在不在制作都一样。")),

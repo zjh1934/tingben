@@ -242,6 +242,47 @@ internal fun PermRow(icon: UiIcon, title: String, granted: Boolean,
     }
 }
 
+/**
+ * R341 · 合成设置缺的不是开关，是「改完到底生效成啥」的一眼可见。
+ * 三档朗读预设早停用（会抢 prompt）、采样九项在调音台、64kbps 单声道
+ * M4A 是硬口径，都不该开成新选项（r221/r231 守恒）。所以只补只读摘要：
+ * 音色模式 / 节奏 / 成章方式 / 接缝 / 成品格式，外加「改一次对所有书生效」。
+ * 数值直接吃当前 state，点一下档位立刻跟着变，不是另一份会漂的副本。
+ */
+@Composable
+internal fun ProduceOverviewCard(
+    c: Context, gapMs: Int, retries: Int, autoMerge: Boolean, declickMs: Int
+) {
+    Column(Modifier.fillMaxWidth()
+        .background(palette.primarySoft.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+        .padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("当前这一套", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                color = Primary, modifier = Modifier.weight(1f))
+            Text("对所有书生效", fontSize = 11.sp, color = Sub)
+        }
+        Spacer(Modifier.height(6.dp))
+        ProduceOverviewLine("音色", modeText(Prefs.modelMode(c)))
+        ProduceOverviewLine("节奏", "段间静音 ${gapMs}ms · 失败重做 $retries 次")
+        ProduceOverviewLine("成章",
+            if (autoMerge) "小块齐了自动拼这一章"
+            else "关自动 · 去目录页点「拼接并转码」")
+        ProduceOverviewLine("接缝",
+            when (declickMs) { 0 -> "直接接"; 15 -> "轻"; else -> "标准" })
+        ProduceOverviewLine("成品", "64kbps 单声道 M4A · 验过才删内部 WAV")
+    }
+}
+
+@Composable
+internal fun ProduceOverviewLine(k: String, v: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(k, fontSize = 11.sp, color = Sub, modifier = Modifier.width(40.dp))
+        Text(v, fontSize = 11.sp, color = palette.text,
+            modifier = Modifier.weight(1f))
+    }
+}
+
 @Composable
 @Suppress("UNUSED_PARAMETER")
 internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
@@ -440,6 +481,9 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             var cfg by remember { mutableStateOf(Prefs.defaultPerf(c)) }
             var autoMerge by remember { mutableStateOf(Prefs.autoMergeChapter(c)) }
             var declickMs by remember { mutableStateOf(Prefs.mergeDeclickMs(c)) }
+            // R341 · 先看「现在生效的是哪一套」，再逐项改；四枚 OptionRow 一字未动
+            ProduceOverviewCard(c, cfg.gapMs, cfg.gateRetries, autoMerge, declickMs)
+            Spacer(Modifier.height(8.dp))
             OptionRow("段间静音", "两小段之间的停顿",
                 ProduceConfig.GAP_OPTIONS.map { it to "${it}ms" }, cfg.gapMs) {
                 cfg = cfg.copy(gapMs = it)

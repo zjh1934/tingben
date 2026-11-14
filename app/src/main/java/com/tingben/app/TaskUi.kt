@@ -156,13 +156,57 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
     val done = remember(tasks) { tasks.filter { it.phase == "done" } }
     val isQueued: (String) -> Boolean = { id -> queued.any { it.bookId == id } }
 
+    // R341 · 总览页与「已完成」页共用同一条播放路径，不再各写一遍队列组装。
+    fun playAudio(a: AudioRow) {
+        EventLog.ui("TASK_PLAY_AUDIO", "kind=${a.source}")
+        PlayQueue.setTracks(
+            listOf(Track(a.file, a.name, id = "task:" + a.file.absolutePath)),
+            "task")
+        PlayQueue.playFrom(0, id = "task")
+    }
+
     Column(Modifier.fillMaxSize()) {
+        // R341 · 常驻状态条：不管停在哪个筛选页，正在做什么都看得见，
+        // 不再逼人先猜「合成中」那一页。
+        if (runningTask != null || qPaused) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                .background(PrimarySoft, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                UiIconGlyph(if (runningTask != null) UiIcon.SYNTH else UiIcon.RESUME,
+                    Primary, 16.dp)
+                Spacer(Modifier.width(8.dp))
+                val statusText = if (runningTask != null) {
+                    val t = runningTask!!
+                    val total = maxOf(t.total, st.total, 1)
+                    val pct = st.done.coerceIn(0, total) * 100 / total
+                    "正在做《${t.title}》· $pct%"
+                } else "队列已暂停 · ${pending.size} 条待续"
+                Text(statusText, fontSize = 12.sp, color = Primary,
+                    modifier = Modifier.weight(1f), maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = {
+                    if (runningTask != null) onProgress(runningTask!!.bookId)
+                    else {
+                        EventLog.ui("TASK_QUEUE_RESUME", "from=overview")
+                        Producer.resumeQueue(c)
+                        loadTick++
+                    }
+                }) {
+                    Text(if (runningTask != null) "看进度 ›" else "接着做 ›",
+                        fontSize = 12.sp, color = Primary)
+                }
+            }
+        }
         // 三段切换，代码自绘不引库。计数直接挂在标题上，不另写一行废话。
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val labels = listOf("合成中", "队列中", "已完成")
-            val counts = listOf(if (runningTask != null) 1 else 0,
-                pending.size, audioRows.size)
+            // R341 · 「全部」当默认页：正在做的、待续的、做好的音频一屏排下来；
+            // 三段筛选退成筛选，找一段音频不再靠猜它在哪一页。
+            val labels = listOf("全部") + listOf("合成中", "队列中", "已完成")
+            val counts = listOf(
+                (if (runningTask != null) 1 else 0) + pending.size + audioRows.size,
+                if (runningTask != null) 1 else 0, pending.size, audioRows.size)
             labels.forEachIndexed { i, label ->
                 val on = tab == i
                 Box(Modifier.weight(1f).height(38.dp)
@@ -179,14 +223,57 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
         LazyColumn(Modifier.fillMaxSize().weight(1f),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
             when (tab) {
-                // ① 合成中：真正跑着的那本，实时进度 + 能停能看
+                // ⓪ 全部（默认）：最近做好的音频、待续条数、入口都在一屏
                 0 -> {
+                    item(key = "all_head") {
+                        SectionLabel("最近做好的音频")
+                    }
+                    if (audioRows.isEmpty()) {
+                        item(key = "all_empty") {
+                            EmptyHint("还没有做好的音频") {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = onLibrary) {
+                                        Text("去挑一本 ›", fontSize = 13.sp, color = Primary)
+                                    }
+                                    if (pending.isNotEmpty()) {
+                                        TextButton(onClick = { tab = 2 }) {
+                                            Text("看待续 ${pending.size} 条 ›",
+                                                fontSize = 13.sp, color = Primary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    items(audioRows.take(3), key = { "all_" + it.key }) { a ->
+                        AudioCard(a, play = { playAudio(a) },
+                            onDelete = { confirmAudio = a })
+                    }
+                    if (audioRows.size > 3) {
+                        item(key = "all_more") {
+                            TextButton(onClick = { tab = 3 }) {
+                                Text("看全部 ${audioRows.size} 份音频 ›",
+                                    fontSize = 13.sp, color = Primary)
+                            }
+                        }
+                    }
+                    if (pending.isNotEmpty()) {
+                        item(key = "all_pending") {
+                            TextButton(onClick = { tab = 2 }) {
+                                Text("还有 ${pending.size} 条待续 ›",
+                                    fontSize = 13.sp, color = Primary)
+                            }
+                        }
+                    }
+                }
+                // ① 合成中：真正跑着的那本，实时进度 + 能停能看
+                1 -> {
                     val t = runningTask
                     if (t == null) {
                         item(key = "running_empty") {
                             EmptyHint("现在没有在合成的音频") {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(onClick = { tab = 1 }) {
+                                    TextButton(onClick = { tab = 2 }) {
                                         Text("看队列 ›", fontSize = 13.sp, color = Primary)
                                     }
                                     TextButton(onClick = onLibrary) {
@@ -249,7 +336,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                     }
                 }
                 // ② 队列中：排队项 + 待续任务，能移除、能继续、能开书
-                1 -> {
+                2 -> {
                     if (qPaused) {
                         item(key = "queue_paused") {
                             CardBox(Modifier.padding(bottom = 8.dp)) {
@@ -365,7 +452,7 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                 }
                 // ③ 已完成：一条 = 一份音频（一章音频 / 首页粘贴合成的一段），
                 // R308 · 不再按「整本书」列任务记录，贴回软件真正管的东西。
-                2 -> {
+                3 -> {
                     if (audioRows.isEmpty()) {
                         item(key = "done_empty") {
                             EmptyHint("还没有做好的音频") {
@@ -375,39 +462,10 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                             }
                         }
                     }
+                    // R341 · 整行可点播放，删除收进「⋯」，不再两枚小胶囊对咬
                     items(audioRows, key = { it.key }) { a ->
-                        CardBox(Modifier.padding(bottom = 10.dp)) {
-                            Text(a.name, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Spacer(Modifier.height(4.dp))
-                            val sizeText = java.lang.String.format(java.util.Locale.US,
-                                "%.1f MB", a.bytes / 1048576.0)
-                            val timeText = java.text.SimpleDateFormat(
-                                "MM-dd HH:mm", java.util.Locale.US)
-                                .format(java.util.Date(a.createdAt))
-                            Text("${a.source} · $sizeText · $timeText",
-                                fontSize = 11.sp, color = Sub)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = {
-                                    EventLog.ui("TASK_PLAY_AUDIO", "kind=${a.source}")
-                                    PlayQueue.setTracks(
-                                        listOf(Track(a.file, a.name,
-                                            id = "task:" + a.file.absolutePath)),
-                                        "task")
-                                    PlayQueue.playFrom(0, id = "task")
-                                }) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        UiIconGlyph(UiIcon.LISTEN, Primary)
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("播放 ›", fontSize = 12.sp, color = Primary)
-                                    }
-                                }
-                                Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { confirmAudio = a }) {
-                                    Text("删除音频", fontSize = 12.sp, color = Warn)
-                                }
-                            }
-                        }
+                        AudioCard(a, play = { playAudio(a) },
+                            onDelete = { confirmAudio = a })
                     }
                 }
             }
@@ -485,6 +543,65 @@ internal fun scopeText(t: TaskInfo): String =
 /** R316 · 任务卡主体写「一份音频」，书名退到副行，不再拿整本书当条目。 */
 internal fun unitText(t: TaskInfo): String =
     if (t.only == null) "整本章音频" else "选中 ${t.only!!.size} 章音频"
+
+/**
+ * R341 · 一份音频 = 一张卡。整行可点播放（以前得对准 12sp 的「播放 ›」小字），
+ * 主色「播放」给明确落点，删除收进右上角「⋯」；来源 / 体积 / 时间退成一行。
+ * 保留 UiIcon.LISTEN 与「删除音频」文案（r224 与语义判据锚）。
+ */
+@Composable
+internal fun AudioCard(
+    a: AudioRow,
+    play: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var menu by remember { mutableStateOf(false) }
+    val sizeText = java.lang.String.format(java.util.Locale.US,
+        "%.1f MB", a.bytes / 1048576.0)
+    val timeText = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
+        .format(java.util.Date(a.createdAt))
+    CardBox(Modifier.padding(bottom = 10.dp)) {
+        Row(Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { play() }
+            .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(36.dp)
+                .background(PrimarySoft, RoundedCornerShape(11.dp)),
+                contentAlignment = Alignment.Center) {
+                UiIconGlyph(UiIcon.LISTEN, Primary, 18.dp)
+            }
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+                Text(a.name, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(2.dp))
+                Text("${a.source} · $sizeText · $timeText",
+                    fontSize = 11.sp, color = Sub)
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier
+                .background(Primary, RoundedCornerShape(50))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center) {
+                Text("播放 ›", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    color = palette.onPrimary)
+            }
+            Spacer(Modifier.width(4.dp))
+            Box(Modifier.size(30.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .clickable { menu = true },
+                contentAlignment = Alignment.Center) {
+                Text("⋯", fontSize = 16.sp, color = Sub)
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("删除音频", fontSize = 13.sp, color = Warn) },
+                        onClick = { menu = false; onDelete() })
+                }
+            }
+        }
+    }
+}
 
 /** R287 · 分组小标题：主色小字 + 一根细竖条，不摆彩色徽标框。 */
 @Composable

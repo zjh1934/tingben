@@ -509,6 +509,18 @@ jobs:
         run: python3 scripts/r300_verify.py
       - name: R300 反向注入
         run: python3 scripts/r300_verify.py --selftest
+      - name: R339 重新分章预览与应用同口径（EPUB 章数/规则名/标题一致）
+        run: python3 scripts/r339_verify.py
+      - name: R339 反向注入
+        run: python3 scripts/r339_verify.py --selftest
+      - name: R340 重新分章弹窗重新设计（呈现层 / 逻辑守恒）
+        run: python3 scripts/r340_verify.py
+      - name: R340 反向注入
+        run: python3 scripts/r340_verify.py --selftest
+      - name: R343 中间态章恒可展开（重做中 / 没转码前不锁死）
+        run: python3 scripts/r343_verify.py
+      - name: R343 反向注入
+        run: python3 scripts/r343_verify.py --selftest
       - name: R241 发版前置自检逻辑
         run: python3 scripts/preflight.py --selftest
       - name: R172 正向守门

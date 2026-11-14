@@ -163,15 +163,22 @@ object ChapterPlan {
         return chapters to ChapterSplitter.cutFrom(text, chapters)
     }
 
+    // R339 · 预览与实际应用必须走同一条规则选择，不许各算各的。
+    // 原来 refresh 用 choose、preview 也用 choose，但两处各自展开表达式，
+    // EPUB 书在 build() 里被强制改回结构化分隔，预览却仍按 TXT 正则扫章，
+    // 于是「识别 7 章 / 按字数分节」点完应用变成「EPUB 内置目录 42 章」。
+    private fun ruleFor(text: String, ruleId: String?): String =
+        ruleId ?: TocRules.choose(text).first
+
     private fun build(text: String, forcedRule: String?): Pair<String, List<Chapter>> {
         if (text.contains(Importer.CHAPTER_SEP)) {
             // EPUB 走结构化分隔，一个字不改、完全不经过正则
             val chapters = ChapterSplitter.split(text).first
             return EPUB to chapters
         }
-        val ruleId = forcedRule ?: TocRules.choose(text).first
-        val chapters = ChapterSplitter.fromMarks(text, TocRules.splitMarks(text, ruleId))
-        return ruleId to chapters
+        val rid = ruleFor(text, forcedRule)
+        val chapters = ChapterSplitter.fromMarks(text, TocRules.splitMarks(text, rid))
+        return rid to chapters
     }
 
     /** 章节表代数；老书 / 无表一律 0，与老任务默认 0 一致，升级不误伤。 */
@@ -231,21 +238,30 @@ object ChapterPlan {
         val text = BookStore.read(c, book)
         val sha = if (book.sha.isNotBlank()) book.sha else fingerprint(text)
         val nextEpoch = load(c, book.id)?.epoch?.plus(1) ?: 1
-        val (rid, chapters) = build(text, ruleId ?: TocRules.choose(text).first)
+        // R339 · 与 preview 同一条规则选择；EPUB 由 build 统一改回结构化分隔。
+        val (rid, chapters) = build(text, ruleFor(text, ruleId))
         save(c, book.id, ChapterPlanData(TocRules.SCHEMA, rid, sha, chapters, nextEpoch))
         invalidateForResplit(c, book.id)
         return rid to chapters.size
     }
 
-    /** 预览：章数 + 头 3 / 尾 2 标题，给用户确认再应用（成熟阅读器的做法）。 */
+    /**
+     * 预览：章数 + 头 3 / 尾 2 标题，给用户确认再应用（成熟阅读器的做法）。
+     *
+     * R339 · 原来这里自己再跑一遍 TocRules.splitMarks，与 refresh 的 build()
+     * 是两套口径：EPUB 书在 build 里走 CHAPTER_SEP 结构化分隔，预览却按 TXT
+     * 正则扫标题，弹窗显示「识别 7 章 / 按字数分节」、标题样例也是正则命中的行，
+     * 点应用后 Toast 变成「EPUB 内置目录 42 章」——用户是看着错的预览按的确认，
+     * 而后果说明写着「分段音频作废」。现在预览直接复用 build 的真实章节表：
+     * 章数、规则名、标题样例与点应用后完全一致，规则集本身一字未改。
+     */
     fun preview(c: Context, book: Book, ruleId: String?): Pair<String, Pair<Int, List<String>>> {
         val text = BookStore.read(c, book)
-        val rid = ruleId ?: TocRules.choose(text).first
-        val marks = TocRules.splitMarks(text, rid)
-        val titles = marks.map { it.second }
+        val (rid, chapters) = build(text, ruleFor(text, ruleId))
+        val titles = chapters.map { it.title }
         val shown = if (titles.size <= 5) titles else
             titles.take(3) + listOf("…共 ${titles.size} 章…") + titles.takeLast(2)
-        return rid to (marks.size to shown)
+        return rid to (chapters.size to shown)
     }
 
     fun ruleName(ruleId: String): String = when (ruleId) {
