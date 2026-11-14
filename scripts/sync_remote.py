@@ -6,7 +6,7 @@
 只上传不一致的文件；POST /git/trees 带 base_tree。
 R89 起：docs/ 与 scripts/ 这两个活跃目录按本地清单对齐——远端有、本地没有的
 条目显式删除（原文都在归档包里，可回查）；其余目录仍一律保留，不误删。
-凭据从 git remote 的 URL 里取，不落新文件、不打印。
+凭据优先从 GH_PAT 环境变量读（仓库外 .secrets/gh_token 注入），不落新文件、不打印；旧 remote URL 路径仅兼容兜底。
 """
 import base64, hashlib, json, os, pathlib, re, sys, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
@@ -15,11 +15,16 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 REPO = "zjh1934/tingben-android"
 API = "https://api.github.com/repos/" + REPO
 
-_url = os.popen("git -C %s remote get-url origin" % ROOT).read().strip()
-_m = re.search(r"https://([^@]+)@github\.com/", _url)
-if not _m:
-    sys.exit("取不到凭据")
-TOKEN = _m.group(1)
+# R343 · 仓库按铁律不配 git remote（禁 push），令牌只在仓库外 .secrets/gh_token
+# 里、发版时由 use_token.sh 注入 GH_PAT。旧写法从 remote URL 抠 token，既和
+# 铁律打架、又让快进 main 直接「取不到凭据」卡死。旧路径仅留作兼容兜底。
+TOKEN = os.environ.get("GH_PAT", "")
+if not TOKEN:
+    _url = os.popen("git -C %s remote get-url origin" % ROOT).read().strip()
+    _m = re.search(r"https://([^@]+)@github\.com/", _url)
+    if not _m:
+        sys.exit("取不到凭据")
+    TOKEN = _m.group(1)
 H = {"Authorization": "token " + TOKEN, "Accept": "application/vnd.github+json",
      "Content-Type": "application/json", "X-GitHub-Api-Version": "2022-11-28",
      "User-Agent": "tingben-sync"}

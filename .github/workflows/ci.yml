@@ -521,6 +521,10 @@ jobs:
         run: python3 scripts/r343_verify.py
       - name: R343 反向注入
         run: python3 scripts/r343_verify.py --selftest
+      - name: R344 采样参数仅描述造音色模式露出
+        run: python3 scripts/r344_verify.py
+      - name: R344 反向注入
+        run: python3 scripts/r344_verify.py --selftest
       - name: R241 发版前置自检逻辑
         run: python3 scripts/preflight.py --selftest
       - name: R172 正向守门

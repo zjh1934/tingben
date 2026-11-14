@@ -418,21 +418,22 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                 Text("当前模式缺模型，去「模型」页导入。", fontSize = 12.sp, color = Warn)
             }
             Spacer(Modifier.height(14.dp))
-            // R326 · 九项采样是全局参数（三种模式都原样传给引擎），原来只在
-            // 「描述造音色」里露出，另外两种模式给的是一枚「切过去调这九项」——
-            // 点一下就把全局模式改成第一种且不切回，看着像「模式自动回退」。
-            // 现在三种模式都能直接调，删掉那枚会改模式的入口。
-            Text("采样参数 · 9 项", fontSize = 12.sp,
-                fontWeight = FontWeight.Bold, color = palette.text)
-            Text("采样参数三种模式共用", fontSize = 11.sp, color = Sub)
-            Spacer(Modifier.height(6.dp))
-            ParamCatalog.SAMPLING.forEach { spec ->
-                ParamLine(spec = spec, cur = spec.read(draft.knobs)) { s ->
-                    spec.withValue(draft.knobs, s)?.let { draft = draft.copy(knobs = it) }
+            // R344 · 用户口径：采样参数这一块只在「描述造音色」模式里露出，
+            // 「预设音色」「参考音频」两种模式整块不显示。底层九项仍是全局
+            // 参数、三种模式都原样传给引擎（R222），这里只改界面露出，
+            // 不碰合成、保存、试听、音色指纹与断点续跑。
+            if (mode == ModelStore.Mode.VOICE_DESIGN) {
+                Text("采样参数 · 9 项", fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold, color = palette.text)
+                Spacer(Modifier.height(6.dp))
+                ParamCatalog.SAMPLING.forEach { spec ->
+                    ParamLine(spec = spec, cur = spec.read(draft.knobs)) { s ->
+                        spec.withValue(draft.knobs, s)?.let { draft = draft.copy(knobs = it) }
+                    }
                 }
-            }
-            TextButton(onClick = { draft = draft.copy(knobs = TtsKnobs()) }) {
-                Text("全部恢复默认", fontSize = 12.sp, color = Sub)
+                TextButton(onClick = { draft = draft.copy(knobs = TtsKnobs()) }) {
+                    Text("全部恢复默认", fontSize = 12.sp, color = Sub)
+                }
             }
 
             Spacer(Modifier.height(14.dp))

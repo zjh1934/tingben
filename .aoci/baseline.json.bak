@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-11T16:16:15Z",
-  "updated_at": "2026-11-13T17:52:03Z",
+  "updated_at": "2026-11-14T05:23:44Z",
   "files": {
     ".github/ISSUE_TEMPLATE/bug_report.md": {
       "role": "index",
@@ -29,9 +29,9 @@
     },
     ".github/workflows/ci.yml": {
       "role": "index",
-      "sha256": "72cd3a200903a210ebd4bbd9851db261482fd88749ddfb1c33d9e6ecb790912b",
-      "size": 33551,
-      "normalized_sha256": "72cd3a200903a210ebd4bbd9851db261482fd88749ddfb1c33d9e6ecb790912b"
+      "sha256": "04f65b984024ff96b83266361fb756ed6ed08e10e805bb993402ab91d56f79ad",
+      "size": 33958,
+      "normalized_sha256": "04f65b984024ff96b83266361fb756ed6ed08e10e805bb993402ab91d56f79ad"
     },
     ".gitignore": {
       "role": "index",
@@ -41,15 +41,15 @@
     },
     "AGENTS.md": {
       "role": "index",
-      "sha256": "e5b8fc3746417891a0663d72e22d8f4bf011ddc1ac663c702f550145312f3deb",
-      "size": 70360,
-      "normalized_sha256": "e5b8fc3746417891a0663d72e22d8f4bf011ddc1ac663c702f550145312f3deb"
+      "sha256": "686c27dfcfad5c386f5432fad3efd66a6d678510e802b66591150ba84fad3c9d",
+      "size": 70895,
+      "normalized_sha256": "686c27dfcfad5c386f5432fad3efd66a6d678510e802b66591150ba84fad3c9d"
     },
     "CHANGELOG.md": {
       "role": "index",
-      "sha256": "73977a74ca870f6c8fbbb05fb698bd614083ec428b81e8422e30822f3ebe71d8",
-      "size": 9354,
-      "normalized_sha256": "73977a74ca870f6c8fbbb05fb698bd614083ec428b81e8422e30822f3ebe71d8"
+      "sha256": "ba69dab352e15f53d348c77c501d42fd14de76d0d838c6e86008024a700d81b4",
+      "size": 11099,
+      "normalized_sha256": "ba69dab352e15f53d348c77c501d42fd14de76d0d838c6e86008024a700d81b4"
     },
     "CONTRIBUTING.md": {
       "role": "index",
@@ -65,15 +65,15 @@
     },
     "README.md": {
       "role": "index",
-      "sha256": "3735b83081f86bb4e88db1223b63e57bb4b115c3b23fb8c2e28d65dd48e72372",
+      "sha256": "5bf1942a369dd961a600e472197310d64f52728015a13dfb6089bab20e3361db",
       "size": 7372,
-      "normalized_sha256": "3735b83081f86bb4e88db1223b63e57bb4b115c3b23fb8c2e28d65dd48e72372"
+      "normalized_sha256": "5bf1942a369dd961a600e472197310d64f52728015a13dfb6089bab20e3361db"
     },
     "ROADMAP.md": {
       "role": "index",
-      "sha256": "45ca560940a95db0a619928c72c7e28607bf70a0bf6ae509a04b74e9f996e914",
+      "sha256": "e553d19ccd4ea3a48b8e091c9920e7e3833d59f32e9f7c3fbaea2360033dda3a",
       "size": 3460,
-      "normalized_sha256": "45ca560940a95db0a619928c72c7e28607bf70a0bf6ae509a04b74e9f996e914"
+      "normalized_sha256": "e553d19ccd4ea3a48b8e091c9920e7e3833d59f32e9f7c3fbaea2360033dda3a"
     },
     "SECURITY.md": {
       "role": "index",
@@ -83,15 +83,15 @@
     },
     "STATUS.md": {
       "role": "index",
-      "sha256": "f62825a469c553f77a6024864004e87f6e350c9db39c080254b300bd75f2195f",
+      "sha256": "43de03bd6627a399066d741f6a4006084580fcd9cafd10d78f3db70882de520b",
       "size": 3678,
-      "normalized_sha256": "f62825a469c553f77a6024864004e87f6e350c9db39c080254b300bd75f2195f"
+      "normalized_sha256": "43de03bd6627a399066d741f6a4006084580fcd9cafd10d78f3db70882de520b"
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "0b3b5cb7a38cc4b93d308aec6a3fb706b9cfd1d977784d04683b44a8df3cc975",
-      "size": 84103,
-      "normalized_sha256": "0b3b5cb7a38cc4b93d308aec6a3fb706b9cfd1d977784d04683b44a8df3cc975"
+      "sha256": "270b12f08e10925c9723bf85342318a722f69304bf226a6aad14ee922647174a",
+      "size": 84455,
+      "normalized_sha256": "270b12f08e10925c9723bf85342318a722f69304bf226a6aad14ee922647174a"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -149,9 +149,9 @@
     },
     "app/src/main/java/com/tingben/app/ChapterHub.kt": {
       "role": "index",
-      "sha256": "f0f8bfe2b1861ab75ad9b4e8211cb40bea6867eb89d5a1c1e1ae210cf7ce279a",
-      "size": 112228,
-      "normalized_sha256": "f0f8bfe2b1861ab75ad9b4e8211cb40bea6867eb89d5a1c1e1ae210cf7ce279a"
+      "sha256": "8bb12cb957485501698079fd5988731fa123cc3bcc65f7589d782bd52a0f65ae",
+      "size": 115729,
+      "normalized_sha256": "8bb12cb957485501698079fd5988731fa123cc3bcc65f7589d782bd52a0f65ae"
     },
     "app/src/main/java/com/tingben/app/DescPresetUi.kt": {
       "role": "index",
@@ -179,9 +179,9 @@
     },
     "app/src/main/java/com/tingben/app/MixerUi.kt": {
       "role": "index",
-      "sha256": "4eca031fdf15ee9106ed54f9e87b7fde701de28157f234bb82453b38e8f3dcc8",
-      "size": 42474,
-      "normalized_sha256": "4eca031fdf15ee9106ed54f9e87b7fde701de28157f234bb82453b38e8f3dcc8"
+      "sha256": "2f447c3c856a278f9929e1e5b4b89d2b1d83704e4d97c112c33beb61e7f78748",
+      "size": 42477,
+      "normalized_sha256": "2f447c3c856a278f9929e1e5b4b89d2b1d83704e4d97c112c33beb61e7f78748"
     },
     "app/src/main/java/com/tingben/app/ModelUi.kt": {
       "role": "index",
@@ -581,9 +581,9 @@
     },
     "docs/00_现行契约.md": {
       "role": "index",
-      "sha256": "0c3d4d9fbd9b361fbc1a01f1f1d59e62dfb6e2a391db096d218a8c082010d83e",
-      "size": 12153,
-      "normalized_sha256": "0c3d4d9fbd9b361fbc1a01f1f1d59e62dfb6e2a391db096d218a8c082010d83e"
+      "sha256": "dfbdc9b93a8c93770b20f1387f6242e98c968843bbbd923a0ebe9539a3e1a42c",
+      "size": 12204,
+      "normalized_sha256": "dfbdc9b93a8c93770b20f1387f6242e98c968843bbbd923a0ebe9539a3e1a42c"
     },
     "docs/01_音频模型调教逻辑.md": {
       "role": "index",
@@ -641,9 +641,9 @@
     },
     "release-notes.md": {
       "role": "index",
-      "sha256": "213d58c1812ee749ff9a3821cd99818fde6955ca27c8d660f8dcf229add238e9",
-      "size": 2593,
-      "normalized_sha256": "213d58c1812ee749ff9a3821cd99818fde6955ca27c8d660f8dcf229add238e9"
+      "sha256": "a3dc10af240ee1e23d1d443834bb85b618edfbb2e61a3f3d603972f637f7ab4d",
+      "size": 1196,
+      "normalized_sha256": "a3dc10af240ee1e23d1d443834bb85b618edfbb2e61a3f3d603972f637f7ab4d"
     },
     "scripts/aoci_check.py": {
       "role": "index",
@@ -707,9 +707,9 @@
     },
     "scripts/r135_verify.py": {
       "role": "index",
-      "sha256": "081b8f703d9dde974866096e950d90a7c5888f9551620e35e097e9fa9a75743c",
-      "size": 9674,
-      "normalized_sha256": "081b8f703d9dde974866096e950d90a7c5888f9551620e35e097e9fa9a75743c"
+      "sha256": "807c457cf5221dfccb104675802da4c85a53fea4f1bd496bd23f14ab8f68c960",
+      "size": 9710,
+      "normalized_sha256": "807c457cf5221dfccb104675802da4c85a53fea4f1bd496bd23f14ab8f68c960"
     },
     "scripts/r149_verify.py": {
       "role": "index",
@@ -833,9 +833,9 @@
     },
     "scripts/r231_verify.py": {
       "role": "index",
-      "sha256": "ddffacb2dc695c8e7db52e028d0053356517a902089a2415b8938af513146541",
-      "size": 20606,
-      "normalized_sha256": "ddffacb2dc695c8e7db52e028d0053356517a902089a2415b8938af513146541"
+      "sha256": "3ba51768da3206a2672b923448ca17376956647949cedcc07231bdcefd359d2e",
+      "size": 21634,
+      "normalized_sha256": "3ba51768da3206a2672b923448ca17376956647949cedcc07231bdcefd359d2e"
     },
     "scripts/r233_verify.py": {
       "role": "index",
@@ -909,6 +909,12 @@
       "size": 5652,
       "normalized_sha256": "ab24fcd4594381a5af1e78cdbb88e5d52ab7846843ace2199b34a4aaeb35652b"
     },
+    "scripts/r343_verify.py": {
+      "role": "index",
+      "sha256": "26f0d0e8dd48ac4070446dd44cc4f65505a6022675a708df63de38479de99678",
+      "size": 6959,
+      "normalized_sha256": "26f0d0e8dd48ac4070446dd44cc4f65505a6022675a708df63de38479de99678"
+    },
     "scripts/release_notes.py": {
       "role": "index",
       "sha256": "966ef9d33fe850d4d477a2ab8d37a7f4ef248ec16976918f1c0c538656532edc",
@@ -941,9 +947,9 @@
     },
     "version.txt": {
       "role": "index",
-      "sha256": "3961c2370b58c5e541303ffa0c297ace3fb7254ec42fdddf2bc9910d4197112c",
+      "sha256": "9f97fc6b97adfd411f3ad8a83cb01eb17351ccc1bfdf584e93563b309c365e4c",
       "size": 7,
-      "normalized_sha256": "3961c2370b58c5e541303ffa0c297ace3fb7254ec42fdddf2bc9910d4197112c"
+      "normalized_sha256": "9f97fc6b97adfd411f3ad8a83cb01eb17351ccc1bfdf584e93563b309c365e4c"
     }
   },
   "managed_scope": {
