@@ -95,6 +95,14 @@ object SegPlan {
         val r = readRedo(work); if (r.remove(key)) writeRedo(work, r)
     }
 
+    /** R346 · 章固化后一次清掉整章残留标记，避免逐段 fsync 拖住拼章收尾。 */
+    fun clearSegs(work: File, segs: Collection<Int>) = synchronized(redoLock) {
+        val r = readRedo(work)
+        var changed = false
+        segs.forEach { if (r.remove("seg:$it")) changed = true }
+        if (changed) writeRedo(work, r)
+    }
+
     fun pending(work: File): Set<String> = synchronized(redoLock) { readRedo(work) }
 
     // R329 · 早期「整块重做 / 标注块」留下的 redoSynthesize / redoBlock /

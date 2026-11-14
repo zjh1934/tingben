@@ -19,7 +19,9 @@ NEED = [
     "val chapterSegIndices = LinkedHashMap<Int, MutableList<Int>>()",
     "val chapterLastIndex = chapterSegIndices.mapValues { (_, idxs) -> idxs.last() }",
     "val chapterAtBoundary = chapterLastIndex.entries.associate { (ch, last) -> last to ch }",
-    "fun chapterRedoLeft(ci: Int): Boolean = SegPlan.pending(work).any { key ->",
+    # R346 · 认标记不认 handledRedo、已固化章直接不算「还有重做没消化」
+    "fun chapterRedoLeft(ci: Int): Boolean =",
+    "!chapterSealed(ci) && SegPlan.pending(work).any { key ->",
     "fun tryMergeChapter(ci: Int, at: Int) {",
     "if (chapterRedoLeft(ci)) { deferredChapters.add(ci); return }",
     "chapterSegIndices[ci].orEmpty().forEach { j -> SegPlan.clearRedo(work, \"seg:$j\") }",

@@ -194,18 +194,34 @@ internal fun DescPresetRow(
 }
 
 /**
- * R304 · 第二种模式的音色表是模型自带的英文名，界面统一显示中文；
- * 没收录的名字原样显示，不猜、不硬翻。
+ * R350 · 第二种模式的音色表是模型自带英文名，中文短名按 Qwen3-TTS CustomVoice
+ * 官方音色表的描述译，保留每个音色最能区分的特征（京味 / 成都 / 动感 / 美式 /
+ * 日系 / 韩语），不再自己按「男声 / 女声 / 少年音」编一套。
+ * 送进引擎的仍是模型原名，只在这里显示中文；没收录的名字原样显示，不猜、不硬翻。
  */
 internal fun speakerCn(name: String): String = when (name.trim().lowercase()) {
-    "serena" -> "温柔女声"
-    "vivian" -> "明快女声"
-    "uncle_fu" -> "沉稳男声"
-    "dylan" -> "青年男声"
-    "eric" -> "清朗男声"
-    "ryan" -> "磁性男声"
-    "aiden" -> "少年音"
-    "ono_anna" -> "知性女声"
-    "sohee" -> "软萌女声"
+    "vivian" -> "明亮女声"      // 明亮、略带锋芒的年轻女声
+    "serena" -> "温暖女声"      // 温暖、柔和的年轻女声
+    "uncle_fu" -> "醇厚男声"    // 低沉醇厚的成熟男声
+    "dylan" -> "京味男声"       // 清亮自然的京味年轻男声（北京方言）
+    "eric" -> "成都男声"        // 略带沙哑的活泼成都男声（四川方言）
+    "ryan" -> "动感男声"        // 节奏感强的动感男声
+    "aiden" -> "美式男声"       // 阳光清澈的美式男中音
+    "ono_anna" -> "日系女声"    // 轻快俏皮的日系女声
+    "sohee" -> "韩语女声"       // 温暖富有情感的韩语女声
+    else -> name
+}
+
+/** R350 · 选中项给官方音色描述原文，中文短名的依据一眼可查、也能对上模型文档。 */
+internal fun speakerOfficial(name: String): String = when (name.trim().lowercase()) {
+    "vivian" -> "Vivian · 明亮、略带锋芒的年轻女声"
+    "serena" -> "Serena · 温暖、柔和的年轻女声"
+    "uncle_fu" -> "Uncle_Fu · 低沉醇厚的成熟男声"
+    "dylan" -> "Dylan · 清亮自然的京味年轻男声"
+    "eric" -> "Eric · 略带沙哑的活泼成都男声"
+    "ryan" -> "Ryan · 节奏感强的动感男声"
+    "aiden" -> "Aiden · 阳光清澈的美式男中音"
+    "ono_anna" -> "Ono_Anna · 轻快俏皮的日系女声"
+    "sohee" -> "Sohee · 温暖富有情感的韩语女声"
     else -> name
 }

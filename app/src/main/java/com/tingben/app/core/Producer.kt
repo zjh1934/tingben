@@ -725,7 +725,11 @@ object Producer {
                 "命中 $hits/${annotated.size} 段，只增强导演指令，正文未改")
         }
 
-        val doneChapterFiles = try { AudioTree.readDone(work) } catch (_: Throwable) { emptyMap() }
+        // R346 · 章成品状态必须「实时」：开跑时这份快照不含运行中目录页手动
+        // 「拼接并转码」刚固化的章，不刷新就会把已拼好、小块已清的章当成
+        // 还没做，带着残留重做标记把整章小块又合成一遍，主循环卡在旧章不往前走。
+        var doneChapterFiles: Map<Int, File> =
+            try { AudioTree.readDone(work) } catch (_: Throwable) { emptyMap() }
         val usedDoneChapters = mutableSetOf<Int>()
         val wavs = mutableListOf<File>()
         var synthFails = 0
@@ -810,16 +814,36 @@ object Producer {
         val deferredChapters = mutableSetOf<Int>()
         var chaptersMade = 0
         var chaptersSkipped = 0
+        // R346 · 「已固化」＝拼好转码、小块已清、chapter_done.json 记着它。
+        // 这是唯一事实口径：本次即时拼好的章也在册；运行中目录页手动拼章
+        // 靠主循环每段刷新 doneChapterFiles 认出来，不会漏。
+        fun chapterSealed(ci: Int): Boolean = ci >= 0 &&
+            (ci in mergedThisRun ||
+                doneChapterFiles[ci]?.let { it.isFile && it.length() > 44 } == true)
+        // R346 · 固化后残留的孤儿重做标记只清、绝不重做：小块早删了，
+        // 重做只会写出一堆用不上的 WAV，还让目录页格子一直转黄。
+        fun clearSealedRedo(ci: Int) {
+            SegPlan.clearSegs(work, chapterSegIndices[ci].orEmpty())
+        }
         // 该章是否还有「小块重做」没消化：有就先别拼，等插队重做完再拼，
         // 否则旧声音被拼进成品就再也改不回来。
-        fun chapterRedoLeft(ci: Int): Boolean = SegPlan.pending(work).any { key ->
-            val j = key.removePrefix("seg:").toIntOrNull() ?: return@any false
-            j in toSpeak.indices && j !in handledRedo &&
-                chapterSegIndices[ci]?.contains(j) == true &&
-                !SegDrops.matches(dropSnap, dropWav(j), dropText(j))
-        }
+        // R346 · 认标记不认 handledRedo：失败段的标记还在就是没消化（R329），
+        // handledRedo 只管别在同一次运行里反复重试把主循环拖死（R266）。
+        fun chapterRedoLeft(ci: Int): Boolean =
+            !chapterSealed(ci) && SegPlan.pending(work).any { key ->
+                val j = key.removePrefix("seg:").toIntOrNull() ?: return@any false
+                j in toSpeak.indices &&
+                    chapterSegIndices[ci]?.contains(j) == true &&
+                    !SegDrops.matches(dropSnap, dropWav(j), dropText(j))
+            }
         fun tryMergeChapter(ci: Int, at: Int) {
             if (ci in mergedThisRun || cancelRequested || spaceStopped) return
+            // R346 · 已固化章不再进 deferred 每段重试，顺手清掉孤儿标记。
+            if (chapterSealed(ci)) {
+                clearSealedRedo(ci)
+                mergedThisRun.add(ci); deferredChapters.remove(ci); chaptersSkipped++
+                return
+            }
             if (chapterRedoLeft(ci)) { deferredChapters.add(ci); return }
             val app = appCtx
             // R330 · 用户口径：听着不对的小块要能先重做，再亲手点「拼接并转码」。
@@ -910,6 +934,11 @@ object Producer {
         }
         try {
             for ((i, a) in toSpeak.withIndex()) {
+                // R346 · 运行中目录页手动「拼接并转码」会写 chapter_done.json，
+                // 这里逐段刷新，已固化的章当场认出来；读失败保留旧快照，
+                // 绝不因读盘失败把 covered 抹掉、误触发整章重做。
+                doneChapterFiles = try { AudioTree.readDone(work) }
+                    catch (_: Throwable) { doneChapterFiles }
                 val live = liveSeg(i)
                 if (newlyWritten >= budgetSegs) { spaceStopped = true; break }
                 if (cancelRequested) {
@@ -938,12 +967,14 @@ object Producer {
                     continue
                 }
                 val ci = segChapter.getOrElse(i) { -1 }
+                val sealedCi = chapterSealed(ci)
                 val doneWav = if (ci >= 0) doneChapterFiles[ci] else null
                 val covered = doneWav != null && doneWav.isFile && doneWav.length() > 44 &&
                     !(wav.exists() && wav.length() > 44)
                 val already = wav.exists() && wav.length() > 44
                 // R235 · 运行中也可能刚标记重做，逐段重读 redo.json
-                val redoSeg = "seg:$i" in SegPlan.pending(work)
+                // R346 · 已固化章的孤儿标记不触发重新合成；下方 skip 分支会清掉它。
+                val redoSeg = !sealedCi && "seg:$i" in SegPlan.pending(work)
                 val skip = (covered || already) && !redoSeg
                 // R157 · 第二份真机日志：每次「继续制作」都从 TTS_INPUT 段 1/88 打起，
                 // 看起来像从头重算，实际前 9 段走的是下面这个「已有音频」跳过分支。
@@ -1063,11 +1094,24 @@ object Producer {
                 // 不 touch 被释放，真机上就是「点了重做就卡死、不往前推进」。
                 // 现在每段收尾只插队做标记里最早的那一个，做完立刻 emit 一次
                 // 回主循环，done 继续涨、通知与浮窗继续动。
+                // R346 · 先清「已固化章」的孤儿重做标记：手动拼章、并发写回都可能
+                // 留下 seg: 标记，而这一章的小块早删了；留着它后面每段收尾都会
+                // 回头重做旧章、进度钉住不往前走。只认 chapter_done.json，
+                // 还在制作中的章一个不碰。按标记数清理，不扫全章表。
+                val redoNow = SegPlan.pending(work)
+                for (key in redoNow) {
+                    val j = key.removePrefix("seg:").toIntOrNull() ?: continue
+                    if (j !in toSpeak.indices) continue
+                    if (chapterSealed(segChapter.getOrElse(j) { -1 }))
+                        SegPlan.clearRedo(work, key)
+                }
                 val nextRedo = SegPlan.pending(work)
                     .filter { it.startsWith("seg:") }
                     .mapNotNull { it.removePrefix("seg:").toIntOrNull() }
                     .filter { j -> j <= i && j in toSpeak.indices && j !in handledRedo &&
                         segChapter.getOrElse(j) { -1 } !in mergedThisRun &&
+                        // R346 · 已固化章不许再被回头认领
+                        !chapterSealed(segChapter.getOrElse(j) { -1 }) &&
                         !SegDrops.matches(dropSnap, dropWav(j), dropText(j)) }
                     .minOrNull()
                 if (nextRedo != null && !cancelRequested) {
@@ -1090,10 +1134,11 @@ object Producer {
                         EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_DONE",
                             "seg=${nextRedo + 1} · ${wj.length()} 字节")
                     } else {
-                        // R329 · 失败就不能算「已消化」：章边界靠 handledRedo
-                        // 判断还有没有重做没做完，留着它会把旧声音拼进章成品、
-                        // 连标记一起清掉，这段就永远改不回来了。
-                        handledRedo.remove(nextRedo)
+                        // R266 / R346 · 本次运行不再反复重试这个失败段：旧写法
+                        // handledRedo.remove 会让下一段收尾又挑中它，每段都重做
+                        // 一次，进度钉在旧章不往前走。标记仍留在 redo.json，
+                        // chapterRedoLeft 认标记不认 handledRedo，章边界照样
+                        // 不许拼这一章（R329 口径不破），留待下次「继续制作」认领。
                         // 失败保留旧 wav 与标记，不删能听的那一份
                         EventLog.log(EventLog.Kind.PIPELINE, "SEG_REDO_FAIL",
                             "seg=${nextRedo + 1} code=$code 留待下次续跑")
@@ -1145,6 +1190,8 @@ object Producer {
             if (ci < 0) continue
             // R300 · 这章已在边界拼好并清了小块，收尾不再重复扫它
             if (ci in mergedThisRun) continue
+            // R346 · 运行中目录页手动固化的章同样不进补拼清单
+            if (chapterSealed(ci)) continue
             // R329 · 还有小块重做没消化的章不补拼：留着标记与小块，
             // 下次续跑重做完再拼，不让旧声音被固化进成品。
             if (chapterRedoLeft(ci)) continue

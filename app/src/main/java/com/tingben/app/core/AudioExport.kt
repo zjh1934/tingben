@@ -161,12 +161,26 @@ object AudioExport {
     }
 
     /**
-     * 把 collect() 的成品写进用户选的目录树，按 Item.dir 逐级建/复用子目录。
+     * 把成品写进用户选的目录树，按 Item.dir 逐级建/复用子目录。
      * 用原生 DocumentsContract，不引入 androidx.documentfile 依赖。
      * 必须走 IO 线程（调用方负责）。
      */
     fun exportAll(c: Context, tree: Uri?): Result {
         val t = tree ?: return Result(reason = "还没选导出位置")
+        val items = collect(c)
+        if (items.isEmpty()) return Result(reason = "还没有做好的整章音频")
+        return writeItems(c, t, items)
+    }
+
+    /** R347 · 浏览弹窗里勾选的任意音频（整章成品或中间小块）一键导出到同一个目录树。
+     *  与「导出全部」共用同一套建目录 / 幂等 / 写文件逻辑，行为完全一致。 */
+    fun exportPicked(c: Context, tree: Uri?, items: List<Item>): Result {
+        val t = tree ?: return Result(reason = "还没选导出位置")
+        if (items.isEmpty()) return Result(reason = "还没勾选音频")
+        return writeItems(c, t, items)
+    }
+
+    private fun writeItems(c: Context, t: Uri, items: List<Item>): Result {
         val r = c.contentResolver
         val treeId = try {
             DocumentsContract.getTreeDocumentId(t)
@@ -174,8 +188,6 @@ object AudioExport {
             return Result(reason = "上次选的文件夹失效了，请重新选一次")
         }
         val root = DocumentsContract.buildDocumentUriUsingTree(t, treeId)
-        val items = collect(c)
-        if (items.isEmpty()) return Result(reason = "还没有做好的整章音频")
 
         val dirCache = mutableMapOf<String, Uri>()
 

@@ -104,7 +104,8 @@ def check(f):
               'wav.absolutePath, cur.knobs)',
               'val redoAtStart = SegPlan.pending(work)',
               'if ("seg:$i" in redoAtStart) return@count true',
-              'val redoSeg = "seg:$i" in SegPlan.pending(work)',
+              # R346 · 已固化章的孤儿标记不许强制重新合成整章小块
+              'val redoSeg = !sealedCi && "seg:$i" in SegPlan.pending(work)',
               'val skip = (covered || already) && !redoSeg',
               'val toSpeak = annotated']:
         if k not in m: e.append("逐段实时参数缺: " + k[:56])
@@ -178,6 +179,9 @@ def selftest():
         ("合成用旧 knobs", "producer", "wav.absolutePath, cur.knobs)", "wav.absolutePath, knobs)"),
         ("redo 不纳入 pending", "producer", 'if ("seg:$i" in redoAtStart) return@count true', ""),
         ("redo 不强制重做", "producer", "val skip = (covered || already) && !redoSeg", "val skip = covered || already"),
+        ("已固化章仍被强制重做", "producer",
+         'val redoSeg = !sealedCi && "seg:$i" in SegPlan.pending(work)',
+         'val redoSeg = "seg:$i" in SegPlan.pending(work)'),
         ("分套挪进循环", "producer", "VoiceCache.switchTo(work, cacheKey)", "VoiceCache.switchTo(work, cacheKey)\n            VoiceCache.switchTo(work, cacheKey)"),
         ("r95 旧公式回潮", "r95", "24_000L * 2L * 12L", "24_000L * 2L * 60L"),
         ("r95 守恒被删", "r95", "'NativeEngine.ttsSynthesize('", ""),

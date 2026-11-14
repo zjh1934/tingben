@@ -42,6 +42,9 @@ enum class OverlaySource { PREVIEW, CLIP, PRODUCE }
 
 object OverlayProgress {
 
+    /** R345 · 一枚球的直径；lp() 的默认位置与 build() 的尺寸共用，别再各写一个数。 */
+    private const val RING_DP = 56f
+
     private data class Frame(val done: Int, val total: Int,
                              val chapterPct: Float, val source: OverlaySource)
     private val lock = Any()
@@ -63,15 +66,18 @@ object OverlayProgress {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            // R307 · 不透明：白色页面上也看得清，不要再靠半透明叠在内容上。
-            PixelFormat.OPAQUE
+            // R345 · 方形底板撤掉后，球与球之间要透出后面的页面；仍标 OPAQUE
+            // 会把这些透明区涂成黑块，等于换个更丑的方形底。不透明改由每枚球
+            // 自己画实心圆芯保证（见 RingView.onDraw），窗口本身得能透明。
+            PixelFormat.TRANSLUCENT
         ).apply {
             // R214 · 改成 TOP|START，拖动时 x 增大就往右走，跟手指一致
             gravity = Gravity.TOP or Gravity.START
             // R313 · 默认落在内容区右下：不再压住顶栏两枚入口，也不盖住输入提示。
             // 球仍可拖动；松手只贴边、不缩进边缘，百分比数字永远看得全。
             val dm = android.content.res.Resources.getSystem().displayMetrics
-            val box = (72 * dm.density).toInt()
+            // R345 · 按真实球宽算，不再用旧方形卡片的 72dp 估算（否则右下留空档）。
+            val box = (RING_DP * dm.density).toInt()
             x = (dm.widthPixels - box - (16 * dm.density).toInt()).coerceAtLeast(0)
             y = (dm.heightPixels * 0.58f).toInt()
         }
@@ -86,6 +92,12 @@ object OverlayProgress {
             set(v) { field = v.coerceIn(0f, 1f); invalidate() }
 
         private val stroke = sizePx * 0.11f
+        // R345 · 方形底板撤掉：不透明下沉到每枚球自身，只铺到环中心线（r），
+        // 不越过环外沿。两球叠成 8 字时下球的芯够不到上球的环，不削掉上球下半圈。
+        private val disc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = 0xFFF4F6FA.toInt()
+        }
         // R307 · 底色改成不透明浅色，原来的白描边 / 白字会在白页上消失，
         // 换成深灰底环、主色弧、深色数字；不靠透明度换可读性。
         private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -123,6 +135,8 @@ object OverlayProgress {
             val cy = height / 2f
             val r = sizePx / 2f - stroke
             val oval = RectF(cx - r, cy - r, cx + r, cy + r)
+            // R345 · 先铺自己的不透明圆芯，球外仍透出后面的页面，不再垫方形底。
+            canvas.drawCircle(cx, cy, r, disc)
             canvas.drawArc(oval, 0f, 360f, false, track)
             // 从 12 点方向顺时针描到百分比处：50% 就转到半圈
             if (pct > 0f) canvas.drawArc(oval, -90f, 360f * pct, false, arc)
@@ -138,20 +152,14 @@ object OverlayProgress {
     }
 
     private fun build(c: Context): LinearLayout {
-        val size = (56 * c.resources.displayMetrics.density).toInt()
+        val size = (RING_DP * c.resources.displayMetrics.density).toInt()
         val top = RingView(c, size)
         val bottom = RingView(c, size).apply { visibility = View.GONE }
-        val pad = (4 * c.resources.displayMetrics.density).toInt()
         val box = LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            // R307 · 不透明实底 + 描边：白底页面上也看得清，不再靠透明度叠内容。
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xFFF4F6FA.toInt())
-                cornerRadius = 14 * c.resources.displayMetrics.density
-                setStroke((2 * c.resources.displayMetrics.density).toInt(),
-                    0xFFC9D4E8.toInt())
-            }
+            // R345 · 不再垫方形底板（圆角卡片 + 2dp 描边），也不再留 4dp 内边距：
+            // 窗口只装两枚圆球，球与球之间透出后面的页面；不透明由 RingView
+            // 自己的圆芯保证，白页上数字与环照样看得清。
         }
         box.addView(top)
         // 两球略叠，视觉上成 8 字；单球时这枚 GONE，只剩上面那枚

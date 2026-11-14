@@ -587,37 +587,25 @@ internal fun CustomVoicePane(
             Text(if (speakerBusy) "正在读模型…" else "读取模型自带的音色表 ›", fontSize = 12.sp)
         }
     } else {
-        // R317 · 九种音色按「女声 / 男声 / 少年音」分组，不再一排混着摆；
-        // 送进引擎的仍是模型原名，只在这里显示中文。
-        val groups = linkedMapOf<String, MutableList<String>>()
-        speakerList.forEach { n ->
-            val cn = speakerCn(n)
-            val g = when {
-                "女声" in cn -> "女声"
-                "男声" in cn -> "男声"
-                "少年" in cn -> "少年音"
-                else -> "其它音色"
+        // R350 · 九个音色按模型音色表原样平铺，不再按「女声 / 男声 / 少年音」分组；
+        // 中文短名按官方音色描述译，送进引擎的仍是模型原名。
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            speakerList.forEach { name ->
+                FilterChip(
+                    selected = draft.speaker == name,
+                    onClick = { onDraft(draft.copy(speaker = name)) },
+                    label = { Text(speakerCn(name), fontSize = 12.sp) }
+                )
             }
-            groups.getOrPut(g) { mutableListOf() }.add(n)
         }
-        groups.forEach { (g, names) ->
-            Text(g, fontSize = 11.sp, color = Sub)
-            Spacer(Modifier.height(4.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                names.forEach { name ->
-                    FilterChip(
-                        selected = draft.speaker == name,
-                        onClick = { onDraft(draft.copy(speaker = name)) },
-                        // R304 · 模型自带的英文名在界面显示中文，送进引擎的仍用原名。
-                        label = { Text(speakerCn(name), fontSize = 12.sp) }
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-        }
+        Spacer(Modifier.height(10.dp))
         Text("已选：" + (if (draft.speaker.isBlank()) "还没选" else speakerCn(draft.speaker)),
             fontSize = 11.sp, color = Sub)
+        if (draft.speaker.isNotBlank()) {
+            Text("官方音色描述：" + speakerOfficial(draft.speaker),
+                fontSize = 11.sp, color = Sub)
+        }
     }
     Spacer(Modifier.height(12.dp))
     // R304 · 标签从「自定义」改成「风格描述」，右边同样带选预设 / 添加预设。

@@ -305,7 +305,10 @@ def selftest():
     bad = 0
     # R268 · 同名探测串在 findChildDir / findChildFile 里各一处，
     # 只摘第一处判据仍成立、注入会漏放，须全量替换。
-    FULL = {"同名目录复用被摘", "私有目录教程回潮", "内部路径教程回潮"}
+    # R348 · exportAll 与 exportPicked 各有一处「没选位置」兜底（R347 新增），
+    # 只摘第一处判据仍成立，注入会漏放，须全量替换。
+    FULL = {"同名目录复用被摘", "私有目录教程回潮", "内部路径教程回潮",
+            "没选位置的兜底被摘"}
     for name, key, needle, repl in cuts:
         x = dict(f)
         x[key] = (f[key].replace(needle, repl) if name in FULL

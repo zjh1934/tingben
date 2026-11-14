@@ -90,7 +90,9 @@ object AudioTree {
         (b[off].toInt() and 0xff) or ((b[off + 1].toInt() and 0xff) shl 8) or
             ((b[off + 2].toInt() and 0xff) shl 16) or ((b[off + 3].toInt() and 0xff) shl 24)
 
-    private fun readSegChapters(dir: File): Map<Int, Int>? {
+    /** R348 · 设置页「本机音频」也要显示小块属于哪一章，复用这份映射，
+     *  不另造一份段号→章号的解析。读不到就返回 null，调用方只显示段号。 */
+    internal fun readSegChapters(dir: File): Map<Int, Int>? {
         val body = when (val r = AtomicJson.read(File(dir, "seg_chapters.json"))) {
             is AtomicJson.Read.Ok -> r.text
             else -> return null

@@ -272,6 +272,20 @@ object AudioOps {
         }
     }
 
+    /**
+     * R346 · 章一旦固化（小块已清），这一章残留的「段要重做」标记必须一起清掉：
+     * 否则后续章收尾会把已删的小块又合成一遍，主循环还卡在旧章不往前走。
+     * 只按小块文件名认段号，不碰别的章、别的状态；一次批量写盘。
+     * 手动「拼接并转码」与自动章边界两条路径都走这里，口径唯一。
+     */
+    private fun clearRedoOfParts(parts: List<File>) {
+        val work = parts.firstOrNull()?.parentFile ?: return
+        val idxs = parts.mapNotNull {
+            it.name.removePrefix("direct_").removeSuffix(".wav").toIntOrNull()
+        }
+        if (idxs.isNotEmpty()) SegPlan.clearSegs(work, idxs)
+    }
+
     fun mergeChapter(c: Context, bookId: String, bookTitle: String, chapter: Int,
                      parts: List<File>, gapMs: Int = 0, declickMs: Int = 30): Result {
         if (parts.isEmpty()) return Result(false, reason = "这一章还没有音频小块")
@@ -293,6 +307,9 @@ object AudioOps {
         val killedPaths = parts.map { it.absolutePath }
         val kept = deleteAll(parts)
         AudioTree.forget(c, killedPaths)
+        // R346 · 固化即清标记：目录页手动拼章这条路径以前不清，后续章收尾
+        // 会把刚删掉的小块又合成一遍（孤儿 WAV），任务卡在旧章不往前走。
+        clearRedoOfParts(parts)
         return Result(true, enc.file, kept = kept)
     }
 
@@ -330,6 +347,8 @@ object AudioOps {
         EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_CLEAN",
             "ch=${chapter + 1} · 清掉 ${killedPaths.size - kept} 个中间小块" +
                 if (enc.converted) " · 内部 WAV 已删" else " · 转码没过，WAV 留着可手动另存")
+        // R346 · 与手动拼章同口径：章固化了就不留段级重做标记。
+        clearRedoOfParts(parts)
         return Result(true, enc.file, kept = parts.size)
     }
 

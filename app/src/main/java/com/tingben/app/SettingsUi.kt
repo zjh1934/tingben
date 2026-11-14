@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -454,7 +455,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 }
             }
             OverlayProgressRow(c)
-            // R320 · 图 46：不透明浅底的双球是「上＝整本、下＝这一章」，
+            // R320 · 图 46：不透明圆球的双球是「上＝整本、下＝这一章」，
             // 旧图里两个环叠在一起没有说明，谁也认不出哪个是哪个。浮窗本体
             // 仍按 R214 口径不写字，图例只放设置页里。
             Row(Modifier.fillMaxWidth()
@@ -466,7 +467,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 UiIconGlyph(UiIcon.PROGRESS, Sub, 14.dp)
                 Text(" 这一章", fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.weight(1f))
-                Text("不透明浅底", fontSize = 10.sp, color = Sub)
+                Text("不透明圆球", fontSize = 10.sp, color = Sub)
             }
         }
 
@@ -624,7 +625,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     modifier = Modifier.padding(start = 43.dp, bottom = 4.dp))
             }
             SettingLine(UiIcon.FOLDER, "本机音频",
-                "章成品 / 中间小块 · 按书分组 · 点一个另存") {
+                "章成品 / 中间小块 · 按书分组 · 可勾选批量导出") {
                 Button(onClick = { browseOpen = true },
                     modifier = Modifier.height(34.dp),
                     shape = RoundedCornerShape(50),
@@ -695,6 +696,36 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         else saveOne.launch(f.name)
                     } catch (_: Throwable) { pendingSave = null }
                 },
+                onSaveSelected = { picked ->
+                    // R347 · 一键导出：沿用「导出全部」已经设好的目录树，不另弹选择器。
+                    val tree = AudioExport.treeUri(c)
+                    if (tree == null) {
+                        Toast.makeText(c, "先到「导出位置」里挑一个文件夹",
+                            Toast.LENGTH_SHORT).show()
+                    } else if (!exporting) {
+                        exportScope.launch {
+                            exporting = true
+                            val res = withContext(Dispatchers.IO) {
+                                AudioExport.exportPicked(c, tree,
+                                    picked.map { (g, f) ->
+                                        AudioExport.Item(
+                                            AudioLibrary.safeName(g), f.name, f)
+                                    })
+                            }
+                            exporting = false
+                            val tail = when {
+                                res.failed > 0 -> "，${res.failed} 个没导出去" +
+                                    (if (res.reason.isNotEmpty()) "（${res.reason}）" else "")
+                                res.skipped > 0 -> "，${res.skipped} 个已在文件夹里跳过"
+                                else -> ""
+                            }
+                            exportResult = "已导出 ${res.ok} 个音频到「" +
+                                AudioExport.treeLabel(c) + "」$tail"
+                            Toast.makeText(c, exportResult, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                exporting = exporting,
                 onDismiss = { browseOpen = false })
         }
 
@@ -779,24 +810,98 @@ internal fun ClearSegmentsSettingLine(c: Context) {
     }
 }
 
-/** 本机音频目录的应用内浏览：按书分组列 M4A / WAV，点一个另存到用户挑的位置。
- *  R320 · 两个目录收进同一个弹层，用页签切，不再在设置页各占一行。 */
+/** R347 · 行内自带「哪本书 · 第几章 / 第几段」：分组标题滚走了也认得出；
+ *  完整文件名另占两行显示，长名不再被一行截断。
+ *  R348 · 小块补上所属章号（复用 AudioTree 的 seg_chapters.json），
+ *  长书名 / 长章名也不再被一行 Ellipsis 吃掉。 */
+internal fun audioFileLabel(f: File, group: String, segChapter: Int? = null): String {
+    val stem = f.nameWithoutExtension
+    val chapter = Regex("""^(\d{3})_(.+)$""").matchEntire(stem)
+    val legacy = Regex("""^chapter_[0-9a-fA-F]{8}_(\d{3})_[0-9a-fA-F]{8}$""")
+        .matchEntire(stem)
+    val seg = Regex("""^(?:chunk|direct)_(\d{4})$""").matchEntire(stem)
+    return when {
+        stem == "整本" -> "$group · 整本音频"
+        chapter != null -> "$group · 第 ${chapter.groupValues[1].toIntOrNull() ?: 0} 章 · " +
+            chapter.groupValues[2]
+        legacy != null -> "$group · 第 ${legacy.groupValues[1].toIntOrNull() ?: 0} 章 · 旧版成品"
+        seg != null -> "$group · " +
+            (segChapter?.let { "第 ${it + 1} 章 · " } ?: "") +
+            "第 ${seg.groupValues[1]} 段"
+        else -> "$group · 音频文件"
+    }
+}
+
+/** R348 · 文件名固定占两行。R349 看图后第三稿：两行放得下就整名折行、
+ *  一个字都不省；只有两行也放不下才从中间省，开头与「段号 + 扩展名」
+ *  一定留在屏幕上。旧版 30 字就省，把「稍微长一些」的名字白白掩盖了。 */
+internal fun audioFileNameLines(name: String): String {
+    val perLine = 19
+    if (name.length <= perLine) return name
+    if (name.length <= perLine * 2) {
+        // R349 · 折在下划线附近，但尾部至少留 5 字符：
+        // 不许把 .m4a / .wav 单独甩到第二行变成孤行。
+        val window = (perLine - 12)..(perLine + 3)
+        val cut = window.filter { i ->
+            i in 1 until name.length &&
+                (name.length - i) >= 5 &&
+                (name[i] == '_' || name[i] == '.')
+        }.minByOrNull { i -> if (i > perLine) i - perLine else perLine - i }
+            ?: perLine
+        return name.substring(0, cut) + "\n" + name.substring(cut)
+    }
+    return name.take(perLine) + "\n…" + name.takeLast(perLine)
+}
+
+/** R348 · 从文件往父目录找 seg_chapters.json，读不到就返回 null，
+ *  只显示「第 N 段」，绝不猜一个章号糊上去。 */
+internal fun browseSegChapter(f: File, seg: Int): Int? {
+    var d = f.parentFile
+    var hop = 0
+    while (d != null && hop < 6) {
+        val m = AudioTree.readSegChapters(d)
+        if (m != null) return m[seg]
+        d = d.parentFile
+        hop++
+    }
+    return null
+}
+
+internal val browseSegName = Regex("""^(?:chunk|direct)_(\d{4})$""")
+internal fun browseSegIndex(f: File): Int? =
+    browseSegName.matchEntire(f.nameWithoutExtension)
+        ?.groupValues?.get(1)?.toIntOrNull()
+
+/** 本机音频目录的应用内浏览：按书分组列 M4A / WAV。
+ *  R320 · 两个目录收进同一个弹层，用页签切。
+ *  R347 · 两个页签都有多选 / 全选 / 选本组 / 一键导出；整行点击切换勾选，
+ *  单文件「另存」原样保留在行尾；文件名固定留两行、长名折行不再被截断。
+ *  R348 · 补「反选」、行内章号、长名两行首尾可见、导出中锁按钮防连点。 */
 @Composable
 internal fun LocalFilesDialog(roots: List<Pair<String, File>>,
                               bookTitles: Map<String, String>,
-                              onSave: (File) -> Unit, onDismiss: () -> Unit) {
+                              onSave: (File) -> Unit,
+                              onSaveSelected: (List<Pair<String, File>>) -> Unit,
+                              exporting: Boolean = false,
+                              onDismiss: () -> Unit) {
     var tab by remember { mutableStateOf(0) }
     val (label, root) = roots[tab]
     val groups = remember(root.absolutePath) { browseGroups(root, bookTitles) }
     val total = groups.sumOf { it.second.size }
-    val segRe = Regex("""^(?:chunk|direct)_(\d{4})\.wav$""")
+    // 切页签即清空勾选，避免跨页签把别处的选中项一起导出去。
+    var picked by remember(tab) { mutableStateOf(emptySet<String>()) }
+    val byPath = remember(groups) {
+        groups.flatMap { (g, fs) -> fs.map { f -> f.absolutePath to (g to f) } }.toMap()
+    }
+    val allPaths = remember(groups) { byPath.keys.toSet() }
+    val allOn = total > 0 && picked.size == total
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Card(Modifier.fillMaxWidth(0.92f), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(14.dp)) {
                 Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(3.dp))
-                Text("按书分组 · $total 个 · 可另存",
+                Text("按书分组 · $total 个 · 勾选后可批量导出",
                     fontSize = 11.sp, color = Sub)
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth()
@@ -816,43 +921,155 @@ internal fun LocalFilesDialog(roots: List<Pair<String, File>>,
                     }
                 }
                 Spacer(Modifier.height(8.dp))
+                // R347 · 全选 / 已选合计：两个页签共用同一行，不额外占一层。
+                Row(Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    // R348 · 看图后调整：勾了一部分时给半选态，
+                    // 不再「勾着 3 个、框却是空的」让人以为没勾上。
+                    TriStateCheckbox(
+                        state = when {
+                            picked.isEmpty() -> ToggleableState.Off
+                            allOn -> ToggleableState.On
+                            else -> ToggleableState.Indeterminate
+                        },
+                        onClick = {
+                            picked = if (allOn) emptySet() else allPaths
+                        },
+                        modifier = Modifier.size(30.dp))
+                    Text(if (allOn) "取消全选" else "全选",
+                        fontSize = 12.sp, color = Primary,
+                        modifier = Modifier.clickable {
+                            picked = if (allOn) emptySet() else allPaths
+                        })
+                    // R348 · 反选：勾了大半本、只想导剩下几段时不用从头点。
+                    Text("反选", fontSize = 11.sp, color = Sub,
+                        modifier = Modifier.clickable { picked = allPaths - picked }
+                            .padding(horizontal = 10.dp, vertical = 2.dp))
+                    Spacer(Modifier.weight(1f))
+                    val mb = picked.mapNotNull { byPath[it]?.second }
+                        .sumOf { it.length() } / 1024f / 1024f
+                    Text("已选 ${picked.size} / $total" +
+                        (if (picked.isEmpty()) "" else " · %.1f MB".format(mb)),
+                        fontSize = 11.sp, color = Sub)
+                }
+                Spacer(Modifier.height(2.dp))
                 if (groups.isEmpty()) {
                     Text("这里现在没有音频文件", fontSize = 12.sp, color = Sub)
                 } else {
                     LazyColumn(Modifier.heightIn(max = 380.dp)) {
                         groups.forEach { (g, fs) ->
                             item(key = "group_$g") {
-                                Text("$g · ${fs.size} 个", fontSize = 11.sp,
-                                    color = Primary, fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(
-                                        start = 10.dp, end = 10.dp,
-                                        top = 8.dp, bottom = 3.dp))
+                                Row(Modifier.fillMaxWidth()
+                                    .padding(start = 10.dp, end = 10.dp,
+                                        top = 8.dp, bottom = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text("$g · ${fs.size} 个", fontSize = 11.sp,
+                                        color = Primary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.weight(1f))
+                                    Text(if (fs.all { it.absolutePath in picked })
+                                            "取消本组" else "选本组",
+                                        fontSize = 11.sp, color = Sub,
+                                        modifier = Modifier.clickable {
+                                            val ps = fs.map { it.absolutePath }.toSet()
+                                            picked = if (ps.all { it in picked })
+                                                picked - ps else picked + ps
+                                        }.padding(horizontal = 8.dp, vertical = 2.dp))
+                                }
                             }
                             items(fs, key = { it.absolutePath }) { f ->
+                                val on = f.absolutePath in picked
+                                // R348 · IO 只在文件第一次进列表时做一次，重组不重读。
+                                val segCh = remember(f.absolutePath) {
+                                    browseSegIndex(f)?.let { browseSegChapter(f, it) }
+                                }
                                 Row(
                                     Modifier.fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .clickable { onSave(f) }
-                                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        val seg = segRe.matchEntire(f.name)
-                                        Text(seg?.let { "第 ${it.groupValues[1]} 段" } ?: f.name,
-                                            fontSize = 12.sp, maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis)
-                                        Text(f.name, fontSize = 10.sp, color = Sub,
-                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        .background(
+                                            if (on) PrimarySoft else Color.Transparent,
+                                            RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            picked = if (on) picked - f.absolutePath
+                                                else picked + f.absolutePath
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 9.dp),
+                                    verticalAlignment = Alignment.Top) {
+                                    Checkbox(checked = on, onCheckedChange = null,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                            .size(26.dp))
+                                    Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                                        // R348 · 书名 / 章名长也不截断，最多两行。
+                                        Text(audioFileLabel(f, g, segCh), fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 2,
+                                            lineHeight = 15.sp)
+                                        // R347 · 文件名固定留两行；R348 · 超长从中间省，
+                                        // 首尾（段号 + 扩展名）永远看得见。
+                                        Text(audioFileNameLines(f.name),
+                                            fontSize = 10.sp, color = Sub,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            lineHeight = 13.sp,
+                                            modifier = Modifier.heightIn(min = 30.dp)
+                                                .padding(top = 2.dp))
                                     }
-                                    Text("%.1f MB".format(f.length() / 1024f / 1024f),
-                                        fontSize = 11.sp, color = Sub)
+                                    // R348 · 看图后调整：格式标签挪到体积下面，
+                                    // 左侧只留「哪章哪段 + 两行文件名」，不再五行挤一格。
+                                    Column(horizontalAlignment = Alignment.End,
+                                        modifier = Modifier.padding(top = 4.dp)) {
+                                        Text("%.1f MB".format(
+                                            f.length() / 1024f / 1024f),
+                                            fontSize = 11.sp, color = Sub)
+                                        Text(if (f.name.endsWith(".m4a",
+                                                ignoreCase = true)) "M4A · 章音频"
+                                            else "WAV · 中间小块",
+                                            fontSize = 10.sp, color = Sub)
+                                        // 单文件另存原样保留，只是从「点整行」挪到行尾。
+                                        TextButton(onClick = { onSave(f) },
+                                            modifier = Modifier.height(28.dp),
+                                            contentPadding = PaddingValues(
+                                                horizontal = 8.dp)) {
+                                            Text("另存", fontSize = 11.sp,
+                                                color = Primary)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                TextButton(onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End)) { Text("关闭") }
+                Row(Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onDismiss) {
+                        Text("关闭", fontSize = 12.sp, color = Sub)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Button(onClick = {
+                            onSaveSelected(picked.mapNotNull { byPath[it] })
+                        },
+                        enabled = picked.isNotEmpty() && !exporting,
+                        modifier = Modifier.height(36.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Primary, contentColor = palette.onPrimary),
+                        contentPadding = PaddingValues(horizontal = 14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // R349 · 与形态图一致：导出中给转圈，不只是变灰的文字
+                            if (exporting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = palette.onPrimary)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(if (exporting) "正在导出…"
+                                else if (picked.isEmpty()) "导出选中"
+                                else "导出选中 · ${picked.size} 个", fontSize = 12.sp)
+                        }
+                    }
+                }
             }
         }
     }

@@ -525,6 +525,26 @@ jobs:
         run: python3 scripts/r344_verify.py
       - name: R344 反向注入
         run: python3 scripts/r344_verify.py --selftest
+      - name: R345 悬浮窗圆球无方形底
+        run: python3 scripts/r345_verify.py
+      - name: R345 反向注入
+        run: python3 scripts/r345_verify.py --selftest
+      - name: R346 已固化章不回头重做（第三章做完接着往下走）
+        run: python3 scripts/r346_verify.py
+      - name: R346 反向注入
+        run: python3 scripts/r346_verify.py --selftest
+      - name: R347 本机音频弹窗 多选/全选/一键导出/文件名两行
+        run: python3 scripts/r347_verify.py
+      - name: R347 反向注入
+        run: python3 scripts/r347_verify.py --selftest
+      - name: R348 本机音频弹窗 长名两行/反选/章号/导出中态
+        run: python3 scripts/r348_verify.py
+      - name: R348 反向注入
+        run: python3 scripts/r348_verify.py --selftest
+      - name: R350 预设音色九平铺/官方译名
+        run: python3 scripts/r350_verify.py
+      - name: R350 反向注入
+        run: python3 scripts/r350_verify.py --selftest
       - name: R241 发版前置自检逻辑
         run: python3 scripts/preflight.py --selftest
       - name: R172 正向守门
