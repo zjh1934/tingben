@@ -84,16 +84,16 @@ POS = {
         # 判据按现状迁移、不放宽。
 'SettingsSection("音频文件", "本机", collapsible = false)',
         "导出位置",
-        "AudioExport.exportAll(c, tree)",
-        "先点「更改」挑一个文件夹",
-        "AudioExport.exportAll(c, tree)",
+        "AudioExport.exportPicked(c, tree",
+        "先到「导出位置」里挑一个文件夹",
+        "AudioExport.exportPicked(c, tree",
         "withContext(Dispatchers.IO) { AudioExport.collect(c).size }",
-        '"导出全部"',
+        '"导出选中"',
         # R268 · 导出中置灰、结果留在页里，不是一闪而过的 Toast
         "var exporting by remember { mutableStateOf(false) }",
-        "enabled = expCount > 0 && !exporting",
-        'if (exporting) "正在导出…" else "导出全部"',
-        "exportResult = msg",
+        "enabled = picked.isNotEmpty() && !exporting",
+        'if (exporting) "正在导出…"',
+        'exportResult = "已导出',
         "if (exportResult.isNotEmpty()) {",
     ],
     "manifest": [
@@ -142,7 +142,7 @@ def settings_body(m):
     a = m.find("private fun SettingsScreen(")
     if a < 0:
         return ""
-    b = m.find("\n@Composable\nprivate fun ClearSegmentsRow", a)
+    b = m.find("\n@Composable\nprivate fun ModelScreen", a)
     return m[a:b] if b > a else ""
 
 
@@ -236,7 +236,7 @@ def check(f):
     else:
         # R158b · 教程不进 UI：私有目录/内部路径的长说明一律撤掉。
         # 守门改成「能力仍在 + 教程零回潮」，不再要求文案存在。
-        if "导出位置" not in sb or "AudioExport.exportAll(c, tree)" not in sb:
+        if "导出位置" not in sb or "AudioExport.exportPicked(c, tree" not in sb:
             e.append("设置页导出能力入口丢了")
         for t in ("→", "文件管理器进不去", "内部暂存路径不开放修改"):
             if t in sb:
@@ -292,13 +292,13 @@ def selftest():
         ("内部路径教程回潮", "main",
          'Toast.makeText(c, "导出位置已记住", Toast.LENGTH_SHORT).show()',
          'Toast.makeText(c, "导出位置已记住", Toast.LENGTH_SHORT).show()\n        Text("内部暂存路径不开放修改")'),
-        ("导出动作被摘", "main", "AudioExport.exportAll(c, tree)", ""),
+        ("导出动作被摘", "main", "AudioExport.exportPicked(c, tree", ""),
         ("导出中可重复点", "main",
-         "enabled = expCount > 0 && !exporting", "enabled = expCount > 0"),
-        ("结果只剩 Toast", "main", "exportResult = msg", ""),
+         "enabled = picked.isNotEmpty() && !exporting", "enabled = picked.isNotEmpty()"),
+        ("结果只剩 Toast", "main", 'exportResult = "已导出', ""),
         ("IO 切换被摘", "main",
          "withContext(Dispatchers.IO) { AudioExport.collect(c).size }", ""),
-        ("没选位置提示被摘", "main", "先点「更改」挑一个文件夹", ""),
+        ("没选位置提示被摘", "main", "先到「导出位置」里挑一个文件夹", ""),
         ("CI 漏挂 r156", "ci", "python3 scripts/r156_verify.py --selftest", ""),
         ("现行清单漏 r156", "r135", '"r156_verify.py"', ""),
     ]
@@ -308,7 +308,11 @@ def selftest():
     # R348 · exportAll 与 exportPicked 各有一处「没选位置」兜底（R347 新增），
     # 只摘第一处判据仍成立，注入会漏放，须全量替换。
     FULL = {"同名目录复用被摘", "私有目录教程回潮", "内部路径教程回潮",
-            "没选位置的兜底被摘"}
+            "没选位置的兜底被摘",
+            # R354 · exportPicked 在任务页与本机音频窗口各一处；
+            # 只摘第一处判据仍绿，注入要全量替换才拦得住。
+            # R355 · 没选位置提示有两处兜底，只摘一处判据仍绿
+            "导出动作被摘", "导出中可重复点", "没选位置提示被摘"}
     for name, key, needle, repl in cuts:
         x = dict(f)
         x[key] = (f[key].replace(needle, repl) if name in FULL

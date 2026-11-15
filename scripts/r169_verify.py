@@ -66,8 +66,8 @@ def checks(src, quiet=False):
     if "TextOverflow.Ellipsis" not in main: e.append("R169 模型文件名会竖排折行")
     if not re.search(r'Text\(mode\.file[^)]*maxLines = 1', main, re.S):
         e.append("R169 模型文件名没限单行")
-    if "Button(enabled = expCount > 0" not in main:
-        e.append("R169 0 个成品时「导出全部」仍可点")
+    if "enabled = picked.isNotEmpty() && !exporting," not in main:
+        e.append("R169 本机音频窗口空选时导出按钮仍可点")
     return e
 
 def read_all(base=ROOT):
@@ -98,7 +98,7 @@ def selftest():
             "fontSize = 11.sp, color = Sub, maxLines = 1,\n                                overflow = TextOverflow.Ellipsis,\n                                fontFamily = FontFamily.Monospace,",
             "fontSize = 11.sp, color = Sub,\n                                fontFamily = FontFamily.Monospace,")),
         ("导出按钮不禁用", "main", lambda t: t.replace(
-            "Button(enabled = expCount > 0 && !exporting, ", "Button(")),
+            "enabled = picked.isNotEmpty() && !exporting,", "enabled = true,")),
     ]
     ok = not checks(base)
     got = 0

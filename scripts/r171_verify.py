@@ -37,7 +37,7 @@ HUB_MUST = [
     # 任务看板就地：与独立任务页同源，不另造状态口径
     "制作选中章节",
     "R315 · 目录页就地任务浮窗整段撤掉",
-    "队列 ${queued.size} · 去任务页看",
+    "队列 ${queued.size} · 去任务页 ›",
     "val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }",
     # R334 · 收尾条 / 长按菜单两处拼章统一坏块闸 + 连点锁 + IO，
     # 不再绑死旧版主线程直调的那串字面量。

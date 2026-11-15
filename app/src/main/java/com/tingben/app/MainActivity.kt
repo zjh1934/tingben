@@ -584,39 +584,9 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     val chrome = chromeOf(screen)
     val shownChrome = if (screen == Screen.CHAPTERS)
         chrome.copy(title = chapterBookTitle) else chrome
-    // R226 · 目录页三枚操作上移到系统顶栏，与书名同一排右侧；
-    // 状态在 App 层按同一份 Producer/TaskResume 真值算，ChapterHub 不再单独占一排。
-    val hubProd by Producer.state.collectAsState()
-    val hubTask = remember(refresh, hubProd.running, hubProd.stage) { TaskResume.active(ctx) }
-    val hubRunning = hubProd.running && hubTask?.bookId == bookId
-    val hubStalled = !hubProd.running && hubTask?.bookId == bookId &&
-        hubProd.stage in listOf("没完成", "已停止", "出错了")
-    var lastHubTapMs by remember { mutableStateOf(0L) }
-    fun hubStop() {
-        val now = System.currentTimeMillis()
-        if (now - lastHubTapMs >= 800L) {
-            lastHubTapMs = now
-            EventLog.ui("HUB_STOP", "id=${bookId?.take(8)}")
-            Producer.stop()
-        }
-    }
-    fun onResumeTask() {
-        bookId?.let { id -> TaskResume.byBook(ctx, id)?.let { resumeTask(it) } }
-    }
-    fun hubResume() {
-        val now = System.currentTimeMillis()
-        if (now - lastHubTapMs >= 800L) {
-            lastHubTapMs = now
-            if (bookId?.let { Producer.isBusyForBook(it) } == true) {
-                EventLog.ui("HUB_RESUME_BLOCKED", "id=${bookId?.take(8)} reason=收尾中")
-                Toast.makeText(ctx, "已点停止，正在收尾这一段，稍等再继续",
-                    Toast.LENGTH_SHORT).show()
-            } else {
-                EventLog.ui("HUB_RESUME", "id=${bookId?.take(8)}")
-                onResumeTask()
-            }
-        }
-    }
+    // R352 · 停止 / 继续 / 开始从右上角小图标收进目录页进度卡下面那一排等大按钮：
+    // 状态由 ChapterHub 自己按同一份 Producer/TaskResume 真值算，App 层不再重复算一份，
+    // 也不再留一组只服务于两枚顶栏图标的局部函数。
     // R224 · 左滑开书架抽屉只在软件主页生效；进到书里/设置页不再被边缘手势误触
     DismissibleNavigationDrawer(
         drawerState = drawerState,
@@ -695,11 +665,6 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 }
                 Screen.CHAPTERS -> {
                 {
-                    if (hubRunning) {
-                        IconButton(onClick = { hubStop() }) { StopIcon(Warn) }
-                    } else if (hubStalled) {
-                        IconButton(onClick = { hubResume() }) { PlayIcon(Primary) }
-                    }
                     // R272 · 调音台入口不只首页有，章节目录页顶栏也常驻一枚；
                     // 与底部多选胶囊里的「调音 ›」不是一回事（那个跟选中章绑定）。
                     IconButton(onClick = {
@@ -746,7 +711,9 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                         onOpenModels = {
                             modelsFrom = Screen.CHAPTERS
                             nav.push(Screen.MODELS)
-                        })
+                        },
+                        // R352 · 进度卡下面「队列 N · 去任务页 ›」的真出口
+                        onOpenTasks = { nav.push(Screen.TASKS) })
                 }
                 Screen.PRODUCE -> ProduceScreen(ctx, bookId, refresh,
                     onBack = { nav.pop() },
@@ -758,7 +725,6 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
                     onOpenTask = { id -> openBook(id) },
                     onProgress = { id -> openBook(id) },
-                    onAudio = { id -> openBook(id); refresh++ },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
                     onResume = resumeTask)
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,

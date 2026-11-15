@@ -76,7 +76,7 @@ MAIN = [
     '这套音色已做好 ${cacheInfo.current} 段，接着做不用重来',
     'if (cacheInfo.others > 0) {',
     '切回原来的设置就能接着用',
-    '会连留着的其他音色缓存一起清掉',
+    '删掉选中的 ${picked.size} 个音频？不可恢复',
 ]
 BAN = [
     'EventLog.log(EventLog.Kind.PIPELINE, "VOICE_INVALIDATE"',
@@ -160,7 +160,7 @@ def selftest():
         ("制作页不算缓存摘要", "main",
          lambda t: t.replace('        cacheInfo = info', '        Unit')),
         ("清理弹窗不提归档", "main",
-         lambda t: t.replace('会连留着的其他音色缓存一起清掉', '只删制作过程里生成的分段 WAV')),
+         lambda t: t.replace('删掉选中的 ${picked.size} 个音频？不可恢复', '删掉几个文件')),
         ("TaskResume 又写重出声", "resume",
          lambda t: t.replace('后面按新参数继续', '接着做会按新设置重出声')),
         ("CI 漏挂", "ci",

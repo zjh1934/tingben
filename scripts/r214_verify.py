@@ -117,7 +117,9 @@ def selftest():
     ]
     bad = 0
     for name, key, needle, repl in cuts:
-        g = dict(f); g[key] = f[key].replace(needle, repl, 1)
+        g = dict(f)
+        g[key] = (f[key].replace(needle, repl) if name == "任务页跳转被摘"
+                  else f[key].replace(needle, repl, 1))
         got = check(g)
         if got: print("  反向注入 %-22s 拦下 %d 条" % (name, len(got)))
         else: print("  反向注入漏放: " + name); bad += 1

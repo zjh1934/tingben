@@ -88,7 +88,8 @@ def check(f):
     # R149 · 任务页「听成品」改成传该卡自己的 bookId（修多任务跳错书），
     # 原来绑死全局 taskBookId 的字面量就红了。守语义：音频入口必须落第三列，
     # 且用这次卡片的 id，不关心变量名。
-    if not re.search(r"onAudio\s*=\s*\{[^\n}]*openBook\(", f["main"]):
+    # R352 · onAudio 死参数撤掉；任务页入口仍按卡片自己的 id 回书，锚等价迁移。
+    if not re.search(r"Screen\.TASKS\s*->\s*TaskCenterScreen\([\s\S]{0,300}?onOpenTask\s*=\s*\{\s*id\s*->\s*openBook\(id\)\s*\}", f["main"]):
         e.append("音频入口没落第三列")
     return e
 
@@ -101,7 +102,7 @@ def selftest():
         "统一跳转被摘": ("main", "fun openBook(id: String?)"),
         "任务入口不落第二列": ("main", "onOpenTask = { id -> openBook(id) }"),
         "续跑不落第二列": ("main", "openBook(b.id)"),
-        "音频入口不落第三列": ("main", "onAudio = { id -> openBook(id)"),
+        "音频入口不落第三列": ("main", "Screen.TASKS -> TaskCenterScreen(ctx, refresh,"),
         "目录页不接初始列": ("main", "onBack = { nav.pop() },"),
         "目录页不接初始列参数": ("hub", "internal fun ChapterHubScreen("),
         "初始列不生效": ("hub", "private fun ChapterRow("),

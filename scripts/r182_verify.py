@@ -45,7 +45,10 @@ PLAYER = [
     'val list = remember(st.queueId)',
     'PlayQueue.snapshot().mapIndexed',
     'val q = st.queueId',
-    '当前播放的音频列表',
+    # R357 · 右下角浮胶囊撤掉，队列入口归位顶栏并带真实条数；
+    # 仍守「选章列表可达」，只是锚换成新形态，不放宽。
+    '播放队列 · ${list.size} 条',
+    'showList = !showList',
 ]
 TOOL_CHECK = ['def last_run(branch=None, sha=None):',
               '不拿旧 run 冒充结论']
@@ -107,6 +110,11 @@ def selftest():
         ("列表又按整本书另扫一遍", "player",
          lambda t: t.replace('val q = st.queueId',
                              'val q = "chapter:" + bookId.orEmpty()')),
+        # R357 · 队列入口不许退回右下浮胶囊，也不许变成点不动的死文字
+        ("顶栏队列入口被摘", "player",
+         lambda t: t.replace('播放队列 · ${list.size} 条', '播放')),
+        ("队列入口不再可点", "player",
+         lambda t: t.replace('showList = !showList', 'showList = false')),
         ("CI 漏挂", "ci",
          lambda t: t.replace("python3 scripts/r182_verify.py --selftest", "")),
         ("发版工具 status 又拿旧 run", None,

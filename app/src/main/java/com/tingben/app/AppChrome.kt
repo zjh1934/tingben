@@ -1,5 +1,8 @@
 package com.tingben.app
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
@@ -251,6 +254,27 @@ internal fun PlayIcon(tint: Color, label: String = "继续",
     }
 }
 
+/** R357 · 代码自绘的「外链」小图标：方框 + 右上角箭头。
+ *  不拿一个放大汉字或字符冒充图标，与设置页前导图标同一套路子。 */
+@Composable
+private fun RepoLinkGlyph(tint: Color) {
+    Canvas(Modifier.size(16.dp)) {
+        val s = size.width
+        val sw = s * 0.09f
+        fun ln(x1: Float, y1: Float, x2: Float, y2: Float) =
+            drawLine(tint, Offset(s * x1, s * y1), Offset(s * x2, s * y2),
+                strokeWidth = sw, cap = StrokeCap.Round)
+        // 方框（右上角留口给箭头）
+        ln(0.20f, 0.46f, 0.20f, 0.80f)
+        ln(0.20f, 0.80f, 0.54f, 0.80f)
+        ln(0.54f, 0.80f, 0.54f, 0.56f)
+        // 右上斜出的箭头
+        ln(0.46f, 0.54f, 0.82f, 0.18f)
+        ln(0.60f, 0.18f, 0.82f, 0.18f)
+        ln(0.82f, 0.18f, 0.82f, 0.40f)
+    }
+}
+
 @Composable
 internal fun AppDrawerSheet(
     title: String,
@@ -281,24 +305,51 @@ internal fun AppDrawerSheet(
                 Text("＋ 导入一本书", fontSize = 13.sp)
             }
             Box(Modifier.weight(1f)) { content() }
-            // R320 · 图 47：设置原来是一枚小胶囊孤零零飘在左下角，中间一大片
-            // 空白，像没画完。底部收成一整块：分隔线 + 满宽设置行 + 版本，
-            // 和上面书列表同宽对齐；齿轮换成与设置页前导槽同一套矢量图标。
+            // R357 · 设置与版本号同一行、各占一半宽。版本号不再是一行点不动的小字：
+            // 点它用外部浏览器打开项目仓库主页。应用本身不申请 INTERNET 权限，
+            // 联网由浏览器负责，「纯离线」口径不变；打不开给中文兜底、不静默吞掉。
             Box(Modifier.fillMaxWidth().height(1.dp)
                 .background(sub.copy(alpha = 0.18f)))
-            Row(Modifier.fillMaxWidth()
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val repo = "https://github.com/zjh1934/tingben"
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.weight(1f).height(44.dp)
+                    .background(primary.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
                     .clickable { onSettings() }
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)
-                Spacer(Modifier.width(10.dp))
-                Text("设置", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    color = primary, modifier = Modifier.weight(1f))
-                Text("›", fontSize = 16.sp, color = sub)
+                    .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center) {
+                    UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("设置", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        color = primary)
+                }
+                Row(Modifier.weight(1f).height(44.dp)
+                    .background(primary.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                    .clickable {
+                        val i = Intent(Intent.ACTION_VIEW, Uri.parse(repo))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        try {
+                            if (i.resolveActivity(ctx.packageManager) != null) ctx.startActivity(i)
+                            else Toast.makeText(ctx,
+                                "没找到浏览器，可手动打开 github.com/zjh1934/tingben",
+                                Toast.LENGTH_LONG).show()
+                        } catch (_: Throwable) {
+                            Toast.makeText(ctx,
+                                "打开失败，可手动打开 github.com/zjh1934/tingben",
+                                Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center) {
+                    RepoLinkGlyph(primary)
+                    Spacer(Modifier.width(6.dp))
+                    Text("v" + com.tingben.app.BuildConfig.VERSION_NAME,
+                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = primary)
+                }
             }
-            Text("听本 · " + com.tingben.app.BuildConfig.VERSION_NAME,
-                fontSize = 10.sp, color = sub,
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 10.dp))
         }
     }
 }

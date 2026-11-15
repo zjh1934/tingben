@@ -55,57 +55,6 @@ import java.io.File
 
 // @ui-part: ModelUi
 @Composable
-internal fun ClearSegmentsRow(c: Context) {
-    var confirmClear by remember { mutableStateOf(false) }
-    val clearScope = rememberCoroutineScope()
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("清理分段音频", fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(3.dp))
-            Text("只删临时分段，成品和模型不动", fontSize = 11.sp, color = Sub)
-        }
-        Spacer(Modifier.width(8.dp))
-        Button(onClick = { confirmClear = true },
-            modifier = Modifier.height(34.dp),
-            shape = RoundedCornerShape(50),
-            contentPadding = PaddingValues(horizontal = 14.dp)) {
-            Text("清理", fontSize = 12.sp)
-        }
-    }
-    if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("清理分段音频？", fontSize = 14.sp) },
-            text = { Text("只删制作过程里生成的分段 WAV（会连留着的其他音色缓存一起清掉），" +
-                    "书架原书、成品和模型文件都不动。", fontSize = 12.sp) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmClear = false
-                    // R139 · 遍历整个 work/ 删文件原来在按钮回调（主线程）同步跑，
-                    // 分段多的时候会卡住界面。改 IO 线程，回来再弹 Toast。
-                    clearScope.launch {
-                        val n = withContext(Dispatchers.IO) {
-                            var k = 0
-                            try {
-                                val work = File(c.filesDir, "work")
-                                work.walkTopDown()
-                                    .filter { it.isFile && it.name.endsWith(".wav") }
-                                    .forEach { if (it.delete()) k++ }
-                            } catch (_: Throwable) { }
-                            k
-                        }
-                        Toast.makeText(c, "已清理 $n 个分段音频", Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("确认清理") }
-            },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
-        )
-    }
-}
-
-@Composable
 internal fun ModelScreen(c: Context, refresh: Int,
                          importing: String?, importBytes: Long, importError: String?,
                          onPick: () -> Unit, onBack: () -> Unit, onLibrary: () -> Unit,
@@ -141,12 +90,16 @@ internal fun ModelScreen(c: Context, refresh: Int,
 
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp)) {
 
+        // R355 · 顶栏已经写了「模型」，页内不再重复一个大标题。
+        // 状态与「已导入 N 个文件」并成一行，底下那行重复入口一并撤掉。
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("模型", fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f))
             Text(if (allReady) "4 份已就绪"
                  else "还差 ${missing.size} 份模型",
-                fontSize = 12.sp, color = if (allReady) Good else Warn)
+                fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                color = if (allReady) Good else Warn,
+                modifier = Modifier.weight(1f))
+            if (files.isNotEmpty())
+                Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
         }
 
         if (importing != null) {
@@ -191,34 +144,33 @@ internal fun ModelScreen(c: Context, refresh: Int,
         // 现在三卡固定等高，详情一律移到下方统一弹层，一次只开一项；
         // 页面本身永远一屏（R136），弹层由系统处理返回键与点空白关闭。
         val modes = ModelStore.Mode.values()
-        modes.toList().chunked(2).forEach { rowModes ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowModes.forEach { mode ->
-                    val f = modeFiles[mode]
-                    val isCurrent = mode == current
-                    val open = expanded == mode.id
-                    CardBox(Modifier.weight(1f).height(96.dp).padding(bottom = 6.dp)
-                        .clickable { toggle(mode.id) }) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(mode.label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f),
-                                color = if (isCurrent || open) Primary else Color.Unspecified)
-                            Text(if (open) "收起" else "详情 ›",
-                                fontSize = 10.sp, color = Primary)
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (f != null) "✓" else "＋", fontSize = 12.sp,
-                                color = if (f != null) Good else Warn)
-                        }
-                        Text(if (f != null)
-                                "%.2f GB%s".format(f.length() / 1024f / 1024f / 1024f,
-                                    if (isCurrent) " · 当前" else "")
-                            else "待导入", fontSize = 11.sp,
+        // R355 · 三张卡同一行等宽：不再两列 + 第三张孤零零掉到下一行，
+        // 右边空半格还正好被悬浮进度球压住，看着像没排完。
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            modes.forEach { mode ->
+                val f = modeFiles[mode]
+                val isCurrent = mode == current
+                val open = expanded == mode.id
+                CardBox(Modifier.weight(1f).height(96.dp).padding(bottom = 6.dp)
+                    .clickable { toggle(mode.id) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(mode.label, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f),
+                            color = if (isCurrent || open) Primary else Color.Unspecified,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (f != null) "✓" else "＋", fontSize = 12.sp,
                             color = if (f != null) Good else Warn)
-                        Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis)
                     }
+                    Text(if (f != null)
+                            "%.2f GB%s".format(f.length() / 1024f / 1024f / 1024f,
+                                if (isCurrent) " · 当前" else "")
+                        else "待导入", fontSize = 11.sp,
+                        color = if (f != null) Good else Warn)
+                    Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    Text(if (open) "收起" else "详情 ›",
+                        fontSize = 10.sp, color = Primary)
                 }
-                if (rowModes.size == 1) Spacer(Modifier.weight(1f))
             }
         }
 
@@ -313,14 +265,11 @@ internal fun ModelScreen(c: Context, refresh: Int,
 
         CardBox(Modifier.padding(bottom = 6.dp)) {
             if (allReady) {
-                Text("4 份都在 · 当前是「${current.label}」", fontSize = 13.sp,
+                // R355 · 顶部已写「4 份已就绪」，这里不再重复一遍份数。
+                Text("当前 · 「${current.label}」", fontSize = 13.sp,
                     fontWeight = FontWeight.Bold)
-                // R326 · 旧文案说「切回描述造音色后即可继续」，可三种模式本来就能
-                // 各自合成（缺什么由 synthesisBlockReason 判）。这句会诱导用户手动
-                // 切回第一种，看起来就像「模式自己回退了」。按真实口径写。
-                Text("当前是「" + current.label + "」，合成就用这一模式，不用切回；" +
-                    "缺音色或参考音频时按调音台提示补齐即可。",
-                    fontSize = 11.sp, color = Sub)
+                // R326 · 三种模式本来就能各自合成，别再诱导手动切回第一种。
+                Text("合成就用这一模式，不用切回。", fontSize = 11.sp, color = Sub)
                 if (current != ModelStore.Mode.VOICE_DESIGN) {
                     TextButton(onClick = {
                         if (!st.running) {
@@ -331,8 +280,6 @@ internal fun ModelScreen(c: Context, refresh: Int,
                         Text("改用「描述造音色」（会换掉当前模式） ›",
                             fontSize = 11.sp, color = Primary)
                     }
-                    if (st.running)
-                        Text("正在制作，跑完前不能切", fontSize = 10.sp, color = Warn)
                 }
             } else {
                 Text("还有 ${missing.size} 份没导入", fontSize = 13.sp,
@@ -342,30 +289,33 @@ internal fun ModelScreen(c: Context, refresh: Int,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            // H2 · 主按钮语义固定，不随就绪状态变形。
-            Button(onClick = onPick, enabled = importing == null,
-                modifier = Modifier.fillMaxWidth().height(40.dp)) {
-                Text("导入模型文件", fontSize = 13.sp)
+            if (st.running) {
+                // R355 · 两行几乎一样的「跑完前不能…」合成一句。
+                Text("正在制作，跑完前不能切换或卸载", fontSize = 10.sp, color = Warn)
             }
-            // R165 · 用户实证「模型页不需要去书架按钮」：二级页返回由顶栏统一给，
-            // 这里再放一枚只会让人不知道该点哪个。onLibrary 保留给调用方兼容。
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.weight(1f))
+            // R355 · 导入与卸载并列等大两枚；不再一大一小、不再有第二个导入入口。
+            // H2 · 主按钮语义仍固定，不随就绪状态变形；卸载仍走二次确认。
+            Row(Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onPick, enabled = importing == null,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(12.dp)) {
+                    Text("导入模型文件", fontSize = 13.sp)
+                }
                 if (files.isNotEmpty()) {
                     Button(onClick = {
                         EventLog.ui("MODEL_UNINSTALL_ASK", "n=${files.size}")
                         confirmUninstall = true
                     }, enabled = !st.running,
-                        shape = RoundedCornerShape(50),
-                        modifier = Modifier.height(34.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Warn)) {
                         Text("卸载模型", fontSize = 12.sp, color = palette.onWarn)
                     }
                 }
             }
-            if (st.running && files.isNotEmpty())
-                Text("正在制作，跑完才能卸载模型", fontSize = 10.sp, color = Sub)
         }
 
         // H2 · 卸载是破坏性操作：二次确认，只删模型文件，
@@ -399,15 +349,8 @@ internal fun ModelScreen(c: Context, refresh: Int,
                 }
             )
         }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onPick, enabled = importing == null) {
-                Text("一次导入多个模型文件 ›", fontSize = 12.sp, color = Primary)
-            }
-            Spacer(Modifier.weight(1f))
-            if (files.isNotEmpty())
-                Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
-        }
+        // R355 · 底部第二个「一次导入多个模型文件」入口撤掉：
+        // 主按钮本来就支持多选文件，两个入口只会让人不知道该点哪个。
     }
 }
 

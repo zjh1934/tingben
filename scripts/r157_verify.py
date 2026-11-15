@@ -109,7 +109,7 @@ POS = {
         'autoBookTitle(text, "分享的文字")',
         "导出位置",
         "「输入朗读」",
-        "AudioExport.exportAll(c, tree)",
+        "AudioExport.exportPicked(c, tree",
     ],
     "ci": ["python3 scripts/r157_verify.py --selftest"],
     "r135": ['"r157_verify.py"'],
@@ -362,7 +362,7 @@ def selftest():
          "DocumentsContract.Document.MIME_TYPE_DIR, part", ""),
         ("同名目录复用被摘", "export",
          "buildChildDocumentsUriUsingTree(tree, parentId)", ""),
-        ("导出能力入口被摘", "main", "AudioExport.exportAll(c, tree)", ""),
+        ("导出能力入口被摘", "main", "AudioExport.exportPicked(c, tree", ""),
         ("CI 漏挂 r157", "ci", "python3 scripts/r157_verify.py --selftest", ""),
         ("现行清单漏 r157", "r135", '"r157_verify.py"', ""),
     ]
@@ -370,7 +370,9 @@ def selftest():
     # R268 · 同名探测串在目录层与文件层各一处，只摘第一处判据仍成立
     # R278 · TTS_SKIP 有「逐条 dropped」与「窗口汇总」两处，只摘第一处
     # 会漏掉另一处、判据仍绿，必须全量替换才算「机制被摘」。
-    FULL = {"同名目录复用被摘", "TTS_SKIP 被摘"}
+    FULL = {"同名目录复用被摘", "TTS_SKIP 被摘",
+            # R354 · exportPicked 两处调用，注入按全量替换才拦得住
+            "导出能力入口被摘"}
     for name, key, needle, repl in cuts:
         x = dict(f)
         x[key] = (f[key].replace(needle, repl) if name in FULL

@@ -68,12 +68,13 @@ HUB = [
     'ListenState.get(c, "chapter:${book.id}")',
     'val needModels = remember(refresh) { ModelStore.synthesisBlockReason(c) != null }',
     'fun playBook(atId: String?, fromMs: Long?)',
-    'if (resumePos != null && resumePos.positionMs > 5000L) {',
-    'Text("接着听 · %d:%02d ›".format(',
+    'if (resumePos != null && resumePos.positionMs > 5000L)',
+    '"接着听" else "从头听"',   # R352 · 主文案恒定，时间挪副行
+    '"%d:%02d".format(',              # R352 · 断点时间仍按 mm:ss 显示
     'EventLog.ui("HUB_RESUME_LISTEN"',
-    'Text("去导入模型 ›"',
+    'needModels -> "去导入模型 ›"',
     'onOpenModels: () -> Unit = {}',
-    'Text("按顺序播放"',
+    'HubActChip("按顺序播放"',
 ]
 QUEUE = [
     'private fun savePos()',
@@ -115,6 +116,8 @@ def checks(f):
     for s in MAIN_BAN:
         if s in f["main"]:
             e.append("旧形态回潮: " + s[:56])
+    if '"接着听 · %d:%02d ›".format(' in f["hub"]:
+        e.append("旧形态回潮: 时间又塞回 12sp 单行主文案")
     for key, needles in SEMANTIC.items():
         for s in needles:
             if s not in f[key]:
@@ -148,13 +151,21 @@ def selftest():
         ("建书不再传 id", "main",
          lambda t: t.replace('onAdded(added.id)', 'onAdded()')),
         ("接着听入口被摘", "hub",
-         lambda t: t.replace('if (resumePos != null && resumePos.positionMs > 5000L) {',
-                             'if (false) {')),
+         lambda t: t.replace('if (resumePos != null && resumePos.positionMs > 5000L)',
+                             'if (false)')),
+        ("主文案被摘（时间不再有落点）", "hub",
+         lambda t: t.replace('"接着听" else "从头听"', '"接着听" else "从头"')),
+        ("时间副行被摘", "hub",
+         lambda t: t.replace('"%d:%02d".format(', '"%d:%02d"')),
+        ("旧单行时间回潮", "hub",
+         lambda t: t.replace('"接着听" else "从头听"',
+                             '"接着听 · %d:%02d ›".format(resumePos.positionMs / 60000, (resumePos.positionMs / 1000) % 60) else "从头听"')),
         ("断点位置不读盘", "hub",
          lambda t: t.replace('if (finishedChapters > 0) ListenState.get(c, "chapter:${book.id}") else null',
                              'null')),
         ("模型缺件出口被摘", "hub",
-         lambda t: t.replace('Text("去导入模型 ›"', 'Text("按顺序播放"')),
+         lambda t: t.replace('needModels -> "去导入模型 ›"',
+                             'else -> "开始制作"')),
         ("缺件出口判据退回按 4 份全装判", "hub",
          lambda t: t.replace('val needModels = remember(refresh) { ModelStore.synthesisBlockReason(c) != null }',
                              'val needModels = remember(refresh) { ModelStore.missing(c).isNotEmpty() }')),

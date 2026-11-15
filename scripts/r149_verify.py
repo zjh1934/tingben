@@ -92,7 +92,7 @@ POS = {
         '"删除任务"',
         "TaskResume.dequeue(c, t.bookId)",
         "只删《${t.title}》这条任务记录",
-        "onAudio = { id -> openBook(id)",
+        "Screen.TASKS -> TaskCenterScreen(ctx, refresh,",
         'EventLog.ui("TASK_RESUME"',
         'EventLog.ui("TASK_PLAY_AUDIO", "kind=${a.source}")',
         '"去这一章 ›"',   # R316 · 任务页按一份音频口径改名，锚等价迁移
@@ -119,6 +119,7 @@ BAN = {
         '"看实时进度 ›"',
         "resumeSkipped",                       # 跨实例残留 → 「不一定弹」
         "onAudio: () -> Unit, onLibrary: () -> Unit",
+        "onAudio = {",  # R352 · 旧死参数不许回潮
         "onAudio = { openBookCol(taskBookId, 2)",
         'Text("看章节 ›", fontSize = 12.sp, color = Primary)',
         # R158b · 教程不进 UI
@@ -294,8 +295,8 @@ def selftest():
         ("删任务被摘", "main", 'EventLog.ui("TASK_DELETE"', ""),
         ("删任务不出队列", "main", "TaskResume.dequeue(c, t.bookId)", ""),
         ("二次确认被摘", "main", "confirmDelete?.let { t ->", ""),
-        ("onAudio 又用全局 id", "main", "onAudio = { id -> openBook(id)",
-         "onAudio = { openBookCol(taskBookId, 2)"),
+        ("onAudio 又用全局 id", "main", "Screen.TASKS -> TaskCenterScreen(ctx, refresh,",
+         "Screen.TASKS -> TaskCenterScreen(ctx, refresh, onAudio = { openBookCol(taskBookId, 2) },"),
         ("过时音频页文案回潮", "main", '"播放 ›"', '"去「我的音频」试听 ›"'),
         ("CI 漏挂 r149", "ci", "python3 scripts/r149_verify.py --selftest", ""),
         ("任务页音频播放日志被摘", "main", 'EventLog.ui("TASK_PLAY_AUDIO"', ""),

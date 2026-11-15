@@ -37,7 +37,7 @@ POS = {
         "onProgress = { openBook(bookId) }",
         "onProgress = { id -> openBook(id) }",
         "onProgress: (String) -> Unit,",
-        "onClick = { onProgress(t.bookId) }",
+        "onProgress = { onProgress(t.bookId) }",
         "private enum class Screen {",
     ],
     "hub": [
@@ -264,8 +264,9 @@ def selftest():
         ("任务页收敛被摘", "main", "onProgress = { id -> openBook(id) }", ""),
         ("任务页传自己 bookId 被摘", "main", "onProgress: (String) -> Unit,",
          "onProgress: () -> Unit,"),
-        ("任务页调用点被摘", "main", "onClick = { onProgress(t.bookId) }",
-         "onClick = onProgress"),
+        # R356 · R352 任务页一份音频一张卡后调用点改名，锚按现行 POS 真源迁移
+        ("任务页调用点被摘", "main", "onProgress = { onProgress(t.bookId) }",
+         "onProgress = { }"),
         ("一次读盘被摘", "hub", "var hubByChapter by remember(book.id)", ""),
         ("段章映射被摘", "hub", "var liveSegsFor by remember(book.id)", ""),
         ("第一列派生被摘", "hub",

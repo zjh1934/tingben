@@ -250,6 +250,18 @@ def struct_errors(f):
         for k in bad_props(t):
             e.append("%s 用了 Java File 不存在/不该用的 '%s'（rc #184 真编译抓到）" % (kt.name, k))
 
+    # R360 · rc #250 真编译错静态化：用了 Modifier.clip 就必须显式 import。
+    # 扫 FILES 视图（selftest 可内存注入）+ 全仓真实 .kt（防别的界面文件漏）。
+    CLIP_IMPORT = "import androidx.compose.ui.draw.clip"
+    for key, txt in f.items():
+        if key == "ci": continue
+        if ".clip(" in txt and CLIP_IMPORT not in txt:
+            e.append("%s 用了 .clip( 却没 import draw.clip（rc #250 真编译抓到）" % key)
+    for kt in sorted((ROOT / "app/src/main/java").rglob("*.kt")):
+        t2 = kt.read_text(encoding="utf-8", errors="replace")
+        if ".clip(" in t2 and CLIP_IMPORT not in t2:
+            e.append("%s 用了 .clip( 却没 import draw.clip（rc #250 真编译抓到）" % kt.name)
+
     # ③ 新引用的类型要有 import 或全限定
     if "EventLog." in f["plan"] and "import com.tingben.app.diag.EventLog" not in f["plan"]:
         e.append("ChapterPlan 用了 EventLog 但没 import")
@@ -274,8 +286,10 @@ def struct_errors(f):
         e.append("有 @Composable 孤立在 KDoc 之前（会串到下一个函数上）")
     if "val s = Stroke(" in ch:
         e.append("自绘图标又用 Stroke 对象当 drawLine 末参（没有该重载）")
-    if ch.count("strokeWidth = sw, cap = StrokeCap.Round") != 2:
-        e.append("两处 drawLine 没用 strokeWidth + cap 具名参数")
+    # R357 · 抽屉新增代码自绘外链图标，第三处 drawLine 同样必须具名；
+    # 计数按现行文件精确匹配，少一处或退回 Stroke 对象都要红。
+    if ch.count("strokeWidth = sw, cap = StrokeCap.Round") != 3:
+        e.append("三处 drawLine 没用 strokeWidth + cap 具名参数")
 
     # R290 · rc #216 真编译错静态化：Gradle 才报、静态没抓到的两处
     mx, st = f["mixer"], f["settings"]
@@ -315,6 +329,8 @@ def selftest():
          lambda t: t.replace("f.parentFile?.isDirectory", "f.parentFile?.isDir")),
         ("EventLog 没 import", "plan",
          lambda t: t.replace("import com.tingben.app.diag.EventLog\n", "")),
+        ("clip 缺 import（rc #250 真编译错）", "hub",
+         lambda t: t.replace("import androidx.compose.ui.draw.clip\n", "")),
         ("CI 漏挂", "ci",
          lambda t: t.replace("python3 scripts/r173_verify.py --selftest", "")),
         # R246 · rc #208 真编译错防回潮
@@ -326,6 +342,10 @@ def selftest():
         ("drawLine 又传 Stroke 对象", "chrome",
          lambda t: t.replace("val sw = 2.dp.toPx()",
                              "val s = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)", 1)),
+        # R357 · 三处具名参数少一处就要红（含新增外链图标那处）
+        ("外链图标具名参数被摘", "chrome",
+         lambda t: t.replace("strokeWidth = sw, cap = StrokeCap.Round",
+                             "strokeWidth = sw", 1)),
         # R290 · rc #216 真编译错防回潮
         ("synthesize 尾随 lambda 回潮", "mixer",
          lambda t: t.replace("ClipSynth.synthesize(c, text, out, label,\n                    cancelled = { myToken != trialToken || !isActive })",

@@ -231,7 +231,10 @@ def selftest():
     bad = 0
     for name, key, needle, repl in cuts:
         x = dict(f)
-        x[key] = f[key].replace(needle, repl, 1)
+        # R354 · 调音台与本机音频窗口各有一枚同款红叉，只替换第一处
+        # 会让判据误绿；「关闭叉退回灰图标」这一例按全量替换。
+        x[key] = f[key].replace(needle, repl,
+                                -1 if name == "关闭叉退回灰图标" else 1)
         if not check(x):
             bad += 1
             print("  反向注入漏放:", name)

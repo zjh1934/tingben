@@ -38,15 +38,15 @@ def check(f):
     e = []
     # A · 收尾窗口内必须给用户反馈，不许静默调 onResumeTask
     # R226 · 收尾判断随三按钮上移 App 层，统一在合并视图里按符号定位
-    if "Producer.isBusyForBook(" not in f["merged"]:
+    if "Producer.isBusyForBook(" not in f["hub"]:
         e.append("续跑按钮没收尾窗口判断")
-    if "HUB_RESUME_BLOCKED" not in f["merged"]:
+    if "HUB_RESUME_BLOCKED" not in f["hub"]:
         e.append("被拦时没记账")
     if re.search(r'if \(busy\) return', f["producer"]) is None:
         e.append("Producer.start 的静默早退没了（前置判断才成立）")
     # A 的顺序：判断必须在 onResumeTask() 之前
-    k = f["merged"].find("fun hubResume()")
-    block = f["merged"][k:k + 900] if k >= 0 else ""
+    k = f["hub"].find("fun hubPrimaryAction()")
+    block = f["hub"][k:k + 900] if k >= 0 else ""
     i, j = block.find("Producer.isBusyForBook("), block.find("onResumeTask()")
     if i < 0 or j < 0 or i > j:
         e.append("收尾判断没排在续跑之前")
@@ -78,11 +78,11 @@ def selftest():
     f = files()
     assert not check(f), "基线自己就红了"
     cuts = [
-        ("收尾判断被摘", "merged", "bookId?.let { Producer.isBusyForBook(it) }", "true"),
-        ("被拦不记账", "merged", "HUB_RESUME_BLOCKED", "HUB_RESUME"),
-        ("被拦不给反馈", "merged",
-         '                Toast.makeText(ctx, "已点停止，正在收尾这一段，稍等再继续"',
-         '                Toast.makeText(ctx, "已点停止，正在收尾这一段"'),
+        # R356 · 收尾判断随三按钮上移，锚迁到 check 真依赖的 hub 串
+        ("收尾判断被摘", "hub", "Producer.isBusyForBook(", ""),
+        ("被拦不记账", "hub", "HUB_RESUME_BLOCKED", "HUB_RESUME"),
+        # R356 · 中文反馈锚迁到 hub 的「稍等再继续」，check 按 hubPrimaryAction 块守
+        ("被拦不给反馈", "hub", "稍等再继续", ""),
         ("UI 错误又记成崩溃", "ui", "EventLog.Kind.AUDIT", "EventLog.Kind.CRASH"),
         ("UI 错误丢了 ERROR 级", "ui", "level = EventLog.Level.ERROR", ""),
         ("错误汇总不按 ERROR 捞", "log", '" | ERROR | "', '" | NOPE | "'),
@@ -91,9 +91,12 @@ def selftest():
         ("现行清单漏登记", "r135", '"r209_verify.py"', ""),
     ]
     bad = 0
+    # R356 · hub 里同串出现多处，只摘第一处判据仍绿，这两条须全量替换（注入更严）
+    FULL = {"收尾判断被摘", "被拦不给反馈"}
     for name, key, needle, repl in cuts:
         g = dict(f)
-        g[key] = f[key].replace(needle, repl, 1)
+        g[key] = (f[key].replace(needle, repl) if name in FULL
+                  else f[key].replace(needle, repl, 1))
         got = check(g)
         if got:
             print("  反向注入 %-24s 拦下 %d 条" % (name, len(got)))

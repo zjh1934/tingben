@@ -87,14 +87,27 @@ HUB_POS = [
     "confirmSegDel?.let",
     "AudioTree.forget(c,",
     "AudioOps.deleteAll(files)",
-    # 顶部：双进度 + 心跳（R226 · 停止/继续已上移系统顶栏，由 MAIN_POS 守）
+    # R352 · 停止/继续/开始 与 接着听/按顺序播放 同一排等大按钮（不再缩右上角）
+    "private fun RowScope.HubActChip(",
+    'bookRunning -> "停止制作"',
+    'stalledTask -> "继续制作"',
+    'else -> "开始制作"',
+    "fun hubPrimaryAction()",
+    'EventLog.ui("HUB_STOP"',
+    'EventLog.ui("HUB_RESUME"',
+    'EventLog.ui("HUB_RESUME_BLOCKED"',
+    "if (now - lastHubActionMs < 800L) return",
+    'needModels -> "去导入模型 ›"',
+    'HubActChip("按顺序播放"',
+    "onOpenTasks()",
+    # 顶部：双进度 + 心跳
     "LinearProgressIndicator(progress = { bookPct }",
     "LinearProgressIndicator(progress = { chapterPctNow }",
     # 可播汇总 / 顺序播放 / 队列就地管理
     "\"按顺序播放\"",
     "AudioLibrary.playableItems(c, book.id)",
     "TaskResume.queue(c)",
-    "队列 ${queued.size} · 去任务页看",
+    "队列 ${queued.size} · 去任务页 ›",
     # R243 · 「继续队列」按钮砍掉，底层能力仍在 Producer；这里判同源数据，
     # 按钮回潮由 HUB_BAN 拦，不放宽能力判据。
     "制作选中章节",
@@ -153,14 +166,11 @@ MAIN_POS = [
     'EventLog.ui("OPEN_BOOK"',
     # R226 · 三枚操作上移系统顶栏，与书名同一排：判据按符号、不绑颜色常量
     "trailing = when (screen)",
-    'StopIcon(',
-    'PlayIcon(',
-    'TasksIcon(',
+    'MixerIcon(Primary)',
+    'TasksIcon(Primary)',
     'UiIconGlyph(UiIcon.SETTINGS, Primary, 20.dp)',
-    'EventLog.ui("HUB_STOP"',
-    'EventLog.ui("HUB_RESUME"',
     'EventLog.ui("HOME_TASKS", "open:global")',
-    "fun hubStop()", "fun hubResume()",
+    'onOpenTasks = { nav.push(Screen.TASKS) }',
     "nav.push(Screen.TASKS)",
 ]
 MAIN_BAN = ["openBookCol", "hubCol", "initialCol =",
@@ -304,6 +314,12 @@ def injections():
          lambda t: t.replace("制作选中章节", "")),
         ("全局任务入口被摘", "main",
          lambda t: t.replace("nav.push(Screen.TASKS)", "")),
+        # R356 · CAPS 守 HubActChip("按顺序播放"，注入锚同步迁移（不放宽）
+        ("R352 等大按钮排被摘", "hub",
+         lambda t: t.replace('HubActChip("按顺序播放"', "// lost")),
+        ("R352 防连点被摘", "hub",
+         lambda t: t.replace("if (now - lastHubActionMs < 800L) return",
+                             "if (false) return")),
         ("目录页看板回潮", "hub",
          lambda t: t.replace("R315 · 目录页就地任务浮窗整段撤掉", "TaskBoardDialog(")),
     ]

@@ -59,9 +59,11 @@ HUB = [
     "R298 · 目录页就地任务看板撤掉",
     "val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }",
 ]
-# R226 · 节流随三按钮上移 App 层
-MAIN += ["var lastHubTapMs by remember { mutableStateOf(0L) }",
-         "now - lastHubTapMs >= 800L"]
+# R352 · 节流随按钮下移 ChapterHub 的等大按钮排
+HUB += ["var lastHubActionMs by remember(book.id) { mutableStateOf(0L) }",
+        "if (now - lastHubActionMs < 800L) return",
+        "fun hubPrimaryAction()",
+        "HubActChip(primaryLabel"]
 CHROME = [
     "import androidx.compose.foundation.clickable",
     ".clickable { onRefresh() }",
@@ -87,8 +89,8 @@ def checks(f):
     for s in MAIN_BAN:
         if s in f["main"]:
             e.append("旧形态回潮: " + s[:56])
-    if f["main"].count("now - lastHubTapMs") != 2:
-        e.append("顶栏两处节流不齐")
+    if f["hub"].count("if (now - lastHubActionMs < 800L) return") != 1:
+        e.append("按钮排节流不齐")
     for s in HUB:
         if s not in f["hub"]:
             e.append("目录页能力缺失: " + s[:60])
@@ -136,10 +138,11 @@ def selftest():
          lambda t: t.replace('val queued = remember(refresh, localTick, st.running) { TaskResume.queue(c) }', '')),
         ("目录页看板回潮", "hub",
          lambda t: t.replace('制作选中章节', 'TaskBoardDialog(')),
-        ("停止按钮不节流", "main",
-         lambda t: t.replace("if (now - lastHubTapMs >= 800L) {", "if (true) {", 1)),
-        ("继续按钮不节流", "main",
-         lambda t: t.replace("if (now - lastHubTapMs >= 800L) {", "if (true) {", 1)),
+        ("按钮排不节流", "hub",
+         lambda t: t.replace("if (now - lastHubActionMs < 800L) return",
+                             "if (false) return", 1)),
+        ("按钮排被摘", "hub",
+         lambda t: t.replace("HubActChip(primaryLabel", "// lost", 1)),
         ("README 版本回退", "readme",
          lambda t: t.replace('**当前版本 `%s`**' % version(),
                              '**当前版本 `0.0.1`**')),

@@ -76,7 +76,7 @@ POS = {
         '"模型已就绪"', '"模型还没齐"',
         "RoundedCornerShape(10.dp))\n                .padding(3.dp)",
         "if (on) palette.card else Color.Transparent",
-        '"清理", fontSize = 12.sp',
+        'Text(if (picked.isEmpty()) "删除选中"',
         '"去打开", fontSize = 12.sp',
     ],
     "ci": ["python3 scripts/r152_verify.py --selftest"],

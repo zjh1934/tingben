@@ -545,6 +545,18 @@ jobs:
         run: python3 scripts/r350_verify.py
       - name: R350 反向注入
         run: python3 scripts/r350_verify.py --selftest
+      - name: R352 目录页任务开关 / 任务页重设计
+        run: python3 scripts/r352_verify.py
+      - name: R352 反向注入
+        run: python3 scripts/r352_verify.py --selftest
+      - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
+        run: python3 scripts/r357_verify.py
+      - name: R357 反向注入
+        run: python3 scripts/r357_verify.py --selftest
+      - name: R359 播放器封面经典音符 / 旧书页声波零回潮
+        run: python3 scripts/r359_verify.py
+      - name: R359 反向注入
+        run: python3 scripts/r359_verify.py --selftest
       - name: R241 发版前置自检逻辑
         run: python3 scripts/preflight.py --selftest
       - name: R172 正向守门

@@ -31,7 +31,7 @@ def checks(mb):
     if "confirmButton = {" not in mb:
         e.append("详情弹层缺 confirmButton（Kotlin 编译不过）")
     # 卡内不允许再出现「导入这份 / 删除重试 / 复制地址」这类详情操作
-    card = mb[mb.find("modes.toList().chunked(2)"):mb.find("// R170 · 统一详情弹层")]
+    card = mb[mb.find("val modes = ModelStore.Mode.values()"):mb.find("// R170 · 统一详情弹层")]
     for forbidden in ("ModelStore.delete(c, f)", "copyUrl(cnUrl(mode.file))",
                       "导入这份 ›", "删除重试", "启用 ›"):
         if forbidden in card:
@@ -61,9 +61,11 @@ def selftest():
     cases = [
         ("三卡又不等高", lambda s: s.replace("Modifier.weight(1f).height(96.dp)",
                                              "Modifier.weight(1f)")),
+        # R355 · 三卡改一行后缩进变了，注入锚只认稳定短串，不放宽判据
         ("详情塞回卡内", lambda s: s.replace(
-            "                        Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1,\n                            overflow = TextOverflow.Ellipsis)",
-            "                        Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1,\n                            overflow = TextOverflow.Ellipsis)\n                        TextButton(onClick = { ModelStore.delete(c, f!!) }) { Text(\"删除重试\") }")),
+            "Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1,",
+            'TextButton(onClick = { ModelStore.delete(c, f!!) }) { Text("删除重试") }\n'
+            '                    Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1,')),
         ("统一弹层被摘", lambda s: s.replace("expanded?.let { key ->", "null?.let { key ->")),
         ("弹层缺必填按钮", lambda s: s.replace("confirmButton = {", "dismissButton = {")),
         ("复制文件名被摘", lambda s: s.replace(

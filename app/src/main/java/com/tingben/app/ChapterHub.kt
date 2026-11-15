@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -168,7 +169,9 @@ internal fun ChapterHubScreen(
     // R180 · 模型没齐时「去导入模型 ›」的出口
     onOpenModels: () -> Unit = {},
     // R218 · 制作设置页点「重新分章」回本页时唤起弹窗
-    resplitRequest: Int = 0
+    resplitRequest: Int = 0,
+    // R352 · 进度卡下面「去任务页 ›」的真出口（右上角不再挂任务浮窗）
+    onOpenTasks: () -> Unit = {}
 ) {
     var localTick by remember { mutableStateOf(0) }
     var planTick by remember { mutableStateOf(0) }
@@ -694,6 +697,42 @@ internal fun ChapterHubScreen(
     // R291 · 用「当前模式能不能合成」判，不用「4 份是否全装」判：
     // 只装够当前模式就能开跑，不该一直挂「去导入」。
     val needModels = remember(refresh) { ModelStore.synthesisBlockReason(c) != null }
+    // R352 · 主按钮防连点：原来防连点在 App 层的顶栏图标里，按钮下移后一并收进来。
+    var lastHubActionMs by remember(book.id) { mutableStateOf(0L) }
+    /** R352 · 一排三枚等大按钮里的第一枚：按同一份真值在停止/继续/开始间切换。 */
+    fun hubPrimaryAction() {
+        val now = System.currentTimeMillis()
+        if (now - lastHubActionMs < 800L) return
+        lastHubActionMs = now
+        when {
+            bookRunning -> {
+                EventLog.ui("HUB_STOP", "id=${book.id.take(8)}")
+                Producer.stop()
+                Toast.makeText(c, "已停止，队列也暂停；可再点继续制作",
+                    Toast.LENGTH_SHORT).show()
+            }
+            stalledTask -> {
+                if (Producer.isBusyForBook(book.id)) {
+                    EventLog.ui("HUB_RESUME_BLOCKED", "id=${book.id.take(8)} reason=收尾中")
+                    Toast.makeText(c, "已点停止，正在收尾这一段，稍等再继续",
+                        Toast.LENGTH_SHORT).show()
+                } else {
+                    EventLog.ui("HUB_RESUME", "id=${book.id.take(8)}")
+                    onResumeTask()
+                }
+            }
+            needModels -> onOpenModels()
+            else -> {
+                val only = selected.ifEmpty { null }
+                val hint = Producer.enqueueOrStart(c, book, only, null, Prefs.defaultPerf(c))
+                Toast.makeText(c, hint, Toast.LENGTH_LONG).show()
+                onStarted(book.id, selected)
+                selected = emptySet()
+                multiMode = false
+                EventLog.ui("HUB_START", "ch=${only?.size ?: 0}")
+            }
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(HubBg)) {
         Column(Modifier.fillMaxSize()) {
@@ -731,70 +770,72 @@ internal fun ChapterHubScreen(
                     color = HubGood, trackColor = HubLine)
             }
             HubDivider()
-            // 可播汇总 / 顺序播放 / 队列：原来散在第三列和任务页，现在一行收口。
-            Row(Modifier.fillMaxWidth().background(HubCard)
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.weight(1f))
-                if (finishedChapters > 0) {
-                    // R180 · 一处构造播放队列，两个入口共用，只读一次盘。
-                    fun playBook(atId: String?, fromMs: Long?) {
-                        val list = AudioLibrary.playableItems(c, book.id)
-                        if (list.isEmpty()) return
-                        val q = "chapter:${book.id}"
-                        val ts = list.map { (idx, a) ->
-                            Track(a.file, "${book.title} · 第 ${idx + 1} 章",
-                                AudioLibrary.chapterStartMs(c, a, idx),
-                                id = "chapter:${a.file.absolutePath}")
-                        }
-                        val at = if (atId == null) 0
-                        else ts.indexOfFirst { it.id == atId }.coerceAtLeast(0)
-                        PlayQueue.setTracks(ts, q)
-                        PlayQueue.playFrom(at, fromMs, id = q)
-                        onPlayBook(book.id)
-                    }
-                    if (resumePos != null && resumePos.positionMs > 5000L) {
-                        // R315 · 图 10：两枚入口原来挤在一个浅色小胶囊里，
-                        // 看着像一个按钮。接着听做实心主色，从头那枚做浅底，
-                        // 中间留白，一眼分得开；文案与事件名不动。
-                        Box(Modifier.height(34.dp)
-                            .background(HubPrimary, RoundedCornerShape(50))
-                            .clickable {
-                                playBook(resumePos.trackId, resumePos.positionMs)
-                                EventLog.ui("HUB_RESUME_LISTEN", "book=${book.id.take(8)}")
-                            }
-                            .padding(horizontal = 14.dp),
-                            contentAlignment = Alignment.Center) {
-                            Text("接着听 · %d:%02d ›".format(
-                                resumePos.positionMs / 60000,
-                                (resumePos.positionMs / 1000) % 60),
-                                fontSize = 12.sp, color = palette.onPrimary,
-                                fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Box(Modifier.height(34.dp)
-                        .background(HubSoft, RoundedCornerShape(50))
-                        .clickable { playBook(null, null) }
-                        .padding(horizontal = 14.dp),
-                        contentAlignment = Alignment.Center) {
-                        Text("按顺序播放", fontSize = 12.sp, color = HubPrimary)
-                    }
-                } else if (needModels) {
-                    TextButton(onClick = { onOpenModels() }) {
-                        Text("去导入模型 ›", fontSize = 12.sp, color = HubWarn)
-                    }
+            // R352 · 停止 / 继续 / 开始 和 接着听 / 按顺序播放 同一排、同样大小：
+            // 不再缩在右上角只给一枚小图标，也不再「只能停止不能继续 / 开始」。
+            // 播放队列仍是一处构造、两个入口共用，只读一次盘。
+            fun playBook(atId: String?, fromMs: Long?) {
+                val list = AudioLibrary.playableItems(c, book.id)
+                if (list.isEmpty()) return
+                val q = "chapter:${book.id}"
+                val ts = list.map { (idx, a) ->
+                    Track(a.file, "${book.title} · 第 ${idx + 1} 章",
+                        AudioLibrary.chapterStartMs(c, a, idx),
+                        id = "chapter:${a.file.absolutePath}")
                 }
-                if (queued.isNotEmpty()) {
-                    // R315 · 图 17 揭出 R298 没做干净：目录页还留着第二枚任务
-                    // 按钮、还弹按整本书列的任务浮窗。这里按钮改成一行不可点的
-                    // 状态文字，队列的查看 / 移除统一从主页右上角进全局任务页。
-                    // R315 · 队列只留一行状态，诊断埋点照旧打，不弹窗、不摆按钮。
-                    LaunchedEffect(queued.size) {
-                        EventLog.ui("HUB_QUEUE", "n=${queued.size}")
-                    }
-                    Text("队列 ${queued.size} · 去任务页看", fontSize = 12.sp,
-                        color = HubSub)
+                val at = if (atId == null) 0
+                else ts.indexOfFirst { it.id == atId }.coerceAtLeast(0)
+                PlayQueue.setTracks(ts, q)
+                PlayQueue.playFrom(at, fromMs, id = q)
+                onPlayBook(book.id)
+            }
+            val canListen = finishedChapters > 0
+            // R352 · 看图后定：这枚就是「任务开关」，文案在不同状态下写清点下去会怎样，
+            // 不再让人对着右上角一枚小图标猜「现在是能停、能续还是能开」。
+            val primaryLabel = when {
+                bookRunning -> "停止制作"
+                stalledTask -> "继续制作"
+                needModels -> "去导入模型 ›"
+                else -> "开始制作"
+            }
+            val primarySub = when {
+                bookRunning -> "收尾这一段"
+                stalledTask -> "接着做不用重来"
+                needModels -> "模型没齐"
+                else -> "按勾选的章开做"
+            }
+            Row(Modifier.fillMaxWidth().background(HubCard)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                HubActChip(primaryLabel, if (bookRunning) HubWarn else palette.onPrimary,
+                    if (bookRunning) HubWarn.copy(alpha = 0.12f) else HubPrimary,
+                    true, sub = primarySub, onClick = { hubPrimaryAction() })
+                // 时间从主文案挪到副行：主文案恒为「接着听 / 从头听」，
+                // 12sp 单行在 1/3 宽里装不下 1:02:04 这种长进度也不会被截断。
+                val resumeLabel = if (resumePos != null && resumePos.positionMs > 5000L)
+                    "接着听" else "从头听"
+                val resumeSub = if (resumePos != null && resumePos.positionMs > 5000L)
+                    "%d:%02d".format(resumePos.positionMs / 60000,
+                        (resumePos.positionMs / 1000) % 60) else "从第一章"
+                HubActChip(resumeLabel, HubPrimary, HubSoft, canListen, sub = resumeSub,
+                    onClick = {
+                        playBook(resumePos?.trackId, resumePos?.positionMs)
+                        EventLog.ui("HUB_RESUME_LISTEN", "book=${book.id.take(8)}")
+                    })
+                HubActChip("按顺序播放", HubPrimary, HubSoft, canListen,
+                    sub = "整本连着听", onClick = { playBook(null, null) })
+            }
+            if (queued.isNotEmpty()) {
+                LaunchedEffect(queued.size) { EventLog.ui("HUB_QUEUE", "n=${queued.size}") }
+                Row(Modifier.fillMaxWidth().background(HubCard)
+                    .clickable { onOpenTasks() }
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("队列 ${queued.size} · 去任务页 ›", fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold, color = HubPrimary)
+                    Spacer(Modifier.weight(1f))
+                    if (bookRunning) Text("第 ${liveChapter?.plus(1) ?: 1} 章正在制作",
+                        fontSize = 11.sp, color = HubSub)
                 }
             }
             HubDivider()
@@ -1671,6 +1712,32 @@ private fun MergeChapterFooter(label: String, status: String,
                 contentAlignment = Alignment.Center) {
                 Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     color = if (enabled) Color.White else HubSub)
+            }
+        }
+    }
+}
+
+/**
+ * R352 · 目录页进度卡下面那一排「同样大小」的按键。
+ * 三枚各占 1/3 宽、同高 44dp；主文案一行、状态/时间放副行，长度再变也不挤；
+ * 置灰仍占位，不因为没做出章音频就塌成两枚。
+ */
+@Composable
+private fun RowScope.HubActChip(
+    label: String, fg: Color, bg: Color, enabled: Boolean, onClick: () -> Unit,
+    sub: String = ""
+) {
+    Box(Modifier.weight(1f).height(44.dp)
+        .clip(RoundedCornerShape(12.dp))
+        .background(if (enabled) bg else HubLine)
+        .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                color = if (enabled) fg else HubSub, maxLines = 1)
+            if (sub.isNotBlank()) {
+                Text(sub, fontSize = 10.sp,
+                    color = if (enabled) fg.copy(alpha = 0.75f) else HubSub, maxLines = 1)
             }
         }
     }

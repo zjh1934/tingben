@@ -53,8 +53,8 @@ def check(f):
     # R321 · R320 把字标徽章换成画出来的 UiIcon，旧锚「成」恒红；按现状
     # 改守真实副行文案，三条正向都指向当前源码，注入仍逐条拦，不放宽。
     for k in ['SettingLine(UiIcon.BELL, "通知权限"',
-              'SettingLine(UiIcon.M4A, "整章成品",',
-              '已做好 $expCount 个 · M4A · 拼好即转码']:
+              'SettingLine(UiIcon.FOLDER, "本机音频",',
+              '已做好 $expCount 个章成品']:
         if k not in s: e.append("统一行没接上: " + k[:52])
     # ② 碎卡合并
     if 'SettingsSection("音频文件", "本机", collapsible = false)' not in s:
@@ -66,8 +66,8 @@ def check(f):
     n = len(re.findall(r'SettingsSection\([^)]*"本机"', s))
     if n != 1: e.append("标「本机」的卡不是正好一张（实 %d）" % n)
     card = s[s.find('SettingsSection("音频文件"'):]
-    for k in ["ClearSegmentsSettingLine(c)", "AudioExport.exportAll(c, tree)",
-              '"音频文件"', '"导出全部"', "treeLauncher.launch(AudioExport.treeUri(c))"]:
+    for k in ['"本机音频"', '"删除选中"', "AudioExport.exportPicked(c, tree",
+              '"导出选中"', "treeLauncher.launch(AudioExport.treeUri(c))"]:
         if k not in card: e.append("合并卡内容缺: " + k[:52])
     # ③ 顶部卡去调试串（诊断日志仍保留，r141 守，不是删信息）
     for banned in ['" · 本机 Android "', "android.os.Build.SUPPORTED_ABIS.firstOrNull()"]:
@@ -105,15 +105,15 @@ def selftest():
         ("危险色被摘", "settings", "if (danger) Warn.copy(alpha = 0.14f) else PrimarySoft", "PrimarySoft"),
         ("统一行高被摘", "settings", "Modifier.fillMaxWidth().padding(vertical = 9.dp)", "Modifier.fillMaxWidth()"),
         ("通知行没接", "settings", 'SettingLine(UiIcon.BELL, "通知权限"', ""),
-        ("导出行没接", "settings", 'SettingLine(UiIcon.M4A, "整章成品",', ""),
-        ("成品行没接", "settings", '已做好 $expCount 个 · M4A · 拼好即转码', ""),
+        ("导出行没接", "settings", 'SettingLine(UiIcon.FOLDER, "本机音频",', ""),
+        ("成品行没接", "settings", '已做好 $expCount 个章成品', ""),
         ("合并卡被摘", "settings", 'SettingsSection("音频文件", "本机", collapsible = false)', ""),
         ("旧本机数据卡回潮", "settings", 'SettingsSection("运行与通知", "系统", collapsible = false)',
          'SettingsSection("本机数据", "本机", collapsible = false)\n        SettingsSection("运行与通知", "系统", collapsible = false)'),
         ("旧成品卡回潮", "settings", 'SettingsSection("音频文件", "本机", collapsible = false)',
          'SettingsSection("成品文件", "本机", collapsible = false)'),
-        ("清缓存行被摘", "settings", "ClearSegmentsSettingLine(c)", ""),
-        ("导出动作被摘", "settings", "AudioExport.exportAll(c, tree)", ""),
+        ("删除键被摘", "settings", '"删除选中"', ""),
+        ("导出动作被摘", "settings", "AudioExport.exportPicked(c, tree", ""),
         ("调试串回潮", "settings", '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME',
          '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME + " · 本机 Android " + android.os.Build.VERSION.RELEASE'),
         ("软件版本被摘", "settings", '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME', '"版本"'),

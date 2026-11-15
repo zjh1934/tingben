@@ -36,8 +36,8 @@ PARTS = (
     ("InputReadUi.kt", "@Composable\nprivate fun InputReadScreen(", "@Composable\nprivate fun ProduceScreen("),
     ("ProduceUi.kt", "@Composable\nprivate fun ProduceScreen(", "@Composable\nprivate fun TaskCenterScreen("),
     ("TaskUi.kt", "@Composable\nprivate fun TaskCenterScreen(", "@Composable\nprivate fun OverlayProgressRow("),
-    ("SettingsUi.kt", "@Composable\nprivate fun OverlayProgressRow(", "@Composable\nprivate fun ClearSegmentsRow("),
-    ("ModelUi.kt", "@Composable\nprivate fun ClearSegmentsRow(", "@Composable\nprivate fun MixerDialog("),
+    ("SettingsUi.kt", "@Composable\nprivate fun OverlayProgressRow(", "@Composable\nprivate fun ModelScreen("),
+    ("ModelUi.kt", "@Composable\nprivate fun ModelScreen(", "@Composable\nprivate fun MixerDialog("),
     ("MixerUi.kt", "@Composable\nprivate fun MixerDialog(", "@Composable\nprivate fun ResumeAskDialog("),
     ("ResumeUi.kt", "@Composable\nprivate fun ResumeAskDialog(", END),
 )

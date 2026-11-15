@@ -65,13 +65,15 @@ def check(f):
         e.append("两条进度条底色不全")
     # ③ R226 · 三按钮上移系统顶栏，与书名同一排；按符号定位、不绑颜色常量
     for k in ["trailing = when (screen)",
-              'IconButton(onClick = { hubStop() }',
-              'IconButton(onClick = { hubResume() }',
+              'HubActChip(primaryLabel',
+              'HubActChip(resumeLabel',
               'nav.push(Screen.TASKS)',
               'IconButton(onClick = { nav.push(Screen.PRODUCE) }',
-              "fun hubStop()", "fun hubResume()",
+              "fun hubPrimaryAction()",
               "screen = Screen.TASKS"]:
-        if k not in mg: e.append("顶栏缺: " + k[:56])
+        if k not in mg and k not in hb: e.append("操作排缺: " + k[:56])
+    # R356 · 停止/继续/开始搬进等大按钮排后标签仍须在（加严，不放宽）
+    if 'bookRunning -> "停止制作"' not in hb: e.append("停止按钮标签被摘")
     # R298 · 目录页就地看板撤掉，旧入口零回潮
     for b in ["hubTasksTick", "tasksRequest = hubTasksTick", "TaskBoardDialog(",
               'EventLog.ui("HUB_TASKS_OPEN"']:
@@ -108,10 +110,10 @@ def selftest():
         ("列表没接 state", "hub", "state = chapterListState", ""),
         ("进度条底色被摘", "hub", "trackColor = HubLine", ""),
         ("本章进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),
-        ("废话回潮", "merged", "fun hubStop()", 'Text("可播 3/10 章")'),
+        ("废话回潮", "hub", "fun hubPrimaryAction()", 'Text("可播 3/10 章")'),
         ("目录页旧入口回潮", "merged", "nav.push(Screen.TASKS)", "hubTasksTick++"),
         ("顶栏按钮不齐", "merged", "trailing = when (screen)", ""),
-        ("停止按钮被摘", "merged", 'IconButton(onClick = { hubStop() }', ""),
+        ("停止按钮被摘", "hub", 'bookRunning -> "停止制作"', ""),
         ("空章又弹块", "hub", "if (r.index == shownChapter) {", "if (true) {"),
         ("左侧勾被摘", "hub", "Box(Modifier.size(34.dp).clickable { onToggle(r.index) }", ""),
         ("点勾不进多选", "hub", "multiMode = next.isNotEmpty()", ""),

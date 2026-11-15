@@ -57,7 +57,7 @@ POS = {
         # R348 起导出按钮多一态「正在导出…」，锚按现行三分支迁移，能力不减
         "Text(if (exporting) \"正在导出…\"",
         "else if (picked.isEmpty()) \"导出选中\"",
-        "else \"导出选中 · ${picked.size} 个\", fontSize = 12.sp",
+        "else \"导出选中 · ${picked.size} 个\", fontSize = 11.sp",
         "AudioExport.exportPicked(c, tree,",
         "AudioLibrary.safeName(g), f.name, f)",
         # 副行按新形态说清「可批量导出」

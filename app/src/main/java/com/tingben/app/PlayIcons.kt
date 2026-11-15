@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -136,6 +137,34 @@ internal fun IconResume(tint: Color, modifier: Modifier = Modifier) {
             close()
         }
         drawPath(tri, tint)
+    }
+}
+
+/**
+ * R359 · 经典双八分音符（♫）：两个实心符头 + 两根符干 + 一条斜横梁。
+ * 代码自绘、随主题取色、任意尺寸不糊，不引图标库、不加资源文件。
+ * 播放器封面与底部收起条共用这一处定义，撤掉 R262 那套自绘书页图形与声波竖条。
+ */
+@Composable
+internal fun IconMusicNote(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val stem = (w * 0.062f).coerceAtLeast(1.6.dp.toPx())
+        val beam = (w * 0.105f).coerceAtLeast(2.4.dp.toPx())
+        // 符头：左下、右下各一枚实心椭圆，稍微错开，就是常见的 ♫
+        drawOval(tint, topLeft = Offset(w * 0.16f, h * 0.62f),
+            size = Size(w * 0.26f, h * 0.18f))
+        drawOval(tint, topLeft = Offset(w * 0.50f, h * 0.54f),
+            size = Size(w * 0.26f, h * 0.18f))
+        // 符干从符头右上侧竖起
+        drawLine(tint, Offset(w * 0.40f, h * 0.70f), Offset(w * 0.40f, h * 0.20f),
+            stem, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.74f, h * 0.62f), Offset(w * 0.74f, h * 0.12f),
+            stem, StrokeCap.Round)
+        // 横梁把两根符干连成一对八分音符
+        drawLine(tint, Offset(w * 0.40f, h * 0.20f), Offset(w * 0.74f, h * 0.12f),
+            beam, StrokeCap.Round)
     }
 }
 
