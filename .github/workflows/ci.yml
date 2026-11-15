@@ -561,6 +561,14 @@ jobs:
         run: python3 scripts/r365_verify.py
       - name: R365 反向注入
         run: python3 scripts/r365_verify.py --selftest
+      - name: R368 合成链停止收尾 / 进度真值 / 试听坏文件 / 制作中重做
+        run: python3 scripts/r368_verify.py
+      - name: R368 反向注入
+        run: python3 scripts/r368_verify.py --selftest
+      - name: R369 合成链二次梳理：可中断转码 / 登记顺序 / 单桶回退
+        run: python3 scripts/r369_verify.py
+      - name: R369 反向注入
+        run: python3 scripts/r369_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入

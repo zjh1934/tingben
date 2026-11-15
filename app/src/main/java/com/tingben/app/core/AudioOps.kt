@@ -135,7 +135,11 @@ object AudioOps {
      * 现在按 8KB 缓冲从 data chunk 流式喂 MediaCodec，内存与章长无关。
      * 平台自带编解码，不引第三方库、不加权限。
      */
-    fun toM4a(c: Context, src: File, out: File): Result {
+    // R369 · stopCheck 默认关闭，只有「自动章拼接」传入。真机日志：点停止后
+    // 章边界已经在转码，还要再跑四分钟才收尾；手动「转 M4A」不带这个回调，
+    // 行为不变。命中后统一走下面的 stop/release 与 out.delete()，不留半成品。
+    fun toM4a(c: Context, src: File, out: File,
+              stopCheck: (() -> Boolean)? = null): Result {
         val span = pcmSpan(src) ?: return Result(false, reason = "这个文件不是能读的 WAV")
         val (offset, len, rate) = span
         if (len <= 0L) return Result(false, reason = "这个 WAV 里没有声音数据")
@@ -159,12 +163,14 @@ object AudioOps {
             var fed = 0L
             var inputDone = false
             var outputDone = false
+            var stopped = false
             var guard = 0
             val info = MediaCodec.BufferInfo()
             val buf = ByteArray(8192)
             RandomAccessFile(src, "r").use { raf ->
                 raf.seek(offset)
-                while (!outputDone && guard++ < 2000000) {
+                while (!outputDone && !stopped && guard++ < 2000000) {
+                    if (stopCheck?.invoke() == true) { stopped = true; break }
                     if (!inputDone) {
                         val idx = enc.dequeueInputBuffer(10000)
                         if (idx >= 0) {
@@ -218,9 +224,11 @@ object AudioOps {
             try { muxer?.stop() } catch (_: Throwable) { }
             try { muxer?.release() } catch (_: Throwable) { }
             codec = null; muxer = null
-            if (!started || !inputDone || !outputDone || !validateM4a(out)) {
+            if (stopped || !started || !inputDone || !outputDone || !validateM4a(out)) {
                 out.delete()
-                return Result(false, reason = "转格式没完成，原文件留着")
+                return Result(false,
+                    reason = if (stopped) "已停止，转码中断，内部 WAV 留着"
+                             else "转格式没完成，原文件留着")
             }
             Result(true, out)
         } catch (t: Throwable) {
@@ -243,9 +251,13 @@ object AudioOps {
      * 用户仍可用「另存 WAV」手动兜底，绝不让一章音频凭空消失。
      */
     private fun encodeChapter(c: Context, bookId: String, bookTitle: String, chapter: Int,
-                              parts: List<File>, gapMs: Int, declickMs: Int): Encoded? {
+                              parts: List<File>, gapMs: Int, declickMs: Int,
+                              stopCheck: (() -> Boolean)? = null): Encoded? {
         setBusy(bookId, chapter, "正在拼接中")
         try {
+            // R369 · 点停止到章边界之间的窗口：别再开一份四分钟的拼接转码。
+            // 在 try 内 return 仍会走 finally 清 mergeBusy，章名蒙层不会卡住。
+            if (stopCheck?.invoke() == true) return null
             val wav = AudioLibrary.chapterFile(c, bookId, bookTitle, chapter,
                 AudioTree.chapterTitle(c, bookId, chapter))
             val ok = WavMerger.merge(parts = parts, out = wav, gapMs = gapMs, declickMs = declickMs)
@@ -257,7 +269,7 @@ object AudioOps {
             setBusy(bookId, chapter, "正在转码中")
             val m4a = AudioLibrary.chapterM4aFile(c, bookId, bookTitle, chapter,
                 AudioTree.chapterTitle(c, bookId, chapter))
-            val conv = toM4a(c, wav, m4a)
+            val conv = toM4a(c, wav, m4a, stopCheck)
             if (conv.ok && m4a.length() > 0L) {
                 EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_M4A_OK",
                     "ch=${chapter + 1} · wav=${wav.length()} → m4a=${m4a.length()} 字节")
@@ -330,10 +342,32 @@ object AudioOps {
     fun mergeChapterAuto(c: Context, bookId: String, bookTitle: String, chapter: Int,
                          parts: List<File>, gapMs: Int = 0, declickMs: Int = 30): Result {
         if (parts.isEmpty()) return Result(false, reason = "这一章还没有音频小块")
-        val enc = encodeChapter(c, bookId, bookTitle, chapter, parts, gapMs, declickMs)
+        val enc = encodeChapter(c, bookId, bookTitle, chapter, parts, gapMs, declickMs,
+            stopCheck = { Producer.isStoppingBook(bookId) })
             ?: return Result(false, reason = "这一章拼接没成功，小块都留着")
+        // R368 · 真机日志：00:12:17 章边界开始拼、转码跑了四分钟，00:16:14 用户
+        // 点停止，00:16:18 仍 CHAPTER_M4A_OK → CHAPTER_MERGE_ONE → CLEAN 清掉 55
+        // 个中间小块。tryMergeChapter 进入前的 cancelRequested 守卫拦不住「已经在
+        // 转码途中的章」。这里在写章状态之前再认一次停止：不登记、不 markDone、
+        // 不删小块；刚生成但未登记的整章文件也一并清掉，免得 AudioLibrary 兜底
+        // 扫描把它登记成成品、与 chapter_done 分家。小块原样留着，目录页仍可
+        // 亲手点「拼接并转码」，与 R343 中间态口径一致。
+        if (Producer.isStoppingBook(bookId)) {
+            runCatching { if (enc.converted) enc.file.delete() }
+            runCatching { enc.wav.delete() }
+            EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_HOLD",
+                "ch=${chapter + 1} · 已停止，章成品不登记、小块原样留着等手动拼接并转码")
+            return Result(false, reason = "已停止，这一章的小块都留着，可在目录页点「拼接并转码」")
+        }
         AudioLibrary.register(c, bookId, bookTitle, only = setOf(chapter),
             direct = true, file = enc.file, allChapterCount = chapter + 1)
+        // R369 · 与手动路径同序：登记成功才写章状态。旧写法先 markDone 再查
+        // lastRegisterOk，登记失败时章状态已固化，成品却没进「我的音频」，
+        // 续跑 covered 跳过、补拼也跳过 —— 这章音频不见了却显示已完成。
+        if (!AudioLibrary.lastRegisterOk) {
+            return Result(true, enc.file, kept = parts.size,
+                reason = "整章已拼好，但成品登记没成功，章状态与小块先留着")
+        }
         EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_ONE",
             "ch=${chapter + 1} · ${parts.size} 块 · ${enc.file.length()} 字节")
         val work = parts.firstOrNull()?.parentFile
@@ -341,10 +375,6 @@ object AudioOps {
         if (!marked) {
             return Result(true, enc.file, kept = parts.size,
                 reason = "整章已拼好，但章状态没记上，中间小块先留着")
-        }
-        if (!AudioLibrary.lastRegisterOk) {
-            return Result(true, enc.file, kept = parts.size,
-                reason = "整章已拼好，但成品登记没成功，内部 WAV 与小块先留着")
         }
         if (enc.converted) enc.wav.delete()
         val killedPaths = parts.map { it.absolutePath }
@@ -358,7 +388,9 @@ object AudioOps {
             else "ch=${chapter + 1} · 按设置保留 ${killedPaths.size} 个中间小块" + tail)
         // R346 · 与手动拼章同口径：章固化了就不留段级重做标记。
         clearRedoOfParts(parts)
-        return Result(true, enc.file, kept = parts.size)
+        // R369 · 与手动路径同口径：kept 是「删失败、实际留着的份数」。
+        // 旧写法恒返回 parts.size，开关开着且全删成功也说成留了一堆。
+        return Result(true, enc.file, kept = kept)
     }
 
     /**

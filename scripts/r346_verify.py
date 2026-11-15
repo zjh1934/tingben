@@ -159,8 +159,11 @@ def selftest():
         ("拼章入口不认已固化", "producer", "if (chapterSealed(ci)) {", ""),
         ("手动拼章不清标记", "audioops", "        clearRedoOfParts(parts)\n        return Result(true, enc.file, kept = kept)",
          "        return Result(true, enc.file, kept = kept)"),
-        ("自动拼章不清标记", "audioops", "        clearRedoOfParts(parts)\n        return Result(true, enc.file, kept = parts.size)",
-         "        return Result(true, enc.file, kept = parts.size)"),
+        # R369 · 自动路径 kept 改回真实删失败数后，旧锚点不再命中；
+        # 用自动路径独有的 R369 注释限定作用域，仍是「摘掉清标记」这一种回潮。
+        ("自动拼章不清标记", "audioops",
+         "        clearRedoOfParts(parts)\n        // R369 · 与手动路径同口径：kept 是「删失败、实际留着的份数」。",
+         "        // R369 · 与手动路径同口径：kept 是「删失败、实际留着的份数」。"),
         ("批量清接口被摘", "segplan", "fun clearSegs(work: File, segs: Collection<Int>)", ""),
         ("章边界即时拼被摘", "producer",
          "chapterAtBoundary[i]?.let { tryMergeChapter(it, i) }", ""),

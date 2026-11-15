@@ -50,6 +50,9 @@ object Producer {
     @Volatile var lastStartError: String? = null
         private set
     fun isStopping() = cancelRequested
+    /** R368 · 停止标志是全局的，回溯补拼 / 章边界只该被「这本书正在停」拦住。 */
+    fun isStoppingBook(bookId: String): Boolean =
+        cancelRequested && current?.bookId == bookId
 
     fun restore(c: Context) {
         appCtx = c.applicationContext
@@ -366,9 +369,17 @@ object Producer {
             message = "已到系统本次运行时长上限，安全停在 ${p.done}/${p.total} 块，做好的都留着。")
     }
 
-    private fun halted(done: Int, total: Int, failed: Int): Progress = Progress(
-        false, "已停止", done, total, failed,
-        "已停在 $done/$total 块，已做好的都留着。点「继续制作」从这接着跑。")
+    /**
+     * R368 · 真机日志：点停止后 FGS_FINISH 写成 done=6/656，实际已做到 61 段。
+     * 根因是调用处把 wavs.size（拼接用的「文件个数」）当已完成段数：章音频
+     * 覆盖的 55 段只算 1 个文件，本轮新做 5 段就成了 6。进度真值一直由 emit
+     * 按累计段号维护在 _state.done 里，这里一律以它为准，调用方传什么都忽略。
+     */
+    private fun halted(ignoredDone: Int, total: Int, failed: Int): Progress {
+        val done = _state.value.done.coerceIn(0, total.coerceAtLeast(0))
+        return Progress(false, "已停止", done, total, failed,
+            "已停在 $done/$total 段，已做好的都留着。点「继续制作」从这接着跑。")
+    }
 
     fun hasProgress(c: Context, bookId: String, only: Set<Int>?) =
         AnnCache.hasProgress(c, bookId, only)
@@ -673,11 +684,13 @@ object Producer {
         // 三个 stamp 文件照旧写，TaskResume 的失效判据继续有效，但不再删文件。
         val cacheKey = VoiceCache.keyOf(voiceStamp, modeStamp, presetStamp)
         val sw = VoiceCache.switchTo(work, cacheKey)
-        if (sw.archived > 0 || sw.restored > 0) {
-            EventLog.log(EventLog.Kind.PIPELINE, "VOICE_CACHE_SWITCH",
-                "音色套=$cacheKey · 旧套留档 ${sw.archived} 段 · 认领 ${sw.restored} 段" +
-                    " · 已做好的不重做，后面按新参数继续（切回原设置可还原）")
-        }
+        // R368 · 「认领 N 段」只数根目录散段；章音频固化、小块按 R361 删掉后
+        // 这里是 0 或本轮新做的几段，真机日志写成「认领 5 段」让人以为前面
+        // 55 段丢了，还有一轮干脆因 0/0 整条不写。改成说清口径、每轮留一条。
+        EventLog.log(EventLog.Kind.PIPELINE, "VOICE_CACHE_SWITCH",
+            "音色套=$cacheKey · 旧套留档 ${sw.archived} 段 · 散段认领 ${sw.restored} 份" +
+                "（章音频覆盖的段不在这里重复计）" +
+                " · 已做好的不重做，后面按新参数继续（切回原设置可还原）")
         try { File(work, "voice_stamp.txt").writeText(voiceStamp) } catch (_: Throwable) { }
         try { File(work, "mode_stamp.txt").writeText(modeStamp) } catch (_: Throwable) { }
         try { File(work, "produce_stamp.txt").writeText(presetStamp) } catch (_: Throwable) { }
@@ -764,6 +777,16 @@ object Producer {
                 ?.let { it.isFile && it.length() > 44 } == true
             if ("seg:$i" in redoAtStart) return@count true
             !covered
+        }
+        // R368 · 续跑开局先把进度设到真实已完成段数。旧写法 emit(0) 之后靠
+        // 循环里「跳过已有段」逐段把 0 补回 N：真机日志 100ms 内刷 26/36/55/60
+        // 条 OVERLAY_PCT，浮窗与通知从 0 一路跳到 N 再慢下来，诊断日志被
+        // O(N) 条进度噪声撑到 700KB+，bottom 那条还因 covered 只记一次而各轮
+        // 口径不一。开局一次到位，跳过段不再逐条上报。
+        val restoredDone = (toSpeak.size - pending).coerceIn(0, toSpeak.size)
+        if (restoredDone > 0) {
+            emit("正在生成声音", restoredDone, annotated.size, gateFails,
+                "已续上 $restoredDone/${annotated.size} 段，接着往下做")
         }
         val sample = (0 until toSpeak.size).mapNotNull { i ->
             File(work, String.format("direct_%04d.wav", i))
@@ -962,7 +985,10 @@ object Producer {
                         "段 ${i + 1}/${toSpeak.size} 已手工删除，不参与合成与拼接",
                         level = EventLog.Level.TRACE,
                         fields = mapOf("seg" to (i + 1).toString(), "src" to "dropped"))
-                    emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
+                    // R368 · 手工删掉的段也要往前走，但别把开局设好的累计进度
+                    // 倒退回 i+1（续跑时前 N 段正是这类段）。
+                    emit("正在生成声音", maxOf(_state.value.done, i + 1),
+                        annotated.size, gateFails + synthFails,
                         "已生成 ${i + 1}/${annotated.size} 段声音",
                         chapterProgress = _state.value.chapterProgress)
                     // R297 · 标记后又被手工删掉的段不再合成，标记也不能永久留着：
@@ -1089,7 +1115,11 @@ object Producer {
                 val left = annotated.size - (i + 1)
                 val avg = if (segCostCount > 0) segCostSum / segCostCount else 0L
                 val eta = if (avg > 0L && left > 0) avg * left else 0L
-                emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
+                // R368 · 已有音频的跳过段不再逐段 emit：开局那一条已经把累计
+                // 进度设到真实值，这里再按 i+1 发只会把进度倒退回 1、并把
+                // OVERLAY_PCT 刷成 O(N) 条。只有真正合成/重做过的段才推进。
+                if (!skip) emit("正在生成声音", i + 1, annotated.size,
+                    gateFails + synthFails,
                     "已生成 ${i + 1}/${annotated.size} 段声音" +
                         if (eta > 0L) " · 按当前速度还需约 ${formatEta(eta)}" else "",
                     chapterProgress = chapterSnapshot)
@@ -1162,9 +1192,11 @@ object Producer {
                 deferredChapters.toList().forEach { tryMergeChapter(it, i) }
             }
             if (spaceStopped) {
-                _state.value = Progress(false, "没完成", wavs.size, annotated.size,
+                // R368 · 与 halted 同一真值口径：wavs 是拼接用的文件列表，
+                // 章音频覆盖的段只占一个文件，不能拿来当已完成段数。
+                _state.value = Progress(false, "没完成", _state.value.done, annotated.size,
                     gateFails + synthFails,
-                    "空间用完了，已做好 ${wavs.size} 段并都留着；清出空间后点「继续制作」从这接着做")
+                    "空间用完了，已做好 ${_state.value.done} 段并都留着；清出空间后点「继续制作」从这接着做")
                 EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_PARTIAL_STOP",
                     "kept=${wavs.size} newly=$newlyWritten total=${annotated.size} free=$freeBytes")
                 return

@@ -19,11 +19,16 @@ def check(queue=QUEUE, audio=AUDIO, r66=R66):
     main_open = om.group(1) if om else ""
     if not main_open:
         e.append('F-29 主播放 open 函数不存在')
-    m = re.search(r'if \(!t\.file\.isFile\) \{([\s\S]*?)\n        \}', main_open)
+    # R368 · 入口现在不只判 isFile，还要验完整头（文件在但 0 字节 / 转码
+    # 没写完正是真机 what=-38 的来源）。正则按新形态放宽「条件串」本身，
+    # 但语义判据加严：少掉长度校验就算红，不是放宽。
+    m = re.search(r'if \(!t\.file\.isFile[^\{]*\) \{([\s\S]*?)\n        \}', main_open)
     if not m:
         e.append('F-29 缺文件分支不存在')
     else:
         b = m.group(1)
+        if 'length() <= 44L' not in main_open:
+            e.append('F-29 文件在但内容不完整时没在入口拦下（-38 回潮）')
         if not re.search(r'open\(i \+ 1\)\s*;?\s*return', b):
             e.append('F-29 跳下一首后没返回')
         if b.count('return') < 2 or not ('finish()' in b or 'ended = true' in b):
@@ -95,6 +100,9 @@ def main():
     INJ = [
         ('缺文件分支丢 return', lambda: dict(queue=QUEUE.replace(
             '{ open(i + 1); return }', '{ open(i + 1) }'))),
+        # R368 · 只判 isFile、不验完整头，正是 PLAY_OPEN_ERR what=-38 的旧形态。
+        ('坏文件不拦（-38 回潮）', lambda: dict(queue=QUEUE.replace(
+            ' || t.file.length() <= 44L', ''))),
         # R180 · pause() 开头多了 savePos()，原来绑死「fun pause() { 紧跟
         # abandonFocus()」的替换串不再命中，注入静默失效反而报「没拦下」。
         # 改成只在 pause 函数体里删掉归还焦点那一行，不依赖它前面有什么。

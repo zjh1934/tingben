@@ -389,6 +389,10 @@ internal fun ChapterHubScreen(
     // 自己也调 ensureChapterAudios，两处幂等（audioFor 去重）。
     LaunchedEffect(book.id, st.running) {
         if (st.running) return@LaunchedEffect
+        // R368 · 停止后 running 已 false、busy 仍 true 的收尾窗口别回溯补拼：
+        // 真机日志点停止 0.3 秒后就「补拼 0 章 / 跳过 10 章」，此时章边界转码
+        // 可能还在跑，扫盘与抢拼会把刚停下的章固化、删掉可重做的小块。
+        if (Producer.isBusyForBook(book.id)) return@LaunchedEffect
         val made = withContext(Dispatchers.IO) {
             val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
             // R301 · 正常跑完的书每章成品已在章边界拼好、中间小块已清（R300），
@@ -547,13 +551,29 @@ internal fun ChapterHubScreen(
         val cur = hubByChapter[i]?.mapNotNull {
             it.wav?.takeIf { f -> f.isFile && f.length() > 44 }
         }
+        // R368 · 旧写法整章成品只判 isFile、回退分支连 stat 都不做：小块按
+        // R361 开关清掉后，这里会拿到 0 字节或已删文件，mergedTemp 又用空
+        // 列表去拼，播放器直接报 -38。两份来源都按「存在且大于 WAV 头」认。
+        // R369 · 回退不再按全桶扫：AudioTree.load 会把 work/<bookId> 下所有
+        // only 分桶的同一章小块一起收进来，段计划读不到时就会把两套声音
+        // 拼进一章。优先认当前任务分桶；连任务记录都没有的旧书，按文件
+        // 所在目录取最集中的一组，仍然只用一个桶，绝不混音。
+        val t = task?.takeIf { it.bookId == book.id } ?: TaskResume.byBook(c, book.id)
+        val ownDir = Workbench.workDir(c, t)
+        val candidates = ch?.segments.orEmpty().map { it.file }
+            .filter { f -> f.isFile && f.length() > 44L }
+        val oneKey = ownDir?.absolutePath
+            ?: candidates.groupBy { it.parentFile?.absolutePath ?: "" }
+                .maxByOrNull { (_, fs) -> fs.size }?.key
         val segs = if (!cur.isNullOrEmpty()) cur
-            else ch?.segments?.map { it.file } ?: emptyList()
-        return segs to ch?.merged?.takeIf { it.isFile }
+            else candidates.filter { f -> oneKey != null && f.parentFile?.absolutePath == oneKey }
+        return segs to ch?.merged?.takeIf { it.isFile && it.length() > 44L }
     }
     fun srcOf(i: Int): File? {
         val (segs, merged) = filesOf(i)
-        return merged ?: if (segs.size == 1) segs.firstOrNull()
+        if (merged != null) return merged
+        if (segs.isEmpty()) return null
+        return if (segs.size == 1) segs.firstOrNull()
         else AudioOps.mergedTemp(c, segs).let { rr ->
             if (rr.ok) { tmpCopy = rr.file; rr.file } else null
         }
@@ -573,7 +593,16 @@ internal fun ChapterHubScreen(
     fun playChapter(i: Int, single: Boolean) {
         val q = "chapter:${book.id}"
         if (single) {
-            val a = ui.getOrNull(i)?.audio ?: return
+            // R368 · 真机 HUB_LISTEN 后 PLAY_OPEN_ERR what=-38：登记里还留着
+            // 已被整章重做撤销 / 清掉的成品路径。先验完整头，坏条目在这里
+            // 给明确提示，不再塞进队列让播放器报错后静默跳段。
+            val a = ui.getOrNull(i)?.audio
+                ?.takeIf { it.file.isFile && it.file.length() > 44L }
+            if (a == null) {
+                Toast.makeText(c, "这一章的音频还没拼好或已被删，先拼接并转码",
+                    Toast.LENGTH_SHORT).show()
+                return
+            }
             // R283 · 旧版整本成品兜底时没有伴生偏移表，起点只能从 0 起；标签明示，不假装精确
             PlayQueue.setTracks(listOf(Track(a.file, "${book.title} · 第 ${i + 1} 章" +
                 (if (AudioLibrary.isWholeBook(a) && a.chapters.size > 1) "（从整本开头播）" else ""),
@@ -722,9 +751,18 @@ internal fun ChapterHubScreen(
             return
         }
         // R270 · 只撤「已拼好的章」的旧成品；制作中的章没有成品，不走这条。
+        val busyHere = Producer.isBusy()
+        // R368 · 真机日志 CH_REDO ch=8 n=55 running=true：任务正合成段 62，
+        // 却把刚固化的章成品删掉、又给全章 55 段标重做。删成品会和章边界
+        // 转码抢同一文件，55 个标记还让主循环每段收尾都插队重做、进度钉住。
+        // 制作中只放行「还没出章成品」的章就地标记；已固化的先停稳再重做。
+        if (busyHere && AudioLibrary.hasChapterAudio(c, book.id, ch)) {
+            Toast.makeText(c, "这一章已出成品，先点停止、停稳后再整章重做",
+                Toast.LENGTH_LONG).show()
+            return
+        }
         invalidateChapterAudio(ch)
         // R266 · 制作中同样只标记，让主循环逐段回头重做；排整章任务进队列会等整本跑完。
-        val busyHere = Producer.isBusy()
         // R329 · 空闲时新任务按 only={ch} 落在另一个工作分桶，旧目录没有
         // 小块可复用、本来就会整章重合成；往旧分桶写标记只会留下无人消费的
         // 孤儿，目录页还会把它当成「永远在重做」。制作中才需要就地标记。

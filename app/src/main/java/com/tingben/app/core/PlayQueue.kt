@@ -474,10 +474,14 @@ object PlayQueue {
         index = i
         val t = tracks[i]
         val from = (overrideStartMs ?: t.startMs).coerceAtLeast(0L)
-        if (!t.file.isFile) {
+        // R368 · 真机日志 PLAY_OPEN_ERR what=-38 紧跟 HUB_LISTEN：文件还在，但
+        // 已被清掉内容、只有几十字节，或转码还没写完就被拿去 prepareAsync。
+        // 先验最小完整头再交给 MediaPlayer，坏文件在入口就给明确提示，
+        // 不再让播放器抛 -38 后静默跳到下一段。
+        if (!t.file.isFile || t.file.length() <= 44L) {
             playDiag("PLAY_OPEN_MISS", i + 1,
                 "exists=${t.file.exists()} len=${t.file.length()} tracks=${tracks.size}")
-            UiErrors.playback("第 ${i + 1} 段的音频文件不在了，已跳过", null)
+            UiErrors.playback("第 ${i + 1} 段音频还没做好或已被删，已跳过", null)
             if (i + 1 < tracks.size) { open(i + 1); return }
             finish()
             return
