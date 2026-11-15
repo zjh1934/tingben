@@ -78,6 +78,9 @@ object Prefs {
     // R231 · 拼接偏好：按章自动拼成品 / 接缝淡入淡出时长
     private const val KEY_MERGE_AUTO = "mergeAutoChapter"
     private const val KEY_MERGE_DECLICK = "mergeDeclickMs"
+    // R361 · 章拼好转码后，中间小块是否自动删除。默认开＝沿用升级前行为；
+    // 关＝小块与显示名都留着，可在设置页「音频文件」里导出或删除。
+    private const val KEY_AUTO_DELETE_SEGS = "autoDeleteSegsAfterMerge"
 
     const val DEFAULT_TRIAL_TEXT = "雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。"
 
@@ -106,6 +109,13 @@ object Prefs {
     fun mergeDeclickMs(c: Context) = sp(c).getInt(KEY_MERGE_DECLICK, 30).coerceIn(0, 60)
     fun setMergeDeclickMs(c: Context, v: Int) =
         sp(c).edit().putInt(KEY_MERGE_DECLICK, v.coerceIn(0, 60)).apply()
+
+    // R361 · 新规则优先：过去「章固化＝小块必删」是写死的；现在只认这枚开关。
+    // 默认 true 让 1.1.44 用户升级后行为不变，不产生意外的小块堆积。
+    fun autoDeleteSegsAfterMerge(c: Context) =
+        sp(c).getBoolean(KEY_AUTO_DELETE_SEGS, true)
+    fun setAutoDeleteSegsAfterMerge(c: Context, v: Boolean) =
+        sp(c).edit().putBoolean(KEY_AUTO_DELETE_SEGS, v).apply()
 
     fun nonVerbal(c: Context) = sp(c).getBoolean(KEY_NONVERBAL, true)
     fun setNonVerbal(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_NONVERBAL, v).apply()

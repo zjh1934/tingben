@@ -96,9 +96,9 @@ MAIN_BAN = [
     'SettingsSection("通知与权限"',
 ]
 
-# R224 · 取消从「文字 + 小图标」换成有底色的 ActionChip
-MULTI_MUST = ['ActionChip("取消"', 'EventLog.ui("MULTI_CANCEL_BAR"',
-              "internal fun ActionChip("]
+# R365 · 取消从带字 chip 换成一排里的 × 纯图标（语义走 contentDescription）
+MULTI_MUST = ['IconChip("取消多选"', 'EventLog.ui("MULTI_CANCEL_BAR"',
+              "internal fun IconChip("]
 
 
 def sources():
@@ -147,7 +147,7 @@ def selftest():
          lambda t: t.replace("制作选中章节", "")),
         ("看板回潮", "hub",
          lambda t: t.replace("R315 · 目录页就地任务浮窗整段撤掉", "TaskBoardDialog(")),
-        ("取消按钮被摘", "multi", lambda t: t.replace('ActionChip("取消"', 'Text("×"')),
+        ("取消按钮被摘", "multi", lambda t: t.replace('IconChip("取消多选"', 'Text("×"')),
         ("首页空态提示被摘", "main", lambda t: t.replace(
             'if (text.isEmpty()) Text("粘贴或输入要念的正文",', "")),
         ("首页废话回潮", "main", lambda t: t.replace(

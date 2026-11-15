@@ -98,8 +98,10 @@ def selftest():
                              '    private fun unusedMoveSide(from: File, to: File): Boolean = try {')),
         ("AudioOps 又删完再 filter", "ops",
          lambda t: t.replace('        val killedPaths = parts.map { it.absolutePath }\n'
-                             '        val kept = deleteAll(parts)\n'
-                             '        AudioTree.forget(c, killedPaths)',
+                             '        // R361 · 同手动路径：小块删不删只认设置开关；章状态先写、标记照旧清。\n'
+                             '        val autoDel = Prefs.autoDeleteSegsAfterMerge(c)\n'
+                             '        val kept = if (autoDel) deleteAll(parts) else parts.size\n'
+                             '        if (autoDel) AudioTree.forget(c, killedPaths)',
                              '        val kept = deleteAll(parts)\n'
                              '        AudioTree.forget(c, parts.filter { !it.isFile }.map { it.absolutePath })')),
         ("CI 漏挂守门", "ci",

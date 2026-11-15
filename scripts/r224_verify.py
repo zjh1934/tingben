@@ -29,10 +29,11 @@ def files():
         "task": rd(APP / "TaskUi.kt"),
     }
 
-CHIPS = ['primaryLabel = if (selected.isEmpty()) null else "制作选中章节"',
+CHIPS = ['primaryLabel = "制作选中章节"',
+         "primaryEnabled = selected.isNotEmpty()",
          "DropdownMenuItem(leadingIcon = { UiIconGlyph(UiIcon.MERGE",
          "DropdownMenuItem(leadingIcon = { UiIconGlyph(UiIcon.WAV", "DropdownMenuItem(leadingIcon = { UiIconGlyph(UiIcon.M4A",
-         "ActionChip(\"删除选中音频\", danger = true"]
+         'IconChip("删除选中音频", UiIcon.DELETE, danger = true']
 BAN = ["TextButton(onClick = onMixer)", "TextButton(onClick = onCancel)",
         # R304 · 这两枚 chip 已撤，出现即回潮
         'ActionChip("调音 ›", icon = UiIcon.MIXER',
@@ -54,8 +55,10 @@ def check(f):
         if k not in hb: e.append("勾选动作没按钮化: " + k[:40])
     for k in BAN:
         if k in hb or k in m: e.append("R224 回潮：动作又变回平铺文字 " + k[:40])
-    if 'ActionChip(allLabel' not in m: e.append("全选没按钮化")
-    if 'ActionChip("取消"' not in m: e.append("取消没按钮化")
+    if 'IconChip(allDesc' not in m: e.append("全选没按钮化")
+    if 'IconChip("取消多选"' not in m: e.append("取消没按钮化")
+    if 'internal fun IconChip(' not in m: e.append("R365 单行纯图标组件缺失")
+    if "enabled: Boolean = true" not in m: e.append("R365 纯图标按钮缺禁用态")
     # ③ 抽屉手势只在主页
     if "gesturesEnabled = screen == Screen.LIBRARY" not in mn:
         e.append("抽屉左滑没限定主页")
@@ -105,14 +108,16 @@ def selftest():
         ("点击被摘", "multi", ".clickable(onClick = onClick)", ""),
         ("危险色被摘", "multi", "danger: Boolean = false", ""),
         ("制作退回横滑小按钮", "hub",
-         'primaryLabel = if (selected.isEmpty()) null else "制作选中章节"',
+         'primaryLabel = "制作选中章节"',
          'ActionChip("合成音频", icon = UiIcon.SYNTH, onClick = { startAction(HubAction.SYNTH) })\n                '),
+        ("单行图标组件被摘", "multi", "internal fun IconChip(", ""),
+        ("禁用态被摘", "multi", "enabled: Boolean = true", ""),
         ("底部旧 chip 回潮", "hub", 'showCount = false',
           'showCount = false\n                    ActionChip("调音 ›", icon = UiIcon.MIXER, onClick = onMixer)'),
-        ("删除危险色被摘", "hub", 'ActionChip("删除选中音频", danger = true',
-         'ActionChip("删除选中音频"'),
-        ("全选退回文字", "multi", "ActionChip(allLabel", "TextButton(onClick"),
-        ("取消退回文字", "multi", 'ActionChip("取消"', "TextButton(onClick"),
+        ("删除危险色被摘", "hub", 'IconChip("删除选中音频", UiIcon.DELETE, danger = true',
+         'IconChip("删除选中音频", UiIcon.DELETE'),
+        ("全选退回文字", "multi", "IconChip(allDesc", "TextButton(onClick"),
+        ("取消退回文字", "multi", 'IconChip("取消多选"', "TextButton(onClick"),
         ("手势回全局", "main", "gesturesEnabled = screen == Screen.LIBRARY",
          "gesturesEnabled = true"),
         ("手势被关", "main", "gesturesEnabled = screen == Screen.LIBRARY",
@@ -130,7 +135,8 @@ def selftest():
     ]
     bad = 0
     for name, key, needle, repl in cuts:
-        g = dict(f); g[key] = f[key].replace(needle, repl, 1)
+        # R365 · ActionChip 与 IconChip 并存，同名形态字面量全量替换才拦得住
+        g = dict(f); g[key] = f[key].replace(needle, repl)
         if check(g): print("  反向注入 %-22s 拦下" % name)
         else: print("  反向注入漏放:", name); bad += 1
     print("反向注入 %d/%d 全拦下" % (len(cuts) - bad, len(cuts)))

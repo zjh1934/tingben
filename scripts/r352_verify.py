@@ -30,11 +30,11 @@ POS = {
         'private fun RowScope.HubActChip(',
         'sub: String = ""',                       # 副行参数
         '.height(44.dp)',                         # 三枚同高
-        'Text(sub, fontSize = 10.sp',             # 时间/状态在副行
+        'Text(sub, modifier = Modifier.fillMaxWidth(),',  # R363 · 副行也锁在按键宽内
         '"接着听" else "从头听"',                  # 主文案不再带 mm:ss
         '"%d:%02d".format(',                      # 断点时间仍显示
         'val primarySub = when {',                # 任务开关状态说明
-        '"按勾选的章开做"',
+        '"按勾选开做"',                        # R363 · 短文案，字体放大也不顶出按键
         '"收尾这一段"',
         'HubActChip("按顺序播放"',
         'onOpenTasks: () -> Unit = {}',
@@ -43,8 +43,11 @@ POS = {
         'import androidx.compose.ui.draw.clip',
         'sub = primarySub, onClick = { hubPrimaryAction() })',
         'sub = resumeSub,\n                    onClick = {',
-        'sub = "整本连着听", onClick = { playBook(null, null) })',
+        'sub = "从第一章起", onClick = { playBook(null, null) })',
         '队列 ${queued.size} · 去任务页 ›',
+        # R363 · 真机截图里文字顶出按键：列宽锁死 + 单行省略是硬要求
+        'Text(label, modifier = Modifier.fillMaxWidth(),',
+        'softWrap = false, overflow = TextOverflow.Ellipsis)',
     ],
     "task": [
         'FilterRow(filter) { filter = it }',
@@ -86,6 +89,10 @@ BAN = {
         'sub = primarySub) {',
         'sub = resumeSub) {',
         'sub = "整本连着听") {',
+        # R363 · 长副文案回潮（系统字体放大会顶出 1/3 宽的按键）
+        '"接着做不用重来"',
+        '"按勾选的章开做"',
+        'sub = "整本连着听"',
     ],
     "task": [
         'onAudio: (String) -> Unit',              # 死参数回潮
@@ -132,7 +139,7 @@ def selftest():
     assert not check(base), "基线自己就红了，先修基线"
     cuts = [
         ("三枚等大被摘", "hub", '.height(44.dp)', '.height(38.dp)'),
-        ("副行被摘", "hub", 'Text(sub, fontSize = 10.sp', 'Text(sub, fontSize = 12.sp'),
+        ("副行被摘", "hub", 'Text(sub, modifier = Modifier.fillMaxWidth(),', 'Text(sub, fontSize = 12.sp'),
         ("任务开关状态说明被摘", "hub", 'val primarySub = when {', 'val primarySub = 0'),
         ("时间又塞回主文案", "hub", '"接着听" else "从头听"', '"接着听 · %d:%02d ›".format('),
         ("队列真出口被摘", "hub", 'onOpenTasks: () -> Unit = {}', 'onOpenTasks: () -> Unit = { }'),
@@ -153,8 +160,8 @@ def selftest():
         ("第一枚按钮尾随 lambda 回潮（rc #250）", "hub",
          'sub = primarySub, onClick = { hubPrimaryAction() })', 'sub = primarySub) { hubPrimaryAction() }'),
         ("第三枚按钮尾随 lambda 回潮（rc #250）", "hub",
-         'sub = "整本连着听", onClick = { playBook(null, null) })',
-         'sub = "整本连着听") {\n                    playBook(null, null)\n                }'),
+         'sub = "从第一章起", onClick = { playBook(null, null) })',
+         'sub = "从第一章起") {\n                    playBook(null, null)\n                }'),
         ("任务页按卡片 id 回书被摘", "main", 'onOpenTask = { id -> openBook(id) }', 'onOpenTask = { }'),
     ]
     bad = 0

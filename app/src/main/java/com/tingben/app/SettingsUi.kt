@@ -528,8 +528,9 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         SettingsSection("制作设置", "合成", collapsible = false) {
             var cfg by remember { mutableStateOf(Prefs.defaultPerf(c)) }
             var autoMerge by remember { mutableStateOf(Prefs.autoMergeChapter(c)) }
+            var autoDelSegs by remember { mutableStateOf(Prefs.autoDeleteSegsAfterMerge(c)) }
             var declickMs by remember { mutableStateOf(Prefs.mergeDeclickMs(c)) }
-            // R341 · 先看「现在生效的是哪一套」，再逐项改；四枚 OptionRow 一字未动
+            // R341 · 先看「现在生效的是哪一套」再逐项改；R361 新增第五项只管小块清理。
             ProduceOverviewCard(c, cfg.gapMs, cfg.gateRetries, autoMerge, declickMs)
             Spacer(Modifier.height(8.dp))
             OptionRow("段间静音", "两小段之间的停顿",
@@ -547,6 +548,12 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 autoMerge = it
                 Prefs.setAutoMergeChapter(c, it)
             }
+            // R361 · 新规则：过去「章固化＝小块必删」写死在拼章尾部，现在只认这枚开关。
+            OptionRow("拼好后删除中间小块", "开：章音频转码校验通过就删这一章小块；关：留着，可在「音频文件」里导出或删除",
+                listOf(true to "开", false to "关"), autoDelSegs) {
+                autoDelSegs = it
+                Prefs.setAutoDeleteSegsAfterMerge(c, it)
+            }
             OptionRow("接缝处理", "相邻小块淡入淡出，压掉咔哒声",
                 listOf(0 to "直接接", 15 to "轻", 30 to "标准"), declickMs) {
                 declickMs = it
@@ -557,6 +564,8 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                 Prefs.setDefaultPerf(c, cfg)
                 autoMerge = true
                 Prefs.setAutoMergeChapter(c, true)
+                autoDelSegs = true
+                Prefs.setAutoDeleteSegsAfterMerge(c, true)
                 declickMs = 30
                 Prefs.setMergeDeclickMs(c, 30)
                 Toast.makeText(c, "已恢复默认制作设置", Toast.LENGTH_SHORT).show()

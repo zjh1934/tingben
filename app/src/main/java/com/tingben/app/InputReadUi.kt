@@ -469,13 +469,16 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                     onCancel = { selected = emptySet() }
                 ) {
                     val chosen = clips.filter { it.id in selected }
-                    ActionChip("删除", danger = true, icon = UiIcon.DELETE,
-                        onClick = { dropClips(selected) })
-                    ActionChip("重做", icon = UiIcon.SYNTH, onClick = {
+                    IconChip("删除", UiIcon.DELETE, danger = true,
+                        onClick = { dropClips(selected) },
+                        modifier = Modifier.weight(1f))
+                    IconChip("重做", UiIcon.SYNTH, modifier = Modifier.weight(1f),
+                        onClick = {
                         chosen.filter { !it.isRunning }.forEach { redoOne(it) }
                         selected = emptySet()
                     })
-                    ActionChip("导出", icon = UiIcon.EXPORT, onClick = {
+                    IconChip("导出", UiIcon.EXPORT, modifier = Modifier.weight(1f),
+                        onClick = {
                         val ready = chosen.filter { it.isDone }
                         if (ready.isEmpty()) {
                             Toast.makeText(c, "选中的都还没合成好", Toast.LENGTH_SHORT).show()

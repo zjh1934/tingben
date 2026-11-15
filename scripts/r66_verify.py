@@ -63,9 +63,8 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
     if 'LazyColumn(Modifier.fillMaxSize(),' not in hub or 'pageCount = { 3 }' in hub:
         e.append('目录页不是单列 / 三列分页回潮')
     if 'private enum class HubAction { SYNTH }' not in hub: e.append('批量动作没收敛')
-    # R224 · 勾选动作改成有底色的 ActionChip，不再是一排平铺的字
-    # R291 · 「合成音频」升成固定主按钮（primaryLabel），不再混在横滑动作里
-    for s in ['primaryLabel = if (selected.isEmpty()) null else "制作选中章节"',
+    # R365 · 底部条改成一排纯图标；主按钮恒在，没勾选只置灰
+    for s in ['primaryLabel = "制作选中章节"', 'primaryEnabled = selected.isNotEmpty()',
               'showCount = false', '"取消全选"', 'onMixer: () -> Unit']:
         if s not in hub: e.append('目录页缺: ' + s)
     # R304 · 这两枚入口右上角已有，底部菜单不再重复摆；出现即回潮

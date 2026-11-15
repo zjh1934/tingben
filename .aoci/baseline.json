@@ -32,10 +32,10 @@
       "size": 439
     },
     ".github/workflows/ci.yml": {
-      "normalized_sha256": "c697e9a8c64b37958fc52e30d28635da5037a608157c969a0822640176cbad0c",
+      "normalized_sha256": "31a9aa1cb0804d1710507908d58b9ef42c0da831f6f79192693ff31b01bcf77e",
       "role": "index",
-      "sha256": "c697e9a8c64b37958fc52e30d28635da5037a608157c969a0822640176cbad0c",
-      "size": 35568
+      "sha256": "31a9aa1cb0804d1710507908d58b9ef42c0da831f6f79192693ff31b01bcf77e",
+      "size": 36135
     },
     ".gitignore": {
       "normalized_sha256": "4229b6733b32c7430e94b931f1f581c7d214bc0e5e907583c6a631ea20e462f9",
@@ -134,10 +134,10 @@
       "size": 16779
     },
     "app/src/main/java/com/tingben/app/ChapterHub.kt": {
-      "normalized_sha256": "9b0a1e99514c091c72b9aef4ee2c1f6e810dea33afabb57650f49777940f8f54",
+      "normalized_sha256": "cc5baef9ea86fb4a771e35f3360426be737418986da7eb696eaa382f1804bb9e",
       "role": "index",
-      "sha256": "9b0a1e99514c091c72b9aef4ee2c1f6e810dea33afabb57650f49777940f8f54",
-      "size": 118767
+      "sha256": "cc5baef9ea86fb4a771e35f3360426be737418986da7eb696eaa382f1804bb9e",
+      "size": 126153
     },
     "app/src/main/java/com/tingben/app/DescPresetUi.kt": {
       "normalized_sha256": "0a78bc5255a1203e64fa4bbb3408dda179563462e685412da13511a9face4d16",
@@ -146,10 +146,10 @@
       "size": 10899
     },
     "app/src/main/java/com/tingben/app/InputReadUi.kt": {
-      "normalized_sha256": "a89f65fad523ac5847176b2807db649a74022e1b227491f2f6dbf31e07c86404",
+      "normalized_sha256": "f9010dc5b5a92f401b758856e2ded50b0085fc3310eff9c67167471ef054b1ba",
       "role": "index",
-      "sha256": "a89f65fad523ac5847176b2807db649a74022e1b227491f2f6dbf31e07c86404",
-      "size": 30039
+      "sha256": "f9010dc5b5a92f401b758856e2ded50b0085fc3310eff9c67167471ef054b1ba",
+      "size": 30180
     },
     "app/src/main/java/com/tingben/app/LibraryUi.kt": {
       "normalized_sha256": "95605155d1a3b35f992ac82080c3f09dda88127a97f0627e624fe110c168ea79",
@@ -176,10 +176,10 @@
       "size": 19695
     },
     "app/src/main/java/com/tingben/app/MultiSelect.kt": {
-      "normalized_sha256": "dd84a66172fe6ce471407fbe4458f9438ec99aec4f76bb8d7693678feceb4e6a",
+      "normalized_sha256": "ef321290080a996f30b832d00bbf6e9c82d9e5a4d9d8cd8d44e95722ca98c7c8",
       "role": "index",
-      "sha256": "dd84a66172fe6ce471407fbe4458f9438ec99aec4f76bb8d7693678feceb4e6a",
-      "size": 7806
+      "sha256": "ef321290080a996f30b832d00bbf6e9c82d9e5a4d9d8cd8d44e95722ca98c7c8",
+      "size": 9197
     },
     "app/src/main/java/com/tingben/app/OverlayProgress.kt": {
       "normalized_sha256": "06abafc7ad0cc03cb142fb8b12a333b3350fccaf45195f0865d58a003e55d58d",
@@ -224,10 +224,10 @@
       "size": 7158
     },
     "app/src/main/java/com/tingben/app/SettingsUi.kt": {
-      "normalized_sha256": "3c31ad90e48c6a9c2f45d78b410a000db8ced26ad8ebf40f22a98207db57ad0c",
+      "normalized_sha256": "905f299aaa6f17b519e1bdf4eed41ec267abc056c74efe0fa7030e2a04c80d8b",
       "role": "index",
-      "sha256": "3c31ad90e48c6a9c2f45d78b410a000db8ced26ad8ebf40f22a98207db57ad0c",
-      "size": 65407
+      "sha256": "905f299aaa6f17b519e1bdf4eed41ec267abc056c74efe0fa7030e2a04c80d8b",
+      "size": 66072
     },
     "app/src/main/java/com/tingben/app/Shell.kt": {
       "normalized_sha256": "2391d3746a28342ac6a7f88797c7b016243aa4eae6b8fd858c1da93b64bebfba",
@@ -254,10 +254,10 @@
       "size": 868
     },
     "app/src/main/java/com/tingben/app/UiIcons.kt": {
-      "normalized_sha256": "9160abc8047c89010c7950f6937cf5a6de8f333d68dd335742e7ab71838a0c76",
+      "normalized_sha256": "e04cd72559cda64b8034349de1a45de0779b7499d2e08a99e23151d138a1c2e9",
       "role": "index",
-      "sha256": "9160abc8047c89010c7950f6937cf5a6de8f333d68dd335742e7ab71838a0c76",
-      "size": 13438
+      "sha256": "e04cd72559cda64b8034349de1a45de0779b7499d2e08a99e23151d138a1c2e9",
+      "size": 13443
     },
     "app/src/main/java/com/tingben/app/core/AnnCache.kt": {
       "normalized_sha256": "af96ec336db50114057c9fae4f3818d91eb0db6f11cd49d5d997de17dfb12b22",
@@ -296,10 +296,10 @@
       "size": 21955
     },
     "app/src/main/java/com/tingben/app/core/AudioOps.kt": {
-      "normalized_sha256": "ed3981f1dc8b6f547549a046077d509e6c68a57b6ee465c95caeb2693074fbfc",
+      "normalized_sha256": "08098084ee3ff8983e2336994645182a131d4761b56bac0622e44c4eeacfdade",
       "role": "index",
-      "sha256": "ed3981f1dc8b6f547549a046077d509e6c68a57b6ee465c95caeb2693074fbfc",
-      "size": 21030
+      "sha256": "08098084ee3ff8983e2336994645182a131d4761b56bac0622e44c4eeacfdade",
+      "size": 22005
     },
     "app/src/main/java/com/tingben/app/core/AudioTree.kt": {
       "normalized_sha256": "5b1b4fd1f8c7bb212e849d1d2e008e342a25d54270e3dae91537ff68f4913c1d",
@@ -434,10 +434,10 @@
       "size": 596
     },
     "app/src/main/java/com/tingben/app/core/Prefs.kt": {
-      "normalized_sha256": "5f09ad395c538bd9c56afd4122178091dcb0926211e842385f7191f20f920105",
+      "normalized_sha256": "c0835c869b4c89cd9726febc84b840044e62dc589d400498e65b58fd334b298c",
       "role": "index",
-      "sha256": "5f09ad395c538bd9c56afd4122178091dcb0926211e842385f7191f20f920105",
-      "size": 11289
+      "sha256": "c0835c869b4c89cd9726febc84b840044e62dc589d400498e65b58fd334b298c",
+      "size": 11999
     },
     "app/src/main/java/com/tingben/app/core/ProduceConfig.kt": {
       "normalized_sha256": "60339ed6ec7f9d8dfda9b28a7739b3c80955c61c0157783b64cce806d7c1dfdb",
@@ -446,10 +446,10 @@
       "size": 4098
     },
     "app/src/main/java/com/tingben/app/core/Producer.kt": {
-      "normalized_sha256": "2b9e40691f460f72c8bf3a1d7af67519112124db71a2d5d32221d29946c666de",
+      "normalized_sha256": "8ee4802cd8a1602ef892b0971d51de5bac8c594e4df820e14147879cf127ccdf",
       "role": "index",
-      "sha256": "2b9e40691f460f72c8bf3a1d7af67519112124db71a2d5d32221d29946c666de",
-      "size": 70167
+      "sha256": "8ee4802cd8a1602ef892b0971d51de5bac8c594e4df820e14147879cf127ccdf",
+      "size": 70804
     },
     "app/src/main/java/com/tingben/app/core/ReadingState.kt": {
       "normalized_sha256": "89c3e8d547695bb8fc1a0bf3ee7c3f5e2e8a1062c0d14826bccdbfbf4a0b1421",
@@ -566,10 +566,10 @@
       "size": 170
     },
     "docs/00_现行契约.md": {
-      "normalized_sha256": "dfbdc9b93a8c93770b20f1387f6242e98c968843bbbd923a0ebe9539a3e1a42c",
+      "normalized_sha256": "de57c18eed4b2066ea6ea30dc9ff3725f1b15a64ec3297c8af5c202b901ef6a0",
       "role": "index",
-      "sha256": "dfbdc9b93a8c93770b20f1387f6242e98c968843bbbd923a0ebe9539a3e1a42c",
-      "size": 12204
+      "sha256": "de57c18eed4b2066ea6ea30dc9ff3725f1b15a64ec3297c8af5c202b901ef6a0",
+      "size": 12390
     },
     "docs/01_音频模型调教逻辑.md": {
       "normalized_sha256": "be45c8db60a0c9d6c67cfee45bdf5ce5f5ccc6403331deeeb2fb9115a1bebb3c",
@@ -692,10 +692,10 @@
       "size": 2897
     },
     "scripts/r135_verify.py": {
-      "normalized_sha256": "5835c5ca34563034ad4e82054bcac7d98149ec8017b6fbc36faf1eea74e3270d",
+      "normalized_sha256": "f14b985ee3a51915f9f516157cdbf7269b6d6ad27fcca2722dd4f3d978e8244e",
       "role": "index",
-      "sha256": "5835c5ca34563034ad4e82054bcac7d98149ec8017b6fbc36faf1eea74e3270d",
-      "size": 9854
+      "sha256": "f14b985ee3a51915f9f516157cdbf7269b6d6ad27fcca2722dd4f3d978e8244e",
+      "size": 9908
     },
     "scripts/r149_verify.py": {
       "normalized_sha256": "d15327efcf9c3420b5f6f49ecf4a9dfb7f729858c6cbc6a982e7f16a3a12bc66",
@@ -770,10 +770,10 @@
       "size": 7794
     },
     "scripts/r219_verify.py": {
-      "normalized_sha256": "aba5e01cadf36a9b167e7198c50f6bfbf7157a71b4af9dd013e1e92659a68d44",
+      "normalized_sha256": "34d115d1bdf534447ac3ca5d06468a8a96e283d8aa0802b9fcbb472332d98253",
       "role": "index",
-      "sha256": "aba5e01cadf36a9b167e7198c50f6bfbf7157a71b4af9dd013e1e92659a68d44",
-      "size": 7103
+      "sha256": "34d115d1bdf534447ac3ca5d06468a8a96e283d8aa0802b9fcbb472332d98253",
+      "size": 8030
     },
     "scripts/r220_verify.py": {
       "normalized_sha256": "9f4526ba87f8b668c8b6c0b48d8220502c4f49b34a7ecdbd9fa510995e4294d4",
@@ -794,10 +794,10 @@
       "size": 7432
     },
     "scripts/r224_verify.py": {
-      "normalized_sha256": "eb351550b95abfa28f3baa3fef854bd52edd2cf3b8c6348677acfe5319531ffb",
+      "normalized_sha256": "a7cd01d8bc04bf112f042ccc2098473c0a3ca0791914a4a168b22010a576b0c0",
       "role": "index",
-      "sha256": "eb351550b95abfa28f3baa3fef854bd52edd2cf3b8c6348677acfe5319531ffb",
-      "size": 7842
+      "sha256": "a7cd01d8bc04bf112f042ccc2098473c0a3ca0791914a4a168b22010a576b0c0",
+      "size": 8279
     },
     "scripts/r225_verify.py": {
       "normalized_sha256": "6d7853776dd309ee696e1d4b324ec37175f00f5c699c552538dfd9d156056619",
@@ -968,6 +968,6 @@
       "size": 7
     }
   },
-  "updated_at": "2026-11-15T09:15:00Z",
+  "updated_at": "2026-11-15T13:33:26Z",
   "version": 1
 }

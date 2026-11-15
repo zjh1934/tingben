@@ -30,6 +30,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tingben.app.core.*
@@ -104,13 +106,22 @@ private sealed class Pane {
 
 private enum class HubAction { SYNTH }
 
+/**
+ * R362 · 目录页章状态的单一真值。参考 Apple Books / Storytel 把「整本进度」
+ * 与「当前位置」分开标注、Vivid 目录给已读/未读/当前章各自可分辨的做法：
+ * 已做过、正在做、本次勾选待做、完全没动过，四态互斥，一处派生。
+ * 章行 / 进度条 / 批量条都读它，不再各算各的（旧代码正是这样互相打架）。
+ */
+private enum class ChapterMark { DONE, MAKING, SCOPED, PLAIN }
+
 private data class ChapterUi(
     val index: Int,
     val title: String,
     val synthesized: Float?,
     val audio: AudioItem?,
     val playable: Boolean,
-    val stalled: Boolean = false
+    val stalled: Boolean = false,
+    val mark: ChapterMark = ChapterMark.PLAIN
 )
 
 private fun chapterStates(
@@ -130,7 +141,15 @@ private fun chapterStates(
             synthesized = if (a != null) 1f else live,
             audio = a,
             playable = ch.index in playable,
-            stalled = stalled
+            stalled = stalled,
+            // MAKING 不在这里判：只有「当前制作章」一个，渲染时按 liveChapter
+            // 覆盖。旧写法把所有范围内 <1f 的章都标成制作中，勾 4 章就 4 章
+            // 一起亮，等于没区分。这里只分「已固化 / 本次范围内待做 / 没动过」。
+            mark = when {
+                a != null || ch.index in playable -> ChapterMark.DONE
+                inScope(ch.index) -> ChapterMark.SCOPED
+                else -> ChapterMark.PLAIN
+            }
         )
     }
 }
@@ -144,7 +163,8 @@ private fun chapterStates(
  * 章节数据的三种视图，硬拆成三页只会逼用户来回找。现在：
  *   · 右侧两枚图标：看原文 / 听成品（R171 撤掉三点「更多」，选中一律长按）
  *   · R264 · 章名不再管展开/收起，制作中的那一章恒定展开小段区
- *   · 长按章行 = 进多选，勾选框**只在多选态出现**，平时不占位
+ *   · 长按章行 = 进多选；R219 起章名左边常驻一排勾，点一下即选中。
+ *     「只在多选态出现」是 R163 的旧口径，早被 R219 替掉，不再两句话并存
  *     R171：勾选态里按返回键 / 点「取消」都退出勾选并留在目录页，
  *     不会一按返回就离开这本书；选空了底部条也还在，取消入口不消失
  *   · 制作章就地铺小片格子，点一下播再点一下停，长按可批量删/试听
@@ -258,17 +278,26 @@ internal fun ChapterHubScreen(
         }
     }
 
-    // R163 · 勾选框平时不渲染，长按 / 点三点才进多选态。
+    // R219 · 勾选框常驻章名左侧，点一下即选中；长按仍进就地菜单。
     var selected by rememberSaveable(book.id) { mutableStateOf<Set<Int>>(emptySet()) }
     var multiMode by remember(book.id) { mutableStateOf(false) }
     // R264 · 制作中的那一章恒定展开：没有「展开/收起」状态、没有切换按钮、
     // 也不再靠点章名开关。liveChapter 是派生值，收工即无展开体。
     val bookRunning = st.running && task?.bookId == book.id
-    val makingChapter = remember(st.chapterProgress, task, ui.size) {
-        var idx = -1
-        for ((k, v) in st.chapterProgress) if (v < 1f && k > idx) idx = k
-        if (idx < 0) idx = task?.only?.maxOrNull() ?: 0
-        idx.coerceIn(0, (ui.size - 1).coerceAtLeast(0))
+    // R362 · 正在做的那一章 = 本次范围内「最靠前的未完成章」。
+    // 旧写法取 v<1f 的最大章号、空表时兜底 only.maxOrNull()：勾 2/3/4/5 就先
+    // 跳到第 5 章，主循环却按段号从第 2 章顺序开跑，看着像「先找第五章、发现
+    // 不对又回第二章」；点顶部进度条也被带到最后一章。改成最小未完成章 +
+    // 兜底最靠前的勾选章，与 Producer 的推进顺序对齐；范围外的章不参与。
+    val makingChapter = remember(st.chapterProgress, task, chapters.size, book.id) {
+        val scope = task?.takeIf { it.bookId == book.id }?.only
+        var idx = Int.MAX_VALUE
+        for ((k, v) in st.chapterProgress) {
+            if (scope != null && k !in scope) continue
+            if (v < 1f && k < idx) idx = k
+        }
+        if (idx == Int.MAX_VALUE) idx = scope?.minOrNull() ?: 0
+        idx.coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
     }
     val liveChapter: Int? = if (bookRunning) makingChapter else null
     // R253 · 长按章行弹就地菜单（像桌面右键），与「勾选后进底部批量条」是两组操作。
@@ -623,25 +652,48 @@ internal fun ChapterHubScreen(
     val curRule = remember(book.id, planTick) { ChapterPlan.currentRuleId(c, book.id) }
     val stalledTask = !st.running && task?.bookId == book.id &&
         st.stage in listOf("没完成", "已停止", "出错了")
-    val totalNow = maxOf(st.total, task?.total ?: 0)
-    val doneNow = (if (bookRunning) st.done else (task?.done ?: 0))
+    // R362 · 这本书的制作档案就是 TaskInfo（task_active.json / tasks.json），
+    // 已存 only / done / total / phase。不另建一套索引：暂停、队列暂停、重开
+    // 软件后它都还在。目录页进度只认「档案 + 磁盘章成品 + 实时 state」，
+    // 不再单靠一停就被清空的内存量，也不让三处各算各的。
+    val archive = remember(book.id, refresh, localTick, st.running) {
+        TaskResume.byBook(c, book.id)
+    }
+    val totalNow = maxOf(st.total, task?.total ?: 0, archive?.total ?: 0)
+    val doneNow = maxOf(st.done, task?.done ?: 0)
         .coerceIn(0, maxOf(totalNow, 1))
     val bookPct = if (totalNow > 0) doneNow.toFloat() / totalNow.toFloat() else 0f
     val chNow = liveChapter
     val chPct = if (chNow == null) 0f else
         (ui.getOrNull(chNow)?.synthesized
             ?: st.chapterProgress[chNow] ?: 0f).coerceIn(0f, 1f)
-    // R264 · 制作中本章进度条就取恒定展开的那一章；收工后取最靠后一章
+    // R362 · 两条进度停下来都不许归零：旧写法一停把 chapterProgress 抹成空表
+    //（Producer.stop 曾重建 Progress），整本进度又只认 task 里旧的 done=0。
+    // 现在运行中取实时章进度；停下来用保留的逐章进度，再用磁盘上
+    //「已固化章数 / 本次范围章数」兜底，只给大概做到哪、不假装精确。
+    val scopeOnly = task?.takeIf { it.bookId == book.id }?.only ?: archive?.only
+    val scopeSize = (scopeOnly?.size ?: ui.size).coerceAtLeast(1)
+    val finishedInScope = ui.count { r ->
+        (r.audio != null || r.playable) &&
+            (scopeOnly == null || r.index in scopeOnly)
+    }
     val chapterPctNow = if (chNow != null) chPct else run {
         var m = 0f
         for ((_, v) in st.chapterProgress) if (v > m) m = v
-        m
+        maxOf(m, finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)
     }
     val showHead = bookRunning || stalledTask ||
         (task?.bookId == book.id && st.stage == "完成")
     fun scrollToMaking() {
         resplitScope.launch {
-            chapterListState.animateScrollToItem(makingChapter)
+            // R362 · 章号不等于 LazyColumn 的 item 序号：展开的那一章会额外插
+            // 入 seg_head / 若干行格子 / 收尾条。回看的是更靠前的章时补上这段，
+            // 否则点进度条会滑过正在做的那一章。运行中展开的就是制作章，
+            // 额外条目都在它后面，不需要补。
+            val shown = shownChapter
+            val extra = if (shown != null && shown < makingChapter)
+                2 + chapterSegs.chunked(SEG_GRID_COLUMNS).size else 0
+            chapterListState.animateScrollToItem((makingChapter + extra).coerceAtLeast(0))
         }
     }
     /**
@@ -799,9 +851,11 @@ internal fun ChapterHubScreen(
             }
             val primarySub = when {
                 bookRunning -> "收尾这一段"
-                stalledTask -> "接着做不用重来"
+                // R363 · 副文案一律压到 5 字内：系统字体放大时，长句会顶出
+                // 1/3 宽的按键外沿；短文案 + 单行省略双保险，语义不丢。
+                stalledTask -> "断点续做"
                 needModels -> "模型没齐"
-                else -> "按勾选的章开做"
+                else -> "按勾选开做"
             }
             Row(Modifier.fillMaxWidth().background(HubCard)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -823,7 +877,7 @@ internal fun ChapterHubScreen(
                         EventLog.ui("HUB_RESUME_LISTEN", "book=${book.id.take(8)}")
                     })
                 HubActChip("按顺序播放", HubPrimary, HubSoft, canListen,
-                    sub = "整本连着听", onClick = { playBook(null, null) })
+                    sub = "从第一章起", onClick = { playBook(null, null) })
             }
             if (queued.isNotEmpty()) {
                 LaunchedEffect(queued.size) { EventLog.ui("HUB_QUEUE", "n=${queued.size}") }
@@ -849,7 +903,11 @@ internal fun ChapterHubScreen(
                         val backToLive = bookRunning && r.index == liveChapter &&
                             shownChapter != liveChapter
                         ChapterRow(
-                            r = r, multi = multiMode, checked = r.index in selected,
+                            // R362 · 四态互斥：只有 liveChapter 是「制作中」，
+                            // 其余由 chapterStates 从磁盘 / 任务档案派生。
+                            r = if (bookRunning && r.index == liveChapter)
+                                r.copy(mark = ChapterMark.MAKING) else r,
+                            multi = multiMode, checked = r.index in selected,
                             // R264 · 章名不再承担展开/收起：制作中的那一章自动展开，
                             // 看书交给右侧小眼睛，章行只保留长按菜单。
                             // R304 · 长按就地菜单只在「没进勾选态」时弹：进了勾选态
@@ -1023,6 +1081,8 @@ internal fun ChapterHubScreen(
                     }
                     // R333 · 收尾条跟上面那一堆小块同一个视觉块（HubSoft 连续），
                     // 不再是章名下一行孤零零一整条实心主按钮；只在真有小块 / 正在拼时出。
+                    // R361 · 这枚开关只影响「小块删不删」，不改章已完成的事实。
+                    val keepSegs = !Prefs.autoDeleteSegsAfterMerge(c)
                     val readyHere = mergeReady[r.index] ?: 0
                     val hasDone = r.audio != null || r.playable
                     val redoHere = hubByChapter[r.index].orEmpty()
@@ -1034,7 +1094,11 @@ internal fun ChapterHubScreen(
                         || mergingChapter == r.index || phaseHere != null
                     val unmergedHere = r.index in unmergedChapters
                     val canMerge = readyHere > 0 && redoHere == 0 && !busyHere
+                    // R361 · 章已固化、按设置留着小块时，这些小块只是留档不是「待拼」：
+                    // 别说成「把上面这些小块做成一个章音频」，免得以为还没拼过。
+                    val keepSegsHere = keepSegs && hasDone && readyHere > 0 && !busyHere
                     val status = when {
+                        keepSegsHere -> "章音频已生成 · 中间小块按设置留着，可在「音频文件」里导出或删除"
                         phaseHere != null -> phaseHere
                         mergingChapter == r.index -> "正在拼这一章…"
                         busyHere -> "这一章还在制作中，做完再拼"
@@ -1112,21 +1176,24 @@ internal fun ChapterHubScreen(
                 allLabel = if (ui.isNotEmpty() && selected.size == ui.size)
                     "取消全选" else "全选章节",
                 showCount = false,
-                // R291 · 制作固定在动作行最左边，不跟着次要动作横滑。
-                // R304 · 这张菜单重新设计：不带「已选多少章」，也不再重复摆
-                // 调音台 / 制作设置（右上角已有），只管选中的这几章本身。
-                primaryLabel = if (selected.isEmpty()) null else "制作选中章节",
+                // R365 · 一排纯图标：主按钮恒在，没勾选时只置灰，不换排。
+                // R304 · 这张菜单不带「已选多少章」，也不重复摆调音台 / 制作设置
+                //（右上角已有），只管选中的这几章本身。
+                primaryLabel = "制作选中章节",
+                primaryEnabled = selected.isNotEmpty(),
                 onPrimary = { startAction(HubAction.SYNTH) },
                 primaryIcon = UiIcon.SYNTH,
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 if (selected.isNotEmpty()) {
-                    // R315 · 图 12：主按钮之外只留两枚（导出 / 删除），拼章、
-                    // 转码、另存收进「导出与另存」二级菜单，四个能力一条没丢，
-                    // 也不再让一排胶囊把「制作选中章节」挤成配角。
-                    Box {
-                        ActionChip("导出与另存", icon = UiIcon.M4A,
-                            onClick = { exportMenu = true })
+                    // R315 · 主按钮之外只留两枚（导出 / 删除），拼章、
+                    // 转码、另存收进「导出与另存」二级菜单，四个能力一条没丢。
+                    // R365 · 两枚都换成纯图标、与主按钮同一排；下拉菜单的锚点
+                    // 仍挂在带 weight 的 Box 上，窄屏不会再挤掉任何一枚。
+                    Box(Modifier.weight(1f)) {
+                        IconChip("导出与另存", UiIcon.M4A,
+                            onClick = { exportMenu = true },
+                            modifier = Modifier.fillMaxWidth())
                         DropdownMenu(expanded = exportMenu,
                             onDismissRequest = { exportMenu = false }) {
                             val i = selected.firstOrNull()
@@ -1257,9 +1324,9 @@ internal fun ChapterHubScreen(
                             }
                         }
                     }
-                    ActionChip("删除选中音频", danger = true, icon = UiIcon.DELETE, onClick = {
+                    IconChip("删除选中音频", UiIcon.DELETE, danger = true, onClick = {
                         confirmChDel = selected.associateWith { filesOf(it) }
-                    })
+                    }, modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -1553,6 +1620,17 @@ private fun ChapterRow(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // R362 · 左侧 3dp 状态竖条：已固化绿 / 正在做主色 / 本次范围内待做
+            // 淡主色 / 完全没动过透明。字色一律不动（R169 定过可读性口径），
+            // 不靠把字压淡区分；参考 Vivid 目录「当前章左侧竖线」的做法。
+            val markColor = when (r.mark) {
+                ChapterMark.DONE -> HubGood
+                ChapterMark.MAKING -> HubPrimary
+                ChapterMark.SCOPED -> HubPrimary.copy(alpha = 0.42f)
+                ChapterMark.PLAIN -> Color.Transparent
+            }
+            Box(Modifier.width(3.dp).height(52.dp).background(markColor))
+            Spacer(Modifier.width(8.dp))
             // R169 · 真机截图（1.1.5 浅色）：103 章整列几乎看不见。HubGrey 对白卡
             // 只有 1.74~1.85:1，远低于 4.5:1。R167 把「浅色保留灰字层级」当层级，
             // 实际是读不了。深浅两色统一 palette.text（浅色近黑 / 深色纯白），
@@ -1563,9 +1641,28 @@ private fun ChapterRow(
                 SelectBox(checked = checked, tint = HubPrimary,
                     boxColor = HubCard, modifier = Modifier.size(18.dp))
             }
-            Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
-                color = palette.text,
-                modifier = Modifier.weight(1f))
+            // R362 · 两行章名区：状态短标签放第二行，不抢章名的横向宽度。
+            // 只有「制作中」加粗，其余保持 R169 的统一字色与常规字重。
+            Column(Modifier.weight(1f)) {
+                Text("${r.index + 1}. ${r.title}", fontSize = 14.sp, maxLines = 1,
+                    color = palette.text,
+                    fontWeight = if (r.mark == ChapterMark.MAKING)
+                        FontWeight.Bold else FontWeight.Normal)
+                val markLabel = when (r.mark) {
+                    ChapterMark.DONE -> "已完成"
+                    ChapterMark.MAKING -> "制作中"
+                    ChapterMark.SCOPED -> "本次待做"
+                    ChapterMark.PLAIN -> null
+                }
+                if (markLabel != null) {
+                    Text(markLabel, fontSize = 10.sp, maxLines = 1,
+                        color = when (r.mark) {
+                            ChapterMark.DONE -> HubGood
+                            ChapterMark.MAKING -> HubPrimary
+                            else -> HubSub
+                        })
+                }
+            }
             // R333 · 有待固化小块的章给一枚回看入口，点开就摊开那一章的小块，
             // 收尾条就在格子下面；不再让按钮孤零零挂在章名下一行。
             if (peekHint != null) {
@@ -1719,8 +1816,12 @@ private fun MergeChapterFooter(label: String, status: String,
 
 /**
  * R352 · 目录页进度卡下面那一排「同样大小」的按键。
- * 三枚各占 1/3 宽、同高 44dp；主文案一行、状态/时间放副行，长度再变也不挤；
+ * 三枚各占 1/3 宽、同高 44dp；主文案一行、状态/时间放副行；
  * 置灰仍占位，不因为没做出章音频就塌成两枚。
+ *
+ * R363 · 原来 Column 是 wrap_content，Text 单行按内容宽测量，真机上字体一放大
+ * 就整行画到色块外面（截图里「接着做不用重来」「整本连着听」都顶出按键）。
+ * 现在列宽锁死为按键宽、文字居中且单行省略，任何字号下都不会越出圆角边界。
  */
 @Composable
 private fun RowScope.HubActChip(
@@ -1732,12 +1833,17 @@ private fun RowScope.HubActChip(
         .background(if (enabled) bg else HubLine)
         .clickable(enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                color = if (enabled) fg else HubSub, maxLines = 1)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 3.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                color = if (enabled) fg else HubSub, maxLines = 1,
+                softWrap = false, overflow = TextOverflow.Ellipsis)
             if (sub.isNotBlank()) {
-                Text(sub, fontSize = 10.sp,
-                    color = if (enabled) fg.copy(alpha = 0.75f) else HubSub, maxLines = 1)
+                Text(sub, modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center, fontSize = 10.sp,
+                    color = if (enabled) fg.copy(alpha = 0.75f) else HubSub, maxLines = 1,
+                    softWrap = false, overflow = TextOverflow.Ellipsis)
             }
         }
     }

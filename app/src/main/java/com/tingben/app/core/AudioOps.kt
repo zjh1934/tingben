@@ -273,8 +273,9 @@ object AudioOps {
     }
 
     /**
-     * R346 · 章一旦固化（小块已清），这一章残留的「段要重做」标记必须一起清掉：
-     * 否则后续章收尾会把已删的小块又合成一遍，主循环还卡在旧章不往前走。
+     * R346 · 章一旦固化（chapter_done.json 记上），这一章残留的「段要重做」标记必须一起清掉：
+     * 否则后续章收尾会把旧小块又合成一遍，主循环还卡在旧章不往前走。
+     * R361 · 小块按设置留着时同样清标记：章已固化就不再插队重做，与文件在不在无关。
      * 只按小块文件名认段号，不碰别的章、别的状态；一次批量写盘。
      * 手动「拼接并转码」与自动章边界两条路径都走这里，口径唯一。
      */
@@ -305,8 +306,12 @@ object AudioOps {
         }
         if (enc.converted) enc.wav.delete()
         val killedPaths = parts.map { it.absolutePath }
-        val kept = deleteAll(parts)
-        AudioTree.forget(c, killedPaths)
+        // R361 · 新规则优先：小块删不删只认设置开关，不再写死「固化即删」。
+        // 关＝文件与显示名都留着，去设置页「音频文件」里导出或删除；
+        // 章状态、内部 WAV、重做标记仍按老口径处理，续跑不会回头。
+        val autoDel = Prefs.autoDeleteSegsAfterMerge(c)
+        val kept = if (autoDel) deleteAll(parts) else parts.size
+        if (autoDel) AudioTree.forget(c, killedPaths)
         // R346 · 固化即清标记：目录页手动拼章这条路径以前不清，后续章收尾
         // 会把刚删掉的小块又合成一遍（孤儿 WAV），任务卡在旧章不往前走。
         clearRedoOfParts(parts)
@@ -315,10 +320,11 @@ object AudioOps {
 
     /**
      * R231 · 整本合成收尾时，给「这一章」单独出一份成品音频。
-     * R255 · 用户口径：整章既已拼好，中间态小块就该清掉，别占着私有目录。
-     * R308 · 成品改为 M4A：拼完即转码、校验通过才删内部 WAV；
+     * R361 · 新规则优先：整章拼好后，中间小块删不删只看设置开关（默认删）。
+     * 旧口径「小块必删」不再并存；关开关时小块与显示名原样留着。
+     * R308 · 成品改为 M4A：拼完即转码、校验通过才删内部 WAV（与小块两回事）；
      * 转码失败保留 WAV 当手动另存兜底，章名蒙层显示拼接/转码阶段。
-     * 顺序有讲究——先写 chapter_done 再删小块：Producer 续跑靠 doneChapterFiles
+     * 顺序有讲究——先写 chapter_done 再动小块：Producer 续跑靠 doneChapterFiles
      * 走 covered 跳过，不写就删会让整章重做。markDone 失败就保留小块并说实话。
      */
     fun mergeChapterAuto(c: Context, bookId: String, bookTitle: String, chapter: Int,
@@ -342,11 +348,14 @@ object AudioOps {
         }
         if (enc.converted) enc.wav.delete()
         val killedPaths = parts.map { it.absolutePath }
-        val kept = deleteAll(parts)
-        AudioTree.forget(c, killedPaths)
+        // R361 · 同手动路径：小块删不删只认设置开关；章状态先写、标记照旧清。
+        val autoDel = Prefs.autoDeleteSegsAfterMerge(c)
+        val kept = if (autoDel) deleteAll(parts) else parts.size
+        if (autoDel) AudioTree.forget(c, killedPaths)
+        val tail = if (enc.converted) " · 内部 WAV 已删" else " · 转码没过，WAV 留着可手动另存"
         EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_MERGE_CLEAN",
-            "ch=${chapter + 1} · 清掉 ${killedPaths.size - kept} 个中间小块" +
-                if (enc.converted) " · 内部 WAV 已删" else " · 转码没过，WAV 留着可手动另存")
+            if (autoDel) "ch=${chapter + 1} · 清掉 ${killedPaths.size - kept} 个中间小块" + tail
+            else "ch=${chapter + 1} · 按设置保留 ${killedPaths.size} 个中间小块" + tail)
         // R346 · 与手动拼章同口径：章固化了就不留段级重做标记。
         clearRedoOfParts(parts)
         return Result(true, enc.file, kept = parts.size)

@@ -48,14 +48,22 @@ def check(f):
               "切分粒度改过"]:
         if k not in rs: e.append("续跑没拦旧分段: " + k[:50])
     # ② 进度条 / 滚动 / 空章
+    # R362 · 锚按新形态改准：起始章改取「范围内最靠前未完成章」，滚动补上
+    # 展开章插入的 item 偏移；旧写法（取最大章号 / 裸章号滚动）列为回潮禁令。
     for k in ["val chapterListState = rememberLazyListState()",
-              "val makingChapter = remember(st.chapterProgress, task, ui.size)",
-              "chapterListState.animateScrollToItem(makingChapter)",
+              "val makingChapter = remember(st.chapterProgress, task, chapters.size, book.id)",
+              "if (v < 1f && k < idx) idx = k",
+              "chapterListState.animateScrollToItem((makingChapter + extra).coerceAtLeast(0))",
+              "2 + chapterSegs.chunked(SEG_GRID_COLUMNS).size else 0",
               "state = chapterListState",
               '.clickable { scrollToMaking() }',
               "LinearProgressIndicator(progress = { chapterPctNow }",
               "height(18.dp)", "height(14.dp)"]:
         if k not in hb: e.append("进度/滚动缺: " + k[:56])
+    for b in ["for ((k, v) in st.chapterProgress) if (v < 1f && k > idx) idx = k",
+              "task?.only?.maxOrNull() ?: 0",
+              "chapterListState.animateScrollToItem(makingChapter)\n"]:
+        if b in hb: e.append("起始章/滚动旧写法回潮: " + b[:44])
     for k in ['"可播 $finishedChapters/${ui.size} 章"',
               '"${chapters.size} 章 · ${ChapterPlan.ruleName(curRule)}"',
               "Text(heartbeat",
@@ -106,7 +114,12 @@ def selftest():
         ("音色键漏代际", "cfg", "TextSplitter.SPLIT_EPOCH.toString()", ""),
         ("split_stamp 不写", "producer", 'File(work, "split_stamp.txt").writeText', ""),
         ("续跑不拦旧段", "resume", 'val splitFile = File(w, "split_stamp.txt")', ""),
-        ("点条不滚动", "hub", "chapterListState.animateScrollToItem(makingChapter)", ""),
+        ("点条不滚动", "hub",
+         "chapterListState.animateScrollToItem((makingChapter + extra).coerceAtLeast(0))", ""),
+        ("起始章又取最大章号", "hub", "if (v < 1f && k < idx) idx = k",
+         "if (v < 1f && k > idx) idx = k"),
+        ("item 偏移补偿被摘", "hub",
+         "2 + chapterSegs.chunked(SEG_GRID_COLUMNS).size else 0", "0"),
         ("列表没接 state", "hub", "state = chapterListState", ""),
         ("进度条底色被摘", "hub", "trackColor = HubLine", ""),
         ("本章进度条被摘", "hub", "LinearProgressIndicator(progress = { chapterPctNow }", ""),

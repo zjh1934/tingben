@@ -3,9 +3,7 @@ package com.tingben.app
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,7 +22,10 @@ import com.tingben.app.diag.EventLog
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -52,8 +53,10 @@ internal fun ActionChip(
         danger -> palette.warn.copy(alpha = 0.13f)
         else -> palette.primarySoft
     }
+    // R363 起文字单行省略，字体放大时也不会画到色块外面；
+    // R365 · 底部条不再用它，此组件只供分段看台等仍带文字的地方。
     Box(
-        modifier.padding(end = 6.dp)
+        modifier
             .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(bg)
@@ -67,12 +70,57 @@ internal fun ActionChip(
                 UiIconGlyph(icon, tint, glyphSize = 18.dp)
                 Spacer(Modifier.width(5.dp))
                 Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                    color = tint, maxLines = 1)
+                    color = tint, maxLines = 1, softWrap = false,
+                    overflow = TextOverflow.Ellipsis)
             }
         } else {
             Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                color = tint, maxLines = 1)
+                color = tint, maxLines = 1, softWrap = false,
+                overflow = TextOverflow.Ellipsis)
         }
+    }
+}
+
+/**
+ * R365 · 底部条专用：一枚纯图标按钮，不渲染文字。
+ *
+ * 目录页本来就挤，带字的三行条把章节列表压掉一大截；新口径是「一排图标就够」。
+ * 文字全撤（含「已选 N」「全选章节」「取消」），可读性靠三件事补齐：
+ * 图标语义（contentDescription）、主色 / 危险色 / 禁用置灰三态、固定等宽点击区。
+ * 动作本身一条不删；ActionChip 仍供分段看台等有文字的地方用。
+ */
+@Composable
+internal fun IconChip(
+    label: String,
+    icon: UiIcon,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    primary: Boolean = false,
+    danger: Boolean = false
+) {
+    val tint = when {
+        !enabled -> palette.sub.copy(alpha = 0.45f)
+        primary -> palette.onPrimary
+        danger -> palette.warn
+        else -> palette.primary
+    }
+    val bg = when {
+        !enabled -> palette.primarySoft.copy(alpha = 0.45f)
+        primary -> palette.primary
+        danger -> palette.warn.copy(alpha = 0.13f)
+        else -> palette.primarySoft
+    }
+    Box(
+        modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center
+    ) {
+        UiIconGlyph(icon, tint, glyphSize = 20.dp)
     }
 }
 
@@ -127,11 +175,13 @@ internal fun SelectBox(
 }
 
 /**
- * 底部胶囊操作条：上面一行「已选 / 全选 / 取消」，下面一行动作。
- * R291 · 原来所有动作都塞在一个横向滚动区里，而计数、全选、取消先占掉
- * 大半宽度，排在后面的「制作」被挤出屏幕，勾完章根本看不见去哪开工。
- * 现在主按钮固定在动作行左侧、不参与横滑；次要动作仍可横滑，不挤压控制行。
- * 动作由调用方给，组件不知道也不该知道「删的是章还是段」。
+ * 底部操作条：R365 · 单行纯图标，一行等宽铺开，不再占两三排。
+ *
+ * R363 的「顶行工具 + 主按钮独占整行 + 次要动作等宽一行」和更早 R291 的
+ * 「主按钮固定 + 次要动作横滑」都跟本轮打架，按「只留最新」整段作废，
+ * 不并存、不回潮。页面本来就挤，条子只留一行 44dp。
+ * 动作由调用方给，组件不知道也不该知道「删的是章还是段」；
+ * 没勾选时主按钮置灰、无可操作项收起，条子始终只有一行。
  */
 @Composable
 internal fun MultiSelectBar(
@@ -143,44 +193,39 @@ internal fun MultiSelectBar(
     primaryLabel: String? = null,
     onPrimary: (() -> Unit)? = null,
     primaryIcon: UiIcon? = null,
-    // R304 · 章节目录页那张菜单不要「已选多少章」这行字；首页片段列表仍保留。
+    // R365 · 没勾选时主按钮不被摘掉，只置灰，避免条子在 4 枚 / 5 枚之间跳。
+    primaryEnabled: Boolean = true,
+    // R304 · 计数不画在页面上，只进 contentDescription，纯图标形态不破。
     showCount: Boolean = true,
     actions: @Composable RowScope.() -> Unit
 ) {
     Card(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
         colors = CardDefaults.cardColors(containerColor = palette.card),
-        shape = RoundedCornerShape(28.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (showCount) Text("已选 $count", fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    color = palette.primary, modifier = Modifier.padding(start = 8.dp))
-                Spacer(Modifier.weight(1f))
-                ActionChip(allLabel, icon = UiIcon.ALL, onClick = {
-                    onSelectAll()
-                    EventLog.ui("MULTI_ALL_BAR", allLabel)
-                })
-                // R171 · 原来只有一个灰色 ×，用户「不知道这个勾选态怎么取消」。
-                // 换成看得见的「取消」文字，图标留作辅助，事件名不动。
-                ActionChip("取消", icon = UiIcon.CANCEL, onClick = {
-                    onCancel()
-                    EventLog.ui("MULTI_CANCEL_BAR", "")
-                }, modifier = Modifier.padding(start = 2.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val allDesc = if (showCount) "$allLabel · 已选 $count" else allLabel
+            IconChip(allDesc, UiIcon.ALL, onClick = {
+                onSelectAll()
+                EventLog.ui("MULTI_ALL_BAR", allLabel)
+            }, modifier = Modifier.weight(1f))
+            // R171 · 取消能力不撤，只从文字换成 × 图标，事件名不动。
+            IconChip("取消多选", UiIcon.CANCEL, onClick = {
+                onCancel()
+                EventLog.ui("MULTI_CANCEL_BAR", "")
+            }, modifier = Modifier.weight(1f))
+            if (primaryLabel != null && onPrimary != null) {
+                IconChip(primaryLabel, primaryIcon ?: UiIcon.SYNTH,
+                    onClick = onPrimary, enabled = primaryEnabled,
+                    primary = true, modifier = Modifier.weight(1f))
             }
-            Row(Modifier.fillMaxWidth().padding(top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                if (primaryLabel != null && onPrimary != null) {
-                    ActionChip(primaryLabel, onClick = onPrimary, primary = true,
-                        icon = primaryIcon)
-                }
-                // 次要动作可能多，横滑兜底；主按钮在它左边，永远露着
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    actions()
-                }
-            }
+            actions()
         }
     }
 }

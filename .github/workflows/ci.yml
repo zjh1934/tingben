@@ -545,10 +545,22 @@ jobs:
         run: python3 scripts/r350_verify.py
       - name: R350 反向注入
         run: python3 scripts/r350_verify.py --selftest
+      - name: R361 拼好后删除中间小块开关
+        run: python3 scripts/r361_verify.py
+      - name: R361 反向注入
+        run: python3 scripts/r361_verify.py --selftest
+      - name: R362 目录页起始章 / 暂停进度 / 章状态四态
+        run: python3 scripts/r362_verify.py
+      - name: R362 反向注入
+        run: python3 scripts/r362_verify.py --selftest
       - name: R352 目录页任务开关 / 任务页重设计
         run: python3 scripts/r352_verify.py
       - name: R352 反向注入
         run: python3 scripts/r352_verify.py --selftest
+      - name: R365 底部多选条一排纯图标
+        run: python3 scripts/r365_verify.py
+      - name: R365 反向注入
+        run: python3 scripts/r365_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入

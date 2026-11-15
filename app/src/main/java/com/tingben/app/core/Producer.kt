@@ -317,8 +317,11 @@ object Producer {
         // R148 · 1.1.3 日志：点停止后 79 秒才 FGS_FINISH，用户以为「按了没反应」。
         // 取消只在段间检查，而一段推理要 1~3 分钟。先立刻把状态改成已停止，
         // 当前那段跑完直接丢掉（不写盘、不计入进度），不再让用户干等。
-        _state.value = Progress(false, "已停止", _state.value.done, _state.value.total,
-            _state.value.failed, "已停止，正在收尾当前这一小段…已做好的都留着")
+        // R362 · 保留 chapterProgress：旧写法用 6 参 Progress(...) 重建状态，
+        // 逐章进度被默认空表抹掉，目录页两条进度条一点停止就同时归零。
+        // 改成 copy，只改 running / stage / message，done / total / 逐章进度全留着。
+        _state.value = _state.value.copy(running = false, stage = "已停止",
+            message = "已停止，正在收尾当前这一小段…已做好的都留着")
         try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
         appCtx?.let { c ->
             current?.let { t ->
@@ -328,6 +331,9 @@ object Producer {
                 // 同步内存态：否则 finally 会按 running 再标成 interrupted，
                 // 下次开软件就被当成崩溃中断而自动续跑，违背用户主动停止的意图。
                 current = stopped
+                // R362 · 档案的内存镜像也跟着同步：目录页读 Producer.resume
+                // 拿 done / only，不同步就停在启动时的 done=0，暂停后整本条也归零。
+                _resume.value = stopped
                 TaskResume.save(c, stopped)
             }
             ProduceService.stopping(c)
@@ -814,7 +820,8 @@ object Producer {
         val deferredChapters = mutableSetOf<Int>()
         var chaptersMade = 0
         var chaptersSkipped = 0
-        // R346 · 「已固化」＝拼好转码、小块已清、chapter_done.json 记着它。
+        // R346 · 「已固化」＝拼好转码、chapter_done.json 记着它。
+        // R361 · 小块删不删看设置开关，不再算「已固化」的判据；判定只认章状态，
         // 这是唯一事实口径：本次即时拼好的章也在册；运行中目录页手动拼章
         // 靠主循环每段刷新 doneChapterFiles 认出来，不会漏。
         fun chapterSealed(ci: Int): Boolean = ci >= 0 &&
@@ -847,8 +854,8 @@ object Producer {
             if (chapterRedoLeft(ci)) { deferredChapters.add(ci); return }
             val app = appCtx
             // R330 · 用户口径：听着不对的小块要能先重做，再亲手点「拼接并转码」。
-            // 拼了就清小块、旧声音会被固化进成品，坏块再改只能整章重来。
-            // 所以关掉「自动拼成整章」后章边界不再抢着拼，小块原样留着；
+            // 拼了之后小块删不删看 R361 开关；旧声音会被固化进成品，
+            // 坏块再改只能整章重来。所以关掉「自动拼成整章」后章边界不再抢着拼，小块原样留着；
             // 开关开时行为不变：这一章小块做完立刻拼成这一章音频、接着做下一章。
             if (app == null || !Prefs.autoMergeChapter(app)) {
                 deferredChapters.add(ci)

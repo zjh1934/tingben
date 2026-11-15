@@ -32,9 +32,10 @@ POS = {
         "drawPath(p, boxColor",
         "onSelectAll: () -> Unit",
         "onCancel: () -> Unit",
-        "horizontalScroll(rememberScrollState())",
+        "horizontalArrangement = Arrangement.spacedBy(6.dp)",   # R365 · 单行等距
         "internal fun ActionChip(",
-        'ActionChip("取消"',
+        "internal fun IconChip(",                                # R365 · 一排纯图标
+        'IconChip("取消多选"',
     ],
     "hub": [
         # 第一列：长按也能勾选，底部换成统一条
@@ -85,7 +86,10 @@ def load():
 
 
 BAN_MULTI = ['TextButton(onClick = onMixer)', 'TextButton(onClick = onCancel)',
-             'Text("合成音频", fontSize = 12.sp, color = HubPrimary)']
+             'Text("合成音频", fontSize = 12.sp, color = HubPrimary)',
+             # R363 / R365 · 横滑与三行带字两套旧口径都作废，只留单行图标
+             'horizontalScroll(rememberScrollState())',
+             'Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp))']
 
 def check(f):
     e = []
@@ -118,6 +122,8 @@ def selftest():
         "第三列方块被摘": ("hub", "SelectBox("),
         "批量清单被摘": ("hub", "confirmChDel = selected.associateWith { filesOf(it) }"),
         "陈旧闭包防护被摘": ("hub", "章名左边常驻一枚勾"),
+        "单行图标组件被摘": ("multi", "internal fun IconChip("),
+        "单行等距被摘": ("multi", "horizontalArrangement = Arrangement.spacedBy(6.dp)"),
         # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
         # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
         # R195 · 旧页批量操作锚点随独立进度页删净，此例退役
