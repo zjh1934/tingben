@@ -211,7 +211,7 @@ internal fun PlayerSheet(
         }
 
         if (showList) {
-            Text("播放队列 · ${list.size} 条", fontSize = 13.sp,
+            Text("播放队列 · ${list.size} 条", fontSize = HiSectionSp,
                 fontWeight = FontWeight.Bold, color = palette.primary,
                 modifier = Modifier.padding(horizontal = 20.dp).alpha(chrome))
             Spacer(Modifier.height(8.dp))

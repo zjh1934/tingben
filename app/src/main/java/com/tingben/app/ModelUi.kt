@@ -95,11 +95,11 @@ internal fun ModelScreen(c: Context, refresh: Int,
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (allReady) "4 份已就绪"
                  else "还差 ${missing.size} 份模型",
-                fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                fontSize = HiCaptionSp, fontWeight = FontWeight.SemiBold,
                 color = if (allReady) Good else Warn,
                 modifier = Modifier.weight(1f))
             if (files.isNotEmpty())
-                Text("已导入 ${files.size} 个文件", fontSize = 11.sp, color = Sub)
+                Text("已导入 ${files.size} 个文件", fontSize = HiMicroSp, color = Sub)
         }
 
         if (importing != null) {

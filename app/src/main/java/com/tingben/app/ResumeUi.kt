@@ -74,7 +74,7 @@ internal fun ResumeAskDialog(
                         IconResume(palette.primary, Modifier.size(22.dp))
                     }
                     Spacer(Modifier.width(10.dp))
-                    Text("上次没做完", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                    Text("上次没做完", fontSize = HiTitleSp, fontWeight = FontWeight.Bold,
                         color = palette.text)
                     Spacer(Modifier.weight(1f))
                     // R320 · 图 45：右上角 chip 原来直接塞 label（可能是百分比），
@@ -82,7 +82,7 @@ internal fun ResumeAskDialog(
                     // 整张卡只留一个百分比数字。
                     Box(Modifier.background(palette.primarySoft, RoundedCornerShape(50))
                             .padding(horizontal = 10.dp, vertical = 4.dp)) {
-                        Text("未完成", fontSize = 11.sp, color = palette.primary)
+                        Text("未完成", fontSize = HiMicroSp, color = palette.primary)
                     }
                 }
                 Spacer(Modifier.height(14.dp))

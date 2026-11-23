@@ -220,7 +220,7 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                     contentAlignment = Alignment.Center) {
                     IconBack(Primary)
                 }
-                Text("输入朗读", fontSize = 16.sp,
+                Text("输入朗读", fontSize = HiTitleSp,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                     color = palette.text)
                 Spacer(Modifier.weight(1f))
@@ -233,10 +233,10 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
         if (asHome && fullInput) {
             Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("念点什么", fontSize = 15.sp,
+                Text("念点什么", fontSize = HiSectionSp,
                     fontWeight = FontWeight.Bold, color = palette.text)
                 Spacer(Modifier.weight(1f))
-                Text("${text.length} 字", fontSize = 12.sp, color = Sub)
+                Text("${text.length} 字", fontSize = HiCaptionSp, color = Sub)
             }
         }
         if (fullInput) Box(Modifier.fillMaxWidth().fillMaxHeight(0.26f)

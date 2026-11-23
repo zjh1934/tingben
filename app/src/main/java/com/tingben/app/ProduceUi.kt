@@ -140,12 +140,13 @@ internal fun ProduceScreen(c: Context, id: String?, refresh: Int, onBack: () -> 
     val book = snapshot.book
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         TextButton(onClick = onBack) { Text("← 目录") }
+        // R370 · 书名 / 章数 / 去向说明三层字号递进，不再两行都是灰小字。
         Text(book.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
-        Text("${chapters.size} 章 · ${book.chars} 字", fontSize = 13.sp, color = Sub)
+        Text("${chapters.size} 章 · ${book.chars} 字", fontSize = HiSectionSp, color = Sub)
         Spacer(Modifier.height(4.dp))
         Text("参数在设置页 · 勾章在目录页",
-            fontSize = 11.sp, color = Sub)
+            fontSize = HiMicroSp, color = Sub.copy(alpha = HiHairAlpha))
         Spacer(Modifier.height(10.dp))
         // R218 · 撤掉「合成前调音」入口卡片：调音在首页右上 / 目录页 / 设置页
         // 都够得到，制作设置页不该再塞一枚没用的入口。

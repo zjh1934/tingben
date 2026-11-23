@@ -70,9 +70,9 @@ POS = {
         'Text("导入模型文件", fontSize = 13.sp)',
         "colors = ButtonDefaults.buttonColors(containerColor = Warn)",
         # H3 设置页
-        "Card(\n        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),",
+        "Card(\n        modifier = Modifier.fillMaxWidth().padding(bottom = HiSectionGap),",
         "colors = CardDefaults.cardColors(containerColor = palette.card)",
-        "Box(Modifier.size(width = 3.dp, height = 15.dp)",
+        "Box(Modifier.size(width = 3.dp, height = 16.dp)",
         '"模型已就绪"', '"模型还没齐"',
         "RoundedCornerShape(10.dp))\n                .padding(3.dp)",
         "if (on) palette.card else Color.Transparent",
@@ -197,7 +197,7 @@ def logic_cases(f):
     if not body:
         bad.append("没圈出 SettingsSection 函数体")
     else:
-        if "Card(" not in body or "RoundedCornerShape(16.dp)" not in body:
+        if "Card(" not in body or "RoundedCornerShape(HiCardRadius)" not in body:
             bad.append("设置分区没卡片化")
         if "HorizontalDivider(color = Line)" in body:
             bad.append("设置分区又退回裸分隔线")
@@ -258,11 +258,11 @@ def selftest():
         ("三模式默认信息被摘", "main", 'Text(mode.hint, fontSize = 10.sp, color = Sub, maxLines = 1', ""),
         ("三模式详情入口被摘", "main", 'Text(if (open) "收起" else "详情 ›",', ""),
         ("设置卡片被摘", "main",
-         "Card(\n        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),", ""),
-        ("徽标被摘", "main", "Box(Modifier.size(width = 3.dp, height = 15.dp)", ""),
+         "Card(\n        modifier = Modifier.fillMaxWidth().padding(bottom = HiSectionGap),", ""),
+        ("徽标被摘", "main", "Box(Modifier.size(width = 3.dp, height = 16.dp)", ""),
         ("主题分段被摘", "main", "if (on) palette.card else Color.Transparent", ""),
         ("状态卡被摘", "main", '"模型已就绪"', ""),
-        ("裸分隔线回潮", "main", "Box(Modifier.size(width = 3.dp, height = 15.dp)",
+        ("裸分隔线回潮", "main", "Box(Modifier.size(width = 3.dp, height = 16.dp)",
          "HorizontalDivider(color = Line)"),
         ("CI 漏挂 r152", "ci", "python3 scripts/r152_verify.py --selftest", ""),
         ("现行清单漏 r152", "r135", '"r152_verify.py"', ""),

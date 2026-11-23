@@ -140,7 +140,7 @@ INJECT = [
     ('恢复假单选', 'main', 'Text("参数在设置页 · 勾章在目录页"',
      'ProduceMode.values().forEach { }\n            Text("参数在设置页 · 勾章在目录页"'),
     ('删路径说明', 'main',
-     'Text("参数在设置页 · 勾章在目录页",\n            fontSize = 11.sp, color = Sub)', ''),
+     'Text("参数在设置页 · 勾章在目录页",\n            fontSize = HiMicroSp, color = Sub.copy(alpha = HiHairAlpha))', ''),
     ('删恢复默认', 'main', 'Prefs.setDefaultPerf(c, cfg)', ''),
     ('删颜色定义', 'opts', 'private val OptPrimary: Color get() = palette.primary\n', ''),
     ('去掉焦点申请', 'queue', 'am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED',

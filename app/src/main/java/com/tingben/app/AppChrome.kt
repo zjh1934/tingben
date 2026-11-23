@@ -133,8 +133,11 @@ internal fun AppTopBar(
     // R226 · 二级页可把操作挂到书名同一排的右侧，不再单独占一行。
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
+    // R370 · 顶栏是「导航层」，内容是「信息层」：统一留白、标题提一级，
+    // 底下补一根极淡发丝线。所有页面共用这一处，不再各页各调 padding。
+    Column(Modifier.fillMaxWidth().background(surface)) {
     Row(
-        Modifier.fillMaxWidth().background(surface).padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = HiPagePad, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (spec.canBack && onBack != null) {
@@ -151,8 +154,8 @@ internal fun AppTopBar(
             // R243 · 书名太长向左滚动，不换行把顶栏撑宽 / 不压掉右侧按钮
             Text(
                 spec.title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = HiTitleSp,
+                fontWeight = FontWeight.Bold,
                 color = primary,
                 maxLines = 1,
                 softWrap = false,
@@ -175,6 +178,9 @@ internal fun AppTopBar(
             }
         }
         trailing()
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp)
+        .background(palette.line.copy(alpha = HiHairAlpha)))
     }
 }
 
@@ -292,7 +298,7 @@ internal fun AppDrawerSheet(
         Column(Modifier.fillMaxSize().padding(vertical = 12.dp)) {
             // R243 · 抽屉顶上「我的书」是废话，标题为空就整行不渲染
             if (title.isNotEmpty()) {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                Text(title, fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
                     color = primary,
                     modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 10.dp))
             }
@@ -300,9 +306,9 @@ internal fun AppDrawerSheet(
             Button(
                 onClick = onImport,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(HiChipRadius)
             ) {
-                Text("＋ 导入一本书", fontSize = 13.sp)
+                Text("＋ 导入一本书", fontSize = HiSectionSp)
             }
             Box(Modifier.weight(1f)) { content() }
             // R357 · 设置与版本号同一行、各占一半宽。版本号不再是一行点不动的小字：
@@ -315,7 +321,7 @@ internal fun AppDrawerSheet(
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.weight(1f).height(44.dp)
-                    .background(primary.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                    .background(primary.copy(alpha = 0.10f), RoundedCornerShape(HiChipRadius))
                     .clickable { onSettings() }
                     .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -326,7 +332,7 @@ internal fun AppDrawerSheet(
                         color = primary)
                 }
                 Row(Modifier.weight(1f).height(44.dp)
-                    .background(primary.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                    .background(primary.copy(alpha = 0.10f), RoundedCornerShape(HiChipRadius))
                     .clickable {
                         val i = Intent(Intent.ACTION_VIEW, Uri.parse(repo))
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

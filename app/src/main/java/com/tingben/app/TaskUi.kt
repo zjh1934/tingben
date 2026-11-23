@@ -557,10 +557,11 @@ internal fun AudioCard(
 @Composable
 internal fun SectionLabel(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(3.dp).height(12.dp)
+        // R370 · 分区锚条与字号跟设置分组同款，任务页、目录页不再各写一套。
+        Box(Modifier.width(3.dp).height(14.dp)
             .background(Primary, RoundedCornerShape(2.dp)))
         Spacer(Modifier.width(6.dp))
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Primary)
+        Text(text, fontSize = HiCaptionSp, fontWeight = FontWeight.Bold, color = Primary)
     }
 }
 
@@ -708,7 +709,7 @@ internal fun SectionRow(title: String, action: String, onAll: () -> Unit) {
         SectionLabel(title)
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onAll) {
-            Text(action, fontSize = 12.sp, color = Primary)
+            Text(action, fontSize = HiCaptionSp, color = Primary)
         }
     }
 }

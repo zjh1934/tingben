@@ -115,10 +115,10 @@ internal fun LibraryScreen(c: Context, refresh: Int, onOpen: (String) -> Unit,
             onDismissRequest = { menuBook = null },
             title = {
                 Column {
-                    Text(b.title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(b.title, fontSize = HiSectionSp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(3.dp))
                     Text(if (isPinned) "已置顶" else "未置顶",
-                        fontSize = 12.sp, color = Sub)
+                        fontSize = HiCaptionSp, color = Sub.copy(alpha = HiHairAlpha))
                 }
             },
             text = { Text("删除会连已做好的音频一起删掉", fontSize = 12.sp, color = Sub) },

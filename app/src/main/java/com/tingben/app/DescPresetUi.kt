@@ -86,7 +86,7 @@ internal fun DescPresetRow(
     if (showPick) {
         AlertDialog(
             onDismissRequest = { showPick = false },
-            title = { Text("选一个「$label」预设", fontSize = 14.sp) },
+            title = { Text("选一个「$label」预设", fontSize = HiSectionSp) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("列表里只显示简短描述；点一下把详细描述填进输入框。",

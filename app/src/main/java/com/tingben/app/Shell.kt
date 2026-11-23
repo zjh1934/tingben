@@ -107,10 +107,12 @@ internal fun chromeOf(s: Screen): ChromeSpec = when (s) {
 
 @Composable
 internal fun CardBox(mod: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    // R370 · 卡片是全站第二层容器：圆角/内边距/投影统一到层级令牌，
+    // 与设置分组、任务卡、目录卡同一套数值，不再 20/18/16 各写各的。
     Card(mod.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Card),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-        Column(Modifier.padding(18.dp), content = content)
+        shape = RoundedCornerShape(HiCardRadius),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(Modifier.padding(HiCardPad), content = content)
     }
 }
 

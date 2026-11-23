@@ -31,7 +31,7 @@ def check(f):
     ch, sh, mn, it, lb, st = (f["chrome"], f["shell"], f["main"],
                               f["input"], f["lib"], f["settings"])
     # ① 抽屉：标题单独一行、导入独占一排、设置收进左下角
-    for k in ['Text("＋ 导入一本书", fontSize = 13.sp)',
+    for k in ['Text("＋ 导入一本书", fontSize = HiSectionSp)',
               'Button(\n                onClick = onImport,',
               'UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)',
               "Box(Modifier.weight(1f)) { content() }"]:
@@ -105,7 +105,7 @@ def selftest():
         ("抽屉设置参数被摘", "chrome", "onSettings: () -> Unit,", ""),
         ("导入又挤回标题行", "chrome", 'Button(\n                onClick = onImport,',
          'TextButton(onClick = onImport)'),
-        ("导入整排被摘", "chrome", 'Text("＋ 导入一本书", fontSize = 13.sp)', ""),
+        ("导入整排被摘", "chrome", 'Text("＋ 导入一本书", fontSize = HiSectionSp)', ""),
         ("抽屉左下设置被摘", "chrome",
          'UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)', ""),
         ("抽屉设置没接线", "main", 'EventLog.ui("DRAWER_SETTINGS", "open")', ""),

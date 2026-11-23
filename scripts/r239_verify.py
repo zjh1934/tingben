@@ -97,7 +97,7 @@ def check(f):
     if "Baseline 由官方维护" not in f["board"]: e.append("AGENTS 官方治理口径被摘")
     # ⑨ R245 设置页重设计：M3 分组层级 / 徽标框退场 / 状态卡中性 / 低频后置
     for k in ["internal fun SettingsSection(",
-              "Box(Modifier.size(width = 3.dp, height = 15.dp)",
+              "Box(Modifier.size(width = 3.dp, height = 16.dp)",
               "color = Primary, modifier = Modifier.weight(1f)",
               '.semantics { contentDescription = "$title · $badge" }',
               ".border(1.dp,",
@@ -154,9 +154,9 @@ def selftest():
         ("AGENTS 官方口径被摘", "agents", "aoci verify", ""),
         ("AGENTS 官方口径被摘（board）", "board", "Baseline 由官方维护", ""),
         ("分组竖条被摘", "settings",
-         "Box(Modifier.size(width = 3.dp, height = 15.dp)", ""),
+         "Box(Modifier.size(width = 3.dp, height = 16.dp)", ""),
         ("彩色徽标框回潮", "settings",
-         "Box(Modifier.size(width = 3.dp, height = 15.dp)",
+         "Box(Modifier.size(width = 3.dp, height = 16.dp)",
          "Box(Modifier.background(PrimarySoft, RoundedCornerShape(6.dp))"),
         ("状态卡整块染色回潮", "settings", ".border(1.dp,",
          "containerColor = if (missing.isEmpty()) PrimarySoft else Warn.copy"),

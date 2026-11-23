@@ -27,7 +27,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * R224 · 多选动作按钮：有底色、圆角、可按压，不再是一排平铺的字。
@@ -58,7 +57,7 @@ internal fun ActionChip(
     Box(
         modifier
             .heightIn(min = 44.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(HiChipRadius))
             .background(bg)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 11.dp),
@@ -69,12 +68,12 @@ internal fun ActionChip(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 UiIconGlyph(icon, tint, glyphSize = 18.dp)
                 Spacer(Modifier.width(5.dp))
-                Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                Text(label, fontSize = HiSectionSp, fontWeight = FontWeight.Medium,
                     color = tint, maxLines = 1, softWrap = false,
                     overflow = TextOverflow.Ellipsis)
             }
         } else {
-            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            Text(label, fontSize = HiSectionSp, fontWeight = FontWeight.Medium,
                 color = tint, maxLines = 1, softWrap = false,
                 overflow = TextOverflow.Ellipsis)
         }
@@ -114,7 +113,7 @@ internal fun IconChip(
     Box(
         modifier
             .heightIn(min = 44.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(HiChipRadius))
             .background(bg)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = label },

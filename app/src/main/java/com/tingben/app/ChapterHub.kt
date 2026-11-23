@@ -1830,7 +1830,8 @@ private fun MergeChapterFooter(label: String, status: String,
         .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(status, fontSize = 12.sp, maxLines = 2,
+            // R370 · 状态是注释级、按钮是分区级，收尾条不再两块字一样大。
+            Text(status, fontSize = HiCaptionSp, maxLines = 2,
                 color = if (busy) HubPrimary
                         else if (enabled) palette.text else HubWarn)
         }
@@ -1845,7 +1846,7 @@ private fun MergeChapterFooter(label: String, status: String,
                 .clickable(enabled = enabled) { onClick() }
                 .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center) {
-                Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                Text(label, fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
                     color = if (enabled) Color.White else HubSub)
             }
         }

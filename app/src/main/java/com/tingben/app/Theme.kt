@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -13,6 +14,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowInsetsControllerCompat
 
 internal data class Pal(
@@ -60,6 +65,34 @@ internal val appThemeDark: Boolean get() = _appThemeDark
 
 internal val palette: Pal get() = if (_appThemeDark) DarkPal else LightPal
 
+// R370 · 全站视觉层级令牌：主页、目录、任务、设置、模型、调音、输入朗读、
+// 播放器与抽屉共用同一套「标题 / 分区 / 正文 / 注释」尺寸和留白。
+// 以前每个页面各写一个数字，同一个层级在七八个页面里能差 2~3sp；
+// 现在只在这里定义一次，改一处全站跟着走，功能与逻辑一条不动。
+internal val HiPagePad = 16.dp
+internal val HiCardPad = 16.dp
+internal val HiCardRadius = 18.dp
+internal val HiChipRadius = 14.dp
+internal val HiSectionGap = 14.dp
+internal val HiTitleSp = 18.sp
+internal val HiSectionSp = 14.sp
+internal val HiBodySp = 14.sp
+internal val HiCaptionSp = 12.sp
+internal val HiMicroSp = 11.sp
+internal const val HiHairAlpha = 0.55f
+
+// 没有显式写 fontSize 的 Text 一律走这套排版，层级由字重 + 字号承担，
+// 不再靠「把字调灰」分主次（深色下灰字看不清，I2/R167 已实证）。
+private val AppTypography = Typography(
+    titleLarge = TextStyle(fontSize = HiTitleSp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = HiSectionSp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = HiBodySp),
+    bodyMedium = TextStyle(fontSize = HiSectionSp),
+    bodySmall = TextStyle(fontSize = HiCaptionSp),
+    labelLarge = TextStyle(fontSize = HiCaptionSp, fontWeight = FontWeight.SemiBold),
+    labelSmall = TextStyle(fontSize = HiMicroSp)
+)
+
 internal fun isSystemNight(c: Context): Boolean =
     (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
         Configuration.UI_MODE_NIGHT_YES
@@ -99,5 +132,5 @@ internal fun TingbenTheme(content: @Composable () -> Unit) {
             outline = p.line
         )
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, typography = AppTypography, content = content)
 }

@@ -569,6 +569,10 @@ jobs:
         run: python3 scripts/r369_verify.py
       - name: R369 反向注入
         run: python3 scripts/r369_verify.py --selftest
+      - name: R370 全站 UI 视觉层级统一 / 每个页面 / 守恒
+        run: python3 scripts/r370_verify.py
+      - name: R370 反向注入
+        run: python3 scripts/r370_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入

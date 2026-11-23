@@ -195,13 +195,13 @@ internal fun SettingsSection(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = HiSectionGap),
+        shape = RoundedCornerShape(HiCardRadius),
         colors = CardDefaults.cardColors(containerColor = palette.card),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(Modifier.fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 12.dp)) {
+            .padding(horizontal = HiPagePad, vertical = 12.dp)) {
             Row(
                 Modifier.fillMaxWidth()
                     .let { if (collapsible) it.clickable { onToggle(!open) } else it }
@@ -209,13 +209,14 @@ internal fun SettingsSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 代码画的主色竖条，替代原来的彩色徽标框
-                Box(Modifier.size(width = 3.dp, height = 15.dp)
+                Box(Modifier.size(width = 3.dp, height = 16.dp)
                     .background(Primary, RoundedCornerShape(2.dp)))
                 Spacer(Modifier.width(9.dp))
-                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                Text(title, fontWeight = FontWeight.Bold, fontSize = HiSectionSp,
                     color = Primary, modifier = Modifier.weight(1f))
                 if (collapsible) {
-                    Text(if (open) "收起 ⌃" else "展开 ›", fontSize = 12.sp, color = Sub)
+                    Text(if (open) "收起 ⌃" else "展开 ›", fontSize = HiCaptionSp,
+                        color = Sub.copy(alpha = HiHairAlpha))
                 }
             }
             if (!collapsible || open) {
@@ -1164,7 +1165,7 @@ internal fun LocalFilesDialog(roots: List<Pair<String, File>>,
 internal fun SettingsEntry(icon: UiIcon, title: String, hint: String, go: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(HiChipRadius))
             .clickable(onClick = go)
             .padding(vertical = 10.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1176,10 +1177,10 @@ internal fun SettingsEntry(icon: UiIcon, title: String, hint: String, go: () -> 
         }
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            Text(title, fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
                 color = palette.text)
             Spacer(Modifier.height(2.dp))
-            Text(hint, fontSize = 11.sp, color = Sub, maxLines = 1,
+            Text(hint, fontSize = HiMicroSp, color = Sub.copy(alpha = HiHairAlpha), maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(6.dp))
@@ -1204,7 +1205,7 @@ internal fun ChevronRight(tint: Color, modifier: Modifier = Modifier) {
 /** R354 · 二级页顶部：返回箭头回首页，标题写清「现在在哪一页」。 */
 @Composable
 internal fun SettingsSubHeader(title: String, onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp),
+    Row(Modifier.fillMaxWidth().padding(bottom = HiSectionGap),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(40.dp)
                 .clip(RoundedCornerShape(20.dp))
@@ -1213,7 +1214,7 @@ internal fun SettingsSubHeader(title: String, onBack: () -> Unit) {
             IconBack(Primary, Modifier.size(20.dp))
         }
         Spacer(Modifier.width(8.dp))
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+        Text(title, fontSize = HiTitleSp, fontWeight = FontWeight.Bold,
             color = palette.text)
     }
 }

@@ -279,7 +279,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
             } else {
                 Spacer(Modifier.width(4.dp))
             }
-            Text("调音台", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = palette.text)
+            Text("调音台", fontSize = HiTitleSp, fontWeight = FontWeight.Bold, color = palette.text)
             Spacer(Modifier.weight(1f))
             if (dirty) {
                 Button(onClick = { commitAll() },

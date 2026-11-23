@@ -30,7 +30,7 @@ FILES = {
 }
 
 # R291 · 抽屉里唯一一枚导入入口；空态那枚是旧第二入口，用于回潮注入
-DRAWER_BTN = 'Text("＋ 导入一本书", fontSize = 13.sp)'
+DRAWER_BTN = 'Text("＋ 导入一本书", fontSize = HiSectionSp)'
 OLD_EMPTY_BTN = 'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)'
 SYS_CARD = 'SettingsSection("运行与通知", "系统", collapsible = false)'
 PERM_CARD = 'SettingsSection("权限", "权限", collapsible = false)'

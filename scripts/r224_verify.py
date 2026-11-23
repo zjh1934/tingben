@@ -47,7 +47,7 @@ def check(f):
     m, hb, mn = f["multi"], f["hub"], f["main"]
     # ① 组件存在且带底色 / 圆角 / 可点
     if "internal fun ActionChip(" not in m: e.append("缺 ActionChip 组件")
-    for k in [".background(", ".clip(RoundedCornerShape(12.dp))", ".clickable(onClick = onClick)"]:
+    for k in [".background(", ".clip(RoundedCornerShape(HiChipRadius))", ".clickable(onClick = onClick)"]:
         if k not in m: e.append("ActionChip 缺按钮形态: " + k)
     if "danger: Boolean = false" not in m: e.append("ActionChip 缺危险色区分")
     # ② 勾选条内动作全换成 chip
@@ -104,7 +104,7 @@ def selftest():
     cuts = [
         ("组件被删", "multi", "internal fun ActionChip(", ""),
         ("底色被摘", "multi", ".background(", ""),
-        ("圆角被摘", "multi", ".clip(RoundedCornerShape(12.dp))", ""),
+        ("圆角被摘", "multi", ".clip(RoundedCornerShape(HiChipRadius))", ""),
         ("点击被摘", "multi", ".clickable(onClick = onClick)", ""),
         ("危险色被摘", "multi", "danger: Boolean = false", ""),
         ("制作退回横滑小按钮", "hub",
