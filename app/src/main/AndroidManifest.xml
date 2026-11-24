@@ -23,6 +23,9 @@
     <!-- R377 · 远程 API 被调用时给「开始 / 结束」两种不同节奏的震动反馈，
          normal 级、安装即授；只在跨网中继前台服务干活时触发。 -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- R386 · 应用更新 / 开机后按用户已保存的开关恢复两个前台服务；
+         不是保活，只接官方豁免的三个系统广播，见 core/ResumeReceiver.kt。 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- R175 · 纯端侧 App，私有书全文 / 数 GB 模型 / 成品音频 / 断点 /
          含正文片段的诊断日志都不该被系统备份或设备迁移带走。allowBackup=false
@@ -119,6 +122,16 @@
                 <action android:name="com.tingben.app.PLAY_NEXT" />
                 <action android:name="com.tingben.app.PLAY_PREV" />
                 <action android:name="com.tingben.app.PLAY_STOP" />
+            </intent-filter>
+        </receiver>
+
+        <!-- R386 · 不导出；只接三个官方豁免广播，进程死了按 Prefs 补拉服务，
+             不注册 USER_PRESENT / SCREEN_ON 之类高频广播强拉活。 -->
+        <receiver android:name=".core.ResumeReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
     </application>

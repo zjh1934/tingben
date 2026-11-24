@@ -26,8 +26,9 @@ import java.util.concurrent.Executors
  *
  * 独立 `specialUse` 前台服务，**不复用** ProduceService 的 mediaProcessing：
  * Android 15 起那类前台服务每 24h 只有 6h 额度，长驻监听会把整本听书挤掉。
- * 唤醒锁只在真合成时持，监听段不持；被厂商清理不强拉活，下次手动开即可
- * （冷启自动恢复留 Phase 3，见方案报告决策记录 D5）。
+ * 唤醒锁只在真合成时持，监听段不持；被厂商清理不强拉活，
+ * R386 起由 Application 冷启 + 更新/开机豁免广播按已保存开关补拉
+ * （core/ServiceResume.kt），不再要求用户手动关再开。
  *
  * 本轮只绑 127.0.0.1 / 局域网，**不连云端、不开公网**（D3）。
  * 请求正文不落日志，只留方法与路径；错误体一律 problem+json，不回 HTML。
@@ -91,7 +92,8 @@ class GatewayService : Service() {
         EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_ON",
             GatewayPrefs.bind(this) + ":" + GatewayPrefs.port(this) + " · 并发 1")
         // 不做 START_STICKY 拉活：进程被杀后监听线程已死，系统重启只是空壳。
-        // 恢复靠设置页再点一次「开启网关」；自动恢复留 Phase 3。
+        // R386 · 恢复不再是「用户再点一次」：Application 冷启 + 更新/开机豁免广播
+        // 会按已保存的开关补拉（core/ServiceResume.kt）。这里只守「不被系统空壳重启」。
         return START_NOT_STICKY
     }
 

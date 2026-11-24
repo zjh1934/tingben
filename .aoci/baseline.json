@@ -32,10 +32,10 @@
       "size": 439
     },
     ".github/workflows/ci.yml": {
-      "normalized_sha256": "748b4c94e98f58e205faae447fc65bb7a1ac3ca1c608da71d15547ae74c50539",
+      "normalized_sha256": "a30d119efdc7a8689780c96373b07f9b3c5205cfb2b03c13fef093b2b7b59a1c",
       "role": "index",
-      "sha256": "748b4c94e98f58e205faae447fc65bb7a1ac3ca1c608da71d15547ae74c50539",
-      "size": 38467
+      "sha256": "a30d119efdc7a8689780c96373b07f9b3c5205cfb2b03c13fef093b2b7b59a1c",
+      "size": 38645
     },
     ".gitignore": {
       "normalized_sha256": "4229b6733b32c7430e94b931f1f581c7d214bc0e5e907583c6a631ea20e462f9",
@@ -50,10 +50,10 @@
       "size": 72459
     },
     "CHANGELOG.md": {
-      "normalized_sha256": "fc312b081aed046243c7bb48738c87a8db1638156fc6cd3977e454679ba95e7c",
+      "normalized_sha256": "ed627912771a9df1f3250018dd203ca86d7c8e77b8a1c132cc1ae90db7057f2d",
       "role": "index",
-      "sha256": "fc312b081aed046243c7bb48738c87a8db1638156fc6cd3977e454679ba95e7c",
-      "size": 22812
+      "sha256": "ed627912771a9df1f3250018dd203ca86d7c8e77b8a1c132cc1ae90db7057f2d",
+      "size": 23771
     },
     "CONTRIBUTING.md": {
       "normalized_sha256": "a7e8d8276bafdf8637b45774069a5134642b92f2538b6cc516068e26d30eb9ff",
@@ -68,15 +68,15 @@
       "size": 1145
     },
     "README.md": {
-      "normalized_sha256": "52b46dcddb62f283a814802b5aa1a2cf2641907bd2a274a402b195128f65cd2b",
+      "normalized_sha256": "800dce8a671ca198911a6fc27b5ad63f0126a9752d573d4d6eedb6860daa74aa",
       "role": "index",
-      "sha256": "52b46dcddb62f283a814802b5aa1a2cf2641907bd2a274a402b195128f65cd2b",
+      "sha256": "800dce8a671ca198911a6fc27b5ad63f0126a9752d573d4d6eedb6860daa74aa",
       "size": 7923
     },
     "ROADMAP.md": {
-      "normalized_sha256": "9b3e6bd7ed9de3e5fab0aef54afc987cab2036a5beb9378434c87a765e10112f",
+      "normalized_sha256": "9ba26736e2e0ba040f5740fc484711601930817d1f93bc25d08450b30d886bc7",
       "role": "index",
-      "sha256": "9b3e6bd7ed9de3e5fab0aef54afc987cab2036a5beb9378434c87a765e10112f",
+      "sha256": "9ba26736e2e0ba040f5740fc484711601930817d1f93bc25d08450b30d886bc7",
       "size": 3530
     },
     "SECURITY.md": {
@@ -86,9 +86,9 @@
       "size": 836
     },
     "STATUS.md": {
-      "normalized_sha256": "34dd6bb66d17b2f0aa1005e956c10ef8e6cc3c4710ce2504efc327f5890a4dae",
+      "normalized_sha256": "aa2d6ee42ea0e47483c63ebd6d5f20ff0aac186a2ca8794d779c3c9a0cc9c04c",
       "role": "index",
-      "sha256": "34dd6bb66d17b2f0aa1005e956c10ef8e6cc3c4710ce2504efc327f5890a4dae",
+      "sha256": "aa2d6ee42ea0e47483c63ebd6d5f20ff0aac186a2ca8794d779c3c9a0cc9c04c",
       "size": 4300
     },
     "app/build.gradle.kts": {
@@ -98,10 +98,10 @@
       "size": 3482
     },
     "app/src/main/AndroidManifest.xml": {
-      "normalized_sha256": "127ad179e5dc458a613ed5b87e96b747bd954a66ca875fbea428e4a5027305f0",
+      "normalized_sha256": "04ec952bb527d8db0ae940cefcde924a00c97f9989d17bc8d2db4e88171add78",
       "role": "index",
-      "sha256": "127ad179e5dc458a613ed5b87e96b747bd954a66ca875fbea428e4a5027305f0",
-      "size": 7505
+      "sha256": "04ec952bb527d8db0ae940cefcde924a00c97f9989d17bc8d2db4e88171add78",
+      "size": 8376
     },
     "app/src/main/cpp/CMakeLists.txt": {
       "normalized_sha256": "1377708e0d5b0fdbebc9e8a5cfb1c0c80bd0994b671b5479ac7f5e526915b23c",
@@ -248,10 +248,10 @@
       "size": 6441
     },
     "app/src/main/java/com/tingben/app/TingbenApp.kt": {
-      "normalized_sha256": "5003dc260ba9d55d4e6c060f2491dd7bb9e595183360f7511f4c88baad0d165d",
+      "normalized_sha256": "26cbb2f439a2a2d271e0ff5903a60e39550cb3bc4ff7883e1cab5cac7d43ae9f",
       "role": "index",
-      "sha256": "5003dc260ba9d55d4e6c060f2491dd7bb9e595183360f7511f4c88baad0d165d",
-      "size": 868
+      "sha256": "26cbb2f439a2a2d271e0ff5903a60e39550cb3bc4ff7883e1cab5cac7d43ae9f",
+      "size": 1181
     },
     "app/src/main/java/com/tingben/app/UiIcons.kt": {
       "normalized_sha256": "e04cd72559cda64b8034349de1a45de0779b7499d2e08a99e23151d138a1c2e9",
@@ -457,6 +457,12 @@
       "sha256": "89c3e8d547695bb8fc1a0bf3ee7c3f5e2e8a1062c0d14826bccdbfbf4a0b1421",
       "size": 2944
     },
+    "app/src/main/java/com/tingben/app/core/ResumeReceiver.kt": {
+      "normalized_sha256": "f36b26f91a5eafb4b400a9b172d11d09731a2fb6127340b4110f1b660b4e1020",
+      "role": "index",
+      "sha256": "f36b26f91a5eafb4b400a9b172d11d09731a2fb6127340b4110f1b660b4e1020",
+      "size": 1151
+    },
     "app/src/main/java/com/tingben/app/core/SegDrops.kt": {
       "normalized_sha256": "8b7745788302de50909952bfa104ef82b22460e2c6cff04e722f7c24ec66fe6a",
       "role": "index",
@@ -468,6 +474,12 @@
       "role": "index",
       "sha256": "1961c1d57f319e00957b7a0ab522c4887f6122b645de1a3669d6456be0612c58",
       "size": 4374
+    },
+    "app/src/main/java/com/tingben/app/core/ServiceResume.kt": {
+      "normalized_sha256": "dbd1500e00a5beb1996328d82edccb3f4d8584d72aac120ed05832a52226e564",
+      "role": "index",
+      "sha256": "dbd1500e00a5beb1996328d82edccb3f4d8584d72aac120ed05832a52226e564",
+      "size": 2910
     },
     "app/src/main/java/com/tingben/app/core/SiteNoise.kt": {
       "normalized_sha256": "aed045576ba3b8a3339e9e6c8c53782c1ecdd6122462dc5da2b3e0d63a39fc22",
@@ -578,10 +590,10 @@
       "size": 3752
     },
     "app/src/main/java/com/tingben/app/gateway/GatewayService.kt": {
-      "normalized_sha256": "0f485ef336670e95ab81b15bfe6e549c667fe0045451746ab23dc5433fcbe227",
+      "normalized_sha256": "78c8caa3661ff7846b551f8dd9fa00118f687fba6e5946744b2716a063698f2a",
       "role": "index",
-      "sha256": "0f485ef336670e95ab81b15bfe6e549c667fe0045451746ab23dc5433fcbe227",
-      "size": 16145
+      "sha256": "78c8caa3661ff7846b551f8dd9fa00118f687fba6e5946744b2716a063698f2a",
+      "size": 16341
     },
     "app/src/main/java/com/tingben/app/gateway/GatewaySynth.kt": {
       "normalized_sha256": "34cb83d4df23415b6031536e54e8ca0416fbd3818cd131fb45da1896581da022",
@@ -770,10 +782,10 @@
       "size": 5646
     },
     "scripts/r135_verify.py": {
-      "normalized_sha256": "b29feaf94f81575282d4f9362b6b4367ca7e5129661f7efa384aaa96f7238f11",
+      "normalized_sha256": "86eab4fbcdb2a5eb6b976929d4e67644ba6f0e40c87c52190efc2d2f9e924ea9",
       "role": "index",
-      "sha256": "b29feaf94f81575282d4f9362b6b4367ca7e5129661f7efa384aaa96f7238f11",
-      "size": 10052
+      "sha256": "86eab4fbcdb2a5eb6b976929d4e67644ba6f0e40c87c52190efc2d2f9e924ea9",
+      "size": 10070
     },
     "scripts/r149_verify.py": {
       "normalized_sha256": "d15327efcf9c3420b5f6f49ecf4a9dfb7f729858c6cbc6a982e7f16a3a12bc66",
@@ -1045,6 +1057,12 @@
       "sha256": "806d9832298dca2c9614a2c78c08c02db558dee345e444f929be75602a201cb8",
       "size": 6546
     },
+    "scripts/r386_verify.py": {
+      "normalized_sha256": "2e98df3d6667d953a7f72cf5624a567f3a3cf902b3a21327b341b3344e46a29d",
+      "role": "index",
+      "sha256": "2e98df3d6667d953a7f72cf5624a567f3a3cf902b3a21327b341b3344e46a29d",
+      "size": 8010
+    },
     "scripts/relay_sim.py": {
       "normalized_sha256": "d6b877d939fc8e54a238b6e86f00c660d81c6a34a587763613c476d318bdc439",
       "role": "index",
@@ -1082,12 +1100,12 @@
       "size": 426
     },
     "version.txt": {
-      "normalized_sha256": "ebcb338e28eb8dbc4105f15c1dbad7699e5e710149499c872ee658ef32367336",
+      "normalized_sha256": "ac717510a5926d09e63fe7bff2cfef6607678452164223ffec7ef28a85d827a4",
       "role": "index",
-      "sha256": "ebcb338e28eb8dbc4105f15c1dbad7699e5e710149499c872ee658ef32367336",
+      "sha256": "ac717510a5926d09e63fe7bff2cfef6607678452164223ffec7ef28a85d827a4",
       "size": 7
     }
   },
-  "updated_at": "2026-11-24T11:42:02Z",
+  "updated_at": "2026-11-24T13:01:05Z",
   "version": 1
 }

@@ -593,6 +593,10 @@ jobs:
         run: python3 scripts/r383_verify.py
       - name: R383 反向注入
         run: python3 scripts/r383_verify.py --selftest
+      - name: R386 更新后自动恢复开关
+        run: python3 scripts/r386_verify.py
+      - name: R386 反向注入
+        run: python3 scripts/r386_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入
