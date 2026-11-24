@@ -581,6 +581,14 @@ jobs:
         run: python3 scripts/r377_verify.py
       - name: R377 反向注入与信箱闭环模拟
         run: python3 scripts/r377_verify.py --selftest
+      - name: R378 发版同步不清空订阅源
+        run: python3 scripts/r378_verify.py
+      - name: R378 反向注入
+        run: python3 scripts/r378_verify.py --selftest
+      - name: R381 日志 24h / 链路埋点 / 震动 / 两页重设计
+        run: python3 scripts/r381_verify.py
+      - name: R381 反向注入
+        run: python3 scripts/r381_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入

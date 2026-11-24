@@ -75,7 +75,7 @@ def check(s=None):
     # ③ 正文即用即删（成功/失败都要删）
     if 'fun deleteQueue(' not in s['client']:
         e.append('RelayClient 没有 DELETE 请求文件')
-    if s['service'].count('client.deleteQueue(item.name, sha)') != 2:
+    if s['service'].count('client.deleteQueue(item.name, reqSha)') != 2:
         e.append('正文即用即删的 DELETE 不齐（超长分支与主路径各一处）')
     if '正文即用即删' not in s['client']:
         e.append('DELETE 的隐私语义注释被摘')
@@ -95,10 +95,15 @@ def check(s=None):
     # ⑤ 震动：开始/结束/失败三种不同节奏 + 无振幅控制回退
     if 'fun start(' not in s['haptics'] or 'fun done(' not in s['haptics'] or 'fun fail(' not in s['haptics']:
         e.append('开始/结束/失败震动没齐')
+    # R381 · 真机反馈「完成的长震动没注意到」：结束节奏从 410ms 拉到约 930ms
+    # （收尾 420ms），并把触发点提前到压缩完成。锚按新形态迁移，不放宽：
+    # 仍必须三种节奏齐、开始/失败不变、完成与开始明显不同。
     if 'START_TIMINGS = longArrayOf(0, 55, 90, 55)' not in s['const'] or \
-       'DONE_TIMINGS = longArrayOf(0, 70, 60, 70, 60, 150)' not in s['const'] or \
+       'DONE_TIMINGS = longArrayOf(0, 80, 90, 80, 90, 80, 90, 420)' not in s['const'] or \
        'FAIL_TIMINGS = longArrayOf(0, 40, 60, 40, 60, 40)' not in s['const']:
         e.append('三种震动节奏常量被改')
+    if 'longArrayOf(0, 70, 60, 70, 60, 150)' in s['const']:
+        e.append('R381 旧完成节奏回潮（长收尾又缩回 150ms）')
     if 'hasAmplitudeControl()' not in s['haptics']:
         e.append('振幅控制回退被摘')
     if s['service'].count('RelayHaptics.start(this)') != 1 or \
@@ -144,10 +149,11 @@ INJECT = [
     ('Token 硬编码', 'relaykt', 'const val API_HOST', 'const val API_HOST\n    // github_pat_1234'),
     ('改连别的服务器', 'const', 'const val API_HOST = "api.github.com"', 'const val API_HOST = "evil.example.com"'),
     ('域名白名单被摘', 'client', 'host != RelayContract.API_HOST', 'false'),
-    ('删请求被摘', 'service', 'client.deleteQueue(item.name, sha)', ''),
+    ('删请求被摘', 'service', 'client.deleteQueue(item.name, reqSha)', ''),
     ('压缩桥被摘', 'synth', 'AudioOps.compressForTransfer(', 'Fake.noCompress('),
     ('谎报压缩格式', 'http', 'X-Tingben-Format', 'X-Fake'),
-    ('结束震动改成和开始一样', 'const', 'DONE_TIMINGS = longArrayOf(0, 70, 60, 70, 60, 150)', 'DONE_TIMINGS = longArrayOf(0, 55, 90, 55)'),
+    ('结束震动改成和开始一样', 'const', 'DONE_TIMINGS = longArrayOf(0, 80, 90, 80, 90, 80, 90, 420)', 'DONE_TIMINGS = longArrayOf(0, 55, 90, 55)'),
+    ('R381 长收尾回潮', 'const', 'DONE_TIMINGS = longArrayOf(0, 80, 90, 80, 90, 80, 90, 420)', 'DONE_TIMINGS = longArrayOf(0, 70, 60, 70, 60, 150)'),
     ('振幅回退被摘', 'haptics', 'hasAmplitudeControl()', 'false'),
     ('另造合成链', 'service', 'GatewaySynth.speak(this, text, 0)', 'FakeSynth.speak(this, text)'),
     ('并发等待被摘', 'service', 'if (r.busy)', 'if (false)'),

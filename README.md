@@ -6,7 +6,7 @@
 
 > 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、App 无网络权限。
 
-[![版本](https://img.shields.io/badge/version-1.1.48-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
+[![版本](https://img.shields.io/badge/version-1.1.49-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -21,10 +21,10 @@
 
 ## 下载
 
-**当前版本 `1.1.48`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+**当前版本 `1.1.49`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.48/app-debug.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.49/app-debug.apk
 ```
 
 永远是最新版的固定直链：
@@ -121,7 +121,7 @@ Android · Kotlin + Jetpack Compose（单 Activity）· JNI/C++ · minSdk 26 / t
 ## 参与
 
 欢迎提 [Issue](https://github.com/zjh1934/tingben/issues) 或 PR。动手前请看 [CONTRIBUTING.md](CONTRIBUTING.md)；
-安全与隐私问题见 [SECURITY.md](SECURITY.md)。日志不落正文、书名与音色描述，提交问题时也请不要贴这些内容。
+安全与隐私问题见 [SECURITY.md](SECURITY.md)。日志只留最近 24 小时，不落正文、书名、音色描述、中继请求正文与 Token，提交问题时也请不要贴这些内容。
 
 ## 许可
 

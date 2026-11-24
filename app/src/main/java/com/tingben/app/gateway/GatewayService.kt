@@ -11,6 +11,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import com.tingben.app.core.sha
+import com.tingben.app.diag.EventLog
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.net.InetAddress
@@ -76,6 +78,7 @@ class GatewayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopGateway()
+            EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_OFF", "用户关闭语音网关")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -85,6 +88,8 @@ class GatewayService : Service() {
             return START_NOT_STICKY
         }
         startGateway()
+        EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_ON",
+            GatewayPrefs.bind(this) + ":" + GatewayPrefs.port(this) + " · 并发 1")
         // 不做 START_STICKY 拉活：进程被杀后监听线程已死，系统重启只是空壳。
         // 恢复靠设置页再点一次「开启网关」；自动恢复留 Phase 3。
         return START_NOT_STICKY
@@ -109,8 +114,11 @@ class GatewayService : Service() {
                         }
                     }
                 }, "tingben-gateway-accept").apply { isDaemon = true }.start()
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
                 running = false
+                EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_BIND_FAIL",
+                    "端口没绑上 · " + t.javaClass.simpleName,
+                    level = EventLog.Level.WARN)
             }
         }
     }
@@ -154,8 +162,12 @@ class GatewayService : Service() {
         if (req.method == "OPTIONS") return GatewayHttp.options()
         if (req.method == "GET" && req.path == GatewayContract.PATH_ROOT)
             return GatewayHttp.html(GatewayContract.INDEX_HTML)
-        if (!GatewayPrefs.verify(this, req.headers["authorization"]))
+        if (!GatewayPrefs.verify(this, req.headers["authorization"])) {
+            EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_401",
+                req.method + " " + req.path + " · Token 不对（不记 Token）",
+                level = EventLog.Level.WARN)
             return GatewayHttp.problem(401, "先在网关面板复制 Token")
+        }
 
         return when {
             req.method == "GET" && req.path == GatewayContract.PATH_HEALTH -> health(loopback)
@@ -217,12 +229,30 @@ class GatewayService : Service() {
         if (text == null) return GatewayHttp.problem(400, "先给一段要念的文字")
         if (tooLong(text)) return GatewayHttp.problem(413,
             "最多 ${GatewayContract.MAX_CHARS} 字（= ClipSynth.MAX_CHARS），先少贴一点")
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val r = GatewaySynth.speak(this, text, ignored)
+        val ms = android.os.SystemClock.elapsedRealtime() - t0
+        // R381 · 只记方法/字数/短哈希/结果，请求正文一个字不落盘。
+        val head = "${req.method} ${req.path} · ${text.length}字 · h=${sha(text).take(8)}"
         return when {
-            r.busy -> GatewayHttp.problem(429, "一次只合成一句，稍后重试",
-                mapOf("Retry-After" to "2"))
-            !r.ok -> GatewayHttp.problem(503, r.reason ?: "合成没成功")
-            else -> GatewayHttp.audio(r.bytes ?: ByteArray(0), ignored, r.format)
+            r.busy -> {
+                EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_429",
+                    "$head · 引擎占用", level = EventLog.Level.WARN)
+                GatewayHttp.problem(429, "一次只合成一句，稍后重试",
+                    mapOf("Retry-After" to "2"))
+            }
+            !r.ok -> {
+                EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_FAIL",
+                    "$head · ${ms}ms · 合成没成", level = EventLog.Level.WARN)
+                GatewayHttp.problem(503, r.reason ?: "合成没成功")
+            }
+            else -> {
+                val b = r.bytes ?: ByteArray(0)
+                EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_DONE",
+                    "$head · ${r.format} ${b.size}B · ${ms}ms",
+                    fields = mapOf("bytes" to b.size.toString(), "ms" to ms.toString()))
+                GatewayHttp.audio(b, ignored, r.format)
+            }
         }
     }
 
@@ -235,6 +265,9 @@ class GatewayService : Service() {
             ?: return GatewayHttp.problem(503,
                 GatewaySynth.blockReason(this) ?: "一次只合成一句，稍后重试",
                 mapOf("Retry-After" to "2"))
+        EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_JOB",
+            "id=$id · ${text.length}字 · h=${sha(text).take(8)} · 已入队",
+            fields = mapOf("id" to id))
         return GatewayHttp.json(202,
             "{\"id\":\"${GatewayHttp.esc(id)}\",\"state\":\"queued\",\"chars\":${text.length}}",
             mapOf("Location" to GatewayContract.PATH_JOBS + "/" + id, "Retry-After" to "2"))

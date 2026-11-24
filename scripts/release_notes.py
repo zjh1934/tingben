@@ -11,7 +11,7 @@ m = re.search(r"^## \[" + re.escape(v) + r"\].*?$(.*?)(?=^## \[|\Z)",
 section = m.group(1).strip() if m else "本版改动见仓库 CHANGELOG.md。"
 print("## 听本 " + v)
 print()
-print("本地离线把小说变成能听的音频 · 端侧 TTS · 无网络权限 · 模型后导入。")
+print("本地离线把小说变成能听的音频 · 端侧 TTS · 网络能力默认关闭（仅用于你手动开启的网关 / 跨网中继）· 模型后导入。")
 print()
 print("### 本版更新")
 print()

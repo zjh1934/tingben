@@ -11,6 +11,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import com.tingben.app.core.sha
+import com.tingben.app.diag.EventLog
 import com.tingben.app.gateway.GatewaySynth
 import org.json.JSONObject
 
@@ -19,9 +21,12 @@ import org.json.JSONObject
  *
  * 一条循环：轮询 queue → 取请求 → 开始震动 → 用本机调音台预设合成
  * （GatewaySynth.speak 复用 ClipSynth、并发锁 1、回传前本地压缩）→
- * 回写 out + status → 结束震动 → DELETE 请求文件（正文即用即删）。
+ * 合成压缩一结束就给「完成」震动（R381：不再等两次上传，反馈不被拉断）
+ * → 回写 out + status → DELETE 请求文件（正文即用即删）。
  *
- * 正文只在内存里，日志 / 通知 / 状态 JSON 一律只记字符数与短原因。
+ * R381 · 每个链路节点都写一条开发者向日志：开关、请求（只记 id / 字数 /
+ * 短哈希）、压缩前后体积、耗时、回写、删请求、错误码、震动触发与跳过。
+ * 正文只在内存里，日志 / 通知 / 状态 JSON 一律只记字符数与短原因，Token 不落盘。
  * 唤醒锁只在合成期持；Doze 下必然断，写进文案不对抗系统。
  */
 class RelayService : Service() {
@@ -61,15 +66,21 @@ class RelayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopRelay()
+            EventLog.log(EventLog.Kind.PIPELINE, "RELAY_OFF", "用户关闭跨网中继")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
         if (!RelayPrefs.configured(this)) {
+            EventLog.log(EventLog.Kind.PIPELINE, "RELAY_START_BLOCKED",
+                "开关 / Token / 仓库没配齐，不起服务", level = EventLog.Level.WARN)
             stopSelf()
             return START_NOT_STICKY
         }
         startRelay()
+        EventLog.log(EventLog.Kind.PIPELINE, "RELAY_ON",
+            RelayPrefs.owner(this) + "/" + RelayPrefs.repo(this) + " · 轮询 " +
+                RelayContract.POLL_MS + "ms · 上限 " + RelayContract.MAX_CHARS + " 字")
         return START_NOT_STICKY
     }
 
@@ -105,21 +116,31 @@ class RelayService : Service() {
                 }
                 val item = items[0]
                 val id = item.name.removeSuffix(".json")
-                val (text, sha) = client.getRequest(item.name)
+                val (text, reqSha) = client.getRequest(item.name)
                 val chars = text.length
+                // R381 · 只记 id / 字数 / 短哈希，正文与 Token 一个字都不落盘。
+                EventLog.log(EventLog.Kind.PIPELINE, "RELAY_REQ",
+                    "id=$id · ${chars}字 · h=${sha(text).take(8)} · 取走请求",
+                    fields = mapOf("id" to id, "chars" to chars.toString()))
                 if (text.isBlank() || chars > RelayContract.MAX_CHARS) {
-                    client.putFailed(id, failStatus(chars,
-                        if (text.isBlank()) "没给文字" else "最多 1500 字，先少贴一点"))
-                    client.deleteQueue(item.name, sha)
+                    val why = if (text.isBlank()) "没给文字" else "最多 1500 字，先少贴一点"
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_REJECT",
+                        "id=$id · $why", level = EventLog.Level.WARN)
+                    client.putFailed(id, failStatus(chars, why))
+                    client.deleteQueue(item.name, reqSha)
                     continue
                 }
 
                 setState("收到请求 · " + chars + " 字 · 本机合成中")
                 RelayHaptics.start(this)
                 holdWake()
+                val t0 = android.os.SystemClock.elapsedRealtime()
                 val r = GatewaySynth.speak(this, text, 0)
+                val ms = android.os.SystemClock.elapsedRealtime() - t0
                 if (r.busy) {
                     // 本机网关或整本书正在用引擎：保留 queue，下一轮再取，不删请求。
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_BUSY",
+                        "id=$id · 引擎被占用，请求留到下一轮", level = EventLog.Level.WARN)
                     releaseWake()
                     Thread.sleep(RelayContract.RETRY_MS)
                     continue
@@ -127,23 +148,42 @@ class RelayService : Service() {
                 val bytes = r.bytes
                 val fmt = r.format
                 if (!r.ok || bytes == null || bytes.size <= 44) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_FAIL",
+                        "id=$id · ${chars}字 · ${ms}ms · 合成没成",
+                        level = EventLog.Level.WARN,
+                        fields = mapOf("id" to id, "ms" to ms.toString()))
                     client.putFailed(id, failStatus(chars, r.reason ?: "合成没成功"))
                     RelayHaptics.fail(this)
                     setState("合成没成 · " + chars + " 字（原因不落正文）")
                 } else {
+                    // R381 · 合成与本地压缩一结束就给「完成」震动：旧版排在两次
+                    // GitHub 上传之后，用户只记得开始两下。上传失败另走 fail。
+                    RelayHaptics.done(this)
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_SYNTH",
+                        "id=$id · ${chars}字 · $fmt ${bytes.size}B · 合成+压缩 ${ms}ms",
+                        fields = mapOf("id" to id, "format" to fmt,
+                            "bytes" to bytes.size.toString(), "ms" to ms.toString()))
                     val blob = client.putOut(id, bytes, fmt)
                     client.putDone(id, doneStatus(chars, fmt, bytes.size,
                         client.audioPath(id, fmt), blob))
-                    RelayHaptics.done(this)
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_PUT_DONE",
+                        "id=$id · out/status 已回写 · $fmt ${bytes.size}B",
+                        fields = mapOf("id" to id))
                     setState("完成 · " + chars + " 字 · " + fmt + " " + bytes.size + " B")
                 }
                 // 无论成功失败，正文即用即删。
-                client.deleteQueue(item.name, sha)
+                client.deleteQueue(item.name, reqSha)
+                EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEL",
+                    "id=$id · 请求文件已删（正文即用即删）", fields = mapOf("id" to id))
                 releaseWake()
                 Thread.sleep(RelayContract.POLL_MS)
             } catch (t: Throwable) {
+                // R381 · 异常 message 可能带 URL / 路径，只记错误码与异常类名。
                 val msg = if (t is RelayClient.Err) "HTTP " + t.code
-                    else (t.message ?: "网络没通").take(60)
+                    else t.javaClass.simpleName
+                EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_ERR",
+                    "轮询失败 · $msg", level = EventLog.Level.WARN,
+                    fields = mapOf("err" to t.javaClass.simpleName))
                 setState("等一等 · " + msg)
                 releaseWake()
                 Thread.sleep(RelayContract.RETRY_MS)

@@ -1,6 +1,7 @@
 package com.tingben.app.relay
 
 import android.content.Context
+import com.tingben.app.diag.EventLog
 import android.os.Build
 import android.os.VibrationAttributes
 import android.os.VibrationEffect
@@ -18,14 +19,14 @@ import android.os.VibratorManager
  */
 internal object RelayHaptics {
 
-    fun start(c: Context) = play(c, RelayContract.START_TIMINGS,
-        RelayContract.START_AMPS, RelayContract.START_ONOFF)
+    fun start(c: Context) = play(c, RelayContract.HAPTIC_START,
+        RelayContract.START_TIMINGS, RelayContract.START_AMPS, RelayContract.START_ONOFF)
 
-    fun done(c: Context) = play(c, RelayContract.DONE_TIMINGS,
-        RelayContract.DONE_AMPS, RelayContract.DONE_ONOFF)
+    fun done(c: Context) = play(c, RelayContract.HAPTIC_DONE,
+        RelayContract.DONE_TIMINGS, RelayContract.DONE_AMPS, RelayContract.DONE_ONOFF)
 
-    fun fail(c: Context) = play(c, RelayContract.FAIL_TIMINGS,
-        RelayContract.FAIL_AMPS, RelayContract.FAIL_ONOFF)
+    fun fail(c: Context) = play(c, RelayContract.HAPTIC_FAIL,
+        RelayContract.FAIL_TIMINGS, RelayContract.FAIL_AMPS, RelayContract.FAIL_ONOFF)
 
     private fun vibrator(c: Context): Vibrator? = try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -36,12 +37,19 @@ internal object RelayHaptics {
         }
     } catch (_: Throwable) { null }
 
-    private fun play(c: Context, timings: LongArray, amps: IntArray, onOff: LongArray) {
+    private fun play(c: Context, phase: String, timings: LongArray,
+                     amps: IntArray, onOff: LongArray) {
         try {
-            val v = vibrator(c) ?: return
-            if (!v.hasVibrator()) return
+            val v = vibrator(c)
+            if (v == null || !v.hasVibrator()) {
+                EventLog.log(EventLog.Kind.AUDIT, "HAPTIC_SKIP",
+                    "phase=$phase · 设备没有振动马达")
+                return
+            }
+            val amp = v.hasAmplitudeControl()
+            val ms = timings.sum()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val e = if (v.hasAmplitudeControl())
+                val e = if (amp)
                     VibrationEffect.createWaveform(timings, amps, -1)
                 else VibrationEffect.createWaveform(onOff, -1)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -52,8 +60,16 @@ internal object RelayHaptics {
                 @Suppress("DEPRECATION")
                 v.vibrate(onOff, -1)
             }
-        } catch (_: Throwable) {
+            // R381 · 用户说「完成的长震动没注意到」：日志先把「真调用了」记下来，
+            // 下轮贴日志就能分清是没触发、被系统吞、还是节奏不够明显。
+            EventLog.log(EventLog.Kind.AUDIT, "HAPTIC",
+                "phase=$phase · ${ms}ms · 振幅控制=$amp",
+                fields = mapOf("phase" to phase, "ms" to ms.toString()))
+        } catch (t: Throwable) {
             // 震动是反馈不是主链，任何设备差异都不许把合成搞失败。
+            EventLog.log(EventLog.Kind.AUDIT, "HAPTIC_SKIP",
+                "phase=$phase · 被系统拒绝", level = EventLog.Level.WARN,
+                fields = mapOf("err" to t.javaClass.simpleName))
         }
     }
 }

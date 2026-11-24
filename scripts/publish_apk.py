@@ -38,14 +38,58 @@ print("APK", apk.name, len(raw), "字节")
 
 c, b = api("POST", "/git/blobs", {"content": base64.b64encode(raw).decode(), "encoding": "base64"})
 if c not in (200, 201): sys.exit("blob 失败 %s %s" % (c, b))
+# R378：订阅源必须跟着每次发版一起更新，否则下载器永远停在旧版本。
+# 附件指向同仓 raw APK（application/octet-stream，不会像 release 网页那样回 text/html）。
+VER = (pathlib.Path("version.txt").read_text(encoding="utf-8").strip()
+       if pathlib.Path("version.txt").exists() else "unknown")
+NOW = __import__("datetime").datetime.now(
+    __import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+ATOM = ('''<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>听本 · 安装包更新</title>
+  <id>https://github.com/zjh1934/tingben/releases</id>
+  <link rel="self" type="application/atom+xml" href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom"/>
+  <link rel="alternate" type="text/html" href="https://github.com/zjh1934/tingben/releases"/>
+  <updated>%s</updated>
+  <subtitle>每条更新都带可直接下载的 APK 附件（enclosure），下载器按此取包。</subtitle>
+  <entry>
+    <title>听本 %s</title>
+    <id>https://github.com/zjh1934/tingben/releases/tag/v%s</id>
+    <link rel="alternate" type="text/html" href="https://github.com/zjh1934/tingben/releases/tag/v%s"/>
+    <link rel="enclosure" type="application/vnd.android.package-archive" length="%d" href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk"/>
+    <updated>%s</updated>
+    <summary>听本 %s · APK %d 字节。</summary>
+  </entry>
+</feed>
+''') % (NOW, VER, VER, VER, len(raw), NOW, VER, len(raw))
+if 'rel="enclosure"' not in ATOM:
+    sys.exit("订阅源缺少 enclosure，下载器会拿到 HTML 而不是 APK")
+
+c, readme_b = api("POST", "/git/blobs",
+    {"content": base64.b64encode(
+        ("# 听本安装包\n\n浏览器直接打开 app-debug.apk 即可下载；"
+         "订阅源 updates.atom 由下载器使用；源码与 CI 在 zjh1934/tingben。\n").encode()).decode(),
+     "encoding": "base64"})
+if c not in (200, 201): sys.exit("README blob 失败 %s %s" % (c, readme_b))
+
 c, ref = api("GET", "/git/ref/heads/main")
+if c != 200: sys.exit("读 main 失败 %s" % c)
 parent = ref["object"]["sha"]
-c, t = api("POST", "/git/trees", {"base_tree": None,
+# R378：原来这里写死 base_tree=None，等于每次发版把整个公开仓重建成
+# 「只有 APK + README」，把订阅源 updates.atom 与 Pages 静态页全删了，
+# 下载器再抓就是 404。改成继承远端 tree，只覆盖本次两个文件。
+c, head_commit = api("GET", "/git/commits/" + parent)
+if c != 200: sys.exit("读父提交失败 %s" % c)
+base_tree = head_commit["tree"]["sha"]
+c, t = api("POST", "/git/trees", {"base_tree": base_tree,
     "tree": [{"path": "app-debug.apk", "mode": "100644", "type": "blob", "sha": b["sha"]},
-             {"path": "README.md", "mode": "100644", "type": "blob",
-              "sha": api("POST", "/git/blobs",
-                  {"content": base64.b64encode("# 听本安装包\n\n浏览器直接打开 app-debug.apk 即可下载；源码与 CI 在 zjh1934/tingben。\n".encode()).decode(),
-                   "encoding": "base64"})[1]["sha"]}]})
+             {"path": "README.md", "mode": "100644", "type": "blob", "sha": readme_b["sha"]},
+             {"path": "updates.atom", "mode": "100644", "type": "blob",
+              "sha": api("POST", "/git/blobs", {"content": base64.b64encode(ATOM.encode()).decode(),
+                                               "encoding": "base64"})[1]["sha"]},
+             {"path": "docs/updates.atom", "mode": "100644", "type": "blob",
+              "sha": api("POST", "/git/blobs", {"content": base64.b64encode(ATOM.encode()).decode(),
+                                               "encoding": "base64"})[1]["sha"]}]})
 if c not in (200, 201): sys.exit("tree 失败 %s %s" % (c, t))
 c, cm = api("POST", "/git/commits",
     {"message": "release: 听本 APK %d 字节" % len(raw), "tree": t["sha"], "parents": [parent]})

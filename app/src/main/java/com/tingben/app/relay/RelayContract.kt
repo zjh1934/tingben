@@ -39,10 +39,21 @@ internal object RelayContract {
     val START_AMPS = intArrayOf(0, 170, 0, 170)
     val START_ONOFF = longArrayOf(0, 55, 90, 55)
 
-    /** 完成：三连渐强 + 一记长收尾，与开始明显不同。 */
-    val DONE_TIMINGS = longArrayOf(0, 70, 60, 70, 60, 150)
-    val DONE_AMPS = intArrayOf(0, 120, 0, 190, 0, 255)
-    val DONE_ONOFF = longArrayOf(0, 70, 60, 70, 60, 150)
+    /**
+     * 完成：三连渐强 + 一记明显更长的收尾（总约 930ms，收尾 420ms）。
+     * R381 真机反馈「只记得开始两下，长震动没注意到」：旧版收尾只有 150ms，
+     * 又排在两次 GitHub 上传之后，感知被拉断。现在加长收尾、并把触发点提前到
+     * 合成压缩完成那一刻（见 RelayService），开始 200ms 两下 / 结束近 1 秒，
+     * 不用看屏幕也能分出来。
+     */
+    val DONE_TIMINGS = longArrayOf(0, 80, 90, 80, 90, 80, 90, 420)
+    val DONE_AMPS = intArrayOf(0, 110, 0, 160, 0, 210, 0, 255)
+    val DONE_ONOFF = longArrayOf(0, 80, 90, 80, 90, 80, 90, 420)
+
+    /** R381 · 日志用的节奏名，排查「用户说没震」时先分清是没触发还是没注意。 */
+    const val HAPTIC_START = "start"
+    const val HAPTIC_DONE = "done"
+    const val HAPTIC_FAIL = "fail"
 
     /** 失败：三下轻而急，弱于前两种。 */
     val FAIL_TIMINGS = longArrayOf(0, 40, 60, 40, 60, 40)

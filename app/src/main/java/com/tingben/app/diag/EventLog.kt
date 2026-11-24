@@ -13,6 +13,7 @@ import com.tingben.app.core.sha
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -28,6 +29,75 @@ object EventLog {
     @Volatile private var lastEngineAt: Long = 0L
 
     private val ring = ArrayDeque<String>()
+
+    // R381 · 日志只留最近 24 小时：超过就自动删掉，不再记录、不再导出。
+    // 排查要的是「这一两天发生了什么」；跨月的旧报错只会把人带去修早已修好的东西
+    // （R157 真机日志里就吃过这个亏）。字节上限保留作双保险。
+    private const val RETENTION_MS = 24L * 60 * 60 * 1000
+    private const val PRUNE_INTERVAL_MS = 5L * 60 * 1000
+    @Volatile private var lastPruneAt = 0L
+
+    /**
+     * events.log / events_detail.log 每行开头是 "MM-dd HH:mm:ss.SSS"（不带年份）。
+     * 按当前年份补全；若补出来比现在还晚一天以上，说明是跨年留下的，回退一年。
+     * 解析不了的行保守保留，不误删。
+     */
+    private fun lineTime(line: String): Long? = try {
+        val head = line.substringBefore(" | ", "")
+        if (head.length < 12) null else {
+            val d = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).parse(head) ?: return null
+            val cal = Calendar.getInstance()
+            cal.time = d
+            cal.set(Calendar.YEAR, Calendar.getInstance().get(Calendar.YEAR))
+            var t = cal.timeInMillis
+            if (t > System.currentTimeMillis() + RETENTION_MS) {
+                cal.add(Calendar.YEAR, -1)
+                t = cal.timeInMillis
+            }
+            t
+        }
+    } catch (_: Throwable) { null }
+
+    /** 清掉 24h 以外的行，返回清掉的数量。内部不再调 log（防递归）。 */
+    @Synchronized
+    fun prune(now: Long = System.currentTimeMillis()): Int {
+        val cutoff = now - RETENTION_MS
+        var removed = 0
+        for (f in listOf(file, detailFile)) {
+            val t = f ?: continue
+            val before = removed
+            try {
+                if (!t.exists()) continue
+                val kept = mutableListOf<String>()
+                for (l in t.readLines()) {
+                    val ts = lineTime(l)
+                    if (ts == null || ts >= cutoff) kept += l else removed++
+                }
+                if (removed > before) {
+                    t.writeText(kept.joinToString("\n") + if (kept.isEmpty()) "" else "\n")
+                }
+            } catch (_: Throwable) { }
+        }
+        // crash.log 不是逐行事件流，按文件时间整体过期清理。
+        try {
+            val cf = crashFile
+            if (cf != null && cf.exists() && cf.lastModified() < cutoff) {
+                cf.writeText("")
+                removed++
+            }
+        } catch (_: Throwable) { }
+        if (removed > 0) {
+            try {
+                val ts = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date(now))
+                val d = "清掉 $removed 行 24h 以外的旧事件 · policy=24h"
+                appendCapped(file, "$ts | AUDIT | LOG_RETENTION | $d", 768 * 1024L, 800)
+                appendCapped(detailFile, "$ts | AUDIT | INFO | LOG_RETENTION | $d", 1536 * 1024L, 2000)
+                ring.addLast("$ts | AUDIT | LOG_RETENTION | $d")
+                while (ring.size > RING_MAX) ring.removeFirst()
+            } catch (_: Throwable) { }
+        }
+        return removed
+    }
 
     // R147 · 用户会连着用好几次再来给日志。没有会话边界的话，一长条事件流
     // 分不清「哪一轮」，摘要只取末尾一小段还会把前面几轮全丢掉。每次冷启动记一个 id。
@@ -61,6 +131,7 @@ object EventLog {
         file = File(c.filesDir, "events.log")
         detailFile = File(c.filesDir, "events_detail.log")
         crashFile = File(c.filesDir, "crash.log")
+        prune()   // R381 · 冷启动先按 24h 清一遍，环形缓冲才不会装进旧事件
         try {
             val old = file?.readLines()?.takeLast(RING_MAX).orEmpty()
             ring.clear(); old.forEach { ring.addLast(it) }
@@ -121,6 +192,11 @@ object EventLog {
     @Synchronized
     fun log(kind: Kind, action: String, detail: String = "",
             level: Level = Level.INFO, fields: Map<String, String> = emptyMap()) {
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastPruneAt > PRUNE_INTERVAL_MS) {
+            lastPruneAt = nowMs
+            prune(nowMs)
+        }
         if (kind == Kind.ENGINE) {
             lastEngineAction = action
             lastEngineDetail = detail
@@ -158,7 +234,10 @@ object EventLog {
     }
 
     /**
-     * 全量错误行：不管哪一轮，出错都要带进摘要，别被窗口截掉。
+     * 错误行：在「最近 24 小时」这个窗口里全带进摘要，别被会话窗口截掉。
+     *
+     * R381 · 原来是「本机累计、跨版本」；用户明确日志最多留 24 小时，
+     * 于是按新口径只收窗口内报错，旧账随 prune 一起删，不再并存两套。
      *
      * R157 · 第二份真机日志实证：摘要里那条 13:51「制作记录写入失败：segmap.json」
      * 其实是 1.1.3 的历史报错（R148 已修：目录名超长），但摘要区不标版本，
@@ -244,8 +323,9 @@ object EventLog {
 
     private fun header(): String =
         "# 听本 · 开发诊断日志\n\n" +
-            "> 这份日志是**给开发者排查用的**，不是给使用者看的。\n" +
-            "> R225 起日志不含书名/正文/音色描述原文（只留长度与短哈希）；App 零出站请求（R375 起 INTERNET 仅用于默认关闭的本机网关监听），日志不会自己离开设备。\n\n"
+            "> 这份日志是**给开发者排查用的**，不是给使用者看的：只记链路节点 / 错误码 / 耗时 / 体积，不记随手点击流水。\n" +
+            "> R381 起只保留最近 24 小时，冷启动、每 5 分钟、导出前各清一次，超期行自动删除；清理本身记一行 LOG_RETENTION。\n" +
+            "> R225 起日志不含书名/正文/音色描述原文（只留长度与短哈希），跨网中继的请求正文与 Token 同样不落盘；日志不会自己离开设备。\n\n"
 
     /**
      * R161 · API 30+ 的 ApplicationExitInfo：进程上次是被谁干掉的。
@@ -315,6 +395,7 @@ object EventLog {
             (body.ifBlank { "（空）" }) + "\n```\n\n"
 
     fun exportBundle(c: Context): String = buildString {
+        prune()   // R381 · 导出的就是 24h 内的全量，不带隔夜旧账
         append(header())
         append("## 环境\n\n").append(envBlock(c)).append("\n")
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")
@@ -323,20 +404,22 @@ object EventLog {
         append(fence("崩溃前事件（环形缓冲）", ringTail(200)))
         append("## 会话边界\n\n本次会话 `$currentSession`；" +
             "事件流里每条 `SESSION_START` 是一轮冷启动，按它切段即可对应「用第几轮」。\n\n")
-        // 全量，不再截断到 400 / 800 行：排查要的是完整时间线
+        // 24h 窗口内的全量，不再截断到 400 / 800 行：排查要的是完整时间线
         append(fence("事件日志（全量）", read()))
         append(fence("详细日志（全量）", readDetail()))
     }
 
     /** 一键复制用：关键状态 + 最近事件，控制体积。 */
     fun exportSummary(c: Context): String = buildString {
+        prune()   // R381 · 摘要也只取 24h 内的报错与事件
         append("# 听本 · 诊断摘要\n\n")
-        append("> 给开发者排查用，不含书名/正文/音色描述原文（R225 起只留长度与短哈希）。完整日志在设置页导出 .md。\n\n")
+        append("> 给开发者排查用，不含书名/正文/音色描述原文（R225 起只留长度与短哈希），中继请求正文与 Token 不落盘。完整日志在设置页导出 .md。\n" +
+                "> R381 起日志只保留最近 24 小时，超期自动删除；下面「所有报错」也只在这 24 小时里累计，不再跨版本翻旧账。\n\n")
         append("## 环境\n\n").append(envBlock(c)).append("\n")
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")
         append("## 进程退出原因（系统记录）\n\n").append(exitReasonsBlock(c)).append("\n")
         append(fence("最近崩溃（尾部）", lastCrash().lines().takeLast(40).joinToString("\n")))
-        append("> 下面是本机累计的全部报错，跨版本；方括号是产生时的版本，" +
+        append("> 下面是最近 24 小时内的全部报错；方括号是产生时的版本，" +
             "**旧版本的报错不代表当前还在出错**。\n\n")
         append(fence("所有报错/警告（不受会话窗口限制）", allErrors()))
         append(fence("最近 3 轮完整事件（按 SESSION_START 分段）", recentSessions(3)))
