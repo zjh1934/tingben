@@ -597,6 +597,14 @@ jobs:
         run: python3 scripts/r386_verify.py
       - name: R386 反向注入
         run: python3 scripts/r386_verify.py --selftest
+      - name: R387 请求文本留存
+        run: python3 scripts/r387_verify.py
+      - name: R387 反向注入
+        run: python3 scripts/r387_verify.py --selftest
+      - name: R388 切绑定不记假 OFF / 订阅源 self
+        run: python3 scripts/r388_verify.py
+      - name: R388 反向注入
+        run: python3 scripts/r388_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入

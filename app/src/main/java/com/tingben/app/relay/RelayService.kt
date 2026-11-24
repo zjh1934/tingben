@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import com.tingben.app.core.RequestArchive
 import com.tingben.app.core.sha
 import com.tingben.app.diag.EventLog
 import com.tingben.app.gateway.GatewaySynth
@@ -26,7 +27,10 @@ import org.json.JSONObject
  *
  * R381 · 每个链路节点都写一条开发者向日志：开关、请求（只记 id / 字数 /
  * 短哈希）、压缩前后体积、耗时、回写、删请求、错误码、震动触发与跳过。
- * 正文只在内存里，日志 / 通知 / 状态 JSON 一律只记字符数与短原因，Token 不落盘。
+ * R387 · 正文口径按用户新要求改准：仓库侧请求文件仍「即用即删」，但取到
+ * 请求时原文会写一份进本机私有留存区（core/RequestArchive.kt，用户主动查看用，
+ * 只留文本）；**日志 / 通知 / 状态 JSON / 诊断导出仍一个字不落正文**，
+ * 只记字符数与短原因，Token 不落盘。两者不是一回事，别再沿用旧的一刀切说法。
  * 唤醒锁只在合成期持；Doze 下必然断，写进文案不对抗系统。
  */
 class RelayService : Service() {
@@ -118,7 +122,11 @@ class RelayService : Service() {
                 val id = item.name.removeSuffix(".json")
                 val (text, reqSha) = client.getRequest(item.name)
                 val chars = text.length
-                // R381 · 只记 id / 字数 / 短哈希，正文与 Token 一个字都不落盘。
+                // R387 · 用户要「每次过来的请求把文本留下」：在校验之前就留，
+                // 被判空 / 超 1500 字 / 合成失败的也留，排查时看得到全貌。
+                // 只写本机私有留存区，不进日志，也不影响仓库侧「取完即删」。
+                RequestArchive.add(this, RequestArchive.SRC_RELAY, text)
+                // R381 · 只记 id / 字数 / 短哈希，正文与 Token 一个字都不落日志。
                 EventLog.log(EventLog.Kind.PIPELINE, "RELAY_REQ",
                     "id=$id · ${chars}字 · h=${sha(text).take(8)} · 取走请求",
                     fields = mapOf("id" to id, "chars" to chars.toString()))

@@ -476,6 +476,10 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             SettingsEntry(UiIcon.M4A, "跨网中继", "GitHub 免费仓库 · 零付费 · 压缩音频回传") {
                 page = "relay"
             }
+            // R387 · 请求文本留存：两渠道左右分列，只留文字不留音频。
+            SettingsEntry(UiIcon.BOOK, "请求文本", "两渠道分列 · 各 10 条 · 复制 / 多选删 / 清空") {
+                page = "archive"
+            }
             SettingsEntry(UiIcon.EXPORT, "开发者工具", "诊断摘要 · 完整日志") {
                 devOpen = true; page = "dev"
             }
@@ -483,10 +487,13 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         } else {
             SettingsSubHeader(settingsPageTitle(page)) { page = "" }
         if (page == "gateway") {
-            GatewayScreen(c)
+            GatewayScreen(c, onArchive = { page = "archive" })
         }
         if (page == "relay") {
-            RelayScreen(c)
+            RelayScreen(c, onArchive = { page = "archive" })
+        }
+        if (page == "archive") {
+            ArchiveScreen(c)
         }
         if (page == "appearance") {
         SettingsSection("外观与显示", "软件", collapsible = false) {
@@ -1242,5 +1249,6 @@ internal fun settingsPageTitle(page: String): String = when (page) {
     "dev" -> "开发者工具"
     "gateway" -> "语音网关"
     "relay" -> "跨网中继"
+    "archive" -> "请求文本"
     else -> "设置"
 }

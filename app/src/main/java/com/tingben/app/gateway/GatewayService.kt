@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import com.tingben.app.core.RequestArchive
 import com.tingben.app.core.sha
 import com.tingben.app.diag.EventLog
 import org.json.JSONObject
@@ -38,6 +39,7 @@ class GatewayService : Service() {
     companion object {
         const val ACTION_START = "com.tingben.app.GATEWAY_START"
         const val ACTION_STOP = "com.tingben.app.GATEWAY_STOP"
+        const val ACTION_REBIND = "com.tingben.app.GATEWAY_REBIND"
         private const val NOTIF_ID = 0x4757
         private const val CHANNEL = "tingben_gateway"
 
@@ -49,6 +51,13 @@ class GatewayService : Service() {
 
         fun stop(c: Context) {
             c.startService(Intent(c, GatewayService::class.java).setAction(ACTION_STOP))
+        }
+
+        /** R387 · 只换绑定地址，不走 ACTION_STOP（那条会记「用户关闭语音网关」）。 */
+        fun rebind(c: Context) {
+            val i = Intent(c, GatewayService::class.java).setAction(ACTION_REBIND)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) c.startForegroundService(i)
+            else c.startService(i)
         }
     }
 
@@ -82,6 +91,19 @@ class GatewayService : Service() {
             EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_OFF", "用户关闭语音网关")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+            return START_NOT_STICKY
+        }
+        // R387 · 切「允许局域网」不再是「先关再开」：那条会平白记一行用户关闭，
+        // 而且网关本来没开时拨一下开关也会留下假的 GATEWAY_OFF。这里只换监听地址。
+        if (intent?.action == ACTION_REBIND) {
+            if (!GatewayPrefs.enabled(this)) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            stopGateway()
+            startGateway()
+            EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_BIND_APPLIED",
+                GatewayPrefs.bind(this) + ":" + GatewayPrefs.port(this) + " · 按新绑定重开监听")
             return START_NOT_STICKY
         }
         if (!GatewayPrefs.enabled(this)) {
@@ -231,6 +253,8 @@ class GatewayService : Service() {
         if (text == null) return GatewayHttp.problem(400, "先给一段要念的文字")
         if (tooLong(text)) return GatewayHttp.problem(413,
             "最多 ${GatewayContract.MAX_CHARS} 字（= ClipSynth.MAX_CHARS），先少贴一点")
+        // R387 · 同步短文本：拿到就留一份原文进本机私有区（只留文本，不进日志）。
+        RequestArchive.add(this, RequestArchive.SRC_GATEWAY, text)
         val t0 = android.os.SystemClock.elapsedRealtime()
         val r = GatewaySynth.speak(this, text, ignored)
         val ms = android.os.SystemClock.elapsedRealtime() - t0
@@ -263,6 +287,8 @@ class GatewayService : Service() {
         if (text == null) return GatewayHttp.problem(400, "先给一段要念的文字")
         if (tooLong(text)) return GatewayHttp.problem(413,
             "最多 ${GatewayContract.MAX_CHARS} 字（= ClipSynth.MAX_CHARS），先少贴一点")
+        // R387 · 异步 job 同样留原文，与同步入口同一个渠道标签。
+        RequestArchive.add(this, RequestArchive.SRC_GATEWAY, text)
         val id = GatewaySynth.submit(this, text, ignored)
             ?: return GatewayHttp.problem(503,
                 GatewaySynth.blockReason(this) ?: "一次只合成一句，稍后重试",

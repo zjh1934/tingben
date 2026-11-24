@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""R225 · 日志脱敏守门：用户内容（书名 / 音色描述 / 正文 / 自填语气）不得落盘。
+"""R225 · 日志脱敏守门：用户内容（书名 / 音色描述 / 正文 / 自填语气）不得落进日志。
 
 只留「长度 + 短哈希 + 内部 id + 计数 + 字节数」，诊断信息不减反增。
+R387 口径改准（用户本轮明确要求留存请求文本）：唯一例外是
+core/RequestArchive.kt 的本机私有留存区，它只留文本、由用户主动查看，
+**不进 events.log / 不进 exportBundle / exportSummary / 不备份**；
+本守门仍守死「日志零正文」，不放宽到日志里。两套口径不并存。
 用法：python3 scripts/r225_verify.py [--selftest]
 """
 import pathlib, re, sys

@@ -413,7 +413,7 @@ object EventLog {
     fun exportSummary(c: Context): String = buildString {
         prune()   // R381 · 摘要也只取 24h 内的报错与事件
         append("# 听本 · 诊断摘要\n\n")
-        append("> 给开发者排查用，不含书名/正文/音色描述原文（R225 起只留长度与短哈希），中继请求正文与 Token 不落盘。完整日志在设置页导出 .md。\n" +
+        append("> 给开发者排查用，不含书名/正文/音色描述原文（R225 起只留长度与短哈希）。R387 起请求原文另存本机私有「请求文本」留存区（只留文本、用户主动查看），本摘要与完整日志仍零正文；Token 零落盘。完整日志在设置页导出 .md。\n" +
                 "> R381 起日志只保留最近 24 小时，超期自动删除；下面「所有报错」也只在这 24 小时里累计，不再跨版本翻旧账。\n\n")
         append("## 环境\n\n").append(envBlock(c)).append("\n")
         append("## 运行快照\n\n").append(snapshotBlock(c)).append("\n")

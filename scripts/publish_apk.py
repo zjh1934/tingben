@@ -48,7 +48,7 @@ ATOM = ('''<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>听本 · 安装包更新</title>
   <id>https://github.com/zjh1934/tingben/releases</id>
-  <link rel="self" type="application/atom+xml" href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom"/>
+  <link rel="self" type="application/atom+xml" href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/updates.atom"/>
   <link rel="alternate" type="text/html" href="https://github.com/zjh1934/tingben/releases"/>
   <updated>%s</updated>
   <subtitle>每条更新都带可直接下载的 APK 附件（enclosure），下载器按此取包。</subtitle>

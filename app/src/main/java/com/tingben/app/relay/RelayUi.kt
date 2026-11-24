@@ -51,7 +51,7 @@ private fun RelayKV(label: String, value: String) {
 }
 
 @Composable
-internal fun RelayScreen(c: Context) {
+internal fun RelayScreen(c: Context, onArchive: () -> Unit = {}) {
     var tick by remember { mutableStateOf(0) }
     val on = remember(tick) { RelayPrefs.enabled(c) }
     val owner = remember(tick) { RelayPrefs.owner(c) }
@@ -179,6 +179,20 @@ internal fun RelayScreen(c: Context) {
                     Toast.makeText(c, "已复制两段地址", Toast.LENGTH_SHORT).show()
                 }) { Text("一次复制两段地址", fontSize = HiCaptionSp) }
             }
+        }
+
+        // R387 · 本页下方留一个出口，点进去看这一页收到的请求文本（左右分列）。
+        CardBox {
+            Row(Modifier.fillMaxWidth().clickable { onArchive() },
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("查看请求文本", fontSize = HiSectionSp,
+                    fontWeight = FontWeight.Bold, color = palette.primary,
+                    modifier = Modifier.weight(1f))
+                Text("展开 ›", fontSize = HiCaptionSp, color = palette.sub)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text("只留文字，不留音频；在「请求文本」页左右两列看两条渠道。",
+                fontSize = HiMicroSp, color = palette.sub)
         }
 
         // 悬浮进度球常驻左下，底部留足，别再压住状态与说明

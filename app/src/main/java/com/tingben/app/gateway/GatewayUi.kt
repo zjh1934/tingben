@@ -50,7 +50,7 @@ private fun GatewayKV(label: String, value: String) {
 }
 
 @Composable
-internal fun GatewayScreen(c: Context) {
+internal fun GatewayScreen(c: Context, onArchive: () -> Unit = {}) {
     var tick by remember { mutableStateOf(0) }
     val on = remember(tick) { GatewayPrefs.enabled(c) }
     val url = remember(tick) { GatewayPrefs.displayUrl(c) }
@@ -139,9 +139,11 @@ internal fun GatewayScreen(c: Context) {
                         fontSize = HiCaptionSp, color = palette.sub)
                 }
                 Switch(checked = lan, onCheckedChange = { wantLan ->
+                    val wasOn = GatewayPrefs.enabled(c)
                     GatewayPrefs.setBind(c, wantLan)
-                    GatewayService.stop(c)
-                    GatewayService.start(c)
+                    // R387 · 网关没开就只存设置，不碰服务；开着才按新地址重开监听。
+                    // 不再 stop+start：那会在日志里平白记一行「用户关闭语音网关」。
+                    if (wasOn) GatewayService.rebind(c)
                     EventLog.log(EventLog.Kind.UI, "GATEWAY_BIND",
                         if (wantLan) "切到局域网" else "切回只本机")
                     tick++
@@ -173,6 +175,20 @@ internal fun GatewayScreen(c: Context) {
                     + "长文本分段仍留 Phase 2。",
                     fontSize = HiMicroSp, color = palette.sub)
             }
+        }
+
+        // R387 · 本页下方留一个出口，点进去看这一页收到的请求文本（左右分列）。
+        CardBox {
+            Row(Modifier.fillMaxWidth().clickable { onArchive() },
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("查看请求文本", fontSize = HiSectionSp,
+                    fontWeight = FontWeight.Bold, color = palette.primary,
+                    modifier = Modifier.weight(1f))
+                Text("展开 ›", fontSize = HiCaptionSp, color = palette.sub)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text("只留文字，不留音频；在「请求文本」页左右两列看两条渠道。",
+                fontSize = HiMicroSp, color = palette.sub)
         }
 
         Spacer(Modifier.height(72.dp))
