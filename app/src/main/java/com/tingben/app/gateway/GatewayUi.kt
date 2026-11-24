@@ -5,9 +5,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -61,9 +59,9 @@ internal fun GatewayScreen(c: Context) {
     var showHow by remember { mutableStateOf(false) }
     val clip = LocalClipboardManager.current
 
-    Column(Modifier.fillMaxWidth()
-        .verticalScroll(rememberScrollState())
-        .padding(HiPagePad),
+    // R383 · 与中继页同因：设置页外壳已有一层 verticalScroll，页面内不许
+    // 再起第二个滚动容器（无限高约束会在 measure 阶段抛异常闪退）。
+    Column(Modifier.fillMaxWidth().padding(HiPagePad),
         verticalArrangement = Arrangement.spacedBy(HiSectionGap)) {
 
         // ① 状态 + 绑定，一眼看清现在监听在哪

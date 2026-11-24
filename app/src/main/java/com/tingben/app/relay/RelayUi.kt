@@ -5,9 +5,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -68,9 +66,11 @@ internal fun RelayScreen(c: Context) {
     val repoUrl = "https://github.com/$owner/$repo"
     val pageUrl = "https://zjh1934.github.io/ting-ben-apk/relay.html"
 
-    Column(Modifier.fillMaxWidth()
-        .verticalScroll(rememberScrollState())
-        .padding(HiPagePad),
+    // R383 · 真机日志实证：设置页外壳 SettingsUi 已经是
+    // Column(fillMaxSize().verticalScroll())，这里再套一层 verticalScroll，
+    // 内层滚动容器就会收到「无限高」约束，Compose 在 measure 阶段直接抛
+    // IllegalStateException 闪退。本页只放内容，滚动交给外层那唯一一层。
+    Column(Modifier.fillMaxWidth().padding(HiPagePad),
         verticalArrangement = Arrangement.spacedBy(HiSectionGap)) {
 
         // ① 状态：一行开关态 + 一行实时状态，不再让悬浮球压住文字
