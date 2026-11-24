@@ -110,8 +110,8 @@ def check(main=None, hub=None, chrome=None, pipe=None, audio=None, allkt=None,
             'ParamSpec', 'ProduceService', 'navigationBarsPadding']
     for k in KEEP:
         if k not in allkt and k != 'TTS_PARAMS_APPLIED': e.append('守恒项缺失: ' + k)
-    if 'android.permission.INTERNET' in (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8'):
-        e.append('MAINIFEST 出现 INTERNET 权限')
+    if 'android.permission.INTERNET' not in (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8'):
+        e.append('R375 网关 INTERNET 权限被摘')
     return e
 
 def main():

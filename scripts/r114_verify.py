@@ -117,7 +117,7 @@ def check(root):
     ck('val liveChapter: Int? = if (bookRunning) makingChapter else null' in hub,
        '守恒：制作章恒定展开被改（R264 派生值）')
     ck('HubTitles = listOf(' not in hub, '守恒：三列目录回潮（R163 已合并）')
-    ck('android.permission.INTERNET' not in mf, '守恒：Manifest 出现 INTERNET')
+    ck('android.permission.INTERNET' in mf, '守恒：R375 网关 INTERNET 权限被摘')
     ck('scripts/r114_verify.py' in ci, 'CI 未挂 R114')
     return e
 

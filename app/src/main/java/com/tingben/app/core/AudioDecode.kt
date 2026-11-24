@@ -15,7 +15,8 @@ import kotlin.math.abs
  * R234 · 参考音频解码底座：任意容器/编码 → 24kHz / 单声道 / 16-bit WAV。
  *
  * 用的是 **Android 系统内置的 SDK**（MediaExtractor 解复用 + MediaCodec 硬解码），
- * 不引 FFmpeg / 第三方 aar，不加 INTERNET 权限，离线可用；支持 mp3 / m4a / aac /
+ * 不引 FFmpeg / 第三方 aar，零出站请求（R375 起 INTERNET 仅本机网关监听），
+ * 离线可用；支持 mp3 / m4a / aac /
  * ogg / wav 等系统能解的格式。整体路线借鉴 Ringdroid（AOSP 开源铃声编辑器）：
  * 平台解码出 PCM → 画波形 → 拖选区间 → 导出 WAV，而不是自己手搓解码器。
  *

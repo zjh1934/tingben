@@ -312,7 +312,8 @@ internal fun AppDrawerSheet(
             }
             Box(Modifier.weight(1f)) { content() }
             // R357 · 设置与版本号同一行、各占一半宽。版本号不再是一行点不动的小字：
-            // 点它用外部浏览器打开项目仓库主页。应用本身不申请 INTERNET 权限，
+            // 点它用外部浏览器打开项目仓库主页。应用本身零出站、零上传
+            // （R375 起 INTERNET 仅用于用户手动开启、默认关闭的本机网关监听），
             // 联网由浏览器负责，「纯离线」口径不变；打不开给中文兜底、不静默吞掉。
             Box(Modifier.fillMaxWidth().height(1.dp)
                 .background(sub.copy(alpha = 0.18f)))

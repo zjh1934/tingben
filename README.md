@@ -6,7 +6,7 @@
 
 > 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、App 无网络权限。
 
-[![版本](https://img.shields.io/badge/version-1.1.47-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
+[![版本](https://img.shields.io/badge/version-1.1.48-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -17,14 +17,14 @@
 
 想听一本本地的小说，不想把正文上传到任何服务器、也不想装几个 G 的模型进 APK。
 听本把整条链路都放在手机里：导入书 → 勾要做的章 → 逐段端侧合成 → 这一章的小块一做完就拼成这一章的音频。
-没有账号、没有联网、没有文本改写，正文一个字都不动。App 不含 `INTERNET` 权限，只支持 arm64-v8a 机型。
+没有文本改写，正文一个字都不动。R375 起清单含 `INTERNET`，用于默认关闭的本机网关；R377 起同一个权限也用于默认关闭的「跨网中继」——借你自己的 GitHub 免费私有仓库当中转，0 元 / 0 域名 / 0 服务器，任何拿到地址的人用浏览器或标准库脚本就能把文字发到这台手机合成，拿到的是手机本地压缩好的音频。文字会经过 GitHub（合成完立刻删请求文件），这一点在设置页写清；除 `relay/` 包外 App 仍零出站。只支持 arm64-v8a 机型。
 
 ## 下载
 
-**当前版本 `1.1.47`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+**当前版本 `1.1.48`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.47/app-debug.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.48/app-debug.apk
 ```
 
 永远是最新版的固定直链：
@@ -58,7 +58,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
 
 | 能力 | 说明 |
 |---|---|
-| 离线端侧合成 | 无 `INTERNET` 权限；一套 Qwen3-TTS 模型在手机里跑，合成不联网 |
+| 离线端侧合成 | 零出站、零上传；一套 Qwen3-TTS 模型在手机里跑，合成不联网。`INTERNET` 仅用于默认关闭的本机语音网关监听 |
 | 正文不改 | 不做改写、不做角色切分；导入 txt / md / epub 或粘贴文字建书 |
 | 按章制作 | 设置里定「怎么做」，目录页勾「做哪几章」，顺着勾选一次做完 |
 | 逐章出成品 | 这一章小块做完立刻拼成一个音频，转 64kbps 单声道 AAC-LC M4A，校验通过才删内部 WAV；失败留手动另存兜底 |

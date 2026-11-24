@@ -93,7 +93,7 @@ POS = {
     ],
     "manifest": [
         'android.permission.SYSTEM_ALERT_WINDOW',
-        "R158 · 旧约束「不申请 SYSTEM_ALERT_WINDOW」已由用户推翻",
+        "R158 · 系统级浮窗权限按需申请，用于可选的悬浮进度控件",
         "R161：onTimeout(int,int)",
     ],
     "contract": [

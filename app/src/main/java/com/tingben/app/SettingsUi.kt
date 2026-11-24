@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.widget.Toast
+import com.tingben.app.gateway.GatewayScreen
+import com.tingben.app.relay.RelayScreen
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -468,12 +470,24 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             SettingsEntry(UiIcon.FOLDER, "音频文件", "浏览 · 批量导出 · 删除") {
                 page = "files"
             }
+            SettingsEntry(UiIcon.SYNTH, "语音网关", "本机接口 · 默认关 · 音色只读本机") {
+                page = "gateway"
+            }
+            SettingsEntry(UiIcon.M4A, "跨网中继", "GitHub 免费仓库 · 零付费 · 压缩音频回传") {
+                page = "relay"
+            }
             SettingsEntry(UiIcon.EXPORT, "开发者工具", "诊断摘要 · 完整日志") {
                 devOpen = true; page = "dev"
             }
         }
         } else {
             SettingsSubHeader(settingsPageTitle(page)) { page = "" }
+        if (page == "gateway") {
+            GatewayScreen(c)
+        }
+        if (page == "relay") {
+            RelayScreen(c)
+        }
         if (page == "appearance") {
         SettingsSection("外观与显示", "软件", collapsible = false) {
             // R239 · 主题是三段选择器，不是「一行 + 尾部控件」；但标题行也走
@@ -1226,5 +1240,7 @@ internal fun settingsPageTitle(page: String): String = when (page) {
     "perms" -> "权限管理"
     "files" -> "音频文件"
     "dev" -> "开发者工具"
+    "gateway" -> "语音网关"
+    "relay" -> "跨网中继"
     else -> "设置"
 }

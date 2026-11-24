@@ -58,7 +58,7 @@ def check(pipe=None, prefs=None, main=None, hub=None, event=None, chrome=None,
     slots = [x.get('slot') for x in manifest.get('models', [])]
     want_slots = {'tts_tokenizer', 'tts_talker_voice_design', 'tts_talker_custom_voice', 'tts_talker_base'}
     if set(slots) != want_slots or len(slots) != 4: e.append('模型清单不是 1 底座 + 3 模式: ' + str(slots))
-    if 'android.permission.INTERNET' in android: e.append('出现 INTERNET 权限')
+    if 'android.permission.INTERNET' not in android: e.append('R375 网关 INTERNET 权限被摘')
     if 'version.txt' not in gradle or 'versionName' not in gradle: e.append('版本号没停在 1.1.0')
     return e
 
@@ -85,7 +85,7 @@ def main():
             'run(c, book, onlyChapters, directRead, thinkOverride, config)'))),
         ('旧成品兼容被删', lambda: check(audio=AUDIO.replace('chapterIndices', 'chapterIdx'),
             allkt=ALL.replace('chapterIndices', 'chapterIdx'))),
-        ('INTERNET 权限回潮', lambda: check(android=ANDROID + '\n<uses-permission android:name="android.permission.INTERNET" />')),
+        ('网关 INTERNET 权限被摘', lambda: check(android=ANDROID.replace('<uses-permission android:name="android.permission.INTERNET" />', ''))),
         ('版本号退回', lambda: check(gradle=GRADLE.replace('version.txt', 'version_missing.txt'))),
     ]
     bad = []

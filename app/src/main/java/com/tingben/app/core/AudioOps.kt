@@ -462,4 +462,29 @@ object AudioOps {
         }
         return failed
     }
+
+    /**
+     * R377 · 网关 / 跨网中继「回传前压缩」：WAV 字节 → AAC-LC / 64kbps / 单声道 M4A 字节。
+     *
+     * 复用上面已在整章链验证过的 toM4a（平台自带 MediaCodec + MediaMuxer，零第三方依赖），
+     * 不引 LAME / FFmpeg，不动 native 构建链。查证结论：Android 全版本没有原生 MP3 编码器，
+     * MediaCodec 与 Media3 Transformer 都只出 AAC，所以这里出 M4A；体积约 WAV 的 1/10，
+     * 与用户要的「别传大 WAV」一致。转码失败**原样回退 WAV 并如实标注 format**，
+     * 绝不把没压过的文件谎称压缩过。
+     */
+    fun compressForTransfer(c: Context, wav: ByteArray, tag: String): Pair<ByteArray, String> {
+        if (wav.size <= 44) return Pair(wav, "wav")
+        return try {
+            val d = File(c.cacheDir, "xfer").apply { mkdirs() }
+            val src = File(d, "x_" + tag + ".wav")
+            val out = File(d, "x_" + tag + ".m4a")
+            src.writeBytes(wav)
+            val r = toM4a(c, src, out)
+            val b = if (r.ok && out.isFile && out.length() > 1024L) out.readBytes() else wav
+            src.delete(); out.delete()
+            if (b === wav) Pair(wav, "wav") else Pair(b, "m4a")
+        } catch (_: Throwable) {
+            Pair(wav, "wav")
+        }
+    }
 }

@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "round": "R377",
+  "decision_doc": "方案/听本_手机端语音合成网关_方案研究.md",
+  "default_bind": "127.0.0.1",
+  "default_port": 8765,
+  "default_enabled": false,
+  "preset_frozen": true,
+  "max_concurrency": 1,
+  "sync_max_chars": 1500,
+  "sync_soft_chars": 200,
+  "async_min_chars": 0,
+  "clip_synth_max_chars": 1500,
+  "job_retention_seconds": 600,
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/",
+      "type": "text/html; charset=utf-8",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/v1/health",
+      "type": "application/json; charset=utf-8",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/v1/openapi.json",
+      "type": "application/json; charset=utf-8",
+      "status": 200
+    },
+    {
+      "method": "OPTIONS",
+      "path": "*",
+      "type": "no-body",
+      "status": 204
+    },
+    {
+      "method": "POST",
+      "path": "/v1/speak",
+      "type": "audio/mp4",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/v1/jobs",
+      "type": "application/json; charset=utf-8",
+      "status": 202
+    },
+    {
+      "method": "GET",
+      "path": "/v1/jobs/{id}",
+      "type": "application/json; charset=utf-8",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/v1/jobs/{id}/audio",
+      "type": "audio/mp4",
+      "status": 200
+    }
+  ],
+  "error_type": "application/problem+json; charset=utf-8",
+  "errors": [
+    {
+      "status": 400,
+      "code": "empty_text",
+      "meaning": "text 为空或不是字符串"
+    },
+    {
+      "status": 401,
+      "code": "unauthorized",
+      "meaning": "非本机绑定缺 Token 或 Token 不匹配"
+    },
+    {
+      "status": 404,
+      "code": "not_found",
+      "meaning": "未知路径或 job 已过期"
+    },
+    {
+      "status": 405,
+      "code": "method_not_allowed",
+      "meaning": "端点方法不对"
+    },
+    {
+      "status": 409,
+      "code": "job_not_ready",
+      "meaning": "job 未完成就取音频"
+    },
+    {
+      "status": 413,
+      "code": "text_too_long",
+      "meaning": "超过 1500 字（= ClipSynth.MAX_CHARS）；本轮不分段，先少贴一点"
+    },
+    {
+      "status": 429,
+      "code": "busy",
+      "meaning": "并发锁 1 被占，带 Retry-After"
+    },
+    {
+      "status": 503,
+      "code": "engine_unavailable",
+      "meaning": "模型缺件 / 引擎忙 / 整本制作中"
+    }
+  ],
+  "cors": {
+    "allow_origin": "*",
+    "allow_methods": "GET, POST, OPTIONS",
+    "allow_headers": "Content-Type, Authorization",
+    "max_age": "600"
+  },
+  "audio_headers": [
+    "Content-Type",
+    "Content-Length",
+    "Content-Disposition",
+    "X-Tingben-Preset",
+    "Cache-Control"
+  ],
+  "forbidden_response_types": [
+    "text/html（除 html_allowed_paths 列出的内置网页外，任何错误响应都不许回 HTML）"
+  ],
+  "ignored_request_fields": [
+    "voice",
+    "speaker",
+    "speed",
+    "seed",
+    "temperature",
+    "topK",
+    "topP",
+    "mode",
+    "knobs",
+    "instruct"
+  ],
+  "privacy": "本机网关：请求正文不落日志，只留方法与字符数；模型路径不外露；网关 Token 只存 SHA-256。跨网中继：文字会经过用户自己的私有 GitHub 仓库（合成完立刻 DELETE 请求文件、Token 只给这一个仓库、App 日志只记字符数），严格意义的零上传不再成立，已如实告知用户。",
+  "token_required": "always",
+  "token_note": "网关只要开启就要求 Bearer Token（比报告的「非本机才强制」更严，是超集）；面板同时给地址与 Token",
+  "max_chars": 1500,
+  "max_chars_source": "ClipSynth.MAX_CHARS（R215/R276 现成单次合成真源，网关不另造链）",
+  "async_note": "异步 job 本轮只解决「不想等同步响应」，输入同样 ≤1500 字；长文本分段拼接留 Phase 2",
+  "phase2_deferred": "长文本分段与进度留 Phase 2（复用 SegPlan/Producer 拼接链）；M4A 压缩回传已在 R377 落地。",
+  "html_allowed_paths": [
+    "/"
+  ],
+  "audio_type": "audio/mp4",
+  "audio_fallback": "audio/wav",
+  "max_chars_note": "R377 起中继请求同样守 1500 字上限，超长直接回 failed，不静默截断。",
+  "relay": {
+    "middle_server": "用户自有 GitHub 免费私有仓库 zjh1934/tingben-relay（0 元 / 0 域名 / 0 VPS / 0 穿透二进制）",
+    "only_host": "api.github.com",
+    "dirs": {
+      "queue": "调用方写 {\"v\":1,\"text\":\"...\"}，手机取走合成后立刻 DELETE",
+      "out": "手机写 {id}.m4a（压缩后）",
+      "status": "手机写 {id}.json（state/format/bytes/chars/audio/sha/ts）"
+    },
+    "flow": [
+      "调用方 PUT queue/{uuid}.json",
+      "手机 GET contents/queue/ 取最老一条",
+      "RelayHaptics.start 短促两下",
+      "GatewaySynth.speak 复用 ClipSynth 本机预设 + 并发锁 1",
+      "AudioOps.compressForTransfer 手机本地压成 AAC-LC/64kbps/单声道 M4A",
+      "PUT out/{id}.m4a + PUT status/{id}.json",
+      "RelayHaptics.done 三连渐强加长收尾",
+      "DELETE queue/{uuid}.json（正文即用即删）",
+      "调用方轮询 status 后取回压缩音频"
+    ],
+    "haptics": {
+      "start": "短-停-短 timings[0,55,90,55] amps[0,170,0,170]",
+      "done": "三连渐强+长收尾 timings[0,70,60,70,60,150] amps[0,120,0,190,0,255]",
+      "fail": "三下轻急 timings[0,40,60,40,60,40]",
+      "fallback": "无 hasAmplitudeControl 时回退纯开/关波形"
+    },
+    "audio": "回传前已在手机本地压缩；Android 全版本无原生 MP3 编码器，出 M4A/AAC，失败如实回退 WAV 并标 format",
+    "poll_ms": 4000,
+    "idle_poll_ms": 10000,
+    "max_chars": 1500,
+    "token": "由用户在 App「跨网中继」页填一次细粒度 PAT，绝不进 APK / 日志 / 诊断摘要",
+    "e2e": "R377 沙盒侧真连 api.github.com + 真用 ffmpeg 压缩，15 步全通过，WAV 144044 B → M4A 24047 B（16.7%），记录见中继仓库 docs/e2e-report.md"
+  }
+}

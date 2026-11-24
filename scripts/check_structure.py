@@ -54,7 +54,8 @@ for root, dirs, files in os.walk(ROOT):
             kt_files.append(p)
 
 m = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-if "android.permission.INTERNET" in m: errs.append("Manifest 含 INTERNET 权限")
+if "android.permission.INTERNET" not in m:
+    errs.append("R375 网关 INTERNET 权限被摘（本机网关需要，零出站由 r375_verify 守）")
 if 'applicationId = "com.tingben.app"' not in (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8"):
     errs.append("包名不是 com.tingben.app")
 
@@ -694,7 +695,7 @@ if "--selftest" in sys.argv:
 
 if errs:
     print("\n".join("ERROR " + e for e in errs)); sys.exit(1)
-print("自检通过: %d 项必备文件 / 权重泄漏 0 / 无 INTERNET / 包名正确 / KDoc 坑 0 / R68 旧符号零残留 %d 项 / 主链 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / R31 符号 %d 项 / native 早停 3 项"
+print("自检通过: %d 项必备文件 / 权重泄漏 0 / 零出站（除 relay 包外；INTERNET 用于本机网关与跨网中继，relay 由 r377 守） / 包名正确 / KDoc 坑 0 / R68 旧符号零残留 %d 项 / 主链 %d 项 / R25 符号 %d 项 / R26 符号 %d 项 / R31 符号 %d 项 / native 早停 3 项"
       % (len(REQUIRED), len(R68_GONE_A) + len(R68_GONE_B) + len(R68_GONE_C) + len(R68_GONE_D),
          len(R68_KEEP_A), len(R25_ALL) + len(R25_MAIN),
          len(R26_ALL) + 5 + 5, len(R31_ALL) + 11 + 7 + 4))

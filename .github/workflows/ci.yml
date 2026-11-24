@@ -573,6 +573,14 @@ jobs:
         run: python3 scripts/r370_verify.py
       - name: R370 反向注入
         run: python3 scripts/r370_verify.py --selftest
+      - name: R375 手机端语音合成网关
+        run: python3 scripts/r375_verify.py
+      - name: R375 手机端语音合成网关反向注入与契约模拟
+        run: python3 scripts/r375_verify.py --selftest
+      - name: R377 跨网中继 / 压缩回传 / 震动反馈
+        run: python3 scripts/r377_verify.py
+      - name: R377 反向注入与信箱闭环模拟
+        run: python3 scripts/r377_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入
@@ -678,8 +686,15 @@ jobs:
           [ -x "$BT/aapt" ] || BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -name '3*' | sort | tail -1)"
           echo "--- 权限 ---"
           "$BT/aapt" dump permissions "$APK" 2>/dev/null | head -20
-          if "$BT/aapt" dump permissions "$APK" 2>/dev/null | grep -q 'android.permission.INTERNET'; then
-            echo "::error::APK 含 INTERNET 权限"; exit 1
+          # R375/R377 口径迁移：INTERNET 是「默认关闭的本机网关监听 + 只连
+          # api.github.com 的跨网中继」所需，清单里合法存在，不能再一刀切拦。
+          # 改守两件：它必须在（被误删会让网关起不来），且不许冒出隐私权限。
+          PERMS="$("$BT/aapt" dump permissions "$APK" 2>/dev/null || true)"
+          if ! echo "$PERMS" | grep -q 'android.permission.INTERNET'; then
+            echo "::error::R375 起 INTERNET 应存在（默认关的网关与中继要用）"; exit 1
+          fi
+          if echo "$PERMS" | grep -qE 'android.permission.(READ_SMS|READ_CONTACTS|RECORD_AUDIO|ACCESS_FINE_LOCATION|READ_PHONE_STATE|CAMERA|QUERY_ALL_PACKAGES)'; then
+            echo "::error::APK 出现了不该有的隐私权限"; exit 1
           fi
           "$BT/aapt" dump badging "$APK" 2>/dev/null | head -8
           mkdir -p build-report
@@ -688,7 +703,7 @@ jobs:
             echo "提交 ${{ github.sha }} · 版本 ${{ steps.ver.outputs.v }} · run ${{ github.run_number }}"
             echo
             echo "APK: $SIZE 字节 ($(echo "scale=1; $SIZE/1048576" | bc) MB)"
-            echo "无 INTERNET / 无 .gguf / 仅 arm64-v8a / <100MB"
+            echo "INTERNET 仅默认关的网关与中继 / 无 .gguf / 仅 arm64-v8a / <100MB / 隐私权限 0"
           } > "build-report/build-${{ github.run_number }}.md"
 
       - name: 上传 APK

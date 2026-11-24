@@ -196,7 +196,7 @@ object EventLog {
      * 控制体积，避免大文本把剪贴板塞爆。
      *
      * 隐私（R225）：书名/正文/音色描述原文一律不落盘，只留长度与短哈希。
-     * 软件无 INTERNET 权限，日志不会自己离开设备。
+     * App 零出站请求（R375 起 INTERNET 仅用于默认关闭的本机网关监听），日志不会自己离开设备。
      */
     private fun envBlock(c: Context): String {
         val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
@@ -245,7 +245,7 @@ object EventLog {
     private fun header(): String =
         "# 听本 · 开发诊断日志\n\n" +
             "> 这份日志是**给开发者排查用的**，不是给使用者看的。\n" +
-            "> R225 起日志不含书名/正文/音色描述原文（只留长度与短哈希）；软件无 INTERNET 权限，日志不会自己离开设备。\n\n"
+            "> R225 起日志不含书名/正文/音色描述原文（只留长度与短哈希）；App 零出站请求（R375 起 INTERNET 仅用于默认关闭的本机网关监听），日志不会自己离开设备。\n\n"
 
     /**
      * R161 · API 30+ 的 ApplicationExitInfo：进程上次是被谁干掉的。

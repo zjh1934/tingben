@@ -8,7 +8,7 @@
   上扒跟手与下滑淡出守恒 / 右下浮胶囊与顶栏废话零回潮。
 · 抽屉：设置与版本号同一行、各占一半宽；版本号点击用外部浏览器打开
   项目仓库主页，先 resolveActivity、打不开给中文兜底；
-  外链图标代码自绘；应用仍不申请 INTERNET 权限（纯离线口径不变）。
+  外链图标代码自绘；R375 起 INTERNET 仅用于用户手动开启的本机网关，App 仍零出站、零上传。
 
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r357_verify.py [--selftest]
@@ -26,6 +26,7 @@ FILES = {
 }
 
 POS = {
+    "manifest": ['<uses-permission android:name="android.permission.INTERNET" />'],
     "player": [
         "PlayerCover(palette.primary, 88.dp, st.isPlaying)",
         "IconMusicNote(tint, Modifier.size(coverSize * 0.54f))",
@@ -72,7 +73,7 @@ BAN = {
         'Text("听本 · " + com.tingben.app.BuildConfig.VERSION_NAME',
         'Text("›", fontSize = 16.sp, color = sub)',
     ],
-    "manifest": ["android.permission.INTERNET"],
+    "manifest": ["android.permission.READ_SMS"],
 }
 
 
@@ -115,10 +116,8 @@ def selftest():
         ("设置仍可点被摘", "chrome", ".clickable { onSettings() }", ""),
         ("两枚等宽退回一枚", "chrome",
          "Modifier.weight(1f).height(44.dp)", "Modifier.width(120.dp).height(44.dp)"),
-        ("申请联网权限", "manifest",
-         "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />",
-         "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n"
-         "    <uses-permission android:name=\"android.permission.INTERNET\" />"),
+        ("网关 INTERNET 权限被摘", "manifest",
+         '<uses-permission android:name="android.permission.INTERNET" />', ""),
         ("CI 漏挂", "ci", "python3 scripts/r357_verify.py --selftest", ""),
         ("清单漏登记", "r135", '"r357_verify.py"', ""),
         ("经典音符被摘", "player",

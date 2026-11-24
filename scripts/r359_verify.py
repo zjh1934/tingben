@@ -28,6 +28,7 @@ FILES = {
 }
 
 POS = {
+    "manifest": ['<uses-permission android:name="android.permission.INTERNET" />'],
     "player": [
         "R359 · 播放器封面换成经典双八分音符",
         "internal fun PlayerCover(tint: Color, coverSize: Dp, playing: Boolean = false)",
@@ -61,7 +62,7 @@ BAN = {
         "PlayerCover(palette.primary, 180.dp",
     ],
     "icons": ["摊开的书", "书页 + 声波"],
-    "manifest": ["android.permission.INTERNET"],
+    "manifest": ["android.permission.READ_SMS"],
 }
 
 
@@ -122,10 +123,8 @@ def selftest():
         ("清单漏登记", "r135", '"r359_verify.py"', ""),
         ("r357 未迁移", "r357",
          "IconMusicNote(tint, Modifier.size(coverSize * 0.54f))", ""),
-        ("申请联网权限", "manifest",
-         "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />",
-         "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n"
-         "    <uses-permission android:name=\"android.permission.INTERNET\" />"),
+        ("网关 INTERNET 权限被摘", "manifest",
+         '<uses-permission android:name="android.permission.INTERNET" />', ""),
     ]
     bad = 0
     for name, key, needle, repl in cuts:

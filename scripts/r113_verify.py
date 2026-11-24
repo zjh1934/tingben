@@ -72,7 +72,7 @@ def check(root):
     ck('fallback-raw' in cpp, 'F-23 提取失败没回退原始 PCM')
     ck('${CMAKE_DL_LIBS}' in cmake, 'F-23 未链接 dl')
 
-    ck('android.permission.INTERNET' not in mf, '守恒：Manifest 出现 INTERNET')
+    ck('android.permission.INTERNET' in mf, '守恒：R375 网关 INTERNET 权限被摘')
     ck('scripts/r113_verify.py' in ci, 'CI 未挂 R113')
     return e
 

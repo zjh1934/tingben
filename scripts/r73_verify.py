@@ -89,7 +89,7 @@ KEEP = [
     ('底部安全区', 'ALLKT', 'navigationBarsPadding()'),
     ('采样真到引擎', 'ALLKT', 'qt_tts_params'),
     ('前台服务', 'ALLKT', 'ProduceService'),
-    ('无 INTERNET', 'ALLKT', 'android.permission.INTERNET'),
+    ('R375 网关权限', 'MANIFEST', 'android.permission.INTERNET'),
 ]
 
 def check(theme=None, main=None, hub=None, opts=None, chrome=None, prefs=None,
@@ -120,8 +120,8 @@ def check(theme=None, main=None, hub=None, opts=None, chrome=None, prefs=None,
             e.append(f'旧形态残留[{label}]')
     for label, src, needle in KEEP:
         which = pool.get(src) if isinstance(src, str) else src
-        if label == '无 INTERNET':
-            if needle in manifest: e.append('守恒失败[Manifest 出现 INTERNET]')
+        if label == 'R375 网关权限':
+            if needle not in manifest: e.append('守恒失败[R375 网关权限被摘]')
         elif needle not in which:
             e.append(f'守恒失败[{label}]')
     n = sum(x.count(': Color get() = palette.') for x in (main, hub, opts))
