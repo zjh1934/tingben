@@ -32,7 +32,12 @@ internal object ServiceResume {
     /** @param from 只写来源短词（冷启动 / 应用更新 / 开机），不写 Token、不写正文。 */
     fun resumeIfNeeded(c: Context, from: String) {
         if (RelayPrefs.configured(c)) {
-            try {
+            if (RelayService.isRunning()) {
+                // R400 · 冷启动与 MY_PACKAGE_REPLACED 可能相隔几百毫秒各来一次；
+                // 真机日志里留下两条 RELAY_RESUME + 两条 RELAY_ON。已在轮询就别再起。
+                EventLog.log(EventLog.Kind.PIPELINE, "RELAY_RESUME_SKIP",
+                    from + " · 已在轮询，跳过重复补拉", level = EventLog.Level.TRACE)
+            } else try {
                 RelayService.start(c)
                 EventLog.log(EventLog.Kind.PIPELINE, "RELAY_RESUME",
                     from + " · 按已保存的开关恢复跨网中继")
@@ -43,7 +48,10 @@ internal object ServiceResume {
             }
         }
         if (GatewayPrefs.enabled(c)) {
-            try {
+            if (GatewayService.isRunning()) {
+                EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_RESUME_SKIP",
+                    from + " · 已在监听，跳过重复补拉", level = EventLog.Level.TRACE)
+            } else try {
                 GatewayService.start(c)
                 EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_RESUME",
                     from + " · 按已保存的开关恢复语音网关")

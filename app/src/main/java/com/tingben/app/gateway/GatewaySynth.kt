@@ -61,10 +61,14 @@ internal object GatewaySynth {
         return ModelStore.synthesisBlockReason(c)
     }
 
-    /** R377 · 合成 → 手机本地压缩 → 只把压缩后的字节给调用方；失败如实回退 WAV。 */
-    private fun synth(c: Context, text: String, id: String): Pair<ByteArray, String> {
+    /** R377 · 合成 → 手机本地压缩 → 只把压缩后的字节给调用方；失败如实回退 WAV。
+     *  R400 · label 由调用方给：局域网网关 =「网关」，跨网中继 =「中继」。
+     *  之前写死「网关」，真机日志里 117 条中继请求的 MIXER_TRIAL 全标成网关，
+     *  开发者看日志分不清是哪条渠道来的。只改埋点文案，合成链一字不动。 */
+    private fun synth(c: Context, text: String, id: String,
+                      label: String): Pair<ByteArray, String> {
         val f = File(dir(c), "gw_$id.wav")
-        ClipSynth.synthesize(c, text, "gateway.wav", "网关", outFile = f)
+        ClipSynth.synthesize(c, text, "gateway.wav", label, outFile = f)
         val wav = f.readBytes()
         if (wav.size <= 44) throw IllegalStateException("合成出来的音频是空的")
         return AudioOps.compressForTransfer(c, wav, "gw_" + id)
@@ -74,13 +78,14 @@ internal object GatewaySynth {
         Integer.toHexString((Math.random() * 0xffff).toInt())
 
     /** 同步短文本：一次一句，成功直接给 WAV 字节。 */
-    fun speak(c: Context, text: String, ignored: Int): Speak {
+    fun speak(c: Context, text: String, ignored: Int,
+              label: String = "网关"): Speak {
         blockReason(c)?.let { return Speak(false, false, null, it) }
         if (!busy.compareAndSet(false, true))
             return Speak(false, true, null, "一次只合成一句，稍后重试")
         onBusyStart()
         try {
-            val (b, fmt) = synth(c, text, newId())
+            val (b, fmt) = synth(c, text, newId(), label)
             return Speak(true, false, b, null, fmt)
         } catch (e: Throwable) {
             return Speak(false, false, null,
@@ -102,7 +107,7 @@ internal object GatewaySynth {
             onBusyStart()
             try {
                 j.state = "running"
-                val (b, fmt) = synth(c, text, id)
+                val (b, fmt) = synth(c, text, id, "网关")
                 j.audio = b
                 j.format = fmt
                 j.progress = 1f

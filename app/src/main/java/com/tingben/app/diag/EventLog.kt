@@ -340,7 +340,15 @@ object EventLog {
                     as? android.app.ActivityManager ?: return
             val list = am.getHistoricalProcessExitReasons(null, 0, 8)
             if (list.isNullOrEmpty()) return
+            // R400 · 系统返回的是「最近 8 次」的历史，每次冷启全量重放会把同一批
+            // 旧崩溃/旧更新在日志里写一遍又一遍（真机日志里 8 条重复出现 4 轮）。
+            // 只记比上次写过的时间戳更新的退出原因，历史仍留在「进程退出原因」块里。
+            val meta = c.getSharedPreferences("tingben_diag_meta", Context.MODE_PRIVATE)
+            val lastTs = meta.getLong("last_exit_ts", 0L)
+            var maxTs = lastTs
             for (r in list) {
+                if (r.timestamp <= lastTs) continue
+                if (r.timestamp > maxTs) maxTs = r.timestamp
                 log(Kind.AUDIT, "APP_EXIT",
                     "reason=${exitReasonName(r.reason)} ts=${r.timestamp} " +
                         "pid=${r.pid} importance=${r.importance} " +
@@ -348,6 +356,7 @@ object EventLog {
                     fields = mapOf("reason" to r.reason.toString(),
                         "ts" to r.timestamp.toString()))
             }
+            if (maxTs > lastTs) meta.edit().putLong("last_exit_ts", maxTs).apply()
         } catch (_: Throwable) { }
     }
 

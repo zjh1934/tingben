@@ -26,6 +26,9 @@ internal object RelayContract {
     const val POLL_MS = 4000L
     const val IDLE_POLL_MS = 10000L
     const val RETRY_MS = 5000L
+    /** R400 · 连续网络失败时的退避上限：断网夜里不再每 5 秒刷一行 WARN。
+     *  忙时 4s / 空闲 10s / 出错 5s→10s→20s→40s→60s，成功后立刻归零。 */
+    const val MAX_BACKOFF_MS = 60000L
 
     /** = ClipSynth.MAX_CHARS，超长请求直接回 failed，不静默截断。 */
     const val MAX_CHARS = 1500

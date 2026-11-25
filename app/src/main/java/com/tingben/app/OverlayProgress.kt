@@ -49,6 +49,8 @@ object OverlayProgress {
                              val chapterPct: Float, val source: OverlaySource)
     private val lock = Any()
     @Volatile private var frame: Frame? = null
+    /** R400 · 日志节流：同一帧被三方 update 连着刷时只记一行；重绘照旧每次做。 */
+    @Volatile private var lastPctLog = ""
 
     @Volatile private var root: View? = null
     @Volatile private var lp: WindowManager.LayoutParams? = null
@@ -260,10 +262,15 @@ object OverlayProgress {
                 } else {
                     bottomRing?.visibility = View.GONE
                 }
-                EventLog.log(EventLog.Kind.UI, "OVERLAY_PCT",
-                    "top=${(topPct * 100).toInt()} bottom=${(chapterPctNow * 100).toInt()} " +
-                        "done=$doneNow total=$totalNow src=${target.source.name}",
-                    level = EventLog.Level.TRACE)
+                val sig = "$doneNow/$totalNow/${(topPct * 100).toInt()}/" +
+                    "${(chapterPctNow * 100).toInt()}/${target.source.name}"
+                if (sig != lastPctLog) {
+                    lastPctLog = sig
+                    EventLog.log(EventLog.Kind.UI, "OVERLAY_PCT",
+                        "top=${(topPct * 100).toInt()} bottom=${(chapterPctNow * 100).toInt()} " +
+                            "done=$doneNow total=$totalNow src=${target.source.name}",
+                        level = EventLog.Level.TRACE)
+                }
             } catch (t: Throwable) {
                 // 厂商 ROM 可能拒绝 addView；浮窗是可选增强，不能拖垮制作
                 UiErrors.report("悬浮进度显示不了，制作照常进行", t)

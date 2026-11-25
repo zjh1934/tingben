@@ -37,6 +37,10 @@ class RelayService : Service() {
 
     companion object {
         const val ACTION_START = "com.tingben.app.RELAY_START"
+        /** R400 · 进程内静态存活标志：冷启动与 MY_PACKAGE_REPLACED 广播可能间隔
+         *  几百毫秒各补拉一次，ServiceResume 靠它判断「已经在轮询，不重复起」。 */
+        @Volatile private var alive = false
+        fun isRunning(): Boolean = alive
         const val ACTION_STOP = "com.tingben.app.RELAY_STOP"
         private const val NOTIF_ID = 0x524C
         private const val CHANNEL = "tingben_relay"
@@ -81,30 +85,47 @@ class RelayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startRelay()
-        EventLog.log(EventLog.Kind.PIPELINE, "RELAY_ON",
-            RelayPrefs.owner(this) + "/" + RelayPrefs.repo(this) + " · 轮询 " +
-                RelayContract.POLL_MS + "ms · 上限 " + RelayContract.MAX_CHARS + " 字")
+        // R400 · 只在真的从「没在跑」拉起来时记 RELAY_ON：真机日志里冷启动与
+        // 应用更新广播相隔 0.5s 各补拉一次，会留下两条 RELAY_ON，看着像起了两个服务。
+        val started = startRelay()
+        if (started) {
+            EventLog.log(EventLog.Kind.PIPELINE, "RELAY_ON",
+                RelayPrefs.owner(this) + "/" + RelayPrefs.repo(this) + " · 忙 " +
+                    RelayContract.POLL_MS + "ms / 闲 " + RelayContract.IDLE_POLL_MS +
+                    "ms · 上限 " + RelayContract.MAX_CHARS + " 字")
+        } else {
+            EventLog.log(EventLog.Kind.PIPELINE, "RELAY_ON_NOOP",
+                "已在轮询 · 重复补拉不重启、不重复记 ON", level = EventLog.Level.TRACE)
+        }
         return START_NOT_STICKY
     }
 
-    private fun startRelay() {
-        if (running) return
-        synchronized(this) {
-            if (running) return
-            running = true
-            thread = Thread({ loop() }, "tingben-relay-poll").apply { isDaemon = true; start() }
+    /** @return 是否真的从停止变成运行；重复补拉返回 false。 */
+    private fun startRelay(): Boolean {
+        if (running) return false
+        return synchronized(this) {
+            if (running) false else {
+                running = true
+                alive = true
+                thread = Thread({ loop() }, "tingben-relay-poll").apply { isDaemon = true; start() }
+                true
+            }
         }
     }
 
     private fun stopRelay() {
         running = false
+        alive = false
         try { thread?.interrupt() } catch (_: Throwable) { }
         thread = null
         releaseWake()
     }
 
     private fun loop() {
+        // R400 · 连续网络失败计数：断网（UnknownHostException）时按指数退避，
+        // 同类错误只记首行 + 每 12 次一行汇总，恢复时记一行 RECOVER；
+        // 正常关停的 InterruptedException 不再伪装成 WARN「轮询失败」。
+        var errStreak = 0
         while (running) {
             try {
                 if (!RelayPrefs.configured(this)) {
@@ -113,6 +134,11 @@ class RelayService : Service() {
                 val client = RelayClient(RelayPrefs.owner(this), RelayPrefs.repo(this),
                     RelayPrefs.branch(this), RelayPrefs.token(this))
                 val items = client.listQueue()
+                if (errStreak > 0) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_RECOVER",
+                        "网络恢复 · 连续出错 $errStreak 次后重新取到队列 · 退避归零")
+                    errStreak = 0
+                }
                 if (items.isEmpty()) {
                     setState("等着请求 · " + RelayPrefs.owner(this) + "/" + RelayPrefs.repo(this))
                     Thread.sleep(RelayContract.IDLE_POLL_MS)
@@ -143,7 +169,8 @@ class RelayService : Service() {
                 RelayHaptics.start(this)
                 holdWake()
                 val t0 = android.os.SystemClock.elapsedRealtime()
-                val r = GatewaySynth.speak(this, text, 0)
+                // R400 · 渠道标签：中继链路的 MIXER_TRIAL 记「来源=中继」，不再混成网关。
+                val r = GatewaySynth.speak(this, text, 0, "中继")
                 val ms = android.os.SystemClock.elapsedRealtime() - t0
                 if (r.busy) {
                     // 本机网关或整本书正在用引擎：保留 queue，下一轮再取，不删请求。
@@ -186,17 +213,38 @@ class RelayService : Service() {
                 releaseWake()
                 Thread.sleep(RelayContract.POLL_MS)
             } catch (t: Throwable) {
+                // R400 · stopRelay() 用 interrupt() 打断 sleep 让线程退出，是正常关停，
+                // 不是失败；旧版把它记成 WARN「轮询失败 · InterruptedException」，
+                // 用户每次关开关都会多一条假错误。
+                if (!running || t is InterruptedException) {
+                    releaseWake()
+                    return
+                }
                 // R381 · 异常 message 可能带 URL / 路径，只记错误码与异常类名。
                 val msg = if (t is RelayClient.Err) "HTTP " + t.code
                     else t.javaClass.simpleName
-                EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_ERR",
-                    "轮询失败 · $msg", level = EventLog.Level.WARN,
-                    fields = mapOf("err" to t.javaClass.simpleName))
+                errStreak++
+                val backoff = backoffMs(errStreak)
+                // 首行 + 每 12 次汇总：真机日志里断网 4 分钟刷了 46 行同款 WARN。
+                if (errStreak == 1 || errStreak % 12 == 0) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_ERR",
+                        "轮询失败 · $msg · 连续 ${errStreak}次 · 退避 ${backoff}ms",
+                        level = EventLog.Level.WARN,
+                        fields = mapOf("err" to t.javaClass.simpleName,
+                            "streak" to errStreak.toString(), "backoff" to backoff.toString()))
+                }
                 setState("等一等 · " + msg)
                 releaseWake()
-                Thread.sleep(RelayContract.RETRY_MS)
+                try { Thread.sleep(backoff) } catch (_: InterruptedException) { return }
             }
         }
+    }
+
+    /** R400 · 5s→10s→20s→40s→60s 封顶；成功后由 loop 的 RECOVER 分支归零。 */
+    private fun backoffMs(streak: Int): Long {
+        var v = RelayContract.RETRY_MS
+        repeat(streak.coerceAtMost(4)) { v *= 2 }
+        return v.coerceAtMost(RelayContract.MAX_BACKOFF_MS)
     }
 
     private fun doneStatus(chars: Int, format: String, bytes: Int,

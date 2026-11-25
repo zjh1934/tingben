@@ -112,8 +112,9 @@ def check(s=None):
         e.append('服务里震动触发点不齐（开始/完成/失败各一处）')
 
     # ⑥ 复用现成合成链 + 并发锁 + 本机预设只读
-    if 'GatewaySynth.speak(this, text, 0)' not in s['service']:
-        e.append('中继没复用 GatewaySynth / ClipSynth 现成链')
+    # R400 · 调用形态带渠道标签，判据按新形态改准、不放宽
+    if 'GatewaySynth.speak(this, text, 0, "中继")' not in s['service']:
+        e.append('中继没复用 GatewaySynth / ClipSynth 现成链，或渠道标签丢失')
     if 'if (r.busy)' not in s['service']:
         e.append('并发锁 1 的忙等待分支被摘')
     if 'const val MAX_CHARS = 1500' not in s['const']:
@@ -157,7 +158,7 @@ INJECT = [
     ('结束震动改成和开始一样', 'const', 'DONE_TIMINGS = longArrayOf(0, 80, 90, 80, 90, 80, 90, 420)', 'DONE_TIMINGS = longArrayOf(0, 55, 90, 55)'),
     ('R381 长收尾回潮', 'const', 'DONE_TIMINGS = longArrayOf(0, 80, 90, 80, 90, 80, 90, 420)', 'DONE_TIMINGS = longArrayOf(0, 70, 60, 70, 60, 150)'),
     ('振幅回退被摘', 'haptics', 'hasAmplitudeControl()', 'false'),
-    ('另造合成链', 'service', 'GatewaySynth.speak(this, text, 0)', 'FakeSynth.speak(this, text)'),
+    ('另造合成链', 'service', 'GatewaySynth.speak(this, text, 0, "中继")', 'FakeSynth.speak(this, text)'),
     ('并发等待被摘', 'service', 'if (r.busy)', 'if (false)'),
     ('上限改成 2000', 'const', 'const val MAX_CHARS = 1500', 'const val MAX_CHARS = 2000'),
     ('设置页入口被摘', 'settings', 'onPageChange("relay")', 'onPageChange("")'),

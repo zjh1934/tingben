@@ -43,6 +43,10 @@ class GatewayService : Service() {
         private const val NOTIF_ID = 0x4757
         private const val CHANNEL = "tingben_gateway"
 
+        /** R400 · 进程内静态存活标志，供 ServiceResume 判断重复补拉。 */
+        @Volatile private var alive = false
+        fun isRunning(): Boolean = alive
+
         fun start(c: Context) {
             val i = Intent(c, GatewayService::class.java).setAction(ACTION_START)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) c.startForegroundService(i)
@@ -110,24 +114,34 @@ class GatewayService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startGateway()
-        EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_ON",
-            GatewayPrefs.bind(this) + ":" + GatewayPrefs.port(this) + " · 并发 1")
+        // R400 · 只在真新起时记 GATEWAY_ON；重复补拉不重复记。
+        val started = startGateway()
+        if (started) {
+            EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_ON",
+                GatewayPrefs.bind(this) + ":" + GatewayPrefs.port(this) + " · 并发 1")
+        } else {
+            EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_ON_NOOP",
+                "已在监听 · 重复补拉不重启", level = EventLog.Level.TRACE)
+        }
         // 不做 START_STICKY 拉活：进程被杀后监听线程已死，系统重启只是空壳。
         // R386 · 恢复不再是「用户再点一次」：Application 冷启 + 更新/开机豁免广播
         // 会按已保存的开关补拉（core/ServiceResume.kt）。这里只守「不被系统空壳重启」。
         return START_NOT_STICKY
     }
 
-    private fun startGateway() {
-        if (running) return
+    /** @return 是否真的从停止变成运行。 */
+    private fun startGateway(): Boolean {
+        if (running) return false
+        var ok = false
         synchronized(this) {
-            if (running) return
+            if (running) return false
             try {
                 val port = GatewayPrefs.port(this)
                 val bind = GatewayPrefs.bind(this)
                 server = ServerSocket(port, 8, InetAddress.getByName(bind))
                 running = true
+                alive = true
+                ok = true
                 Thread({
                     while (running) {
                         try {
@@ -140,15 +154,18 @@ class GatewayService : Service() {
                 }, "tingben-gateway-accept").apply { isDaemon = true }.start()
             } catch (t: Throwable) {
                 running = false
+                alive = false
                 EventLog.log(EventLog.Kind.PIPELINE, "GATEWAY_BIND_FAIL",
                     "端口没绑上 · " + t.javaClass.simpleName,
                     level = EventLog.Level.WARN)
             }
         }
+        return ok
     }
 
     private fun stopGateway() {
         running = false
+        alive = false
         try { server?.close() } catch (_: Throwable) { }
         server = null
     }
