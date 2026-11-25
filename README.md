@@ -4,9 +4,9 @@
 
 # 听本 · Tingben
 
-> 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、App 无网络权限。
+> 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、默认零联网；本机网关与跨网中继要你手动开启。
 
-[![版本](https://img.shields.io/badge/version-1.1.53-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
+[![版本](https://img.shields.io/badge/version-1.1.54-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)

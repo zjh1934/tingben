@@ -1,0 +1,42 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>听本 · 安装包与更新</title>
+<style>body{font:15px/1.7 system-ui,-apple-system,sans-serif;max-width:680px;margin:24px auto;padding:0 16px;color:#222;background:#fafbfe}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:22px 0 8px}p{margin:8px 0}.sub{color:#666;font-size:14px}
+.card{background:#fff;border:1px solid #e5e7f0;border-radius:14px;padding:16px;margin:12px 0}
+a.btn{display:block;text-decoration:none;color:#fff;background:#4f46e5;border-radius:10px;padding:11px 14px;margin:8px 0;text-align:center;font-weight:600}
+a.btn.alt{background:#eef0ff;color:#4f46e5;font-weight:500}a{color:#4f46e5}
+code{background:#f1f2f8;border-radius:5px;padding:1px 5px;font-size:13px}.note{font-size:12px;color:#777}
+ul{padding-left:20px}li{margin:5px 0}</style></head>
+<body>
+<h1>听本 · Tingben</h1>
+<p class="sub">本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文不改、模型自己导入。<br>
+默认零联网；本机网关与跨网中继都要你手动开启。</p>
+
+<div class="card">
+<h2>装到手机</h2>
+<p>每次发版的安装包都叫 <code>tingben-v版本号.apk</code>，下载器里一眼分得清项目和版本。</p>
+<a class="btn" href="https://github.com/zjh1934/tingben/releases/latest">去 Releases 下最新版</a>
+<a class="btn alt" href="updates.atom">下载器订阅源（updates.atom）</a>
+<p class="note">覆盖安装保留已导入的模型与做好的音频。仅 arm64-v8a / Android 8.0+。</p>
+</div>
+
+<div class="card">
+<h2>用起来</h2>
+<ul>
+<li><a href="https://github.com/zjh1934/tingben/blob/main/docs/使用指南.md">使用指南</a> · <a href="https://github.com/zjh1934/tingben/blob/main/docs/FAQ.md">常见问题</a></li>
+<li><a href="https://github.com/zjh1934/tingben">源码与更新记录</a></li>
+<li><a href="relay.html">跨网语音中继 → 提交文字合成</a></li>
+</ul>
+</div>
+
+<div class="card">
+<h2>关于跨网中继</h2>
+<p>手机开着「设置 → 跨网中继」时，拿到地址与 Token 的人可以用浏览器或标准库脚本把文字发过来，
+用<b>这台手机调音台当前的预设</b>合成，回传前在手机本地压成 M4A 再取回。</p>
+<p class="note">文字会经过你自己的 GitHub 私有仓库，合成完立刻删请求文件；Token 只给这一个仓库。
+异步，几秒到十几秒。<b>本页不收集任何 Token，也不提交文字</b>——要点进「跨网语音中继」那一页。</p>
+</div>
+
+<p class="note">严格意义的「零上传」在启用跨网中继时不成立；不开启时 App 无出站流量。</p>
+</body></html>
