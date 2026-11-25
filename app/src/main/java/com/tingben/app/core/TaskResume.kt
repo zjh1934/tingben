@@ -269,14 +269,24 @@ object TaskResume {
      * 不改阶段、不删文件、不碰真跑起来的整本任务（done>0 直接放行）。
      */
     fun recoverScope(c: Context, t: TaskInfo): TaskInfo? {
-        if (t.only != null || t.phase == "done" || t.done > 0) return null
+        if (t.only != null || t.phase == "done") return null
         val root = File(c.filesDir, "work/${t.bookId}/v11/direct")
-        val dirs = try {
-            root.listFiles()?.filter { d ->
-                d.isDirectory && d.name != "all" && !d.name.startsWith("h") &&
-                    d.name.all { ch -> ch.isDigit() || ch == '_' }
-            }
-        } catch (_: Throwable) { null } ?: return null
+        val allDirs = try { root.listFiles()?.filter { d -> d.isDirectory } }
+            catch (_: Throwable) { null } ?: return null
+        fun wavOf(d: File): Int = try {
+            d.listFiles()?.count { f ->
+                f.isFile && (f.name.startsWith("chunk_") || f.name.startsWith("direct_")) &&
+                    f.name.endsWith(".wav") && f.length() > 44
+            } ?: 0
+        } catch (_: Throwable) { 0 }
+        // R404 · 真机 01:10 日志：误开的整本已经跑到 4/26678，旧的 89 段还在
+        // 按章分桶里。旧判据「done>0 就放行」会让装新包自动恢复的承诺落空，
+        // 改成比磁盘成品：整本桶还很小、旧桶成品显著更多，才认是误开。
+        val wholeWav = allDirs.firstOrNull { it.name == "all" }?.let { wavOf(it) } ?: 0
+        val dirs = allDirs.filter { d ->
+            d.name != "all" && !d.name.startsWith("h") &&
+                d.name.all { ch -> ch.isDigit() || ch == '_' }
+        }
         var bestOnly: Set<Int>? = null
         var bestSegs = 0
         var bestScore = 0
@@ -284,20 +294,16 @@ object TaskResume {
             val only = d.name.split('_').mapNotNull { it.toIntOrNull() }.toSet()
             if (only.isEmpty()) continue
             val segs = try { SegPlan.readMap(d)?.size ?: 0 } catch (_: Throwable) { 0 }
-            val wav = try {
-                d.listFiles()?.count { f ->
-                    f.isFile && (f.name.startsWith("chunk_") || f.name.startsWith("direct_")) &&
-                        f.name.endsWith(".wav") && f.length() > 44
-                } ?: 0
-            } catch (_: Throwable) { 0 }
             val done = try { AudioTree.readDone(d).size } catch (_: Throwable) { 0 }
-            val score = wav + done
+            val score = wavOf(d) + done
             if (score > bestScore) {
                 bestScore = score; bestOnly = only; bestSegs = segs
             }
         }
         val pick = bestOnly ?: return null
         if (bestScore == 0 && bestSegs == 0) return null
+        // 整本真跑了很久就别抢；旧断点不占明显多数也别抢。
+        if (wholeWav > 32 || bestScore < wholeWav * 2) return null
         val total = if (bestSegs > 0) bestSegs else t.total
         return t.copy(only = pick, total = total, done = 0,
             phase = "stopped", stage = "已停止",

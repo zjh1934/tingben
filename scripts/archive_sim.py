@@ -14,6 +14,7 @@ SRC_RELAY = "relay"
 SRC_GATEWAY = "gateway"
 DEFAULT_SHOW = 10
 MAX_KEEP = 100
+DEDUPE_S = 600          # R404：同一请求 10 分钟内不重复入档
 
 
 class Archive:
@@ -23,11 +24,16 @@ class Archive:
 
     def add(self, source, text, ts=None):
         assert source in (SRC_RELAY, SRC_GATEWAY)
+        now = ts if ts is not None else time.time()
+        # R404 · 回写 422 会让同一条请求被反复重取，别把 100 条留存灌满。
+        if any(e["source"] == source and e["text"] == text and
+               now - e["ts"] < DEDUPE_S for e in self.entries):
+            return
         self.entries.append({
             "id": uuid.uuid4().hex[:16],
             "source": source,
             "text": text,
-            "ts": ts if ts is not None else time.time(),
+            "ts": now,
         })
         for s in (SRC_RELAY, SRC_GATEWAY):
             mine = sorted([e for e in self.entries if e["source"] == s],
@@ -148,6 +154,18 @@ def run():
     c.add(SRC_GATEWAY, "字" * 1501)
     case("空文本也留", c.counts()[0] == 1)
     case("超长文本也留", c.counts()[1] == 1 and len(c.list(SRC_GATEWAY)[0]["text"]) == 1501)
+
+    # ⑩ R404 · 同一请求反复重取不重复入档，但不同文本 / 过了窗口照留
+    d = Archive()
+    d.add(SRC_RELAY, "同一条被反复重取", ts=5000)
+    d.add(SRC_RELAY, "同一条被反复重取", ts=5001)
+    case("同一请求不重复入档", d.counts()[0] == 1)
+    d.add(SRC_RELAY, "另一条新请求", ts=5002)
+    case("不同文本照留", d.counts()[0] == 2)
+    case("重复时不记 ARCHIVE_ADD",
+         len([l for l in d.log if l.startswith("ARCHIVE_ADD")]) == 2)
+    d.add(SRC_RELAY, "同一条被反复重取", ts=5000 + DEDUPE_S + 1)
+    case("过了去重窗仍留", d.counts()[0] == 3)
 
     print("R387 存档模拟器 %d/%d 通过" % (ok, total))
     return 0 if ok == total else 1

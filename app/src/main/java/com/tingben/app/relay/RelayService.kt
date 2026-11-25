@@ -129,6 +129,11 @@ class RelayService : Service() {
         // R401 · 本机忙（整本制作 / 试听 / 另一条远端）时连续让路的轮数，
         // 只用于汇总日志与恢复快档，不改变「请求保留排队」的行为。
         var busyStreak = 0
+        // R404 · 回写 422 时请求要留着排队，但绝不能每 10 秒重做一次 50~60 秒合成。
+        // 记「本阶段」与冷却截止：put 阶段出错就让同一条请求歇一会儿再试。
+        var phase = "poll"
+        var currentName: String? = null
+        val putCooldownUntil = HashMap<String, Long>()
         while (running) {
             try {
                 if (!RelayPrefs.configured(this)) {
@@ -147,7 +152,19 @@ class RelayService : Service() {
                     Thread.sleep(RelayContract.IDLE_POLL_MS)
                     continue
                 }
-                val item = items[0]
+                // R404 · 冷却中的请求还在仓库里（没丢），只是本轮不重做合成。
+                val now = android.os.SystemClock.elapsedRealtime()
+                val ready = items.filterNot { q ->
+                    putCooldownUntil[q.name]?.let { until -> until > now } == true
+                }
+                if (ready.isEmpty()) {
+                    setState("上一条回写没成功 · 请求留着，稍等再试")
+                    Thread.sleep(RelayContract.IDLE_POLL_MS)
+                    continue
+                }
+                val item = ready[0]
+                currentName = item.name
+                phase = "poll"
                 val id = item.name.removeSuffix(".json")
                 val (text, reqSha) = client.getRequest(item.name)
                 val chars = text.length
@@ -163,6 +180,7 @@ class RelayService : Service() {
                     val why = if (text.isBlank()) "没给文字" else "最多 1500 字，先少贴一点"
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_REJECT",
                         "id=$id · $why", level = EventLog.Level.WARN)
+                    phase = "put"
                     client.putFailed(id, failStatus(chars, why))
                     client.deleteQueue(item.name, reqSha)
                     continue
@@ -212,6 +230,7 @@ class RelayService : Service() {
                         "id=$id · ${chars}字 · ${ms}ms · 合成没成",
                         level = EventLog.Level.WARN,
                         fields = mapOf("id" to id, "ms" to ms.toString()))
+                    phase = "put"
                     client.putFailed(id, failStatus(chars, r.reason ?: "合成没成功"))
                     RelayHaptics.fail(this)
                     setState("合成没成 · " + chars + " 字（原因不落正文）")
@@ -223,6 +242,7 @@ class RelayService : Service() {
                         "id=$id · ${chars}字 · $fmt ${bytes.size}B · 合成+压缩 ${ms}ms",
                         fields = mapOf("id" to id, "format" to fmt,
                             "bytes" to bytes.size.toString(), "ms" to ms.toString()))
+                    phase = "put"
                     val blob = client.putOut(id, bytes, fmt)
                     client.putDone(id, doneStatus(chars, fmt, bytes.size,
                         client.audioPath(id, fmt), blob))
@@ -232,9 +252,11 @@ class RelayService : Service() {
                     setState("完成 · " + chars + " 字 · " + fmt + " " + bytes.size + " B")
                 }
                 // 无论成功失败，正文即用即删。
+                phase = "del"
                 client.deleteQueue(item.name, reqSha)
                 EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEL",
                     "id=$id · 请求文件已删（正文即用即删）", fields = mapOf("id" to id))
+                phase = "poll"; currentName = null; putCooldownUntil.remove(item.name)
                 releaseWake()
                 Thread.sleep(RelayContract.POLL_MS)
             } catch (t: Throwable) {
@@ -250,6 +272,17 @@ class RelayService : Service() {
                     else t.javaClass.simpleName
                 errStreak++
                 val backoff = backoffMs(errStreak)
+                // R404 · 把「回写冲突」和「断网」分开报，别再伪装成轮询失败。
+                // 请求仍留在仓库，不删、不丢，按冷却歇一会儿再试。
+                if (phase == "put" && currentName != null) {
+                    val until = android.os.SystemClock.elapsedRealtime() +
+                        (backoff * 3).coerceAtMost(RelayContract.MAX_BACKOFF_MS * 5)
+                    putCooldownUntil[currentName!!] = until
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_PUT_ERR",
+                        "回写没成功 · $msg · 请求留着排队 · 稍后重试（不是断网）",
+                        level = EventLog.Level.WARN,
+                        fields = mapOf("err" to t.javaClass.simpleName, "phase" to "put"))
+                }
                 // 首行 + 每 12 次汇总：真机日志里断网 4 分钟刷了 46 行同款 WARN。
                 if (errStreak == 1 || errStreak % 12 == 0) {
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_ERR",

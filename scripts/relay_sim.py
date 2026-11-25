@@ -27,9 +27,18 @@ class Repo:
         self.busy = False    # 并发锁 1
         self.log = []        # 只记字符数与短原因，绝不落正文
 
-    def put(self, path, raw):
+    def put(self, path, raw, sha=None):
+        # R404 · GitHub Contents API：更新已存在文件必须带当前 sha，否则 422。
+        if path in self.f:
+            assert sha == self.sha(path), 'HTTP 422：更新已存在文件没带对 sha'
+        else:
+            assert sha is None, '新建文件不该带 sha'
         self.f[path] = raw
         return hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+
+    def put_compat(self, path, raw):
+        """模拟 R404 客户端：先 GET 拿 sha 再 PUT，新建/更新都走得通。"""
+        return self.put(path, raw, sha=self.sha(path))
 
     def get(self, path):
         return self.f.get(path)
@@ -87,7 +96,7 @@ def phone_cycle(repo, enabled=True, token_ok=True, preset='device-local'):
         if audio: st['audio'] = audio
         if blob: st['sha'] = blob
         if reason: st['reason'] = reason[:80]
-        repo.put('status/' + rid + '.json', json.dumps(st, ensure_ascii=False).encode('utf-8'))
+        repo.put_compat('status/' + rid + '.json', json.dumps(st, ensure_ascii=False).encode('utf-8'))
         repo.delete(qpath, sha)              # 正文即用即删，成功失败都删
 
     if not text.strip() or chars > MAX_CHARS:
@@ -101,8 +110,8 @@ def phone_cycle(repo, enabled=True, token_ok=True, preset='device-local'):
         # 把请求删掉，文字白上传、音频永远拿不到。
         st = {'state': 'busy', 'v': 1, 'chars': chars,
               'reason': '本机正忙', 'retry_after_ms': 60000, 'ts': 0}
-        repo.put('status/' + rid + '.json',
-                 json.dumps(st, ensure_ascii=False).encode('utf-8'))
+        repo.put_compat('status/' + rid + '.json',
+                        json.dumps(st, ensure_ascii=False).encode('utf-8'))
         repo.log.append('busy: 写排队态、保留请求、不删不震')
         return False
 
@@ -116,7 +125,7 @@ def phone_cycle(repo, enabled=True, token_ok=True, preset='device-local'):
         compressed = b'\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00isommp42' + b'\x00' * (chars * 8 + 400)
         assert len(compressed) < len(wav)
         audio = 'out/' + rid + '.m4a'
-        blob = repo.put(audio, compressed)
+        blob = repo.put_compat(audio, compressed)
         finish('done', fmt='m4a', audio=audio, blob=blob)
         repo.haptics.append(('done', DONE_TIMINGS, DONE_AMPS))
     finally:
@@ -207,6 +216,25 @@ def main():
     phone_cycle(r5)
     st5b, raw5 = client_fetch(r5, rid5)
     ck('28 忙完自动补做成功', st5b['state'] == 'done' and raw5 is not None)
+
+    # R404 · 真机 01:02~01:08：out/status 已写、queue 没删，同一条被反复重取。
+    r6 = Repo(); rid6 = submit(r6, '回写冲突的这一句')
+    r6.put_compat('out/' + rid6 + '.m4a', b'\x00\x00\x00\x18ftypM4A old')
+    r6.put_compat('status/' + rid6 + '.json', json.dumps({'state': 'failed', 'v': 1}).encode())
+    try:
+        r6.put('status/' + rid6 + '.json', b'new')      # 旧版裸 PUT
+        old_rejected = False
+    except AssertionError as ex:
+        old_rejected = '422' in str(ex)
+    ck('29 旧版裸 PUT 覆盖已存在文件被 422 拒', old_rejected)
+    ck('30 带 sha 覆盖更新成功', r6.put_compat('status/' + rid6 + '.json', b'new') is not None)
+    phone_cycle(r6)
+    st6, raw6 = client_fetch(r6, rid6)
+    ck('31 残留 out/status 也能闭环：done 且取回音频',
+       st6['state'] == 'done' and raw6 is not None)
+    ck('32 闭环后请求文件才删（正文即用即删）',
+       'queue/' + rid6 + '.json' not in r6.f)
+
     ck('29 补做后请求文件即用即删', 'queue/' + rid5 + '.json' not in r5.f)
     ck('30 排队态不落正文', '本机正忙时来的这一句' not in
        json.dumps(st5))

@@ -69,9 +69,9 @@ def start_allowed(only, phase, same_book=True):
     pending = same_book and phase != 'done'
     return not (only is None and pending)
 
-def sim_recover(dirs, total_now, done_now, only_now):
-    """复现 TaskResume.recoverScope 的选桶口径（纯内存）。"""
-    if only_now is not None or done_now > 0:
+def sim_recover(dirs, total_now, only_now, whole_wav=0):
+    """复现 R404 后的 recoverScope：按磁盘分桶成品比，不再看 t.done。"""
+    if only_now is not None:
         return None
     best, best_score, best_segs = None, 0, 0
     for name, segs, wav, done in dirs:
@@ -84,6 +84,8 @@ def sim_recover(dirs, total_now, done_now, only_now):
         if score > best_score:
             best_score, best, best_segs = score, only, segs
     if best is None or (best_score == 0 and best_segs == 0):
+        return None
+    if whole_wav > 32 or best_score < whole_wav * 2:
         return None
     return dict(only=best, total=best_segs or total_now, done=0, phase='stopped')
 
@@ -120,14 +122,20 @@ def logic():
         e.append('逻辑：已完成任务后开新整本被误拦')
     # ③ 误开整本自愈
     dirs = [('all', 26678, 0, 0), ('2_3_4_5_6_7_8_9_10_11', 656, 34, 55), ('h9f3c', 0, 0, 0)]
-    r = sim_recover(dirs, 26678, 0, None)
+    r = sim_recover(dirs, 26678, None, 0)
     if r is None or r['only'] != set(range(2, 12)) or r['total'] != 656:
         e.append('逻辑：旧 10 章分桶没被找回')
-    if sim_recover(dirs, 26678, 0, {1, 2}) is not None:
+    # R404 · 01:10 日志里误开的整本已跑到 4/26678，仍要能回到 89/656
+    r4 = sim_recover(dirs, 26678, None, 4)
+    if r4 is None or r4['total'] != 656:
+        e.append('逻辑：整本桶已做 4 段时旧断点没被找回')
+    if sim_recover(dirs, 26678, {1, 2}, 4) is not None:
         e.append('逻辑：已有明确选章不该被改写')
-    if sim_recover(dirs, 26678, 7, None) is not None:
-        e.append('逻辑：整本真跑起来了不该被抢')
-    if sim_recover([('all', 26678, 0, 0)], 26678, 0, None) is not None:
+    if sim_recover(dirs, 26678, None, 200) is not None:
+        e.append('逻辑：整本真跑很久不该被抢')
+    if sim_recover(dirs, 26678, None, 60) is not None:
+        e.append('逻辑：旧桶不占明显多数不该被抢')
+    if sim_recover([('all', 26678, 0, 0)], 26678, None, 0) is not None:
         e.append('逻辑：没有旧桶不该凭空造断点')
     # ④ -5 残留
     if sim_cancel(True, False) != -5:
@@ -160,7 +168,8 @@ def check(s):
             e.append('防覆盖闸缺: ' + tok[:56])
     # ③ 自愈
     for tok in ['fun recoverScope(c: Context, t: TaskInfo): TaskInfo?',
-                'if (t.only != null || t.phase == "done" || t.done > 0) return null',
+                'if (t.only != null || t.phase == "done") return null',
+                'fun wavOf(d: File): Int', 'wholeWav > 32 || bestScore < wholeWav * 2',
                 'v11/direct', 'SegPlan.readMap(d)?.size', 'AudioTree.readDone(d).size',
                 't.copy(only = pick, total = total, done = 0', 'phase = "stopped"']:
         if tok not in rs:
@@ -209,9 +218,9 @@ BAD = [
         'if (only == null && pending != null) {', 'if (false) {', 1))),
     ('自愈函数被摘', lambda d: d.update(resume=d['resume'].replace(
         'fun recoverScope(c: Context, t: TaskInfo): TaskInfo?', 'fun recoverScopeGone(', 1))),
-    ('自愈误伤已开跑的整本', lambda d: d.update(resume=d['resume'].replace(
-        'if (t.only != null || t.phase == "done" || t.done > 0) return null',
-        'if (t.phase == "done") return null', 1))),
+    ('自愈抢走真跑起来的整本', lambda d: d.update(resume=d['resume'].replace(
+        'if (wholeWav > 32 || bestScore < wholeWav * 2) return null',
+        'if (false) return null', 1))),
     ('自愈不认旧桶段数', lambda d: d.update(resume=d['resume'].replace(
         'SegPlan.readMap(d)?.size', '0', 1))),
     ('restore 没接自愈', lambda d: d.update(producer=d['producer'].replace(
@@ -243,7 +252,7 @@ def main():
         print('R403: %d 处红' % len(e))
         return 1
     print('R403 PASS · 冷启动断点判定 / 防覆盖闸 / 误开整本自愈 / g_cancel 残留')
-    print('  逻辑用例 20 条全绿 · 功能守恒 %d 个 kt 文件零差异 · 链路 %d 文件全在' %
+    print('  逻辑用例全绿（含 R404 的 4/26678 自愈边界）· 功能守恒 %d 个 kt 文件零差异 · 链路 %d 文件全在' %
           (len(json.loads(sources()['baseline'])['files']), len(CHAIN)))
     return 0
 

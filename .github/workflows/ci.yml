@@ -641,6 +641,10 @@ jobs:
         run: python3 scripts/r403_verify.py
       - name: R403 冷启动断点 / 误开整本自愈 / g_cancel 守门（反向注入）
         run: python3 scripts/r403_verify.py --selftest
+      - name: R404 回写 422 / 存档去重 / 4段自愈守门（正向）
+        run: python3 scripts/r404_verify.py
+      - name: R404 回写 422 / 存档去重 / 4段自愈守门（反向注入）
+        run: python3 scripts/r404_verify.py --selftest
       # R393 · 审计发现：下面这些早期批次守门在 CI 里只跑 --selftest（反向注入），
       # 正向 check() 从没执行过 —— CI 绿只能证明「守门自己没坏」，不能证明源码合规。
       # 本地实测 46 个正向全绿，用一个批量步骤补齐，不新增文件、不重排已有步骤。

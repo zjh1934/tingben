@@ -88,23 +88,35 @@ internal object RequestArchive {
         if (!t.renameTo(f)) t.copyTo(f, overwrite = true)
     }
 
+    /**
+     * R404 · 真机日志实证：回写 422 让同一条请求每 10 秒被重取一次，
+     * ARCHIVE_ADD 从 92 一路涨到 100 封顶，真正的新请求被挤出留存区。
+     * 同一来源、同一段文字在去重窗内只留一条；失败/超长的不同文本照留。
+     */
+    private const val DEDUPE_MS = 10 * 60 * 1000L
+
     /** 拿到一条请求就留：包括后来被判「空 / 超 1500 字 / 合成失败」的，排查才全。 */
     fun add(c: Context, source: String, text: String) {
-        val n = synchronized(lock) {
+        val n: Int? = synchronized(lock) {
             val all = readAll(c)
-            all.add(Entry(UUID.randomUUID().toString(), source, text,
-                System.currentTimeMillis()))
-            // 两个渠道各自保上限，别让一边把另一边挤掉。
-            for (s in listOf(SRC_RELAY, SRC_GATEWAY)) {
-                val mine = all.filter { it.source == s }
-                if (mine.size > MAX_KEEP) {
-                    val drop = mine.sortedBy { it.ts }.take(mine.size - MAX_KEEP).toSet()
-                    all.removeAll(drop)
+            val now = System.currentTimeMillis()
+            if (all.any { it.source == source && it.text == text && now - it.ts < DEDUPE_MS }) {
+                null   // 同一条被反复重取，不重复入档，也不记 ARCHIVE_ADD
+            } else {
+                all.add(Entry(UUID.randomUUID().toString(), source, text, now))
+                // 两个渠道各自保上限，别让一边把另一边挤掉。
+                for (s in listOf(SRC_RELAY, SRC_GATEWAY)) {
+                    val mine = all.filter { it.source == s }
+                    if (mine.size > MAX_KEEP) {
+                        val drop = mine.sortedBy { it.ts }.take(mine.size - MAX_KEEP).toSet()
+                        all.removeAll(drop)
+                    }
                 }
+                writeAll(c, all)
+                all.size
             }
-            writeAll(c, all)
-            all.size
         }
+        if (n == null) return
         // R381 埋点规则：只记来源与字数，正文一个字不落日志。
         EventLog.log(EventLog.Kind.PIPELINE, "ARCHIVE_ADD",
             "来源=$source · ${text.length}字 · 共 ${n} 条",
