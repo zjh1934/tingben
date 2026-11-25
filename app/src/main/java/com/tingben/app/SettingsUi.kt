@@ -132,7 +132,7 @@ internal fun PermEntryRow(icon: UiIcon, title: String, hint: String, go: () -> U
             modifier = Modifier.height(34.dp),
             shape = RoundedCornerShape(50),
             colors = ButtonDefaults.buttonColors(
-                containerColor = PrimarySoft, contentColor = Primary),
+                containerColor = Secondary, contentColor = OnSecondary),
             contentPadding = PaddingValues(horizontal = 14.dp)) {
             Text("打开设置 ›", fontSize = 12.sp)
         }
@@ -472,7 +472,9 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             SettingsEntry(UiIcon.FOLDER, "音频文件", "浏览 · 批量导出 · 删除") {
                 onPageChange("files")
             }
-            SettingsEntry(UiIcon.SYNTH, "语音网关", "本机接口 · 默认关 · 音色只读本机") {
+            // R398 · 入口副标题不声称固定开关态：网关可能已经手动开启，
+            // 写死「默认关」会和 51 页状态卡打架。真值只在语音网关页读。
+            SettingsEntry(UiIcon.SYNTH, "语音网关", "本机接口 · 音色只读本机") {
                 onPageChange("gateway")
             }
             SettingsEntry(UiIcon.M4A, "跨网中继", "GitHub 免费仓库 · 零付费 · 压缩音频回传") {
@@ -689,7 +691,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                     modifier = Modifier.weight(1f).height(38.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimarySoft, contentColor = Primary),
+                        containerColor = Secondary, contentColor = OnSecondary),
                     contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Text("一键复制摘要", fontSize = 12.sp)
                 }
@@ -1128,8 +1130,8 @@ internal fun LocalFilesDialog(roots: List<Pair<String, File>>,
                             modifier = Modifier.height(36.dp).weight(1f),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = PrimarySoft,
-                                contentColor = Primary),
+                                containerColor = Secondary,
+                                contentColor = OnSecondary),
                             contentPadding = PaddingValues(horizontal = 6.dp)) {
                             Text(if (treeLabel.isEmpty()) "导出位置"
                                 else "位置 · " + treeLabel.take(6),

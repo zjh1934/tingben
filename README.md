@@ -6,7 +6,7 @@
 
 > 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、默认零联网；本机网关与跨网中继要你手动开启。
 
-[![版本](https://img.shields.io/badge/version-1.1.54-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
+[![版本](https://img.shields.io/badge/version-1.1.55-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -21,18 +21,18 @@
 
 ## 下载
 
-**当前版本 `1.1.54`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+**当前版本 `1.1.55`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
 
 R391 起安装包文件名带**软件名 + 版本号**，下载器里再也不用在一堆 `app-debug.apk` 里猜哪个项目：
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.54/tingben-v1.1.54.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.55/tingben-v1.1.55.apk
 ```
 
 同内容的直链（同样带版本名）：
 
 ```
-https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/tingben-v1.1.54.apk
+https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/tingben-v1.1.55.apk
 ```
 
 兼容旧直链 `.../main/app-debug.apk` 仍是同一份字节，只给没刷新的老链接兜底；订阅源已改推上面带版本名的文件。

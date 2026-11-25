@@ -1,0 +1,635 @@
+{
+ "version": "R396",
+ "files": {
+  "AppChrome.kt": {
+   "Button": 2,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 5,
+   "clickable": 0
+  },
+  "ArchiveUi.kt": {
+   "Button": 3,
+   "OutlinedButton": 2,
+   "TextButton": 6,
+   "onClick": 12,
+   "clickable": 1
+  },
+  "ChapterHub.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 13,
+   "onClick": 34,
+   "clickable": 5
+  },
+  "DescPresetUi.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 5,
+   "onClick": 5,
+   "clickable": 0
+  },
+  "InputReadUi.kt": {
+   "Button": 2,
+   "OutlinedButton": 0,
+   "TextButton": 2,
+   "onClick": 14,
+   "clickable": 0
+  },
+  "LibraryUi.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 6,
+   "onClick": 6,
+   "clickable": 0
+  },
+  "MainActivity.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 4,
+   "clickable": 0
+  },
+  "MixerUi.kt": {
+   "Button": 7,
+   "OutlinedButton": 0,
+   "TextButton": 9,
+   "onClick": 17,
+   "clickable": 0
+  },
+  "ModelUi.kt": {
+   "Button": 2,
+   "OutlinedButton": 0,
+   "TextButton": 13,
+   "onClick": 15,
+   "clickable": 0
+  },
+  "MultiSelect.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 5,
+   "clickable": 2
+  },
+  "OverlayProgress.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "PlayIcons.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "PlayerSheet.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 1,
+   "onClick": 6,
+   "clickable": 1
+  },
+  "ProduceOptions.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "ProduceService.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "ProduceUi.kt": {
+   "Button": 2,
+   "OutlinedButton": 0,
+   "TextButton": 7,
+   "onClick": 9,
+   "clickable": 0
+  },
+  "ResumeUi.kt": {
+   "Button": 1,
+   "OutlinedButton": 2,
+   "TextButton": 0,
+   "onClick": 3,
+   "clickable": 0
+  },
+  "SettingsUi.kt": {
+   "Button": 10,
+   "OutlinedButton": 0,
+   "TextButton": 5,
+   "onClick": 17,
+   "clickable": 1
+  },
+  "Shell.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "TaskUi.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 16,
+   "onClick": 20,
+   "clickable": 1
+  },
+  "Theme.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "TingbenApp.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "UiIcons.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "UiInsets.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "UiSpec.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/AnnCache.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/Annotator.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/AtomicJson.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/AudioDecode.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/AudioExport.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/AudioLibrary.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/AudioOps.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/AudioTree.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/BookStore.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ChapterPlan.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ChapterSplitter.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ClipLibrary.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ClipSynth.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/DescPresets.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/Importer.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/KeepAlive.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ListenState.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/Mixer.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/MixerDraft.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/MixerPresets.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ModelStore.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/NonVerbal.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/NotifPerm.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ParamSpec.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/Pipeline.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/PlayNotif.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/PlayQueue.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/PlaySession.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/PlaybackActions.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/Prefs.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ProduceConfig.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/Producer.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ReadingState.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/RequestArchive.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ResumeReceiver.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/SegDrops.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/SegPlan.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/ServiceResume.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/SiteNoise.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/SynthErrors.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/SynthInput.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/TaskResume.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/TextSplitter.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/TocRules.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/TrialFiles.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/UiErrors.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/VoiceCache.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/VoiceProfile.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/VoiceRef.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/WavMerger.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "core/Workbench.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "diag/EventLog.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "engine/NativeEngine.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "gateway/GatewayContract.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "gateway/GatewayHttp.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "gateway/GatewayPrefs.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "gateway/GatewayService.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "gateway/GatewaySynth.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "gateway/GatewayUi.kt": {
+   "Button": 1,
+   "OutlinedButton": 2,
+   "TextButton": 0,
+   "onClick": 3,
+   "clickable": 0
+  },
+  "relay/RelayClient.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "relay/RelayContract.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "relay/RelayHaptics.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "relay/RelayPrefs.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "relay/RelayService.kt": {
+   "Button": 0,
+   "OutlinedButton": 0,
+   "TextButton": 0,
+   "onClick": 0,
+   "clickable": 0
+  },
+  "relay/RelayUi.kt": {
+   "Button": 1,
+   "OutlinedButton": 2,
+   "TextButton": 1,
+   "onClick": 4,
+   "clickable": 0
+  }
+ }
+}

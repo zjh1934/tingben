@@ -32,6 +32,9 @@ CHROME_POS = [
     "internal fun RefreshStrip(",
     "if (acc > 55f) onRefresh()",
 ]
+# R396 · 四向 inset 单一真值源（供基线校验）
+INSET_SRC = (ROOT / "app/src/main/java/com/tingben/app/UiInsets.kt").read_text(encoding="utf-8")
+
 MAIN_POS = [
     "DismissibleNavigationDrawer(",
     "drawerState = drawerState",
@@ -42,7 +45,7 @@ MAIN_POS = [
     "BackHandler(enabled = drawerState.isOpen)",
     "scope.launch { drawerState.close() }",
     'EventLog.ui("DRAWER_NAV", "open")',
-    ".navigationBarsPadding()",
+    ".tbContentInsets()",
 ]
 OLD_SHELL = ["AppBottomBar(", "DropdownMenu(expanded = false, onDismissRequest = {}) {}",
              "MENU_ITEMS", "TOP_TABS", "AppTab(",
@@ -101,8 +104,13 @@ def check(main, chrome, tag):
               "InputReadScreen("]:
         ck(s in main, "外部导入/通知回跳落地丢失: " + s)
     ck(nav.library_reachable(main), "书架不再是可达目的地")
-    ck("statusBarsPadding().navigationBarsPadding()" in main,
-       "根 Column 没同时让开状态栏与系统手势区")
+    # R396 · 旧连写形态已收进 UiInsets.tbContentInsets()（多两向：挖孔 + 键盘），
+    # 判据按新形态改准且更严：接入点 + 四向契约必须同时在。
+    ck(".tbContentInsets()" in main,
+       "根外框没走四向 inset 契约")
+    for k in [".statusBarsPadding()", ".displayCutoutPadding()",
+              ".navigationBarsPadding()", ".imePadding()"]:
+        ck(k in INSET_SRC, "四向 inset 契约缺: " + k)
     return e
 
 errs = check(MAIN, CHROME, "基线")
@@ -116,7 +124,7 @@ INJECT = [
     ("恢复底栏", MAIN, "gesturesEnabled = screen == Screen.LIBRARY",
      "AppBottomBar(active = 0, onTab = {}, surface = Card, primary = Primary, primarySoft = PrimarySoft, sub = Sub)\n        gesturesEnabled = screen == Screen.LIBRARY"),
     ("☰ 回退成浮层菜单", CHROME, "IconButton(onClick = onMenu)", "DropdownMenu(expanded = false, onDismissRequest = {}) {}; IconButton(onClick = onMenu)"),
-    ("去掉底部安全区", MAIN, ".statusBarsPadding().navigationBarsPadding()", ".statusBarsPadding()"),
+    ("去掉底部安全区", MAIN, ".tbContentInsets()", ""),
     ("调音台浮层关闭没归位", MAIN, _mixer_back_lit, ""),
     ("旧功能菜单回潮", CHROME, "internal const val NAV_INPUT = 6",
      "internal const val NAV_INPUT = 6\nprivate val DRAWER_TOP = listOf(\n    NAV_MIXER to \"调音台\",\n)"),

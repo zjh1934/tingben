@@ -21,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -76,6 +77,10 @@ internal fun ArchiveScreen(c: Context) {
     val channelName = if (tab == 0) "跨网中继" else "语音网关"
     val total = if (tab == 0) counts.first else counts.second
     val items = remember(tick, tab, more) { RequestArchive.show(c, source, more) }
+    // R397 · 计数 / 已选 / 空态可用性一律由状态机派生，不再在画面里拼字符串。
+    val uiState = UiListState(
+        itemCount = total, selectedCount = picked.size, isSelecting = selecting,
+        expandedId = openId.ifEmpty { null })
 
     fun goTab(next: Int) {
         if (next == tab || next !in 0..1) return
@@ -211,7 +216,7 @@ internal fun ArchiveScreen(c: Context) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(channelName, fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
                 color = palette.text, modifier = Modifier.weight(1f))
-            Text("共 $total 条", fontSize = HiMicroSp, color = palette.sub)
+            Text(uiState.fullCountLabel, fontSize = HiMicroSp, color = palette.sub)
         }
         Spacer(Modifier.height(8.dp))
         if (items.isEmpty()) {
@@ -245,28 +250,37 @@ internal fun ArchiveScreen(c: Context) {
     Spacer(Modifier.height(HiSectionGap))
 
     // ③ 板块级动作：一键复制 / 多选 / 一键清空（清空带二次确认）
-    CardBox {
+    // R397 · 模态协议：确认弹窗开着时底层操作条降透明并停命中，
+    // 不让「一键清空」在遮罩下还亮着像能点。onClick / 回调一字未动。
+    CardBox(Modifier.alpha(if (askClear) UiLayer.BACKGROUND_DIM_WHEN_MODAL else 1f)) {
         if (!selecting) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     copy(RequestArchive.list(c, RequestArchive.SRC_RELAY) +
                          RequestArchive.list(c, RequestArchive.SRC_GATEWAY))
                 }, Modifier.weight(1f).height(40.dp),
+                    enabled = uiState.bulkEnabled && !askClear,
                     shape = RoundedCornerShape(50)) {
                     Text("一键复制全部", fontSize = HiCaptionSp)
                 }
                 OutlinedButton(onClick = { selecting = true; openId = "" },
                     Modifier.weight(1f).height(40.dp),
+                    enabled = uiState.bulkEnabled && !askClear,
                     shape = RoundedCornerShape(50)) {
                     Text("多选", fontSize = HiCaptionSp)
                 }
             }
             Spacer(Modifier.height(8.dp))
-            TextButton(onClick = { askClear = true }, Modifier.fillMaxWidth()) {
-                Text("一键清空全部文本", fontSize = HiCaptionSp, color = palette.warn)
+            // R396 · 常态批量动作是 TERTIARY，不再用警示实心抢主视觉；
+            // DANGER 只留在下面确认弹窗的「确认清空」。onClick 一字未动。
+            TextButton(onClick = { askClear = true }, Modifier.fillMaxWidth()
+                .border(1.dp, palette.btnTertiaryLine, RoundedCornerShape(HiChipRadius)),
+                enabled = uiState.bulkEnabled && !askClear) {
+                Text("一键清空全部文本", fontSize = HiCaptionSp,
+                    color = actionColors(UiRole.TERTIARY, palette).content)
             }
         } else {
-            Text("已选 ${picked.size} 条", fontSize = HiCaptionSp, color = palette.text)
+            Text(uiState.fullSelectedLabel, fontSize = HiCaptionSp, color = palette.text)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
@@ -274,6 +288,7 @@ internal fun ArchiveScreen(c: Context) {
                               RequestArchive.list(c, RequestArchive.SRC_GATEWAY)
                     copy(all.filter { it.id in picked })
                 }, Modifier.weight(1f).height(40.dp),
+                    enabled = uiState.selectEnabled && !askClear,
                     shape = RoundedCornerShape(50)) {
                     Text("复制选中", fontSize = HiCaptionSp)
                 }
@@ -283,26 +298,23 @@ internal fun ArchiveScreen(c: Context) {
                     selecting = false
                     Toast.makeText(c, "已删掉选中的文本", Toast.LENGTH_SHORT).show()
                 }, Modifier.weight(1f).height(40.dp),
+                    enabled = uiState.selectEnabled && !askClear,
                     shape = RoundedCornerShape(50)) {
                     Text("删除选中", fontSize = HiCaptionSp)
                 }
             }
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = { selecting = false; picked = emptySet() },
-                Modifier.fillMaxWidth()) {
+                Modifier.fillMaxWidth(), enabled = !askClear) {
                 Text("退出多选", fontSize = HiCaptionSp, color = palette.sub)
             }
         }
     }
 
-    Spacer(Modifier.height(HiSectionGap))
-
-    // ④ 说明降级：不折叠、不藏小问号，直接压成页面底部两行微字。
-    // 列表是重点，说明是次要信息，主次一眼分得清。
-    Text("只留文字，音频与中间文件都不留；存在本机私有区，不进诊断日志、不进导出的日志、不备份。",
-        fontSize = HiMicroSp, color = palette.sub)
-    Spacer(Modifier.height(3.dp))
+    // ④ 说明降级：不折叠、不藏小问号，压成页面底部两行微字；列表才是重点（R390）
     Text("每个渠道默认看最近 10 条，最多各留 100 条，超了自动丢最老。",
+        fontSize = HiMicroSp, color = palette.sub)
+    Text("只留文字、零音频 / 零中间文件，不进日志与诊断导出。",
         fontSize = HiMicroSp, color = palette.sub)
 
     if (askClear) {

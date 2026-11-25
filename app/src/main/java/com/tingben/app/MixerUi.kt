@@ -407,7 +407,7 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
                     modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimarySoft, contentColor = Primary)
+                        containerColor = Secondary, contentColor = OnSecondary)
                 ) { Text("试听 · 当前改动", fontSize = 12.sp) }
             }
             if (trialMsg.isNotBlank()) {

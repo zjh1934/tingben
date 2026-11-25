@@ -26,7 +26,13 @@ internal data class Pal(
     val text: Color, val onPrimary: Color, val grey: Color,
     // I2 · 警示色底上的前景：浅色用白字，深色必须换深字。
     // 原来写死 Color.White，深色下 Warn 是亮黄 #FBBF24，白字对比只有 1.67:1。
-    val onWarn: Color
+    val onWarn: Color,
+    // R396 · 语义色角色：PRIMARY / SECONDARY / TERTIARY / DANGER 四种角色，
+    // 浅深只是同一角色的两套取值。SECONDARY 之前在深色下是「soft 深底 + 浅紫字」，
+    // 看起来像禁用；TERTIARY 给常态批量动作，避免把警示色用在「一键清空」入口；
+    // DANGER 只留给确认弹窗的最终按钮（见 UiSpec.dangerAllowed）。
+    val btnSecondary: Color, val onBtnSecondary: Color,
+    val btnTertiary: Color, val onBtnTertiary: Color, val btnTertiaryLine: Color
 )
 
 internal val LightPal = Pal(
@@ -34,7 +40,10 @@ internal val LightPal = Pal(
     primarySoft = Color(0xFFEEF0FE), sub = Color(0xFF6B7280), good = Color(0xFF0E9F6E),
     line = Color(0xFFE7EAF2), warn = Color(0xFFB45309), text = Color(0xFF1B2030),
     onPrimary = Color(0xFFFFFFFF), grey = Color(0xFFB9BFCB),
-    onWarn = Color(0xFFFFFFFF)
+    onWarn = Color(0xFFFFFFFF),
+    btnSecondary = Color(0xFFEEF0FE), onBtnSecondary = Color(0xFF4338CA),
+    btnTertiary = Color(0xFFFFFFFF), onBtnTertiary = Color(0xFF4338CA),
+    btnTertiaryLine = Color(0xFFC7CEE2)
 )
 
 // I2 · 用户实证「开深色模式以后，字体颜色和底色感觉就不好看」。
@@ -56,7 +65,12 @@ internal val DarkPal = Pal(
     primarySoft = Color(0xFF313C63), sub = Color(0xFFFFFFFF), good = Color(0xFF34D399),
     line = Color(0xFF3B455A), warn = Color(0xFFFBBF24), text = Color(0xFFFFFFFF),
     onPrimary = Color(0xFF10131A), grey = Color(0xFF7E8AA0),
-    onWarn = Color(0xFF1A1206)
+    onWarn = Color(0xFF1A1206),
+    // 深色：次按钮底提亮到 #3D4A72、前景改纯白（不再浅紫压深蓝像禁用）；
+    // 三级按钮 card 底 + 白字 + 提亮描边，对比全部过 WCAG 2.2 AA 4.5:1。
+    btnSecondary = Color(0xFF3D4A72), onBtnSecondary = Color(0xFFFFFFFF),
+    btnTertiary = Color(0xFF222936), onBtnTertiary = Color(0xFFFFFFFF),
+    btnTertiaryLine = Color(0xFF5C6A85)
 )
 
 private var _appThemeDark by mutableStateOf(false)

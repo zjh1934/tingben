@@ -613,6 +613,32 @@ jobs:
         run: python3 scripts/r391_verify.py
       - name: R391 反向注入
         run: python3 scripts/r391_verify.py --selftest
+      - name: R392 页面口径 / 工程地图
+        run: python3 scripts/r392_verify.py
+      - name: R392 反向注入
+        run: python3 scripts/r392_verify.py --selftest
+      - name: R396 UI 四件套守门（正向）
+        run: python3 scripts/r396_verify.py
+      - name: R396 UI 四件套守门（反向注入）
+        run: python3 scripts/r396_verify.py --selftest
+      - name: R397 阶段 2 接入与链路守恒守门（正向）
+        run: python3 scripts/r397_verify.py
+      - name: R397 阶段 2 接入与链路守恒守门（反向注入）
+        run: python3 scripts/r397_verify.py --selftest
+      - name: R398 状态表驱动与阶段 3 契约守门（正向）
+        run: python3 scripts/r398_verify.py
+      - name: R398 状态表驱动与阶段 3 契约守门（反向注入）
+        run: python3 scripts/r398_verify.py --selftest
+      # R393 · 审计发现：下面这些早期批次守门在 CI 里只跑 --selftest（反向注入），
+      # 正向 check() 从没执行过 —— CI 绿只能证明「守门自己没坏」，不能证明源码合规。
+      # 本地实测 46 个正向全绿，用一个批量步骤补齐，不新增文件、不重排已有步骤。
+      - name: 历史守门正向补跑（R393）
+        run: |
+          set -e
+          for f in r100_chain_verify r105_verify r107_verify r108_verify r112_verify r113_verify r114_verify r127_verify r128_verify r129_verify r130_verify r131_verify r132_verify r133_verify r134_verify r135_verify r136_verify r137_verify r138_verify r139_verify r140_verify r141_verify r142_verify r147_verify r148_verify r149_verify r150_verify r151_verify r152_verify r153_verify r154_verify r155_verify r156_verify r157_verify r158_verify r161_verify r163_verify r77_verify r78_verify r89_verify r91_verify r94_verify r95_verify r96_verify r98_verify r99_verify; do
+            python3 "scripts/${f}.py" || { echo "正向失败: ${f}"; exit 1; }
+          done
+          echo "历史守门正向 46/46 全绿"
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入

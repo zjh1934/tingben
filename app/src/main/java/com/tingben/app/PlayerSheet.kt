@@ -150,7 +150,8 @@ internal fun PlayerSheet(
     val playSize = if (showList) 44.dp else 62.dp
 
     Column(Modifier.fillMaxSize().background(palette.bg)
-        .statusBarsPadding().navigationBarsPadding()
+        // R396 · 播放器全屏不再按固定 y 压 24dp 手势区，交给四向 inset 契约。
+        .tbContentInsets()
         .pointerInput(Unit) {
             var acc = 0f
             detectVerticalDragGestures(

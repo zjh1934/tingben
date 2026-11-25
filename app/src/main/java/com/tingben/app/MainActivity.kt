@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -107,6 +108,10 @@ internal val Bg: Color get() = palette.bg
 internal val Card: Color get() = palette.card
 internal val Primary: Color get() = palette.primary
 internal val PrimarySoft: Color get() = palette.primarySoft
+// R397 · 语义色角色别名：SECONDARY 不再用「soft 底 + primary 字」临时拼，
+// 浅深由 Theme.kt 的同一角色两套取值决定（深色下提亮底 + 纯白字）。
+internal val Secondary: Color get() = palette.btnSecondary
+internal val OnSecondary: Color get() = palette.onBtnSecondary
 internal val Sub: Color get() = palette.sub
 internal val Good: Color get() = palette.good
 internal val Line: Color get() = palette.line
@@ -117,6 +122,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // R399 · Android 15/16 强制 edge-to-edge：状态栏与手势导航栏透明、
+        // 内容延伸到屏幕底部（金标联盟 ITGSA 适配公告）。系统栏图标深浅由
+        // TingbenTheme 的 DisposableEffect 按主题接管，两处不打架。
+        // 依赖 activity-compose 1.9.3 / core-ktx 1.13.1 均满足该 API 下限。
+        enableEdgeToEdge()
         applyAppTheme(this, Prefs.themeMode(this))
         PlayQueue.attach(this)
         pushIncoming(intent)
@@ -642,7 +652,9 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             }
         }
     ) {
-        Box(Modifier.fillMaxSize().background(Bg).statusBarsPadding().navigationBarsPadding()) {
+        // R396 · 主外框改走四向 inset 契约（系统栏 + 摄像头挖孔 + 键盘 + 底部手势区）。
+         // 金标联盟 ITGSA 2026-10-31 适配要求：背景延伸、内容避让、控件不压小白条。
+         Box(Modifier.fillMaxSize().background(Bg).tbContentInsets()) {
         Column(Modifier.fillMaxSize()) {
             // R230 · 首页两枚入口（调音常驻、任务有活才亮）与目录页三枚
             // 共用系统顶栏书名右侧同一排；主页右上角不再有 ＋/齿轮/悬浮开关。

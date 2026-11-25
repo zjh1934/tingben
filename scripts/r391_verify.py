@@ -27,6 +27,8 @@ FILES = {
     'r135': ROOT / 'scripts/r135_verify.py',
 }
 
+VER = (ROOT / 'version.txt').read_text(encoding='utf-8').strip()
+
 def sources():
     return {k: v.read_text(encoding='utf-8') for k, v in FILES.items()}
 
@@ -61,13 +63,15 @@ def check(s):
         e.append('Release 说明里的下载链接还是旧名')
     if 'main/app-debug.apk' not in notes:
         e.append('兼容旧直链说明丢了（老链接会 404）')
-    for k in ('tingben-v1.1.54.apk', '当前版本 `1.1.54`'):
+    # R399 · 版本不写死：从 version.txt 读，升版时判据自动跟着走，不放宽也不假红。
+    ver = (ROOT / 'version.txt').read_text(encoding='utf-8').strip()
+    for k in ('tingben-v%s.apk' % ver, '当前版本 `%s`' % ver):
         if k not in s['readme']:
             e.append('README 没对齐新命名：' + k)
-    if 'tingben-v1.1.54.apk' not in s['status']:
+    if 'tingben-v%s.apk' % ver not in s['status']:
         e.append('STATUS 直链没对齐新命名')
-    if '## [1.1.54]' not in s['changelog']:
-        e.append('CHANGELOG 缺 1.1.54 段')
+    if '## [%s]' % ver not in s['changelog']:
+        e.append('CHANGELOG 缺 %s 段' % ver)
     # 订阅源只能推主名，不许把 enclosure 又指回旧名
     if 'href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk"' in pub:
         e.append('订阅源 enclosure 又指回 app-debug.apk（下载器继续分不清）')
@@ -121,7 +125,7 @@ def main():
              'cp app/build/outputs/apk/debug/app-debug.apk "tingben-v${V}.apk"', ''),
             ('Release 说明退回旧链', 'notes',
              '/tingben-v" + v + ".apk"', '/app-debug.apk"'),
-            ('README 版本没对齐', 'readme', '当前版本 `1.1.54`', '当前版本 `1.1.53`'),
+            ('README 版本没对齐', 'readme', '当前版本 `%s`' % VER, '当前版本 `0.0.0`'),
             ('回潮吞竖向的手势', 'archive',
              'detectHorizontalDragGestures(', 'detectDragGestures('),
             ('丢掉跟手位移', 'archive',
