@@ -66,7 +66,7 @@ def core_errors(a, b, c, d):
     th = t[t.index('fun trial(label: String'):t.index('val myToken = trialToken + 1')]
     if 'NativeEngine.nativeCancelReset()' not in th:
         errs.append('试听缺任务级复位')
-    if 'if (Producer.isBusy())' not in th:
+    if 'if (SynthArbiter.producerBusy())' not in th:
         errs.append('试听未拦制作忙')
     if 'if (busyTrial) return' not in th:
         errs.append('试听未拦连点')
@@ -125,7 +125,7 @@ if '--selftest' in sys.argv:
                                '            tingben-native-v2-\n'
                                '            tingben-native-v1-\n', '', 1))),
         ('试听撤掉制作忙拦截', lambda a, b, c, d: (
-            a, b.replace('if (Producer.isBusy()) {', 'if (false) {'), c, d)),
+            a, b.replace('if (SynthArbiter.producerBusy()) {', 'if (false) {'), c, d)),
     ]
     ok = 0
     for label, fn in cases:

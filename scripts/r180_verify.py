@@ -70,7 +70,7 @@ HUB = [
     'fun playBook(atId: String?, fromMs: Long?)',
     'if (resumePos != null && resumePos.positionMs > 5000L)',
     '"接着听" else "从头听"',   # R352 · 主文案恒定，时间挪副行
-    '"%d:%02d".format(',              # R352 · 断点时间仍按 mm:ss 显示
+    '"断点 %d:%02d".format(',        # R401 · 断点时间标清来源，仍按 mm:ss 显示
     'EventLog.ui("HUB_RESUME_LISTEN"',
     'needModels -> "去导入模型 ›"',
     'onOpenModels: () -> Unit = {}',
@@ -156,7 +156,7 @@ def selftest():
         ("主文案被摘（时间不再有落点）", "hub",
          lambda t: t.replace('"接着听" else "从头听"', '"接着听" else "从头"')),
         ("时间副行被摘", "hub",
-         lambda t: t.replace('"%d:%02d".format(', '"%d:%02d"')),
+         lambda t: t.replace('"断点 %d:%02d".format(', '"%d:%02d"')),
         ("旧单行时间回潮", "hub",
          lambda t: t.replace('"接着听" else "从头听"',
                              '"接着听 · %d:%02d ›".format(resumePos.positionMs / 60000, (resumePos.positionMs / 1000) % 60) else "从头听"')),

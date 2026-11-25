@@ -95,8 +95,15 @@ def phone_cycle(repo, enabled=True, token_ok=True, preset='device-local'):
         repo.haptics.append(('fail', FAIL_TIMINGS, FAIL_AMPS))
         return True
     if repo.busy:
-        # 本机网关 / 整本书正占着引擎：保留 queue，下轮再取，不删请求。
-        repo.log.append('busy: 保留请求')
+        # R401 · 整本制作 / 用户试听 / 另一条远端占着引擎：
+        # 写「排队态」让调用方可预期，但**不判 failed、不删 queue、不震动**。
+        # 旧版这里只保留请求、不回状态；更早的真机实现甚至走 RELAY_FAIL
+        # 把请求删掉，文字白上传、音频永远拿不到。
+        st = {'state': 'busy', 'v': 1, 'chars': chars,
+              'reason': '本机正忙', 'retry_after_ms': 60000, 'ts': 0}
+        repo.put('status/' + rid + '.json',
+                 json.dumps(st, ensure_ascii=False).encode('utf-8'))
+        repo.log.append('busy: 写排队态、保留请求、不删不震')
         return False
 
     repo.haptics.append(('start', START_TIMINGS, START_AMPS))
@@ -181,6 +188,28 @@ def main():
     ck('23 三种震动节奏互不相同',
        len({START_TIMINGS, DONE_TIMINGS, FAIL_TIMINGS}) == 3 and
        len({START_AMPS, DONE_AMPS, FAIL_AMPS}) == 3)
+
+    # R401 · 远端请求撞上本机正在合成：排队不丢、状态可预期、忙完自动补做
+    r5 = Repo()
+    rid5 = submit(r5, '本机正忙时来的这一句')
+    r5.busy = True                       # 模拟整本制作 / 调音台试听占着引擎
+    phone_cycle(r5)
+    st5 = json.loads(r5.get('status/' + rid5 + '.json').decode('utf-8'))
+    ck('24 忙时回 state=busy 且带 retry_after_ms',
+       st5['state'] == 'busy' and st5.get('retry_after_ms') == 60000)
+    ck('25 忙时请求文件仍在（没被判失败删掉）',
+       'queue/' + rid5 + '.json' in r5.f)
+    ck('26 忙时不触发震动、不回音频',
+       not r5.haptics and 'out/' + rid5 + '.m4a' not in r5.f)
+    ck('27 调用方能读到排队态且拿不到音频',
+       client_fetch(r5, rid5)[1] is None)
+    r5.busy = False
+    phone_cycle(r5)
+    st5b, raw5 = client_fetch(r5, rid5)
+    ck('28 忙完自动补做成功', st5b['state'] == 'done' and raw5 is not None)
+    ck('29 补做后请求文件即用即删', 'queue/' + rid5 + '.json' not in r5.f)
+    ck('30 排队态不落正文', '本机正忙时来的这一句' not in
+       json.dumps(st5))
 
     bad = [n for n, ok in results if not ok]
     print('\n汇总 %d/%d 通过' % (len(results) - len(bad), len(results)))

@@ -32,7 +32,7 @@ POS = {
         '.height(44.dp)',                         # 三枚同高
         'Text(sub, modifier = Modifier.fillMaxWidth(),',  # R363 · 副行也锁在按键宽内
         '"接着听" else "从头听"',                  # 主文案不再带 mm:ss
-        '"%d:%02d".format(',                      # 断点时间仍显示
+        '"断点 %d:%02d".format(',                      # 断点时间仍显示
         'val primarySub = when {',                # 任务开关状态说明
         '"按勾选开做"',                        # R363 · 短文案，字体放大也不顶出按键
         '"收尾这一段"',
@@ -43,7 +43,7 @@ POS = {
         'import androidx.compose.ui.draw.clip',
         'sub = primarySub, onClick = { hubPrimaryAction() })',
         'sub = resumeSub,\n                    onClick = {',
-        'sub = "从第一章起", onClick = { playBook(null, null) })',
+        'canListen && !bookRunning,',
         '队列 ${queued.size} · 去任务页 ›',
         # R363 · 真机截图里文字顶出按键：列宽锁死 + 单行省略是硬要求
         'Text(label, modifier = Modifier.fillMaxWidth(),',
@@ -160,7 +160,7 @@ def selftest():
         ("第一枚按钮尾随 lambda 回潮（rc #250）", "hub",
          'sub = primarySub, onClick = { hubPrimaryAction() })', 'sub = primarySub) { hubPrimaryAction() }'),
         ("第三枚按钮尾随 lambda 回潮（rc #250）", "hub",
-         'sub = "从第一章起", onClick = { playBook(null, null) })',
+         'canListen && !bookRunning,',
          'sub = "从第一章起") {\n                    playBook(null, null)\n                }'),
         ("任务页按卡片 id 回书被摘", "main", 'onOpenTask = { id -> openBook(id) }', 'onOpenTask = { }'),
     ]

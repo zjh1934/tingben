@@ -45,6 +45,8 @@ async function go(){
    if(!st.data||!st.data.content)continue;
    const j=JSON.parse(un64(st.data.content));
    if(j.state==='failed')throw new Error('手机侧合成失败：'+(j.reason||'无原因'));
+   // R401 · 手机正在做整本书 / 试听 / 另一条请求：排队中，不是失败。
+   if(j.state==='busy'){$('s').textContent='手机正忙（'+(j.reason||'本机在合成')+'），请求留着排队，忙完自动补…';continue;}
    if(j.state!=='done')continue;
    $('s').textContent='手机合成并压缩好了，正在取回…';
    let raw;

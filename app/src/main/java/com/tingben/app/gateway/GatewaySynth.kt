@@ -5,6 +5,7 @@ import com.tingben.app.core.AudioOps
 import com.tingben.app.core.ClipSynth
 import com.tingben.app.core.ModelStore
 import com.tingben.app.core.Producer
+import com.tingben.app.core.SynthArbiter
 import com.tingben.app.engine.NativeEngine
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -54,6 +55,17 @@ internal object GatewaySynth {
 
     private fun dir(c: Context): File = File(c.cacheDir, "gateway").apply { mkdirs() }
 
+    /** R401 · 把 label（网关 / 中继）映射到仲裁的占用者。 */
+    private fun arbiterOwner(label: String): String =
+        if (label == "中继") SynthArbiter.OWNER_RELAY else SynthArbiter.OWNER_GATEWAY
+
+    /**
+     * R401 · 整本制作是长任务，必须回 busy=true：旧版走 blockReason 给
+     * ok=false/busy=false，RelayService 会判 RELAY_FAIL、putFailed、删请求文件，
+     * 用户那条文字白上传、音频永远拿不到。现在只是「排队」，不失败。
+     */
+    fun longTaskBusy(): Boolean = SynthArbiter.producerBusy()
+
     /** 引擎状态 → 503 中文原因；顺序与 ClipSynth 内部守卫一致。 */
     fun blockReason(c: Context): String? {
         if (!NativeEngine.isAvailable()) return "本地引擎没装载，请重启 App"
@@ -80,9 +92,19 @@ internal object GatewaySynth {
     /** 同步短文本：一次一句，成功直接给 WAV 字节。 */
     fun speak(c: Context, text: String, ignored: Int,
               label: String = "网关"): Speak {
+        // R401 · 长任务优先：明确回 busy，让中继保留请求排队，绝不判失败。
+        if (longTaskBusy())
+            return Speak(false, true, null, "正在做整本书，做完再合成")
         blockReason(c)?.let { return Speak(false, false, null, it) }
-        if (!busy.compareAndSet(false, true))
+        val who = arbiterOwner(label)
+        // R401 · 与首页片段 / 调音台试听共一把锁：用户在试听时远端来请求，
+        // 这里抢不到就回 busy 排队，不会两个 talker 并发进 NativeEngine。
+        if (!SynthArbiter.tryAcquire(who))
+            return Speak(false, true, null, SynthArbiter.busyLabel() + "，稍后再试")
+        if (!busy.compareAndSet(false, true)) {
+            SynthArbiter.release(who)
             return Speak(false, true, null, "一次只合成一句，稍后重试")
+        }
         onBusyStart()
         try {
             val (b, fmt) = synth(c, text, newId(), label)
@@ -93,13 +115,18 @@ internal object GatewaySynth {
         } finally {
             onBusyEnd()
             busy.set(false)
+            SynthArbiter.release(who)
         }
     }
 
     /** 异步 job：本轮只解决「不想等同步响应」，输入同样 ≤ MAX_CHARS。 */
     fun submit(c: Context, text: String, ignored: Int): String? {
+        // R401 · 异步 job 同样走长任务让路与单一仲裁，口径与 speak 一致。
+        if (longTaskBusy()) return null
         blockReason(c)?.let { return null }
-        if (!busy.compareAndSet(false, true)) return null
+        val who = SynthArbiter.OWNER_GATEWAY
+        if (!SynthArbiter.tryAcquire(who)) return null
+        if (!busy.compareAndSet(false, true)) { SynthArbiter.release(who); return null }
         val id = newId()
         val j = Job(id, text.length, ignored, System.currentTimeMillis())
         jobs[id] = j
@@ -119,6 +146,7 @@ internal object GatewaySynth {
             } finally {
                 onBusyEnd()
                 busy.set(false)
+                SynthArbiter.release(who)
             }
         }, "tingben-gateway-job").start()
         return id

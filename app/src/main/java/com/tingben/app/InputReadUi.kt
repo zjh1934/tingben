@@ -131,11 +131,24 @@ internal fun InputReadScreen(c: Context, onBack: () -> Unit, onAdded: (String) -
                 -1f, OverlaySource.CLIP)
             synthMutex.withLock {
                 val tmp = if (redo) ClipLibrary.redoFile(c, item.id) else item.audio
-                val res = withContext(Dispatchers.IO) {
-                    runCatching {
-                        ClipSynth.synthesize(c, snapshot, "clip_listen.wav", "首页片段",
-                            outFile = tmp)
+                // R401 · 整本制作 / 远端合成一句时让路，不并发进 NativeEngine。
+                // 不提前 return：busy-- 与 UI 收尾必须照走，否则计数会卡住。
+                val res: Result<String> = if (
+                    !SynthArbiter.awaitAndAcquire(SynthArbiter.OWNER_CLIP)) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(c, SynthArbiter.busyLabel() + "，稍后再合成",
+                            Toast.LENGTH_SHORT).show()
                     }
+                    Result.failure(IllegalStateException("本机正忙，稍后再合成"))
+                } else try {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            ClipSynth.synthesize(c, snapshot, "clip_listen.wav", "首页片段",
+                                outFile = tmp)
+                        }
+                    }
+                } finally {
+                    SynthArbiter.release(SynthArbiter.OWNER_CLIP)
                 }
                 withContext(Dispatchers.Main) {
                     val path = res.getOrNull()

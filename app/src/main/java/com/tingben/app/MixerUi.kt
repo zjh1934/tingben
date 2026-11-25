@@ -223,8 +223,9 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
     }
 
     fun trial(label: String, src: MixerDraft, text: String, out: String) {
-        if (Producer.isBusy()) {
-            Toast.makeText(c, "正在制作，做完再试听", Toast.LENGTH_SHORT).show()
+        // R401 · 长任务统一读 SynthArbiter（它合一读 Producer.isBusy）。
+        if (SynthArbiter.producerBusy()) {
+            Toast.makeText(c, "正在做整本书，做完再试听", Toast.LENGTH_SHORT).show()
             return
         }
         if (busyTrial) return
@@ -235,11 +236,26 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
         busyTrial = true
         trialMsg = "合成中…"
         val job = scope.launch(Dispatchers.IO) {
+            // R401 · 远端（网关/中继）正在合成一句时等它收尾，不并发、
+            // 也不掐断它正在生成的音频；整本制作已在上面提示，不在这里等。
+            if (!SynthArbiter.awaitAndAcquire(SynthArbiter.OWNER_MIXER)) {
+                withContext(Dispatchers.Main) {
+                    if (myToken == trialToken) {
+                        busyTrial = false
+                        trialMsg = SynthArbiter.busyLabel() + "，稍后再试听"
+                    }
+                }
+                return@launch
+            }
             // R215/R276 · 合成主体下沉到 ClipSynth，试听与首页片段共用同一份
             // model / mode 分支 / 失败判定；这里只管状态、播放与 UI 文案。
-            val res = runCatching {
-                ClipSynth.synthesize(c, text, out, label,
-                    cancelled = { myToken != trialToken || !isActive })
+            val res = try {
+                runCatching {
+                    ClipSynth.synthesize(c, text, out, label,
+                        cancelled = { myToken != trialToken || !isActive })
+                }
+            } finally {
+                SynthArbiter.release(SynthArbiter.OWNER_MIXER)
             }
             withContext(Dispatchers.Main) {
                 if (myToken != trialToken || !isActive) return@withContext

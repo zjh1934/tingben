@@ -76,7 +76,7 @@ def check(f):
     # ⑤ 两条进度条常驻 + 制作章小段区常驻 + 段数文案撤掉
     for k in ["val chapterPctNow =", "LinearProgressIndicator(progress = { bookPct }",
               "LinearProgressIndicator(progress = { chapterPctNow }",
-              "modifier = Modifier.fillMaxWidth().height(18.dp),",
+              "modifier = Modifier.fillMaxWidth().height(8.dp)",
               'item(key = "seg_head_${r.index}")',
               "if (r.index == shownChapter) {",
               "items(chapterSegs.chunked(SEG_GRID_COLUMNS),"]:

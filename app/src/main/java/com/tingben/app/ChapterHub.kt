@@ -692,10 +692,10 @@ internal fun ChapterHubScreen(
     val doneNow = maxOf(st.done, task?.done ?: 0)
         .coerceIn(0, maxOf(totalNow, 1))
     val bookPct = if (totalNow > 0) doneNow.toFloat() / totalNow.toFloat() else 0f
-    val chNow = liveChapter
-    val chPct = if (chNow == null) 0f else
-        (ui.getOrNull(chNow)?.synthesized
-            ?: st.chapterProgress[chNow] ?: 0f).coerceIn(0f, 1f)
+    // R401 · 真机截图实证：旧写法运行中取「当前制作章进度」、停止后取
+    // 「已固化章数」，同一个「已出章音频」标签下两个数跳变（96% ↔ 14%），
+    // 用户完全分不清。现在这根条恒定只表示「已拼好章音频的章 / 本次范围章数」；
+    // 当前制作章的进度归位到章行内的细进度条与段网格，不在这里冒充。
     // R362 · 两条进度停下来都不许归零：旧写法一停把 chapterProgress 抹成空表
     //（Producer.stop 曾重建 Progress），整本进度又只认 task 里旧的 done=0。
     // 现在运行中取实时章进度；停下来用保留的逐章进度，再用磁盘上
@@ -706,11 +706,8 @@ internal fun ChapterHubScreen(
         (r.audio != null || r.playable) &&
             (scopeOnly == null || r.index in scopeOnly)
     }
-    val chapterPctNow = if (chNow != null) chPct else run {
-        var m = 0f
-        for ((_, v) in st.chapterProgress) if (v > m) m = v
-        maxOf(m, finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)
-    }
+    val chapterPctNow =
+        (finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)
     val showHead = bookRunning || stalledTask ||
         (task?.bookId == book.id && st.stage == "完成")
     fun scrollToMaking() {
@@ -842,21 +839,23 @@ internal fun ChapterHubScreen(
                 .padding(horizontal = 14.dp, vertical = 6.dp)
                 .clickable { scrollToMaking() }) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("整本制作", fontSize = 10.sp, color = HubSub)
+                    Text("整本制作 · 全部段", fontSize = 11.sp, color = palette.text)
                     Spacer(Modifier.weight(1f))
-                    Text("${(bookPct * 100).toInt()}%", fontSize = 10.sp, color = HubSub)
+                    Text("${(bookPct * 100).toInt()}%", fontSize = 11.sp, color = HubSub)
                 }
                 LinearProgressIndicator(progress = { bookPct },
-                    modifier = Modifier.fillMaxWidth().height(18.dp),
+                    modifier = Modifier.fillMaxWidth().height(8.dp)
+                        .clip(RoundedCornerShape(50)),
                     color = HubPrimary, trackColor = HubLine)
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("已出章音频", fontSize = 10.sp, color = HubSub)
+                    Text("已固化章音频 · 可听", fontSize = 11.sp, color = palette.text)
                     Spacer(Modifier.weight(1f))
-                    Text("${(chapterPctNow * 100).toInt()}%", fontSize = 10.sp, color = HubSub)
+                    Text("${(chapterPctNow * 100).toInt()}%", fontSize = 11.sp, color = HubSub)
                 }
                 LinearProgressIndicator(progress = { chapterPctNow },
-                    modifier = Modifier.fillMaxWidth().height(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(6.dp)
+                        .clip(RoundedCornerShape(50)),
                     color = HubGood, trackColor = HubLine)
             }
             HubDivider()
@@ -906,16 +905,22 @@ internal fun ChapterHubScreen(
                 // 12sp 单行在 1/3 宽里装不下 1:02:04 这种长进度也不会被截断。
                 val resumeLabel = if (resumePos != null && resumePos.positionMs > 5000L)
                     "接着听" else "从头听"
+                // R401 · 「断点 2:13」和播放器「已暂停 02:12」两个数几乎一样，
+                // 不标来源会被当成显示错；这里写清是断点位置。
                 val resumeSub = if (resumePos != null && resumePos.positionMs > 5000L)
-                    "%d:%02d".format(resumePos.positionMs / 60000,
+                    "断点 %d:%02d".format(resumePos.positionMs / 60000,
                         (resumePos.positionMs / 1000) % 60) else "从第一章"
                 HubActChip(resumeLabel, HubPrimary, HubSoft, canListen, sub = resumeSub,
                     onClick = {
                         playBook(resumePos?.trackId, resumePos?.positionMs)
                         EventLog.ui("HUB_RESUME_LISTEN", "book=${book.id.take(8)}")
                     })
-                HubActChip("按顺序播放", HubPrimary, HubSoft, canListen,
-                    sub = "从第一章起", onClick = { playBook(null, null) })
+                // R401 · 制作中重置播放队列到第一章会打断正在做的音频焦点，
+                // 禁用并写明「做完再听」；「接着听」仍可听已出章音频。
+                HubActChip("按顺序播放", HubPrimary, HubSoft,
+                    canListen && !bookRunning,
+                    sub = if (bookRunning) "做完再听" else "从第一章起",
+                    onClick = { playBook(null, null) })
             }
             if (queued.isNotEmpty()) {
                 LaunchedEffect(queued.size) { EventLog.ui("HUB_QUEUE", "n=${queued.size}") }
@@ -932,8 +937,10 @@ internal fun ChapterHubScreen(
             }
             HubDivider()
 
+            // R401 · 真机截图实证：底部播放器（约 150dp）+ 三键导航栏（48dp）
+            // 把最后一章整行压住，100dp 够不着。留足 208dp，最后一项能滚上来。
             LazyColumn(Modifier.fillMaxSize(), state = chapterListState,
-                contentPadding = PaddingValues(bottom = 100.dp)) {
+                contentPadding = PaddingValues(bottom = 208.dp)) {
                 ui.forEach { r ->
                     item(key = "ch_${r.index}") {
                         // R342 · 回看中间态章时，制作章仍要有一键回默认的入口，
@@ -1008,6 +1015,7 @@ internal fun ChapterHubScreen(
                     item(key = "seg_head_${r.index}") {
                         Box(Modifier.fillMaxWidth().background(HubSoft)) {
                                 SegGridHead(chapterSegs, segMulti, segChecked.size,
+                                    chapterNo = r.index + 1, running = bookRunning,
                                     onRedo = {
                                         val rows = chapterSegs.filter {
                                             it.index in segChecked && it.hasAudio
@@ -1128,7 +1136,9 @@ internal fun ChapterHubScreen(
                     val phaseHere = mergeBusy
                         ?.takeIf { it.bookId == book.id && it.chapter == r.index }
                         ?.phase
-                    val busyHere = (st.running && r.index == liveChapter)
+                    // R401 · 主按钮已是「继续制作 / 断点续做」＝已暂停时，
+                    // 不能再写「这一章还在制作中」。只有真在跑或在拼才算 busy。
+                    val busyHere = (bookRunning && r.index == liveChapter)
                         || mergingChapter == r.index || phaseHere != null
                     val unmergedHere = r.index in unmergedChapters
                     val canMerge = readyHere > 0 && redoHere == 0 && !busyHere
@@ -1146,7 +1156,8 @@ internal fun ChapterHubScreen(
                         readyHere == 0 && unmergedHere ->
                             "小块还在重做中，补齐后才能拼这一章"
                         readyHere == 0 -> "这一章还没有音频小块"
-                        else -> "$readyHere 段就绪 · 把上面这些小块做成一个章音频"
+                        else -> (if (!bookRunning && !hasDone) "已暂停 · " else "") +
+                            "$readyHere 段就绪 · 把上面这些小块做成一个章音频"
                     }
                     if (readyHere > 0 || hasDone || busyHere || unmergedHere) {
                         item(key = "merge_footer_${r.index}") {
@@ -1722,9 +1733,13 @@ private fun ChapterRow(
                 HeadphoneIcon(if (r.audio != null || r.playable) HubPrimary else HubGrey)
             }
         }
+        // R401 · 真机截图里这条 fillMaxWidth 的 3dp 绿线横穿整屏、
+        // 把「已完成」那行切成两半。收进卡片内边距 + 圆角，只做章行内的细进度。
         if (p != null && p > 0f) {
-            Box(Modifier.fillMaxWidth().height(3.dp).background(HubLine)) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp)
+                .height(3.dp).clip(RoundedCornerShape(50)).background(HubLine)) {
                 Box(Modifier.fillMaxWidth(p).fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
                     .background(if (r.audio != null) HubGood else HubPrimary))
             }
         }
@@ -1892,6 +1907,7 @@ private fun RowScope.HubActChip(
 @Composable
 private fun SegGridHead(
     segs: List<SegRow>, multi: Boolean, picked: Int,
+    chapterNo: Int, running: Boolean,
     onAll: () -> Unit, onTrial: () -> Unit, onRedo: () -> Unit, onDelete: () -> Unit
 ) {
     val done = segs.count { it.hasAudio }
@@ -1901,17 +1917,22 @@ private fun SegGridHead(
         // 图 15：一片色块没有任何说明，用户不知道哪种颜色是做完了、
         // 哪种在重做、哪种被删了。这里给一行真实进度 + 一行极简图例。
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("已生成 $done / ${segs.size} 段", fontSize = 12.sp,
+            // R401 · 55 段 / 45 段是两章不同，不写章号会被读成同一章跳变。
+            Text("第 $chapterNo 章 · 已生成 $done / ${segs.size} 段", fontSize = 12.sp,
                 fontWeight = FontWeight.Bold, color = palette.text)
             Spacer(Modifier.weight(1f))
-            Text(if (redoing > 0) "重做中 $redoing 段" else "正在往下做",
+            // R401 · 暂停态（主按钮「继续制作」）不能再说「正在往下做」。
+            Text(if (!running) "已暂停 · 等续做"
+                 else if (redoing > 0) "重做中 $redoing 段" else "正在往下做",
                 fontSize = 11.sp, color = HubSub)
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            listOf("已生成" to HubPrimary, "合成中" to HubPrimary,
-                   "重做中" to HubWarn, "待生成" to HubLine,
-                   "已删" to HubCard).forEach { (label, tint) ->
+            // R401 · 旧图例是假的：写「已生成=紫」，实际 segCellColor 里
+            // 已生成是 HubGood 绿、待生成是 HubGrey 灰。按真实色值改准，
+            // 并去掉网格里根本不存在的「已删」态，不列没有的图例。
+            listOf("已生成" to HubGood, "合成中" to HubPrimary,
+                   "重做中" to HubWarn, "待生成" to HubGrey).forEach { (label, tint) ->
                 Box(Modifier.size(9.dp).background(tint, RoundedCornerShape(2.dp)))
                 Text(label, fontSize = 10.sp, color = HubSub,
                     modifier = Modifier.padding(start = 3.dp, end = 10.dp))

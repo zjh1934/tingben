@@ -58,7 +58,7 @@ def check(f):
               "state = chapterListState",
               '.clickable { scrollToMaking() }',
               "LinearProgressIndicator(progress = { chapterPctNow }",
-              "height(18.dp)", "height(14.dp)"]:
+              "height(8.dp)", "height(6.dp)"]:
         if k not in hb: e.append("进度/滚动缺: " + k[:56])
     for b in ["for ((k, v) in st.chapterProgress) if (v < 1f && k > idx) idx = k",
               "task?.only?.maxOrNull() ?: 0",

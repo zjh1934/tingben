@@ -81,7 +81,10 @@ object OverlayProgress {
             // R345 · 按真实球宽算，不再用旧方形卡片的 72dp 估算（否则右下留空档）。
             val box = (RING_DP * dm.density).toInt()
             x = (dm.widthPixels - box - (16 * dm.density).toInt()).coerceAtLeast(0)
-            y = (dm.heightPixels * 0.58f).toInt()
+            // R401 · 真机截图：0.58 落在右下底部播放器/三键栏区域，既压住
+            // 最后一章章名，又和顶部「整本制作 14%」重复显眼。初始落点上移，
+            // 用户仍可随时拖到任意位置（拖动逻辑一字没动）。
+            y = (dm.heightPixels * 0.40f).toInt()
         }
 
     /** R217 · 0~1 比例 → 0~100 的纯数值文本；越界一律夹住，绝不露出段号。 */

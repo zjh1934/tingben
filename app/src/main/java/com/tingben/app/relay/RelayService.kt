@@ -126,6 +126,9 @@ class RelayService : Service() {
         // 同类错误只记首行 + 每 12 次一行汇总，恢复时记一行 RECOVER；
         // 正常关停的 InterruptedException 不再伪装成 WARN「轮询失败」。
         var errStreak = 0
+        // R401 · 本机忙（整本制作 / 试听 / 另一条远端）时连续让路的轮数，
+        // 只用于汇总日志与恢复快档，不改变「请求保留排队」的行为。
+        var busyStreak = 0
         while (running) {
             try {
                 if (!RelayPrefs.configured(this)) {
@@ -165,21 +168,43 @@ class RelayService : Service() {
                     continue
                 }
 
-                setState("收到请求 · " + chars + " 字 · 本机合成中")
-                RelayHaptics.start(this)
-                holdWake()
                 val t0 = android.os.SystemClock.elapsedRealtime()
                 // R400 · 渠道标签：中继链路的 MIXER_TRIAL 记「来源=中继」，不再混成网关。
                 val r = GatewaySynth.speak(this, text, 0, "中继")
                 val ms = android.os.SystemClock.elapsedRealtime() - t0
                 if (r.busy) {
-                    // 本机网关或整本书正在用引擎：保留 queue，下一轮再取，不删请求。
-                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_BUSY",
-                        "id=$id · 引擎被占用，请求留到下一轮", level = EventLog.Level.WARN)
+                    // R401 · 撞上整本制作 / 用户在试听 / 另一条远端请求：
+                    // **不判失败、不删 queue、不震动**。写一条 state=busy 让调用方
+                    // 知道在排队，然后切 60s 慢档等，制作/试听结束自动恢复快档。
+                    busyStreak++
+                    client.putBusy(id, busyStatus(chars, r.reason ?: "本机正忙",
+                        RelayContract.MAX_BACKOFF_MS))
+                    if (busyStreak == 1 || busyStreak % 12 == 0) {
+                        // R381 埋点清单里「RELAY_BUSY」是首轮让路的固定节点，
+                        // 保留它；后续汇总另用 RELAY_DEFER，不刷屏也不丢埋点。
+                        EventLog.log(EventLog.Kind.PIPELINE,
+                            if (busyStreak == 1) "RELAY_BUSY" else "RELAY_DEFER",
+                            "id=$id · 本机忙（${r.reason?.take(24) ?: "引擎占用"}）· " +
+                                "请求保留排队 · 连续 ${busyStreak}轮 · 退避 " +
+                                RelayContract.MAX_BACKOFF_MS + "ms",
+                            level = EventLog.Level.WARN,
+                            fields = mapOf("id" to id, "streak" to busyStreak.toString()))
+                    }
+                    setState("本机正忙 · 请求留着排队，忙完自动补")
                     releaseWake()
-                    Thread.sleep(RelayContract.RETRY_MS)
+                    // 忙时不要每 5 秒重取（整本制作可能几十分钟），走上限慢档。
+                    try { Thread.sleep(RelayContract.MAX_BACKOFF_MS) }
+                    catch (_: InterruptedException) { return }
                     continue
                 }
+                if (busyStreak > 0) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEFER_DONE",
+                        "本机空出来了 · 连续让了 $busyStreak 轮 · 开始合成")
+                    busyStreak = 0
+                }
+                setState("收到请求 · " + chars + " 字 · 本机合成中")
+                RelayHaptics.start(this)
+                holdWake()
                 val bytes = r.bytes
                 val fmt = r.format
                 if (!r.ok || bytes == null || bytes.size <= 44) {
@@ -252,6 +277,14 @@ class RelayService : Service() {
         .put("state", "done").put("v", RelayContract.V)
         .put("chars", chars).put("format", format).put("bytes", bytes)
         .put("audio", audio).put("sha", blob)
+        .put("ts", System.currentTimeMillis() / 1000L)
+
+    /** R401 · 排队态：不含正文、不含 Token；调用方据此显示「手机正忙」。 */
+    private fun busyStatus(chars: Int, reason: String,
+                           retryAfterMs: Long): JSONObject = JSONObject()
+        .put("state", "busy").put("v", RelayContract.V)
+        .put("chars", chars).put("reason", reason.take(80))
+        .put("retry_after_ms", retryAfterMs)
         .put("ts", System.currentTimeMillis() / 1000L)
 
     private fun failStatus(chars: Int, reason: String): JSONObject = JSONObject()

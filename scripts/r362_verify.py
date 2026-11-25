@@ -43,7 +43,7 @@ POS = {
         "val doneNow = maxOf(st.done, task?.done ?: 0)",
         "val scopeOnly = task?.takeIf { it.bookId == book.id }?.only ?: archive?.only",
         "val finishedInScope = ui.count { r ->",
-        "maxOf(m, finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)",
+        "(finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)",
         "2 + chapterSegs.chunked(SEG_GRID_COLUMNS).size else 0",
         "val markColor = when (r.mark)",
         "ChapterMark.SCOPED -> HubPrimary.copy(alpha = 0.42f)",
@@ -106,7 +106,7 @@ def check(f):
     if i >= 0 and j > i and "ChapterMark.MAKING" in body[i:j]:
         e.append("R362 chapterStates 里又判 MAKING（应由 liveChapter 单点覆盖）")
     # 进度兜底必须在 chapterPctNow 里，不能只留一句注释
-    if "maxOf(m, finishedInScope.toFloat()" not in body:
+    if "(finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)" not in body:
         e.append("R362 暂停后章进度没有磁盘兜底")
     return e
 
@@ -135,7 +135,7 @@ def selftest():
         ("档案被摘", "hub",
          "val archive = remember(book.id, refresh, localTick, st.running) {", ""),
         ("暂停兜底被摘", "hub",
-         "maxOf(m, finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)",
+         "(finishedInScope.toFloat() / scopeSize.toFloat()).coerceIn(0f, 1f)",
          "m"),
         ("item 偏移补偿被摘", "hub",
          "2 + chapterSegs.chunked(SEG_GRID_COLUMNS).size else 0", "0"),

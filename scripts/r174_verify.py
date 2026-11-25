@@ -7,7 +7,7 @@
     「导入第一本 ›」是第二枚入口，新装/清干净后两枚同时出现。
     现在只留顶部那一枚，空态整行不渲染，也不许回潮成废话说明。
   · 设置页有两张都标「系统」的卡 → 权限三行并进「运行与通知」
-  · 目录页底部胶囊会挡最后一章？→ 核实有 contentPadding(bottom=100.dp)，
+  · 目录页底部胶囊会挡最后一章？→ 核实有 contentPadding(bottom=208.dp)，
     已收口，这里把它固化成判据，防止以后被顺手删掉
   · 首页缺「我的书」入口 / 模型页残件显示 ✓ → 分别是用户既定设计与已知 P3，
     只记不改
@@ -34,7 +34,7 @@ DRAWER_BTN = 'Text("＋ 导入一本书", fontSize = HiSectionSp)'
 OLD_EMPTY_BTN = 'Text("导入第一本 ›", fontSize = 14.sp, color = Primary)'
 SYS_CARD = 'SettingsSection("运行与通知", "系统", collapsible = false)'
 PERM_CARD = 'SettingsSection("权限", "权限", collapsible = false)'
-BOTTOM_PAD = "contentPadding = PaddingValues(bottom = 100.dp)"
+BOTTOM_PAD = "contentPadding = PaddingValues(bottom = 208.dp)"
 
 
 def group_of(src: str, start_needle: str) -> str:

@@ -348,10 +348,10 @@ def selftest():
                              "strokeWidth = sw", 1)),
         # R290 · rc #216 真编译错防回潮
         ("synthesize 尾随 lambda 回潮", "mixer",
-         lambda t: t.replace("ClipSynth.synthesize(c, text, out, label,\n                    cancelled = { myToken != trialToken || !isActive })",
+         lambda t: t.replace("ClipSynth.synthesize(c, text, out, label,\n                        cancelled = { myToken != trialToken || !isActive })",
                              "ClipSynth.synthesize(c, text, out, label) {\n                    myToken != trialToken || !isActive\n                }")),
         ("cancelled 具名丢失", "mixer",
-         lambda t: t.replace(",\n                    cancelled = { myToken != trialToken || !isActive })", ")")),
+         lambda t: t.replace(",\n                        cancelled = { myToken != trialToken || !isActive })", ")")),
         ("padding 混用回潮", "settings",
          lambda t: t.replace("start = 10.dp, end = 10.dp,\n                                        top = 8.dp, bottom = 3.dp",
                              "horizontal = 10.dp, top = 8.dp, bottom = 3.dp")),

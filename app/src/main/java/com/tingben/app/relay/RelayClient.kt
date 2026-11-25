@@ -112,6 +112,11 @@ internal class RelayClient(
         putObj(RelayContract.DIR_STATUS + "/" + id + ".json",
             status.toString().toByteArray(Charsets.UTF_8), "relay: 完成状态")
 
+    /** R401 · 排队态回写：与 done/failed 同一条 status 路径，不含正文。 */
+    fun putBusy(id: String, status: JSONObject) =
+        putObj(RelayContract.DIR_STATUS + "/" + id + ".json",
+            status.toString().toByteArray(Charsets.UTF_8), "relay: 排队状态")
+
     fun putFailed(id: String, status: JSONObject) =
         putObj(RelayContract.DIR_STATUS + "/" + id + ".json",
             status.toString().toByteArray(Charsets.UTF_8), "relay: 失败状态")
