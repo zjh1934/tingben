@@ -21,17 +21,21 @@
 
 ## 下载
 
-**当前版本 `1.1.53`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+**当前版本 `1.1.54`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+
+R391 起安装包文件名带**软件名 + 版本号**，下载器里再也不用在一堆 `app-debug.apk` 里猜哪个项目：
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.53/app-debug.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.54/tingben-v1.1.54.apk
 ```
 
-永远是最新版的固定直链：
+同内容的直链（同样带版本名）：
 
 ```
-https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk
+https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/tingben-v1.1.54.apk
 ```
+
+兼容旧直链 `.../main/app-debug.apk` 仍是同一份字节，只给没刷新的老链接兜底；订阅源已改推上面带版本名的文件。
 
 > 平台解析器读不了 GB 级二进制时会报「资源解析服务请求失败」，不是坏链，用浏览器打开即可。
 

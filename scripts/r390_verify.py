@@ -84,14 +84,20 @@ def check(s):
         e.append('缺「当前渠道」tab 状态')
     for k in ('fun TabChip(', 'TabChip(Modifier.weight(1f), "跨网中继"',
               'TabChip(Modifier.weight(1f), "语音网关"',
-              'fun goTab(next: Int)', 'detectDragGestures(',
-              'onDragEnd = {', 'if (abs(dragX) > 60f)'):
+              'fun goTab(next: Int)', 'detectHorizontalDragGestures(',
+              'onHorizontalDrag = {', 'onDragEnd = {', 'abs(dx) > 60f',
+              'animateFloatAsState(', 'dragX.animateTo(0f, tween(180))'):
         if k not in a:
             e.append('整宽选项卡缺：' + k)
+    # R391 · 只认横向的手势是「上下滑得动」的硬条件，旧 API 回潮必须拦
+    if 'detectDragGestures(' in ac:
+        e.append('回潮 detectDragGestures（会吞竖向滚动，真机滑不动）')
+    if '!selecting && abs(dx) > 60f' not in a:
+        e.append('多选态横滑会误切渠道（R391 顺手修丢了）')
     if 'fun ColumnScope.Channel(' in a or 'Channel("跨网中继"' in a:
         e.append('回潮成「中间劈开左右两列」（真机截图问题②）')
-    if 'CardBox(Modifier.pointerInput(tab)' not in a:
-        e.append('横滑切换没挂在列表主区上')
+    if '.pointerInput(tab, selecting)' not in a or '.offset { IntOffset(' not in a:
+        e.append('横滑跟手位移没挂在列表主区上（R391 生硬感没修）')
 
     # ③ 说明降级：不折叠不藏，放在列表之后，底部两行微字
     if '④ 说明降级' not in a or a.find('④ 说明降级') < a.find('② 主区'):
@@ -159,8 +165,10 @@ def main():
             ('说明挪回列表前面', 'archive',
              '② 主区', '④ 说明降级'),
             ('二级页自带滚动', 'archive',
-             'CardBox(Modifier.pointerInput(tab) {',
-             'Column(Modifier.verticalScroll(rememberScrollState())) { }\n    CardBox(Modifier.pointerInput(tab) {'),
+             '.pointerInput(tab, selecting) {',
+             'Column(Modifier.verticalScroll(rememberScrollState())) { }\n    CardBox(Modifier\n        .offset { IntOffset((dragX.value * 0.35f).roundToInt(), 0) }\n        .pointerInput(tab, selecting) {'),
+            ('回潮吞竖向的手势', 'archive',
+             'detectHorizontalDragGestures(', 'detectDragGestures('),
             ('摘掉一键清空确认', 'archive', '"确认清空"', '"清空"'),
         ]
         bad = 0

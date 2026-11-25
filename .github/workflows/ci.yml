@@ -609,6 +609,10 @@ jobs:
         run: python3 scripts/r390_verify.py
       - name: R390 反向注入
         run: python3 scripts/r390_verify.py --selftest
+      - name: R391 安装包命名 / 手势不吞竖向
+        run: python3 scripts/r391_verify.py
+      - name: R391 反向注入
+        run: python3 scripts/r391_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入
@@ -741,6 +745,15 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      - name: 安装包改名「软件名-v版本.apk」
+        # R391 · 用户下载器里全是 app-debug.apk，好几个项目混在一起分不清。
+        # 发版前复制一份带软件名+版本号的，Release 资产与订阅源都用它。
+        if: github.ref == 'refs/heads/main'
+        run: |
+          V="${{ steps.ver.outputs.v }}"
+          cp app/build/outputs/apk/debug/app-debug.apk "tingben-v${V}.apk"
+          echo "本次安装包：tingben-v${V}.apk"
+
       - name: 生成 Release 说明
         if: github.ref == 'refs/heads/main'
         run: python3 scripts/release_notes.py | tee release-notes.md > /dev/null
@@ -754,7 +767,7 @@ jobs:
           tag_name: v${{ steps.ver.outputs.v }}
           name: 听本 ${{ steps.ver.outputs.v }}
           body_path: release-notes.md
-          files: app/build/outputs/apk/debug/*.apk
+          files: tingben-v${{ steps.ver.outputs.v }}.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

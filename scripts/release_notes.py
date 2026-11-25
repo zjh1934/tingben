@@ -23,8 +23,10 @@ print("固定签名，直接覆盖安装即可；已导入的模型与做好的�
 print()
 print("### 下载")
 print()
-print("- 固定最新版直链：https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk")
-print("- 本版 APK：https://github.com/zjh1934/tingben/releases/download/v" + v + "/app-debug.apk")
+# R391 · 安装包带软件名+版本，下载器里不再一堆 app-debug.apk 分不清
+print("- 本版安装包：https://github.com/zjh1934/tingben/releases/download/v" + v + "/tingben-v" + v + ".apk")
+print("- 同内容直链：https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/tingben-v" + v + ".apk")
+print("- 兼容旧直链（同内容，仅给没刷新的老链接兜底）：https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk")
 print()
 print("完整记录：[CHANGELOG.md](https://github.com/zjh1934/tingben/blob/main/CHANGELOG.md) · "
       "使用说明：[使用指南](https://github.com/zjh1934/tingben/blob/main/docs/使用指南.md)")

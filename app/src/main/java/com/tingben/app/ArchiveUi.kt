@@ -2,10 +2,13 @@ package com.tingben.app
 
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -24,6 +27,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tingben.app.core.RequestArchive
 import com.tingben.app.diag.EventLog
@@ -31,6 +35,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * R390 · 「请求文本」页改版（1.1.52 真机截图实证的问题）。
@@ -41,6 +47,12 @@ import kotlin.math.abs
  *    主次一眼分明。按 R370 全站 Hi* 令牌；按 R383 不自带滚动，外壳是唯一滚动层。
  * ③ 功能守恒：每条一键复制 / 展开全文、默认 10 条可展开到 100、一键复制、
  *    多选（复制选中 / 删除选中）、一键清空带二次确认、两渠道一起清。
+ *
+ * R391 · 1.1.53 真机反馈「上下滑滑不动、左右滑很生硬」：
+ * 旧 detectDragGestures 会连竖向位移一起消费，外壳唯一那层 verticalScroll 收不到；
+ * 改用 detectHorizontalDragGestures（只认横向、竖向放行），拖动带阻尼跟手偏移，
+ * 松手 180ms 弹回，指示条同步伸缩动画；多选态横滑不误切 tab。
+ * 仍不自带任何 verticalScroll / LazyColumn（R383 闪退根因零回潮）。
  */
 @Composable
 internal fun ArchiveScreen(c: Context) {
@@ -52,7 +64,11 @@ internal fun ArchiveScreen(c: Context) {
     var picked by remember { mutableStateOf(setOf<String>()) }
     var openId by remember { mutableStateOf("") }
     var askClear by remember { mutableStateOf(false) }
-    var dragX by remember { mutableStateOf(0f) }
+    // R391 · 跟手位移用 Animatable：手指拖动时 snapTo，松手 animateTo(0) 弹回，
+    // 不再「一松手瞬间跳过去」。detectHorizontalDragGestures 只认横向，
+    // 竖向交给设置页外壳唯一那层 verticalScroll（R383 闪退根因不能再犯）。
+    val dragX = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
     val clip = LocalClipboardManager.current
 
     val counts = remember(tick) { RequestArchive.counts(c) }
@@ -134,6 +150,8 @@ internal fun ArchiveScreen(c: Context) {
     /** R390 · 选项卡：当前项主色加粗 + 底部指示条；两枚等宽，铺满整行。 */
     @Composable
     fun TabChip(mod: Modifier, title: String, n: Int, sel: Boolean, go: () -> Unit) {
+        // R391 · 指示条宽度跟着选中态平滑伸缩（180ms），点一下 / 滑一下都不硬跳
+        val barW by animateFloatAsState(if (sel) 1f else 0f, tween(180), label = "tabBar")
         Box(mod.height(42.dp)
             .clip(RoundedCornerShape(HiChipRadius))
             .background(palette.primarySoft.copy(alpha = if (sel) 1f else 0f))
@@ -147,7 +165,7 @@ internal fun ArchiveScreen(c: Context) {
                     color = if (sel) palette.primary else palette.sub,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(3.dp))
-                Box(Modifier.width(26.dp).height(2.dp)
+                Box(Modifier.width((26f * barW).dp).height(2.dp)
                     .background(if (sel) palette.primary else palette.line))
             }
         }
@@ -164,20 +182,32 @@ internal fun ArchiveScreen(c: Context) {
 
     Spacer(Modifier.height(HiSectionGap))
 
-    // ② 主区：当前渠道铺满整宽，是这一页的重点。横滑 >60dp 切到另一渠道。
-    CardBox(Modifier.pointerInput(tab) {
-        detectDragGestures(
-            onDragStart = { dragX = 0f },
-            onDrag = { change, drag ->
-                // 只认横向：竖向滚动留给外壳唯一那层，不抢
-                if (abs(drag.x) > abs(drag.y)) { dragX += drag.x; change.consume() }
-            },
-            onDragEnd = {
-                if (abs(dragX) > 60f) goTab(if (dragX < 0f) 1 else 0)
-                dragX = 0f
-            }
-        )
-    }) {
+    // ② 主区：当前渠道铺满整宽，是这一页的重点。
+    // R391 真机反馈「上下滑滑不动、左右滑很生硬」的根因与修法：
+    // 旧 detectDragGestures 内部 drag() 会把竖向位移也 consume 掉，父级外壳的
+    // verticalScroll 收不到 → 整页滑不动；而且松手瞬间直接换 tab，没有过渡。
+    // 现在换成 detectHorizontalDragGestures（只认横向、竖向原样放行给外壳），
+    // 拖动时主区按 0.35 阻尼跟手偏移，松手 180ms 弹回并切 tab；多选态不误切。
+    CardBox(Modifier
+        .offset { IntOffset((dragX.value * 0.35f).roundToInt(), 0) }
+        .pointerInput(tab, selecting) {
+            detectHorizontalDragGestures(
+                onDragStart = { scope.launch { dragX.snapTo(0f) } },
+                onHorizontalDrag = { _, dx ->
+                    if (!selecting) {
+                        scope.launch {
+                            dragX.snapTo((dragX.value + dx).coerceIn(-140f, 140f))
+                        }
+                    }
+                },
+                onDragEnd = {
+                    val dx = dragX.value
+                    if (!selecting && abs(dx) > 60f) goTab(if (dx < 0f) 1 else 0)
+                    scope.launch { dragX.animateTo(0f, tween(180)) }
+                },
+                onDragCancel = { scope.launch { dragX.animateTo(0f, tween(180)) } }
+            )
+        }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(channelName, fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
                 color = palette.text, modifier = Modifier.weight(1f))

@@ -96,7 +96,7 @@ def check(s):
               'TabChip(Modifier.weight(1f), "跨网中继"',
               'TabChip(Modifier.weight(1f), "语音网关"',
               'var tab by remember { mutableStateOf(0) }',
-              'fun goTab(next: Int)', 'detectDragGestures(',
+              'fun goTab(next: Int)', 'detectHorizontalDragGestures(',
               'RequestArchive.DEFAULT_SHOW',
               '"一键复制全部"', '"多选"', '"删除选中"', '"一键清空全部文本"',
               'AlertDialog(', '"确认清空"', '"复制"', '72.dp'):
@@ -105,6 +105,9 @@ def check(s):
     # R390 · 不许回潮成「中间劈开左右两列」：两个渠道必须整宽切换
     if 'fun ColumnScope.Channel(' in u or 'Channel("跨网中继"' in u:
         e.append('请求文本页回潮成左右并排两列（R390 已改整宽选项卡）')
+    # R391 · detectDragGestures 会连竖向一起消费，外壳滚不动（真机实证）
+    if 'detectDragGestures(' in uc or 'detectHorizontalDragGestures(' not in uc:
+        e.append('横滑没用只认横向的手势，竖向滚动会被吞（R391 真机 bug 回潮）')
     # 说明文字降级：不折叠、不藏小问号，且必须在列表之后（页面底部微字）
     if 'showHow' in uc or '"?"' in uc:
         e.append('说明文字又藏进折叠 / 小问号（R390 要放在不显眼位置但不隐藏）')

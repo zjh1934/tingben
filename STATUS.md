@@ -2,14 +2,14 @@
 
 > 只记「现在是什么」。下面做什么 → `ROADMAP.md`。本文件不写历史、不写复盘。
 
-**当前版本 `1.1.53` · 用户真机基线 `1.1.52`（截图实证已装；1.1.53 装没装等你一句）**
+**当前版本 `1.1.54` · 用户真机基线 `1.1.53`（用户明说已装最新版；1.1.54 装没装等你一句）**
 
 | 项 | 值 |
 |---|---|
-| 版本 | `1.1.53` |
-| 基线 | 用户真机安装的 `1.1.52`（真机截图实证）；1.1.53 装上后由用户确认再改本行 |
+| 版本 | `1.1.54` |
+| 基线 | 用户真机安装的 `1.1.53`（本轮用户明说「最新的包我已经装上了」）；1.1.54 装上后由用户确认再改本行 |
 | 版本真值源 | 根目录 `version.txt`；Gradle、CI、Release 标签与名称都从它读 |
-| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk` |
+| 直链 | `https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/tingben-v1.1.54.apk`（R391 起带软件名+版本；`app-debug.apk` 同字节兼容） |
 | 源码仓 / 安装包仓 | `zjh1934/tingben` / `zjh1934/ting-ben-apk` |
 | 包名 / 签名 | `com.tingben.app` · 固定签名，覆盖装保留模型与音频 |
 | 平台 | Android · Kotlin + Compose 单 Activity · JNI/C++ · minSdk 26 / targetSdk 35 · 仅 arm64-v8a |

@@ -364,7 +364,7 @@ def selftest():
         ("一条 Entry 被摘", "code", "version.txt[", "VERSION_MISSING["),
         ("标签越出字典", "code", "[CG9T]", "[QQ9T]"),
         ("规模标签写错", "code", "[CG9T]", "[CG9L]"),
-        ("FRAS 少一段", "code", " | S:每打一次包", " | 不带S前缀"),
+        ("FRAS 少一段", "code", " | S:版本真值源", " | 不带S前缀"),
         ("R 指向不存在", "code", "code:scripts/check_version_bump.py",
          "code:scripts/不存在的文件.py"),
         ("归档回潮进索引", "code", "===/tingben/docs/===",
