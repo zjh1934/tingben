@@ -85,9 +85,10 @@ def check(s):
                 'fun busyLabel()']:
         if tok not in a:
             e.append('SynthArbiter 缺: ' + tok[:40])
-    # 长任务必须回 busy=true，绝不能落回 Speak(ok=false, busy=false) 的失败路径
-    for tok in ['fun longTaskBusy()', 'if (longTaskBusy())',
-                'Speak(false, true, null, "正在做整本书，做完再合成")',
+    # R405 · 优先级反过来：书跑时远端等段边界让路，只有等不到才 busy=true。
+    # 硬约束不变：绝不能落回 Speak(ok=false, busy=false) 的失败删请求路径。
+    for tok in ['fun longTaskBusy()', 'SynthArbiter.awaitProducerYield()',
+                'Speak(false, true, null, "本机正在收尾这一小段，稍后优先处理远端请求")',
                 'SynthArbiter.tryAcquire(who)', 'SynthArbiter.release(who)']:
         if tok not in g:
             e.append('GatewaySynth 仲裁缺: ' + tok[:48])
@@ -184,9 +185,9 @@ BAD = [
     ('忙时删 queue', lambda d: d.update(relay=d['relay'].replace(
         'Thread.sleep(RelayContract.MAX_BACKOFF_MS)',
         'client.deleteQueue(item.name, reqSha)', 1))),
-    ('长任务不当 busy', lambda d: d.update(synth=d['synth'].replace(
-        'Speak(false, true, null, "正在做整本书，做完再合成")',
-        'Speak(false, false, null, "正在做整本书")', 1))),
+    ('等让路超时被改成判失败', lambda d: d.update(synth=d['synth'].replace(
+        'Speak(false, true, null, "本机正在收尾这一小段，稍后优先处理远端请求")',
+        'Speak(false, false, null, "本机正忙")', 1))),
     ('单一仲裁被摘', lambda d: d.update(synth=d['synth'].replace(
         'SynthArbiter.tryAcquire(who)', 'true'))),
     ('本地入口并发', lambda d: d.update(mixer=d['mixer'].replace(

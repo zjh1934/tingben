@@ -33,7 +33,10 @@ object ClipSynth {
         if (text.length > MAX_CHARS)
             throw IllegalStateException("这段 ${text.length} 字太长，最多 $MAX_CHARS 字，先少粘一点")
         if (cancelled()) throw IllegalStateException("已取消")
-        if (Producer.isBusy()) throw IllegalStateException("正在做整本书，做完再听这段")
+        // R405 · 远端最高优先级：书已在段边界释放 talker 让路时，允许远端进引擎；
+        // 试听 / 首页片段仍按老规矩拦住，绝不放行（它们的 owner 不是远端）。
+        if (Producer.isBusy() && !SynthArbiter.remoteOverride())
+            throw IllegalStateException("正在做整本书，做完再听这段")
         if (!NativeEngine.isAvailable())
             throw IllegalStateException("本地引擎没装载，请重启 App")
         ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }

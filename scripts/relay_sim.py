@@ -24,7 +24,11 @@ class Repo:
     def __init__(self):
         self.f = {}          # path -> bytes
         self.haptics = []    # 震动事件
-        self.busy = False    # 并发锁 1
+        self.busy = False    # 短任务并发锁 1（另一条远端 / 试听 / 首页片段）
+        # R405 · 书在跑不再是远端的拒绝理由：远端登记整批，书在段边界让路。
+        self.producer_running = False
+        self.producer_yielded = False
+        self.remote_batch = 0
         self.log = []        # 只记字符数与短原因，绝不落正文
 
     def put(self, path, raw, sha=None):
@@ -103,8 +107,13 @@ def phone_cycle(repo, enabled=True, token_ok=True, preset='device-local'):
         finish('failed', reason='没给文字' if not text.strip() else '最多 1500 字，先少贴一点')
         repo.haptics.append(('fail', FAIL_TIMINGS, FAIL_AMPS))
         return True
+    # R405 · 书正在做整本：不再回 busy 排队，而是让书在段边界释放引擎，
+    # 这一批远端连续做完。模拟 Producer.yieldToRemoteIfNeeded 的握手结果。
+    if repo.producer_running and not repo.producer_yielded:
+        repo.producer_yielded = True
+        repo.log.append('producer_yield: 书在这一小段后让路')
     if repo.busy:
-        # R401 · 整本制作 / 用户试听 / 另一条远端占着引擎：
+        # R401 · 用户试听 / 另一条远端占着引擎（整本制作已由上面让路）：
         # 写「排队态」让调用方可预期，但**不判 failed、不删 queue、不震动**。
         # 旧版这里只保留请求、不回状态；更早的真机实现甚至走 RELAY_FAIL
         # 把请求删掉，文字白上传、音频永远拿不到。
@@ -234,6 +243,27 @@ def main():
        st6['state'] == 'done' and raw6 is not None)
     ck('32 闭环后请求文件才删（正文即用即删）',
        'queue/' + rid6 + '.json' not in r6.f)
+
+    # R405 · 远端最高优先级：书在段边界让路，整批四条连续排空
+    r7 = Repo(); r7.producer_running = True
+    ids7 = [submit(r7, '远端第%d条' % k) for k in range(4)]
+    r7.remote_batch = 4
+    ck('33 书在跑时远端第一条不被判 busy', phone_cycle(r7) is True)
+    ck('34 书已在段边界让路', r7.producer_yielded)
+    for k in range(1, 4):
+        phone_cycle(r7)
+    ck('35 四条整批连续全 done',
+       all(json.loads(r7.get('status/' + x + '.json').decode())['state'] == 'done'
+           for x in ids7))
+    ck('36 整批归零前书不抢回引擎', r7.remote_batch == 4)
+    ck('37 四条请求文件全删（正文即用即删）',
+       all('queue/' + x + '.json' not in r7.f for x in ids7))
+    # 其他入口给远端让路：remote_batch>0 时试听抢不到短任务锁
+    r8 = Repo(); r8.remote_batch = 2
+    def sim_local_acquire(remote_pending):
+        return not remote_pending and not r8.busy
+    ck('38 有远端待处理时试听/首页让路', sim_local_acquire(2) is False)
+    ck('39 远端排空后本地入口恢复', sim_local_acquire(0) is True)
 
     ck('29 补做后请求文件即用即删', 'queue/' + rid5 + '.json' not in r5.f)
     ck('30 排队态不落正文', '本机正忙时来的这一句' not in

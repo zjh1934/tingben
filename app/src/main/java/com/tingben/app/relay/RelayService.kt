@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import com.tingben.app.core.RequestArchive
+import com.tingben.app.core.SynthArbiter
 import com.tingben.app.core.sha
 import com.tingben.app.diag.EventLog
 import com.tingben.app.gateway.GatewaySynth
@@ -148,6 +149,7 @@ class RelayService : Service() {
                     errStreak = 0
                 }
                 if (items.isEmpty()) {
+                    SynthArbiter.setRemoteBatch(0)
                     setState("等着请求 · " + RelayPrefs.owner(this) + "/" + RelayPrefs.repo(this))
                     Thread.sleep(RelayContract.IDLE_POLL_MS)
                     continue
@@ -158,10 +160,15 @@ class RelayService : Service() {
                     putCooldownUntil[q.name]?.let { until -> until > now } == true
                 }
                 if (ready.isEmpty()) {
+                    // R405 · 没有本轮要做的远端请求，整批归零，书可以接着跑。
+                    SynthArbiter.setRemoteBatch(0)
                     setState("上一条回写没成功 · 请求留着，稍等再试")
                     Thread.sleep(RelayContract.IDLE_POLL_MS)
                     continue
                 }
+                // R405 · 整批登记：一次来四条（两个对话各四条）时，书在段边界
+                // 让一次路，把这批连续排空，不在两条之间抢回引擎。
+                SynthArbiter.setRemoteBatch(ready.size)
                 val item = ready[0]
                 currentName = item.name
                 phase = "poll"
@@ -183,6 +190,7 @@ class RelayService : Service() {
                     phase = "put"
                     client.putFailed(id, failStatus(chars, why))
                     client.deleteQueue(item.name, reqSha)
+                    SynthArbiter.remoteBatchDone()
                     continue
                 }
 
@@ -209,6 +217,8 @@ class RelayService : Service() {
                             fields = mapOf("id" to id, "streak" to busyStreak.toString()))
                     }
                     setState("本机正忙 · 请求留着排队，忙完自动补")
+                    // R405 · 本轮没做成，整批计数减掉；下轮列队会重设，不留残票。
+                    SynthArbiter.remoteBatchDone()
                     releaseWake()
                     // 忙时不要每 5 秒重取（整本制作可能几十分钟），走上限慢档。
                     try { Thread.sleep(RelayContract.MAX_BACKOFF_MS) }
@@ -257,6 +267,8 @@ class RelayService : Service() {
                 EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEL",
                     "id=$id · 请求文件已删（正文即用即删）", fields = mapOf("id" to id))
                 phase = "poll"; currentName = null; putCooldownUntil.remove(item.name)
+                // R405 · 这一条真正闭环了，整批减一；归零后书恢复续跑。
+                SynthArbiter.remoteBatchDone()
                 releaseWake()
                 Thread.sleep(RelayContract.POLL_MS)
             } catch (t: Throwable) {
@@ -271,6 +283,9 @@ class RelayService : Service() {
                 val msg = if (t is RelayClient.Err) "HTTP " + t.code
                     else t.javaClass.simpleName
                 errStreak++
+                // R405 · 异常轮没有闭环，整批归零避免书被一张残票永久挡住；
+                // 请求文件仍在仓库，下一轮列队会重新 setRemoteBatch。
+                SynthArbiter.setRemoteBatch(0)
                 val backoff = backoffMs(errStreak)
                 // R404 · 把「回写冲突」和「断网」分开报，别再伪装成轮询失败。
                 // 请求仍留在仓库，不删、不丢，按冷却歇一会儿再试。

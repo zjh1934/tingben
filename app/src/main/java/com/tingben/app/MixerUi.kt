@@ -223,6 +223,12 @@ internal fun MixerScreen(c: Context, onBack: () -> Unit,
     }
 
     fun trial(label: String, src: MixerDraft, text: String, out: String) {
+        // R405 · 远端最高优先级：有远端请求待处理时试听直接让路，不抢引擎。
+        if (SynthArbiter.remotePending() > 0) {
+            Toast.makeText(c, "远端请求正在合成（最高优先级），稍后再试听",
+                Toast.LENGTH_SHORT).show()
+            return
+        }
         // R401 · 长任务统一读 SynthArbiter（它合一读 Producer.isBusy）。
         if (SynthArbiter.producerBusy()) {
             Toast.makeText(c, "正在做整本书，做完再试听", Toast.LENGTH_SHORT).show()

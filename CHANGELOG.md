@@ -3,6 +3,37 @@
 本文件按版本倒序记录用户能感知的变化。版本真值在 [`version.txt`](version.txt)，
 完整 Release 与 APK 在 [Releases](https://github.com/zjh1934/tingben/releases)。
 
+## [1.1.60] - 2026-11-26
+
+### 远端请求合成升为最高优先级（用户口径反转）
+
+用户原话：「远端请求的合成是最高优先级，其他的都要给它让路」；一次来四条、两个对话各四条；本地正在合成书时**音频小块结束就让路**，但「不要因为这个让路把书的合成节奏搞坏搞崩」。
+
+**先把一个物理事实说清楚**：引擎只有一个（`NativeEngine` 单实例、`ttsLoadGated` 全局 `loadBusy`、`ClipSynth.synthesize` 是唯一真源）。四条并发不是四个 talker 同时推理——那会直接崩。本版实现的是「**远端整批登记 → 书在段边界让出引擎 → 这四条（乃至两个对话八条）连续排空 → 书从下一段接着做**」：对用户来说算力全倾向远端，中间书一次都不抢。
+
+**R401 的优先级反过来**：
+- R401：整本制作最高，远端撞上就 `busy` 排队 60s。
+- R405：远端最高。书里正在做整本时，远端**不再被判忙排队**；`GatewaySynth.speak` 等书把当前这一小段做完、落盘、释放 talker，然后远端正经合成。`longTaskBusy()` 只用于判定握手状态，`blockReason()` 去掉「书忙就回失败」那条（旧口径会让 `RelayService` 判 `RELAY_FAIL` 把请求删掉）。
+
+**书怎么让路、怎么保证不崩**（`Producer.yieldToRemoteIfNeeded`，调用点在 `for` 循环顶部＝上一段已收尾、下一段还没开始）：
+
+1. 这一小段的 wav 已落盘、进度已 `emit`、章边界拼接也做完之后，才 `ttsFreeGated(ttsHandle)` 释放模型——**不掐断正在推理的段**，否则会丢音频、段号错乱。释放是必须的：不释放，远端 `ClipSynth` 的 `ttsLoadGated` 永远返回 0，会误报「声音模型正在装载」。
+2. 置 `producerYielded`，**`_state.running` 保持 true**，通知文案改成「远端优先 · 这一小段已存好」；`phase` 不写 `stopped`、不重建 `Progress`、不动 `wavs / segStartBytes / chapterProgress`、不排队列、不补拼、不清 redo 标记。让路期间每 5 秒 `ProduceService.touch` 喂唤醒锁，前台服务与通知都在。
+3. 等整批归零（`batchPending + singlePending == 0`）且当前远端这句已释放锁，再 `ttsLoadGated` + `SynthInput.prepare` 重新加载模型，记 `PRODUCE_RESUME`，从下一段接着做。**音色、段参数、切分规则、断点全部沿用原值**。
+4. 两个兜底：万一模型没加载回来，记 `PRODUCE_RESUME_FAIL` 并按「已做段全留着、点继续制作接着做」收尾，不假装修好；远端源源不断时 10 分钟公平上限放书跑一段，不把书饿死。
+
+**整批怎么算**（`RelayService`）：每轮列队后 `setRemoteBatch(ready.size)`，一条真正闭环才 `remoteBatchDone()`；空队列 / 冷却 / 异常三处归零。中继两条之间那 10 秒轮询空隙由 `GatewaySynth.speak` 的单条票 `remoteEnter/remoteExit` 填平，书不会在两条之间抢回引擎。局域网网关的 `submit` 异步 job 同口径。
+
+**其他入口让路**：`tryAcquire` 在 `remotePending > 0` 时对试听 / 首页片段一律返回 false；`MixerUi` 直接提示「远端请求正在合成（最高优先级），稍后再试听」；`busyLabel()` 同口径。`ClipSynth` 里那道 `Producer.isBusy()` 守卫**只对「书已让路 + 当前占用者确实是远端」放行**（`remoteOverride()`），试听与首页片段永远不放行。
+
+**硬约束一条没动**：忙时保留请求不判失败、不删 queue、不震动（`putBusy` / `busyStatus` 全在）；正文即用即删；Token 不落盘；M4A 压缩；震动三态；24h 日志；断点续跑；拼章转码。
+
+### 守恒
+
+- 90 个 Kotlin 文件按钮/点击回调基线零差异；6 个链路文件符号逐条验在。
+- `r405_verify.py`：四条整批 / 八条双对话 / 单条票 / 试听让路 / ClipSynth 只放行远端 / 公平上限 / 点停止可退出 / 等让路超时仍 busy 的逻辑用例 + **21/21 反向注入**，挂 r135 与 CI 正反向。
+- `r401_verify.py` 按新优先级迁移（反向注入 18/18 仍全拦）；信箱闭环模拟器 **41/41**、存档 25/25、网关模拟器全绿；全套正向守门 **155 零红**、156 个 selftest 全绿、aoci **204 受管对象零漂移**。
+
 ## [1.1.59] - 2026-11-26
 
 ### 第二份 1.1.57 真机日志：远端合成「成功却一直拿不到」

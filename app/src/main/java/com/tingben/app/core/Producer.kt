@@ -710,7 +710,8 @@ object Producer {
         EventLog.log(EventLog.Kind.PIPELINE, "PRESET_APPLIED",
             config.summarySafe() + " · 指纹=" + presetStamp)
 
-        val ttsHandle = try {
+        // R405 · var：让路时会释放 talker 给远端，整批排空后再加载回来。
+        var ttsHandle = try {
             NativeEngine.ttsLoadGated(tk!!.absolutePath, tok!!.absolutePath, null)
         } catch (t: Throwable) {
             abortBeforeStart("音频模型加载失败：" + (t.message ?: ""))
@@ -969,6 +970,97 @@ object Producer {
             skipFirst = -1
             skipLast = -1
         }
+
+        /**
+         * R405 · **远端最高优先级**：在「这一小段完整收尾之后、下一段开始之前」
+         * 给远端让路。调用点在 for 循环末尾，此时 wav 已落盘、进度已 emit、
+         * 章边界拼接也做完了，绝不掐断正在推理的段。
+         *
+         * 不做的四件事（用户要求「别把书的节奏搞崩」）：
+         *  · 不改 phase / 不写 stopped / 不重建 Progress，_state.running 保持 true；
+         *  · 不丢段号、不重算切分、不动 wavs / segStartBytes / chapterProgress；
+         *  · 不释放前台服务与唤醒锁（让路期间定期 touch）；
+         *  · 不自动排队列、不补拼、不清 redo 标记。
+         *
+         * @return false = 用户点了停止或让路后模型没加载回来，主循环该收尾退出。
+         */
+        fun yieldToRemoteIfNeeded(i: Int): Boolean {
+            if (ttsHandle == 0L || !SynthArbiter.producerShouldYield()) return true
+            // ① 释放 talker：ttsLoadGated 的全局 loadBusy 不空出来，
+            //    远端 ClipSynth 永远加载不了模型（会误报「声音模型正在装载」）。
+            try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
+            ttsHandle = 0L
+            SynthArbiter.markProducerYielded()
+            // running 不变，只把通知文案说明白：是在让路，不是卡死也不是停了。
+            emit("远端优先 · 这一小段已存好", i + 1, annotated.size,
+                gateFails + synthFails,
+                "远端请求优先，这一小段已存好；这批做完接着做，不用重来",
+                chapterProgress = _state.value.chapterProgress)
+            EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_YIELD",
+                "seg=${i + 1}/${annotated.size} · 远端待处理 ${SynthArbiter.remotePending()} 条 · 当前小块已落盘")
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            var guard = 0
+            // ② 等整批远端排空；四条 / 八条连续跑完，中间不抢回引擎。
+            //    另有公平上限：真遇上源源不断的远端，也放书跑一段，不饿死。
+            while (!cancelRequested) {
+                val drained = !SynthArbiter.producerShouldYield() &&
+                    !SynthArbiter.isShortBusy()
+                val fair = android.os.SystemClock.elapsedRealtime() - t0 >=
+                    SynthArbiter.MAX_YIELD_WAIT_MS
+                if (drained || (fair && !SynthArbiter.isShortBusy())) break
+                try { Thread.sleep(200L) }
+                catch (_: InterruptedException) { return false }
+                // 唤醒锁 30 分钟不 touch 会被系统放掉，让路期间照喂。
+                if (++guard % 25 == 0) {
+                    try {
+                        ProduceService.touch(c, "让路给远端请求")
+                    } catch (_: Throwable) { }
+                }
+                if (SynthArbiter.shouldLogYield(android.os.SystemClock.elapsedRealtime())) {
+                    EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_YIELD_WAIT",
+                        "seg=${i + 1} · 远端还剩 ${SynthArbiter.remotePending()} 条 · 书在段边界等着")
+                }
+            }
+            if (cancelRequested) {
+                // 用户点停止：不重新加载，按正常收尾退出，已做段全留着。
+                _state.value = halted(i, annotated.size, gateFails + synthFails)
+                return false
+            }
+            // ③ 重新加载 talker + prepare。重试几次，避开远端刚 release 的微小竞态。
+            var h = 0L
+            for (retry in 0 until 3) {
+                h = try {
+                    NativeEngine.ttsLoadGated(tk!!.absolutePath, tok!!.absolutePath, null)
+                } catch (_: Throwable) { 0L }
+                if (h != 0L) break
+                try { Thread.sleep(200L) } catch (_: InterruptedException) { break }
+            }
+            if (h == 0L) {
+                EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_RESUME_FAIL",
+                    "seg=${i + 1} · 让路后模型没加载回来，已做段全留着，点继续制作接着做",
+                    level = EventLog.Level.WARN)
+                _state.value = halted(i, annotated.size, gateFails + synthFails)
+                return false
+            }
+            try {
+                SynthInput.prepare(c, h)
+            } catch (e: Throwable) {
+                try { NativeEngine.ttsFreeGated(h) } catch (_: Throwable) { }
+                EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_RESUME_FAIL",
+                    "seg=${i + 1} · 模式输入没准备好，已做段全留着",
+                    level = EventLog.Level.WARN)
+                _state.value = halted(i, annotated.size, gateFails + synthFails)
+                return false
+            }
+            ttsHandle = h
+            SynthArbiter.markProducerResumed()
+            EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_RESUME",
+                "seg=${i + 1} · 整批远端已排空 · 从下一段接着做，段号与进度不变")
+            emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
+                "已生成 ${i + 1}/${annotated.size} 段声音 · 远端做完接着来",
+                chapterProgress = _state.value.chapterProgress)
+            return true
+        }
         try {
             for ((i, a) in toSpeak.withIndex()) {
                 // R346 · 运行中目录页手动「拼接并转码」会写 chapter_done.json，
@@ -982,6 +1074,11 @@ object Producer {
                     _state.value = halted(i, annotated.size, gateFails + synthFails)
                     return
                 }
+                // R405 · 「上一段已落盘、下一段还没开始」就是段边界：远端来了
+                // 在这里让路，不掐断正在推理的段；放循环顶部也让 continue 分支
+                // 的下一次迭代照样检查到。书的第一段开始前同样会让，不必先等
+                // 它跑完一分钟才响应远端。
+                if (!yieldToRemoteIfNeeded(i)) return
                 val segStart = wavs.size
                 val wavName = dropWav(i)
                 val wav = File(work, wavName)
@@ -1211,7 +1308,10 @@ object Producer {
         } finally {
             // R278 · 尾巴不足一批的跳过段也别丢：return / break / 异常各出口都走这里
             try { flushSkip() } catch (_: Throwable) { }
-            try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
+            // R405 · 让路期间 ttsHandle 可能是 0（已释放给远端），别 free 空句柄。
+            if (ttsHandle != 0L) {
+                try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
+            }
         }
         if (cancelRequested) {
             _state.value = halted(wavs.size, annotated.size, gateFails + synthFails)
