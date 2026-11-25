@@ -23,6 +23,7 @@ FILES = {
     'hub': APP / 'ChapterHub.kt',
     'overlay': APP / 'OverlayProgress.kt',
     'sim': ROOT / 'scripts/relay_sim.py',
+    'ci': ROOT / '.github/workflows/ci.yml',
     'baseline': ROOT / 'contracts/ui_function_baseline.json',
 }
 CHAIN = {
@@ -66,6 +67,13 @@ def check(s):
             e.append('缺文件: ' + k)
     if e:
         return e
+    ci = s.get('ci', '')
+    # R402 · 发版链路防呆：Release 资产真落地才算发版完成。
+    for tok in ['Release 资产确实落地（防软失败）',
+                'assets[] | select(.name == "tingben-v',
+                '没带上 APK 资产（发布动作软失败）']:
+        if tok not in ci:
+            e.append('CI 缺 Release 资产落地校验: ' + tok[:40])
     a, g, r, cl, m, i, h, ov, sim = (s['arbiter'], s['synth'], s['relay'],
                                      s['client'], s['mixer'], s['input'],
                                      s['hub'], s['overlay'], s['sim'])
@@ -205,6 +213,8 @@ BAD = [
     ('章号归属被摘', lambda d: d.update(hub=d['hub'].replace(
         '第 $chapterNo 章 · 已生成', '已生成', 1))),
     ('链路符号', lambda d: d.update(**{'chain:app/src/main/java/com/tingben/app/relay/RelayService.kt': '/* gone */'})),
+    ('资产校验被摘', lambda d: d.update(ci=d['ci'].replace(
+        'Release 资产确实落地（防软失败）', 'Release 发布完成', 1))),
     ('功能守恒', lambda d: d.update(baseline='{}')),
 ]
 

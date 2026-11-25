@@ -37,6 +37,12 @@ object ClipSynth {
         if (!NativeEngine.isAvailable())
             throw IllegalStateException("本地引擎没装载，请重启 App")
         ModelStore.synthesisBlockReason(c)?.let { throw IllegalStateException(it) }
+        // R403 · 真机实证：整本制作点「停止」会把进程级 g_cancel 置位，
+        // 只有下次 start / 调音台试听才清。用户 22:21 停了书之后，
+        // 22:39~00:30 五次网关/中继请求全吃着残留标志，ttsSynthesize
+        // 立刻返回 -5(QT_STATUS_CANCELLED)，判 RELAY_FAIL 并把请求删掉。
+        // 短任务已由 SynthArbiter 与长任务互斥，拿锁后自己清一次是安全的。
+        try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
 
         val mode = ModelStore.currentMode(c)
         val src = MixerDraft.active(c)

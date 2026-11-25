@@ -260,6 +260,50 @@ object TaskResume {
         }
     } catch (_: Throwable) { null }
 
+    /**
+     * R403 · 真机实证：1.1.57 冷启动后目录页断点判定漏了，用户点「开始制作」
+     * 会用 only=null 覆盖档案，把「10 章 656 段」换成「整本 26678 段」，
+     * 已做好的 89 段散段/章成品一份都认领不上（VOICE_CACHE_SWITCH 认领 0 份）。
+     * 按章分桶 v11/direct/<章号_...> 还在磁盘上，这里只在
+     * 「整本 + 一段没做 + 存在带声音的按章分桶」时把范围与总段数改回去；
+     * 不改阶段、不删文件、不碰真跑起来的整本任务（done>0 直接放行）。
+     */
+    fun recoverScope(c: Context, t: TaskInfo): TaskInfo? {
+        if (t.only != null || t.phase == "done" || t.done > 0) return null
+        val root = File(c.filesDir, "work/${t.bookId}/v11/direct")
+        val dirs = try {
+            root.listFiles()?.filter { d ->
+                d.isDirectory && d.name != "all" && !d.name.startsWith("h") &&
+                    d.name.all { ch -> ch.isDigit() || ch == '_' }
+            }
+        } catch (_: Throwable) { null } ?: return null
+        var bestOnly: Set<Int>? = null
+        var bestSegs = 0
+        var bestScore = 0
+        for (d in dirs) {
+            val only = d.name.split('_').mapNotNull { it.toIntOrNull() }.toSet()
+            if (only.isEmpty()) continue
+            val segs = try { SegPlan.readMap(d)?.size ?: 0 } catch (_: Throwable) { 0 }
+            val wav = try {
+                d.listFiles()?.count { f ->
+                    f.isFile && (f.name.startsWith("chunk_") || f.name.startsWith("direct_")) &&
+                        f.name.endsWith(".wav") && f.length() > 44
+                } ?: 0
+            } catch (_: Throwable) { 0 }
+            val done = try { AudioTree.readDone(d).size } catch (_: Throwable) { 0 }
+            val score = wav + done
+            if (score > bestScore) {
+                bestScore = score; bestOnly = only; bestSegs = segs
+            }
+        }
+        val pick = bestOnly ?: return null
+        if (bestScore == 0 && bestSegs == 0) return null
+        val total = if (bestSegs > 0) bestSegs else t.total
+        return t.copy(only = pick, total = total, done = 0,
+            phase = "stopped", stage = "已停止",
+            updatedAt = System.currentTimeMillis())
+    }
+
     fun active(c: Context): TaskInfo? = readAll(c).firstOrNull { it.phase != "done" }
 
     // 返回 null = 可以自动续跑；非 null = 不自动跑的原因（直接给用户看）。

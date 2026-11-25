@@ -56,7 +56,14 @@ object Producer {
 
     fun restore(c: Context) {
         appCtx = c.applicationContext
-        val t = TaskResume.active(c) ?: return
+        val raw = TaskResume.active(c) ?: return
+        // R403 · 先纠正被误开成整本的档案，再算真实进度；只记一条，不刷屏。
+        val t = TaskResume.recoverScope(c, raw)?.also { recovered ->
+            TaskResume.save(c, recovered)
+            EventLog.log(EventLog.Kind.PIPELINE, "TASK_RECOVER_SCOPE",
+                "book=${EventLog.safe(recovered.title)} only=${recovered.only?.size} " +
+                    "total=${recovered.total} · 误开的整本已改回上次选章")
+        } ?: raw
         val fixed = if (t.phase == "running") t.copy(phase = "interrupted") else t
         TaskResume.save(c, fixed)
         current = fixed

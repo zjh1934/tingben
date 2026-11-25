@@ -637,6 +637,10 @@ jobs:
         run: python3 scripts/r401_verify.py
       - name: R401 并发仲裁 / 续跑截图 UI 守门（反向注入）
         run: python3 scripts/r401_verify.py --selftest
+      - name: R403 冷启动断点 / 误开整本自愈 / g_cancel 守门（正向）
+        run: python3 scripts/r403_verify.py
+      - name: R403 冷启动断点 / 误开整本自愈 / g_cancel 守门（反向注入）
+        run: python3 scripts/r403_verify.py --selftest
       # R393 · 审计发现：下面这些早期批次守门在 CI 里只跑 --selftest（反向注入），
       # 正向 check() 从没执行过 —— CI 绿只能证明「守门自己没坏」，不能证明源码合规。
       # 本地实测 46 个正向全绿，用一个批量步骤补齐，不新增文件、不重排已有步骤。
@@ -805,6 +809,24 @@ jobs:
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # R402 · 真机发版实证：softprops 步骤报 success，但 v1.1.57 的 Release
+      # 资产列表是空的（直链仓与订阅源都正常，唯独 releases/download 那一份没落）。
+      # 发布动作软失败不能让整条流水线绿着过去，这里当场验资产真的在。
+      - name: Release 资产确实落地（防软失败）
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${{ steps.ver.outputs.v }}"
+          N=$(curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${V}" \
+            | jq '[.assets[] | select(.name == "tingben-v'"${V}"'.apk")] | length')
+          if [ "$N" != "1" ]; then
+            echo "::error::Release v${V} 没带上 APK 资产（发布动作软失败），本次发版不算完成"
+            exit 1
+          fi
+          echo "Release v${V} 资产已落地"
 
       - name: 同步 APK 到公开直链
         if: github.ref == 'refs/heads/main'

@@ -679,8 +679,14 @@ internal fun ChapterHubScreen(
     }
 
     val curRule = remember(book.id, planTick) { ChapterPlan.currentRuleId(c, book.id) }
+    // R403 · 真机实证（1.1.57 覆盖安装后冷启动）：restore 把 stage 写成
+    // 「上次中断」，旧判定只认「没完成/已停止/出错了」→ 断点恒判 false →
+    // 主按钮变成「开始制作」，用户点下去用 only=null 把 10 章 656 段档案
+    // 覆盖成整本 224 万字 26678 段，已做好的 89 段一份都认领不上。
+    // 断点真值是档案 phase，不是内存态 stage；旧集合保留作热启动兜底。
     val stalledTask = !st.running && task?.bookId == book.id &&
-        st.stage in listOf("没完成", "已停止", "出错了")
+        (task?.phase in listOf("stopped", "interrupted", "blocked", "reconfirm") ||
+            st.stage in listOf("没完成", "已停止", "出错了"))
     // R362 · 这本书的制作档案就是 TaskInfo（task_active.json / tasks.json），
     // 已存 only / done / total / phase。不另建一套索引：暂停、队列暂停、重开
     // 软件后它都还在。目录页进度只认「档案 + 磁盘章成品 + 实时 state」，
@@ -811,6 +817,17 @@ internal fun ChapterHubScreen(
             needModels -> onOpenModels()
             else -> {
                 val only = selected.ifEmpty { null }
+                // R403 · 第二道闸：即便断点判定漏了，也不许「没勾章 + 有未完成档案」
+                // 静默整本重开并覆盖档案。给明确出路，不让用户对着 0/26678 发懵。
+                val pending = task?.takeIf { it.bookId == book.id && it.phase != "done" }
+                if (only == null && pending != null) {
+                    EventLog.ui("HUB_START_GUARD",
+                        "id=${book.id.take(8)} real=${pending.done}/${pending.total}")
+                    Toast.makeText(c,
+                        "这本书还有上次没做完的 ${pending.done}/${pending.total} 段，点「继续制作」接着做；要整本重做请先勾选章",
+                        Toast.LENGTH_LONG).show()
+                    return
+                }
                 val hint = Producer.enqueueOrStart(c, book, only, null, Prefs.defaultPerf(c))
                 Toast.makeText(c, hint, Toast.LENGTH_LONG).show()
                 onStarted(book.id, selected)
