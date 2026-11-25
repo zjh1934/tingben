@@ -71,14 +71,19 @@ def check(s=None):
     if 'RoundedCornerShape(HiCardRadius)' not in sh or \
             'Modifier.padding(HiCardPad)' not in sh:
         e.append('全站卡片容器没用层级令牌')
-    if set_.count('padding(bottom = HiSectionGap)') < 2 or \
+    # R390 · 删掉设置页第二条标题行后，HiSectionGap 少了一处；按新形态迁移，
+    # 分组令牌仍必须齐全，并加一条更严的：不许再出现第二条页面级标题。
+    if set_.count('padding(bottom = HiSectionGap)') < 1 or \
             'RoundedCornerShape(HiCardRadius)' not in set_ or \
             'height = 16.dp' not in set_:
         e.append('设置分组没用层级令牌')
     if 'fontSize = HiSectionSp, fontWeight = FontWeight.Bold' not in set_:
         e.append('设置分组标题没提级')
-    if 'fontSize = HiTitleSp, fontWeight = FontWeight.Bold' not in set_:
-        e.append('设置二级页头没用页面级')
+    if 'fontSize = HiTitleSp,\n                fontWeight = FontWeight.Bold' not in ch:
+        e.append('主顶栏页面级标题被摘（R390 唯一落点）')
+    if 'SettingsSubHeader' in set_ or \
+            'fontSize = HiTitleSp, fontWeight = FontWeight.Bold' in set_:
+        e.append('设置页又画了第二条页面级标题（顶栏应只留一层）')
     if 'fontSize = HiCaptionSp, fontWeight = FontWeight.Bold' not in task:
         e.append('任务分区小标题没用注释级')
     if multi.count('.clip(RoundedCornerShape(HiChipRadius))') < 2:

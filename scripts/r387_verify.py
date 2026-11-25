@@ -3,7 +3,7 @@
 """R387 · 请求文本留存守门。
 
 用户本轮要求：每次过来合成的请求只把「文本」留下，放在新板块里，默认 10 条，
-跨网中继 / 局域网网关左右两列分开，每条一键复制，板块支持多选删除、一键清空。
+跨网中继 / 局域网网关按整宽选项卡切换（R390 起），每条一键复制，板块支持多选删除、一键清空。
 
 涉及一处口径迁移（按「只留最新、不堆旧账」办）：R225 的「正文零落盘」原本
 一刀切；现在唯一例外是 core/RequestArchive.kt 的本机私有留存区——它只留文本、
@@ -90,14 +90,26 @@ def check(s):
         if bad in rs + lg + st:
             e.append('旧口径没删净：' + bad)
 
-    # ④ UI：左右两列、默认 10、每条复制、多选删、一键清空带确认
+    # ④ UI（R390 形态）：整宽选项卡切换 + 默认 10 + 每条复制 + 多选删 + 清空确认
     uc = code_lines(u)
-    for k in ('fun ArchiveScreen(c: Context)', 'Channel("跨网中继"',
-              'Channel("语音网关"', 'RequestArchive.DEFAULT_SHOW',
-              '"一键复制"', '"多选"', '"删除选中"', '"一键清空全部文本"',
+    for k in ('fun ArchiveScreen(c: Context)',
+              'TabChip(Modifier.weight(1f), "跨网中继"',
+              'TabChip(Modifier.weight(1f), "语音网关"',
+              'var tab by remember { mutableStateOf(0) }',
+              'fun goTab(next: Int)', 'detectDragGestures(',
+              'RequestArchive.DEFAULT_SHOW',
+              '"一键复制全部"', '"多选"', '"删除选中"', '"一键清空全部文本"',
               'AlertDialog(', '"确认清空"', '"复制"', '72.dp'):
         if k not in u:
             e.append('留存页缺：' + k)
+    # R390 · 不许回潮成「中间劈开左右两列」：两个渠道必须整宽切换
+    if 'fun ColumnScope.Channel(' in u or 'Channel("跨网中继"' in u:
+        e.append('请求文本页回潮成左右并排两列（R390 已改整宽选项卡）')
+    # 说明文字降级：不折叠、不藏小问号，且必须在列表之后（页面底部微字）
+    if 'showHow' in uc or '"?"' in uc:
+        e.append('说明文字又藏进折叠 / 小问号（R390 要放在不显眼位置但不隐藏）')
+    if u.find('④ 说明降级') < u.find('② 主区'):
+        e.append('说明文字没放到列表之后（主次颠倒）')
     # R383：二级页不许自带滚动，滚动交设置页外壳唯一一层
     for bad in ('verticalScroll(', 'LazyColumn', 'rememberScrollState'):
         if bad in uc:
@@ -106,7 +118,7 @@ def check(s):
         pass
 
     # ⑤ 设置页入口 / 分支 / 标题，两个功能页底部跳转
-    for k in ('UiIcon.BOOK, "请求文本"', 'page = "archive"',
+    for k in ('UiIcon.BOOK, "请求文本"', 'onPageChange("archive")',
               'if (page == "archive")', 'ArchiveScreen(c)',
               '"archive" -> "请求文本"'):
         if k not in st:
@@ -156,7 +168,9 @@ def main():
              'fun ArchiveScreen(c: Context) {\n    Column(Modifier.verticalScroll(rememberScrollState())) {}'),
             ('缺一键清空', 'ui', '"一键清空全部文本"', '"清空"'),
             ('缺多选删除', 'ui', '"删除选中"', '"删掉"'),
-            ('缺右列', 'ui', 'Channel("语音网关"', 'Channel("网关"'),
+            ('摘掉语音网关选项卡', 'ui',
+             'TabChip(Modifier.weight(1f), "语音网关"',
+             'TabChip(Modifier.weight(1f), "网关"'),
             ('设置页没挂入口', 'settings', 'UiIcon.BOOK, "请求文本"', ''),
             ('设置页没接分支', 'settings', 'if (page == "archive")', ''),
             ('网关页没跳转入口', 'gatewayui', '查看请求文本', ''),
@@ -178,7 +192,7 @@ def main():
     import archive_sim
     sim_rc = archive_sim.run()
     e = check(s)
-    print('R387 %s · 双渠道留存 / 只留文本 / 诊断零正文 / 两列 UI / R383+R225 守恒' %
+    print('R387 %s · 双渠道留存 / 只留文本 / 诊断零正文 / 整宽选项卡 UI / R383+R225 守恒' %
           ('FAIL: ' + '; '.join(e) if e else 'PASS'))
     return 1 if (e or sim_rc) else 0
 

@@ -27,7 +27,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -294,14 +293,16 @@ internal fun ProduceOverviewLine(k: String, v: String) {
 @Suppress("UNUSED_PARAMETER")
 internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                            onLibrary: () -> Unit,
-                           onMixer: () -> Unit) {
+                           onMixer: () -> Unit,
+                           page: String,
+                           onPageChange: (String) -> Unit) {
     val missing = remember(refresh) { ModelStore.missing(c) }
     var themeMode by remember { mutableStateOf(Prefs.themeMode(c)) }
     // R171 · 开发者工具默认收起，普通用户打开设置不再先看到两枚排查按钮。
     var devOpen by remember { mutableStateOf(false) }
-    // R354 · 设置首页只列板块入口，点进去才是单独一页；系统返回键先回首页。
-    var page by rememberSaveable { mutableStateOf("") }
-    BackHandler(enabled = page.isNotEmpty()) { page = "" }
+    // R390 · page 上提到 App 层：主顶栏要按当前子页写标题、返回箭头要先回设置首页。
+    // 这里只留「系统返回键先回首页」这一条，二级页不再自己画一条重复标题行。
+    BackHandler(enabled = page.isNotEmpty()) { onPageChange("") }
 
     // R156 · 成品导出：让用户用系统文件管理器自己选一个文件夹（一般是 Download），
     // 记住后把每章成品 WAV 按书名分文件夹写进去。不开放内部 work/audio 路径配置，
@@ -453,44 +454,46 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             }
         }
 
-        // R354 · 六个板块各一条入口，整行可点；前导图标与右箭头都是代码画的矢量图形。
+        // R354 · 八个板块各一条入口，整行可点；前导图标与右箭头都是代码画的矢量图形。
+        // R390 · 点入口只上报子页变化，标题与返回由 App 层唯一的主顶栏统一处理。
         SettingsSection("设置分类", "全部", collapsible = false) {
             SettingsEntry(UiIcon.PALETTE, "外观设置", "主题 · 悬浮进度 · 图例") {
-                page = "appearance"
+                onPageChange("appearance")
             }
             SettingsEntry(UiIcon.RESUME, "运行与通知", "打开软件自动续跑") {
-                page = "runtime"
+                onPageChange("runtime")
             }
             SettingsEntry(UiIcon.SETTINGS, "制作设置", "段间静音 · 自动拼章 · 接缝") {
-                page = "produce"
+                onPageChange("produce")
             }
             SettingsEntry(UiIcon.SHIELD, "权限管理", "通知 · 电池优化 · 悬浮窗") {
-                page = "perms"
+                onPageChange("perms")
             }
             SettingsEntry(UiIcon.FOLDER, "音频文件", "浏览 · 批量导出 · 删除") {
-                page = "files"
+                onPageChange("files")
             }
             SettingsEntry(UiIcon.SYNTH, "语音网关", "本机接口 · 默认关 · 音色只读本机") {
-                page = "gateway"
+                onPageChange("gateway")
             }
             SettingsEntry(UiIcon.M4A, "跨网中继", "GitHub 免费仓库 · 零付费 · 压缩音频回传") {
-                page = "relay"
+                onPageChange("relay")
             }
-            // R387 · 请求文本留存：两渠道左右分列，只留文字不留音频。
-            SettingsEntry(UiIcon.BOOK, "请求文本", "两渠道分列 · 各 10 条 · 复制 / 多选删 / 清空") {
-                page = "archive"
+            // R390 · 请求文本：两渠道改成整宽选项卡切换，只留文字不留音频。
+            SettingsEntry(UiIcon.BOOK, "请求文本", "两渠道切换 · 各 10 条 · 复制 / 多选删 / 清空") {
+                onPageChange("archive")
             }
             SettingsEntry(UiIcon.EXPORT, "开发者工具", "诊断摘要 · 完整日志") {
-                devOpen = true; page = "dev"
+                devOpen = true; onPageChange("dev")
             }
         }
         } else {
-            SettingsSubHeader(settingsPageTitle(page)) { page = "" }
+        // R390 · 顶栏只留一层：左上角返回箭头 + 当前页名由 App 层的主顶栏显示，
+        // 这里不再叠一条「设置 / 请求文本」大标题（真机截图实证两层重复占空间）。
         if (page == "gateway") {
-            GatewayScreen(c, onArchive = { page = "archive" })
+            GatewayScreen(c, onArchive = { onPageChange("archive") })
         }
         if (page == "relay") {
-            RelayScreen(c, onArchive = { page = "archive" })
+            RelayScreen(c, onArchive = { onPageChange("archive") })
         }
         if (page == "archive") {
             ArchiveScreen(c)
@@ -1223,23 +1226,11 @@ internal fun ChevronRight(tint: Color, modifier: Modifier = Modifier) {
     }
 }
 
-/** R354 · 二级页顶部：返回箭头回首页，标题写清「现在在哪一页」。 */
-@Composable
-internal fun SettingsSubHeader(title: String, onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(bottom = HiSectionGap),
-        verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center) {
-            IconBack(Primary, Modifier.size(20.dp))
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(title, fontSize = HiTitleSp, fontWeight = FontWeight.Bold,
-            color = palette.text)
-    }
-}
-
+/**
+ * R390 · 设置子页标题的唯一映射表：主顶栏（AppChrome.AppTopBar）按当前 page
+ * 显示「返回箭头 + 这一页叫什么」，设置首页仍显示「设置」。
+ * 设置页自身不再画第二条标题行（真机截图实证两层重复、白占一整行）。
+ */
 internal fun settingsPageTitle(page: String): String = when (page) {
     "appearance" -> "外观设置"
     "runtime" -> "运行与通知"

@@ -32,9 +32,14 @@ def check(f):
     for k in ['Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)',
               'Screen.PRODUCE  -> ChromeSpec("这本书"']:
         if k not in sh: e.append("顶栏规格缺: " + k[:60])
+    # R390 · shownChrome 从 if/else 扩成 when：目录页书名覆盖不变，
+    # 新增 SETTINGS 按当前子页写唯一标题；两条都在同一张返回表口径里。
     for k in ["val chapterBookTitle = remember(bookId, refresh)",
               "chrome.copy(title = chapterBookTitle)",
-              "val shownChrome = if (screen == Screen.CHAPTERS)",
+              "val shownChrome = when (screen) {",
+              "Screen.SETTINGS -> chrome.copy(",
+              "settingsPageTitle(settingsPage))",
+              "else -> chrome",
               "spec = shownChrome,"]:
         if k not in mg: e.append("App 层书名覆盖缺: " + k[:60])
     # ② 重新分章不占顶栏、能力不丢

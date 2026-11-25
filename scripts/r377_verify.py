@@ -126,7 +126,9 @@ def check(s=None):
         if r.get(k) != v: e.append('契约 relay.%s 不对' % k)
     if 'const val POLL_MS = 4000L' not in s['const'] or 'const val IDLE_POLL_MS = 10000L' not in s['const']:
         e.append('轮询常量与契约不一致')
-    if 'import com.tingben.app.relay.RelayScreen' not in s['settings'] or 'page = "relay"' not in s['settings']:
+    # R390 · 子页状态上提到 App 层，入口改成 onPageChange 上报；能力不放宽。
+    if 'import com.tingben.app.relay.RelayScreen' not in s['settings'] or \
+            'onPageChange("relay")' not in s['settings']:
         e.append('设置页跨网中继入口被摘')
     if '"relay" -> "跨网中继"' not in s['settings']:
         e.append('设置页标题被摘')
@@ -158,7 +160,7 @@ INJECT = [
     ('另造合成链', 'service', 'GatewaySynth.speak(this, text, 0)', 'FakeSynth.speak(this, text)'),
     ('并发等待被摘', 'service', 'if (r.busy)', 'if (false)'),
     ('上限改成 2000', 'const', 'const val MAX_CHARS = 1500', 'const val MAX_CHARS = 2000'),
-    ('设置页入口被摘', 'settings', 'page = "relay"', 'page = ""'),
+    ('设置页入口被摘', 'settings', 'onPageChange("relay")', 'onPageChange("")'),
     ('CI 漏挂', 'ci', 'python3 scripts/r377_verify.py', ''),
     ('APK 闸门回潮旧口径', 'ci', 'R375 起 INTERNET 应存在', 'APK 含 INTERNET 权限'),
     ('现行清单漏登记', 'r135', '"r377_verify.py"', ''),

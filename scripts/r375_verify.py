@@ -152,7 +152,9 @@ def check(s=None):
     # ⑥ 设置页 / 登记 / 模拟器
     if 'import com.tingben.app.gateway.GatewayScreen' not in s['settings']:
         e.append('设置页没引入网关页')
-    if 'page = "gateway"' not in s['settings'] or '"gateway" -> "语音网关"' not in s['settings']:
+    # R390 · 子页状态上提到 App 层，入口改成 onPageChange 上报；能力不放宽。
+    if 'onPageChange("gateway")' not in s['settings'] or \
+            '"gateway" -> "语音网关"' not in s['settings']:
         e.append('设置页网关入口或标题没接')
     if '"r375_verify.py"' not in s['r135']:
         e.append('现行验证清单漏登记 r375_verify.py')
@@ -181,7 +183,7 @@ INJECT = [
     ('网关默认开', 'prefs', 'getBoolean("enabled", false)', 'getBoolean("enabled", true)'),
     ('默认绑公网', 'const', 'const val DEFAULT_BIND = "127.0.0.1"',
      'const val DEFAULT_BIND = "0.0.0.0"'),
-    ('设置页入口被摘', 'settings', 'page = "gateway"', 'page = ""'),
+    ('设置页入口被摘', 'settings', 'onPageChange("gateway")', 'onPageChange("")'),
     ('CI 漏挂', 'ci', 'python3 scripts/r375_verify.py', ''),
     ('音色字段不再丢弃', 'service', 'IGNORED_FIELDS.count', '0 * IGNORED_FIELDS.count'),
 ]

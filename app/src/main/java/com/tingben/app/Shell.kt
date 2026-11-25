@@ -101,7 +101,9 @@ internal fun chromeOf(s: Screen): ChromeSpec = when (s) {
     // 标题由 App 层按 bookId 覆盖；这里留空串占位。
     Screen.CHAPTERS -> ChromeSpec("", TAB_LIBRARY, canBack = true)
     Screen.TASKS    -> ChromeSpec("任务", TAB_TASKS, canBack = true)
-    Screen.SETTINGS -> ChromeSpec("设置", canBack = true)
+    // R390 · 标题留空：由 App 层按当前设置子页填（首页＝设置，子页＝页名），
+    // 顶栏只留「返回箭头 + 一行标题」，不再叠第二条大标题。
+    Screen.SETTINGS -> ChromeSpec("", canBack = true)
     Screen.MODELS   -> ChromeSpec("模型", canBack = true)
 }
 

@@ -182,6 +182,8 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
     var miniBook by rememberSaveable { mutableStateOf<String?>(null) }
     var lastSelection by rememberSaveable { mutableStateOf<Set<Int>?>(null) }
     var refresh by rememberSaveable { mutableStateOf(0) }
+    // R390 · 当前设置子页；空串＝设置首页。主顶栏标题与返回箭头都读它。
+    var settingsPage by rememberSaveable { mutableStateOf("") }
     // R180 · 新装用户打开软件第一眼就该知道「还差模型」，而不是等点合成才撞墙。
     // 只给状态 + 一个能按的入口，不写教程（用户硬口径）；模型齐了整行自动消失。
     val modelMissing = remember(refresh) { ModelStore.missing(ctx).size }
@@ -259,8 +261,15 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             nav.clear()
         }
     }
-    val backAction: () -> Unit = { goBack() }
-    BackHandler(enabled = canGoBack(screen) || nav.canPop()) { goBack() }
+    // R390 · 设置二级页的返回箭头先回设置首页，不要一下弹回书架；
+    // 设置首页再按原来的 goBack 走。系统返回键也走同一个出口，优先级一致。
+    val backAction: () -> Unit = {
+        if (screen == Screen.SETTINGS && settingsPage.isNotEmpty()) {
+            EventLog.ui("BACK", "from=SETTINGS_SUB:$settingsPage")
+            settingsPage = ""
+        } else goBack()
+    }
+    BackHandler(enabled = canGoBack(screen) || nav.canPop()) { backAction() }
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
     }
@@ -582,8 +591,14 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
         bookId?.let { bid -> BookStore.list(ctx).find { it.id == bid }?.title } ?: ""
     }
     val chrome = chromeOf(screen)
-    val shownChrome = if (screen == Screen.CHAPTERS)
-        chrome.copy(title = chapterBookTitle) else chrome
+    // R390 · 设置子页状态上提到 App 层：主顶栏直接写当前页名（「请求文本」等），
+    // 设置页自己不再画第二条标题行；返回箭头先回设置首页再回书架。
+    val shownChrome = when (screen) {
+        Screen.CHAPTERS -> chrome.copy(title = chapterBookTitle)
+        Screen.SETTINGS -> chrome.copy(
+            title = if (settingsPage.isEmpty()) "设置" else settingsPageTitle(settingsPage))
+        else -> chrome
+    }
     // R352 · 停止 / 继续 / 开始从右上角小图标收进目录页进度卡下面那一排等大按钮：
     // 状态由 ChapterHub 自己按同一份 Producer/TaskResume 真值算，App 层不再重复算一份，
     // 也不再留一组只服务于两枚顶栏图标的局部函数。
@@ -602,6 +617,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 onSettings = {
                     EventLog.ui("DRAWER_SETTINGS", "open")
                     modelsFrom = Screen.LIBRARY
+                    settingsPage = ""
                     nav.push(Screen.SETTINGS)
                     refresh++
                     scope.launch { drawerState.close() }
@@ -640,6 +656,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
             onSettings = {
                 EventLog.ui("TOP_SETTINGS", "open")
                 modelsFrom = Screen.LIBRARY
+                settingsPage = ""
                 nav.push(Screen.SETTINGS)
                 refresh++
             },
@@ -721,7 +738,7 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                     onDone = { nav.clear(); openBook(bookId); refresh++ },
                     onStarted = { lastSelection = it },
                     onResplit = { nav.pop(); resplitTick++ },
-                    onSettings = { nav.push(Screen.SETTINGS) })
+                    onSettings = { settingsPage = ""; nav.push(Screen.SETTINGS) })
                 Screen.TASKS -> TaskCenterScreen(ctx, refresh,
                     onOpenTask = { id -> openBook(id) },
                     onProgress = { id -> openBook(id) },
@@ -730,7 +747,9 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 Screen.SETTINGS -> SettingsScreen(ctx, refresh,
                     onModels = { modelsFrom = Screen.SETTINGS; nav.push(Screen.MODELS) },
                     onLibrary = { screen = Screen.LIBRARY; nav.clear() },
-                    onMixer = { chapterMixerOpen = true; mixerFrom = "settings"; EventLog.ui("OVERLAY_MIXER", "open:settings") })
+                    onMixer = { chapterMixerOpen = true; mixerFrom = "settings"; EventLog.ui("OVERLAY_MIXER", "open:settings") },
+                    page = settingsPage,
+                    onPageChange = { settingsPage = it })
                 Screen.MODELS -> ModelScreen(ctx, refresh,
                     importing = importing, importBytes = importBytes, importError = importError,
                     onPick = { pickModel.launch(arrayOf("*/*")) },

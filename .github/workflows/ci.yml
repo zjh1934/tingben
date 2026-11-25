@@ -605,6 +605,10 @@ jobs:
         run: python3 scripts/r388_verify.py
       - name: R388 反向注入
         run: python3 scripts/r388_verify.py --selftest
+      - name: R390 唯一顶栏 / 整宽选项卡 / 说明降级
+        run: python3 scripts/r390_verify.py
+      - name: R390 反向注入
+        run: python3 scripts/r390_verify.py --selftest
       - name: R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库
         run: python3 scripts/r357_verify.py
       - name: R357 反向注入

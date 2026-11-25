@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -18,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -28,35 +30,45 @@ import com.tingben.app.diag.EventLog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 /**
- * R387 · 「请求文本」独立页（设置分类第八个入口）。
+ * R390 · 「请求文本」页改版（1.1.52 真机截图实证的问题）。
  *
- * 按 R354「首页只列入入口、子页各自成页」；按 R370 全站 Hi* 层级令牌；
- * 按 R383 **不自带 verticalScroll / LazyColumn** —— 设置页外壳是唯一滚动层，
- * 这里只铺普通 Column，展开到 100 条也只是把外壳撑长，不制造 infinity 高度。
- *
- * 一个外框卡片里左右两列：左＝跨网中继，右＝语音网关，默认各 10 条、可展开。
- * 每条：点一下展开全文、一枚「复制」；多选态给勾选位 +「复制选中 / 删除选中」；
- * 「一键清空」带二次确认。只展示文本，不展示音频、不回显 Token。
+ * ① 两个渠道不再「中间劈开左右并排」：改成整宽选项卡，点一下或左右滑都能切换，
+ *    当前渠道铺满横屏，列表是这一页的重点。截图中右列 0 条空半屏的难看形态消失。
+ * ② 说明文字不折叠、不藏小问号，但降级成页面底部两行微字：不占首屏、不抢列表，
+ *    主次一眼分明。按 R370 全站 Hi* 令牌；按 R383 不自带滚动，外壳是唯一滚动层。
+ * ③ 功能守恒：每条一键复制 / 展开全文、默认 10 条可展开到 100、一键复制、
+ *    多选（复制选中 / 删除选中）、一键清空带二次确认、两渠道一起清。
  */
 @Composable
 internal fun ArchiveScreen(c: Context) {
     var tick by remember { mutableStateOf(0) }
-    var relayMore by remember { mutableStateOf(false) }
-    var gatewayMore by remember { mutableStateOf(false) }
+    // 0＝跨网中继，1＝语音网关；只有一个「当前渠道」，不再两列并存
+    var tab by remember { mutableStateOf(0) }
+    var more by remember { mutableStateOf(false) }
     var selecting by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf(setOf<String>()) }
     var openId by remember { mutableStateOf("") }
     var askClear by remember { mutableStateOf(false) }
+    var dragX by remember { mutableStateOf(0f) }
     val clip = LocalClipboardManager.current
 
     val counts = remember(tick) { RequestArchive.counts(c) }
-    val relay = remember(tick, relayMore) {
-        RequestArchive.show(c, RequestArchive.SRC_RELAY, relayMore)
-    }
-    val gateway = remember(tick, gatewayMore) {
-        RequestArchive.show(c, RequestArchive.SRC_GATEWAY, gatewayMore)
+    val source = if (tab == 0) RequestArchive.SRC_RELAY else RequestArchive.SRC_GATEWAY
+    val channelName = if (tab == 0) "跨网中继" else "语音网关"
+    val total = if (tab == 0) counts.first else counts.second
+    val items = remember(tick, tab, more) { RequestArchive.show(c, source, more) }
+
+    fun goTab(next: Int) {
+        if (next == tab || next !in 0..1) return
+        tab = next
+        more = false
+        openId = ""
+        picked = emptySet()
+        selecting = false
+        EventLog.log(EventLog.Kind.UI, "ARCHIVE_TAB", if (next == 0) "跨网中继" else "语音网关")
     }
 
     fun refresh() {
@@ -66,7 +78,7 @@ internal fun ArchiveScreen(c: Context) {
 
     fun copy(entries: List<RequestArchive.Entry>) {
         if (entries.isEmpty()) {
-            Toast.makeText(c, "这一列还没有请求文本", Toast.LENGTH_SHORT).show()
+            Toast.makeText(c, "这个渠道还没有请求文本", Toast.LENGTH_SHORT).show()
             return
         }
         val s = RequestArchive.copyText(entries)
@@ -88,20 +100,20 @@ internal fun ArchiveScreen(c: Context) {
                     if (selecting) picked = if (checked) picked - e.id else picked + e.id
                     else openId = if (isOpen) "" else e.id
                 }
-                .padding(horizontal = 8.dp, vertical = 7.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.Top
         ) {
             if (selecting) {
                 Checkbox(checked = checked, onCheckedChange = {
                     picked = if (it) picked + e.id else picked - e.id
                 }, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(6.dp))
             }
             Column(Modifier.weight(1f)) {
                 Text(e.text, fontSize = HiCaptionSp, color = palette.text,
                     maxLines = if (isOpen) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                     .format(Date(e.ts)) + " · " + e.chars + " 字",
                     fontSize = HiMicroSp, color = palette.sub)
@@ -111,39 +123,82 @@ internal fun ArchiveScreen(c: Context) {
                     clip.setText(AnnotatedString(e.text))
                     EventLog.log(EventLog.Kind.PIPELINE, "ARCHIVE_COPY", "复制 1 条")
                     Toast.makeText(c, "已复制", Toast.LENGTH_SHORT).show()
-                }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                    modifier = Modifier.height(26.dp)) {
+                }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)) {
                     Text("复制", fontSize = HiMicroSp)
                 }
             }
         }
     }
 
+    /** R390 · 选项卡：当前项主色加粗 + 底部指示条；两枚等宽，铺满整行。 */
     @Composable
-    fun ColumnScope.Channel(
-        title: String, badge: String, source: String,
-        items: List<RequestArchive.Entry>, total: Int, more: Boolean,
-        onMore: (Boolean) -> Unit
-    ) {
+    fun TabChip(mod: Modifier, title: String, n: Int, sel: Boolean, go: () -> Unit) {
+        Box(mod.height(42.dp)
+            .clip(RoundedCornerShape(HiChipRadius))
+            .background(palette.primarySoft.copy(alpha = if (sel) 1f else 0f))
+            .border(1.dp, if (sel) palette.primary else palette.line,
+                RoundedCornerShape(HiChipRadius))
+            .clickable(onClick = go),
+            contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("$title · $n", fontSize = HiCaptionSp,
+                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                    color = if (sel) palette.primary else palette.sub,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(3.dp))
+                Box(Modifier.width(26.dp).height(2.dp)
+                    .background(if (sel) palette.primary else palette.line))
+            }
+        }
+    }
+
+    // ① 选项卡行：点一下切换；列表区还能左右滑切换，整宽铺满
+    CardBox {
+        Row(Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TabChip(Modifier.weight(1f), "跨网中继", counts.first, tab == 0) { goTab(0) }
+            TabChip(Modifier.weight(1f), "语音网关", counts.second, tab == 1) { goTab(1) }
+        }
+    }
+
+    Spacer(Modifier.height(HiSectionGap))
+
+    // ② 主区：当前渠道铺满整宽，是这一页的重点。横滑 >60dp 切到另一渠道。
+    CardBox(Modifier.pointerInput(tab) {
+        detectDragGestures(
+            onDragStart = { dragX = 0f },
+            onDrag = { change, drag ->
+                // 只认横向：竖向滚动留给外壳唯一那层，不抢
+                if (abs(drag.x) > abs(drag.y)) { dragX += drag.x; change.consume() }
+            },
+            onDragEnd = {
+                if (abs(dragX) > 60f) goTab(if (dragX < 0f) 1 else 0)
+                dragX = 0f
+            }
+        )
+    }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
-                color = palette.primary, modifier = Modifier.weight(1f),
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(badge, fontSize = HiMicroSp, color = palette.sub)
+            Text(channelName, fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
+                color = palette.text, modifier = Modifier.weight(1f))
+            Text("共 $total 条", fontSize = HiMicroSp, color = palette.sub)
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         if (items.isEmpty()) {
-            Text("还没有请求", fontSize = HiMicroSp, color = palette.sub)
-            Spacer(Modifier.height(8.dp))
-            Text("这一列空着", fontSize = HiMicroSp, color = palette.sub)
-            return@Channel
-        }
-        for (e in items) {
-            EntryCard(e)
-            Spacer(Modifier.height(6.dp))
+            CardBox {
+                Text("还没有请求", fontSize = HiCaptionSp, color = palette.sub)
+                Spacer(Modifier.height(4.dp))
+                Text("这个渠道收到合成请求后，文字会留在这里。",
+                    fontSize = HiMicroSp, color = palette.sub)
+            }
+        } else {
+            for (e in items) {
+                EntryCard(e)
+                Spacer(Modifier.height(8.dp))
+            }
         }
         if (total > RequestArchive.DEFAULT_SHOW) {
-            TextButton(onClick = { onMore(!more) },
+            TextButton(onClick = { more = !more },
                 contentPadding = PaddingValues(horizontal = 4.dp)) {
                 Text(if (more) "只看最近 10 条 ⌃" else "展开全部 $total 条 ›",
                     fontSize = HiMicroSp)
@@ -152,40 +207,7 @@ internal fun ArchiveScreen(c: Context) {
         if (!selecting) {
             TextButton(onClick = { copy(RequestArchive.list(c, source)) },
                 contentPadding = PaddingValues(horizontal = 4.dp)) {
-                Text("复制本列", fontSize = HiMicroSp)
-            }
-        }
-    }
-
-    // ① 板块头：一句话说清只留文本、两个渠道、不进诊断
-    CardBox {
-        Text("请求文本", fontSize = HiSectionSp, fontWeight = FontWeight.Bold,
-            color = palette.text)
-        Spacer(Modifier.height(5.dp))
-        Text("每次过来合成的请求，只留下文字；音频与中间文件都不留。"
-            + "左边是跨网中继，右边是局域网网关，默认各 10 条。",
-            fontSize = HiCaptionSp, color = palette.sub)
-        Spacer(Modifier.height(4.dp))
-        Text("存在本机私有区，不进诊断日志、不进导出的日志、不备份；"
-            + "最多各留 100 条，超了自动丢最老。",
-            fontSize = HiMicroSp, color = palette.sub)
-    }
-
-    Spacer(Modifier.height(HiSectionGap))
-
-    // ② 一个外框里左右两列
-    CardBox {
-        Row(Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.weight(1f)) {
-                Channel("跨网中继", "共 ${counts.first} 条",
-                    RequestArchive.SRC_RELAY, relay, counts.first, relayMore,
-                    { relayMore = it })
-            }
-            Column(Modifier.weight(1f)) {
-                Channel("语音网关", "共 ${counts.second} 条",
-                    RequestArchive.SRC_GATEWAY, gateway, counts.second, gatewayMore,
-                    { gatewayMore = it })
+                Text("复制本渠道", fontSize = HiMicroSp)
             }
         }
     }
@@ -201,7 +223,7 @@ internal fun ArchiveScreen(c: Context) {
                          RequestArchive.list(c, RequestArchive.SRC_GATEWAY))
                 }, Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(50)) {
-                    Text("一键复制", fontSize = HiCaptionSp)
+                    Text("一键复制全部", fontSize = HiCaptionSp)
                 }
                 OutlinedButton(onClick = { selecting = true; openId = "" },
                     Modifier.weight(1f).height(40.dp),
@@ -243,12 +265,22 @@ internal fun ArchiveScreen(c: Context) {
         }
     }
 
+    Spacer(Modifier.height(HiSectionGap))
+
+    // ④ 说明降级：不折叠、不藏小问号，直接压成页面底部两行微字。
+    // 列表是重点，说明是次要信息，主次一眼分得清。
+    Text("只留文字，音频与中间文件都不留；存在本机私有区，不进诊断日志、不进导出的日志、不备份。",
+        fontSize = HiMicroSp, color = palette.sub)
+    Spacer(Modifier.height(3.dp))
+    Text("每个渠道默认看最近 10 条，最多各留 100 条，超了自动丢最老。",
+        fontSize = HiMicroSp, color = palette.sub)
+
     if (askClear) {
         AlertDialog(
             onDismissRequest = { askClear = false },
             title = { Text("清空全部请求文本？", fontSize = HiSectionSp) },
             text = {
-                Text("两列一起清掉，共 " + (counts.first + counts.second) +
+                Text("跨网中继和语音网关一起清掉，共 " + (counts.first + counts.second) +
                     " 条。只删文字留存，不影响合成功能，也不删任何音频。",
                     fontSize = HiCaptionSp)
             },

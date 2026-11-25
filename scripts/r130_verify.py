@@ -39,7 +39,12 @@ POS = {
         "fun goBack() {",
         "if (nav.canPop()) nav.pop()",
         "screen = backTargetOf(screen, modelsFrom)",
-        "val backAction: () -> Unit = { goBack() }",
+        # R390 · backAction 仍是全局唯一回退出口，但设置二级页先回设置首页，
+        # 再按原 goBack 回来源页；系统返回键与顶栏箭头走同一个出口。
+        "val backAction: () -> Unit = {",
+        "if (screen == Screen.SETTINGS && settingsPage.isNotEmpty()) {",
+        "} else goBack()",
+        "BackHandler(enabled = canGoBack(screen) || nav.canPop()) { backAction() }",
         "onBack = if (chrome.canBack) backAction else null",
         "canBack = true",
     ],
@@ -84,6 +89,7 @@ def selftest():
         "栈空不按表兜底": ("main", "screen = backTargetOf(screen, modelsFrom)"),
         "根级页判定被摘": ("main", "private fun canGoBack(s: Screen): Boolean = s !in ROOT_SCREENS"),
         "顶栏不接统一出口": ("main", "onBack = if (chrome.canBack) backAction else null"),
+        "返回箭头跳过设置首页": ("main", "screen == Screen.SETTINGS && settingsPage.isNotEmpty()"),
         "二级页没标 canBack": ("main", "canBack = true"),
     }
     bad = 0
