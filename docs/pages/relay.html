@@ -18,7 +18,7 @@ audio{width:100%;margin-top:10px}.note{font-size:12px;color:#666}a{color:#2f6fed
 <div id="s">还没提交。</div>
 <audio id="a" controls></audio>
 <p class="note">文字经过私有 GitHub 仓库，手机合成完立刻删请求文件；Token 只给这一个仓库。异步，几秒到十几秒。
-手机要开着「设置 → 跨网中继」。</p>
+手机要开着「设置 → 跨网中继」；远端请求优先于整本制作，书会在当前音频小块结束后让路。</p>
 <script>
 const $=id=>document.getElementById(id);
 const API=()=> 'https://api.github.com/repos/'+$('o').value.trim()+'/'+$('r').value.trim();
@@ -45,8 +45,8 @@ async function go(){
    if(!st.data||!st.data.content)continue;
    const j=JSON.parse(un64(st.data.content));
    if(j.state==='failed')throw new Error('手机侧合成失败：'+(j.reason||'无原因'));
-   // R401 · 手机正在做整本书 / 试听 / 另一条请求：排队中，不是失败。
-   if(j.state==='busy'){$('s').textContent='手机正忙（'+(j.reason||'本机在合成')+'），请求留着排队，忙完自动补…';continue;}
+   // R401/R405 · 手机正在处理另一批合成（远端整批优先，书在段边界让路）：请求留着，不是失败。
+   if(j.state==='busy'){$('s').textContent='手机正处理另一批合成（'+(j.reason||'稍候')+'），请求留着不丢，忙完自动补…';continue;}
    if(j.state!=='done')continue;
    $('s').textContent='手机合成并压缩好了，正在取回…';
    let raw;
