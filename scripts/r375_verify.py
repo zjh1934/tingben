@@ -8,7 +8,11 @@ D1 加 INTERNET 但零出站 / D2 本轮只本机+局域网 / D4 手写 ServerSo
 D6 复用 ClipSynth / D7 音色只读本机 / D8 并发锁 1。
 
 钉住七件事：
-  ① 清单含 INTERNET + specialUse 服务，且**源码零出站网络客户端调用**
+  ① 清单含 INTERNET + specialUse 服务；除 R377 `relay/`（手动开启）
+     与 R408 `core/UpdateChecker.kt`（仅在用户打开关于页时读公开 atom）
+     两处显式白名单外，**源码零出站网络客户端调用**。
+     R408 的更新检查由 r408_verify.py 与 r375 本守门双重约束：
+     固定 jsdelivr 单源、GET、24h 节流、不带 Token / 设备标识、日志只记码与耗时。
   ② 契约 JSON 与 GatewayContract.kt 逐项对齐（含 MAX_CHARS=ClipSynth.MAX_CHARS）
   ③ 错误体一律 problem+json，除内置网页外零 HTML 响应
   ④ 合成只经 ClipSynth.synthesize，请求里的音色字段静默丢弃
@@ -33,8 +37,11 @@ GW = APP / 'gateway'
 def sources():
     # R377 · relay/ 是唯一允许主动出站的面，零出站守门按包排除，
     # 由 r377_verify.py 单独守「只连 api.github.com / 正文即用即删」。
+    # R408 · UpdateChecker 是第三处显式白名单：与 relay 一样单独守，
+    # 不混进「其余源码零出站」的合并串里，避免新能力把老判据撞红。
     kt = '\n'.join(p.read_text(encoding='utf-8', errors='replace')
-                   for p in sorted((APP).rglob('*.kt')) if 'relay' not in p.parts)
+                   for p in sorted((APP).rglob('*.kt'))
+                   if 'relay' not in p.parts and p.name != 'UpdateChecker.kt')
     return {
         'manifest': (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8'),
         'contract': (ROOT / 'contracts/gateway_contract.json').read_text(encoding='utf-8'),
@@ -50,6 +57,8 @@ def sources():
         'r135': (ROOT / 'scripts/r135_verify.py').read_text(encoding='utf-8'),
         'ci': (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8'),
         'sim': (ROOT / 'scripts/gateway_sim.py').read_text(encoding='utf-8'),
+        'update': (APP / 'core/UpdateChecker.kt').read_text(encoding='utf-8'),
+        'about': (APP / 'AboutUi.kt').read_text(encoding='utf-8'),
     }
 
 
@@ -75,6 +84,24 @@ def check(s=None):
             e.append('零出站被破：出现 ' + bad)
     if re.search(r'(?<!Server)Socket\(', s['allkt']):
         e.append('零出站被破：出现客户端 Socket( 调用')
+
+    # R408 · 第三处白名单不是「放开出站」，而是把它锁成一条只读公开文件：
+    # 固定 jsdelivr 单源 / GET / 24h 节流 / 零凭据 / 零设备标识 / 响应体不落盘。
+    u = s['update']
+    for tok in ['const val FEED = "https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom"',
+                'conn.requestMethod = "GET"', 'THROTTLE_MS = 24L',
+                'setRequestProperty("User-Agent"', '"code=$code ms=$ms cache=$cache latest=$latest src=$CURRENT_SOURCE"']:
+        if tok not in u: e.append('R408 更新检查缺: ' + tok[:58])
+    for ban in ['raw.githubusercontent.com', 'api.github.com',
+                'setRequestProperty("Authorization"', 'setRequestProperty("Referer"',
+                'conn.requestMethod = "POST"', 'RelayPrefs.token', 'getDeviceId',
+                'getSubscriberId', 'Build.SERIAL']:
+        if ban in u: e.append('R408 更新请求带了不该带的: ' + ban)
+    if 'LaunchedEffect(Unit) { recheck(false) }' not in s['about'] or \
+            'recheck(true)' not in s['about']:
+        e.append('R408 检查更新不是「进页节流自动 + 手动强制」')
+    for bad in ('HttpURLConnection', '.openConnection(', 'new URL('):
+        if bad in s['about']: e.append('R408 关于页自己开了出站连接')
 
     # ② 契约 ↔ Kotlin 常量
     pairs = [
@@ -186,6 +213,13 @@ INJECT = [
     ('设置页入口被摘', 'settings', 'onPageChange("gateway")', 'onPageChange("")'),
     ('CI 漏挂', 'ci', 'python3 scripts/r375_verify.py', ''),
     ('音色字段不再丢弃', 'service', 'IGNORED_FIELDS.count', '0 * IGNORED_FIELDS.count'),
+    ('更新源改回 raw', 'update',
+     'https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom',
+     'https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/updates.atom'),
+    ('更新请求改成 POST', 'update', 'conn.requestMethod = "GET"', 'conn.requestMethod = "POST"'),
+    ('更新请求带凭据', 'update', 'setRequestProperty("User-Agent"',
+     'setRequestProperty("Authorization", "token x")\n            setRequestProperty("User-Agent"'),
+    ('24h 节流被摘', 'update', 'THROTTLE_MS = 24L', 'THROTTLE_MS = 0L'),
 ]
 
 

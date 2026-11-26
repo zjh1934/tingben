@@ -1,8 +1,5 @@
 package com.tingben.app
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
@@ -291,6 +288,9 @@ internal fun AppDrawerSheet(
     sub: Color,
     content: @Composable () -> Unit
 ) {
+    // R408 · 版本号不再是「一次性跳浏览器」：点它进「关于听本」页。
+    // 外链、检查更新、诊断、发版说明、兜底面板全在那一页里，抽屉只负责开门。
+    var showAbout by remember { mutableStateOf(false) }
     ModalDrawerSheet(
         modifier = Modifier.requiredWidth(272.dp),
         drawerContainerColor = surface
@@ -311,14 +311,13 @@ internal fun AppDrawerSheet(
                 Text("＋ 导入一本书", fontSize = HiSectionSp)
             }
             Box(Modifier.weight(1f)) { content() }
-            // R357 · 设置与版本号同一行、各占一半宽。版本号不再是一行点不动的小字：
-            // 点它用外部浏览器打开项目仓库主页。应用本身零出站、零上传
-            // （R375 起 INTERNET 仅用于用户手动开启、默认关闭的本机网关监听），
-            // 联网由浏览器负责，「纯离线」口径不变；打不开给中文兜底、不静默吞掉。
+            // R357 / R408 · 设置与版本号同一行、各占一半宽，44dp 视觉令牌守恒。
+            // R408 起点版本号进「关于听本」页：不再把唯一出口押在外部浏览器上，
+            // 无浏览器机型也不会再被一句无法操作的提示挡在门外。
+            // 项目主页外链降级为关于页内一行，失败走复制/重试/分享/诊断兜底面板。
             Box(Modifier.fillMaxWidth().height(1.dp)
                 .background(sub.copy(alpha = 0.18f)))
             val ctx = androidx.compose.ui.platform.LocalContext.current
-            val repo = "https://github.com/zjh1934/tingben"
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.weight(1f).height(44.dp)
@@ -334,19 +333,10 @@ internal fun AppDrawerSheet(
                 }
                 Row(Modifier.weight(1f).height(44.dp)
                     .background(primary.copy(alpha = 0.10f), RoundedCornerShape(HiChipRadius))
-                    .clickable {
-                        val i = Intent(Intent.ACTION_VIEW, Uri.parse(repo))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        try {
-                            if (i.resolveActivity(ctx.packageManager) != null) ctx.startActivity(i)
-                            else Toast.makeText(ctx,
-                                "没找到浏览器，可手动打开 github.com/zjh1934/tingben",
-                                Toast.LENGTH_LONG).show()
-                        } catch (_: Throwable) {
-                            Toast.makeText(ctx,
-                                "打开失败，可手动打开 github.com/zjh1934/tingben",
-                                Toast.LENGTH_LONG).show()
-                        }
+                    .clickable { showAbout = true }
+                    .semantics {
+                        contentDescription = "关于听本，版本 " +
+                            com.tingben.app.BuildConfig.VERSION_NAME
                     }
                     .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -357,6 +347,7 @@ internal fun AppDrawerSheet(
                         fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = primary)
                 }
             }
+            if (showAbout) AboutScreen(ctx) { showAbout = false }
         }
     }
 }

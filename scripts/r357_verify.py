@@ -6,9 +6,10 @@
 · 播放器：小封面卡 / 细轨实心 thumb / 总时长 / 顶栏队列入口带条数 /
   模式与五档倍速并成等宽小 chip 工具条 / 主控制行三枚等距 /
   上扒跟手与下滑淡出守恒 / 右下浮胶囊与顶栏废话零回潮。
-· 抽屉：设置与版本号同一行、各占一半宽；版本号点击用外部浏览器打开
-  项目仓库主页，先 resolveActivity、打不开给中文兜底；
-  外链图标代码自绘；R375 起 INTERNET 仅用于用户手动开启的本机网关，App 仍零出站、零上传。
+· 抽屉：设置与版本号同一行、各占一半宽（44dp 视觉令牌守恒）；
+  R408 起版本号点击进「关于听本」页，不再把唯一出口押在外部浏览器上；
+  外链降级为关于页内一行，失败走「复制 / 重试 / 分享 / 诊断」兜底面板，
+  绝不弹无法操作的死路提示。外链图标代码自绘；App 默认零出站、零上传。
 
 沙盒无 Android SDK，静态绿 != 编译过；真编译由 CI 负责。
 用法：python3 scripts/r357_verify.py [--selftest]
@@ -23,6 +24,7 @@ FILES = {
     "manifest": ROOT / "app/src/main/AndroidManifest.xml",
     "ci": ROOT / ".github/workflows/ci.yml",
     "r135": ROOT / "scripts/r135_verify.py",
+    "about": APP / "AboutUi.kt",
 }
 
 POS = {
@@ -46,15 +48,24 @@ POS = {
     "chrome": [
         "private fun RepoLinkGlyph(tint: Color)",
         "RepoLinkGlyph(primary)",
-        "val repo = \"https://github.com/zjh1934/tingben\"",
-        "Intent(Intent.ACTION_VIEW, Uri.parse(repo))",
-        "Intent.FLAG_ACTIVITY_NEW_TASK",
-        "i.resolveActivity(ctx.packageManager)",
-        "Toast.makeText(ctx,",
+        "var showAbout by remember { mutableStateOf(false) }",
+        ".clickable { showAbout = true }",
+        "if (showAbout) AboutScreen(ctx) { showAbout = false }",
+        "contentDescription = \"关于听本，版本 \"",
         "Text(\"v\" + com.tingben.app.BuildConfig.VERSION_NAME,",
         "UiIconGlyph(UiIcon.SETTINGS, primary, 18.dp)",
         ".clickable { onSettings() }",
         "horizontalArrangement = Arrangement.spacedBy(8.dp)",
+    ],
+    "about": [
+        "private const val REPO = \"https://github.com/zjh1934/tingben\"",
+        "Intent(Intent.ACTION_VIEW, Uri.parse(url))",
+        "catch (_: Throwable) {",
+        "SelectionContainer {",
+        "\"重试打开\"", "\"分享链接\"", "\"复制诊断信息\"",
+        "这台设备暂时打不开网页",
+        "UpdateChecker.check(c, force)",
+        "changelogSections(c)",
     ],
     "ci": ["python3 scripts/r357_verify.py --selftest"],
     "r135": ['"r357_verify.py"'],
@@ -72,6 +83,14 @@ BAN = {
     "chrome": [
         'Text("听本 · " + com.tingben.app.BuildConfig.VERSION_NAME',
         'Text("›", fontSize = 16.sp, color = sub)',
+        # R408 · 旧形态回潮即红：版本号又变回纯外链 / 死路 toast
+        'Intent(Intent.ACTION_VIEW, Uri.parse(repo))',
+        '没找到浏览器',
+    ],
+    "about": [
+        '没找到浏览器',
+        'WebView(',
+        'CustomTabsIntent',
     ],
     "manifest": ["android.permission.READ_SMS"],
 }
@@ -102,12 +121,18 @@ def selftest():
     f = load()
     assert not check(f), "基线自己就红了，先修基线"
     cuts = [
-        ("仓库地址被摘", "chrome",
-         'val repo = "https://github.com/zjh1934/tingben"', 'val repo = ""'),
-        ("版本号不再跳仓库", "chrome",
-         "Intent(Intent.ACTION_VIEW, Uri.parse(repo))", "Intent(Intent.ACTION_VIEW)"),
-        ("防崩解析被摘", "chrome",
-         "i.resolveActivity(ctx.packageManager)", "true"),
+        ("仓库地址被摘", "about",
+         'private const val REPO = "https://github.com/zjh1934/tingben"',
+         'private const val REPO = ""'),
+        ("版本号又变回纯外链", "chrome",
+         ".clickable { showAbout = true }", ".clickable { }"),
+        ("关于页入口被摘", "chrome",
+         "if (showAbout) AboutScreen(ctx) { showAbout = false }", ""),
+        ("读屏文案被摘", "chrome",
+         'contentDescription = "关于听本，版本 "', 'contentDescription = ""'),
+        ("外链 try-catch 被摘", "about",
+         "Intent(Intent.ACTION_VIEW, Uri.parse(url))", "Intent(Intent.ACTION_VIEW)"),
+        ("兜底面板被摘", "about", "这台设备暂时打不开网页", ""),
         ("外链图标调用被摘", "chrome", "RepoLinkGlyph(primary)", ""),
         ("外链图标定义被摘", "chrome",
          "private fun RepoLinkGlyph(tint: Color)", "private fun NothingHere()"),
@@ -157,7 +182,7 @@ def main():
         for x in e:
             print(" -", x)
         return 1
-    print("R357 播放器重设计 / 抽屉同行双按钮 / 版本号跳仓库：PASS")
+    print("R357 播放器重设计 / 抽屉同行双按钮 / 版本号进关于页：PASS")
     return 0
 
 

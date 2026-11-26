@@ -8,7 +8,7 @@ app-debug.apk，分不清谁是谁。发版时同时放两份同字节文件：
   app-debug.apk        ← 兼容旧名，只给还没刷新的老直链兜底，不再新增混淆
 订阅源只推主名，所以下载器以后下到的文件名一定带软件名和版本号。
 """
-import base64, json, os, pathlib, sys, urllib.request, urllib.error
+import base64, html, json, os, pathlib, re, sys, urllib.request, urllib.error
 
 T = os.environ.get("GH_PAT")
 if not T: sys.exit("缺少 GH_PAT")
@@ -54,6 +54,22 @@ if VER == "unknown" or "app-debug" in APK_NAME or VER not in APK_NAME:
     sys.exit("安装包名没带软件名+版本：" + APK_NAME)
 NOW = __import__("datetime").datetime.now(
     __import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+# R408 · atom 每条 entry 带一段纯文本本版说明：App 的「更新了什么」与网页侧
+# 共用一份文案。从随仓 CHANGELOG 的本版段取前 10 行，XML 转义、控制长度；
+# 取不到也不阻断发版。App 一期先用随包 CHANGELOG，这段留给二期渲染。
+def note_text():
+    try:
+        txt = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+        m = re.search(r"^## \[" + re.escape(VER) + r"\].*?\n(.*?)(?=^## \[|\Z)",
+                      txt, re.S | re.M)
+        sec = m.group(1) if m else ""
+        lines = [l.strip() for l in sec.splitlines()
+                 if l.strip() and not l.strip().startswith("###")]
+        return html.escape("\n".join(lines[:10])[:600])
+    except Exception:
+        return html.escape("听本 v" + VER + " 更新")
+
+NOTE = note_text()
 ATOM = ('''<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>听本 · 安装包更新</title>
@@ -69,9 +85,10 @@ ATOM = ('''<?xml version="1.0" encoding="UTF-8"?>
     <link rel="enclosure" type="application/vnd.android.package-archive" length="%d" href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/%s"/>
     <updated>%s</updated>
     <summary>听本 v%s · 安装包 %s · %d 字节。</summary>
+    <content type="text">%s</content>
   </entry>
 </feed>
-''') % (NOW, VER, VER, VER, len(raw), APK_NAME, NOW, VER, APK_NAME, len(raw))
+''') % (NOW, VER, VER, VER, len(raw), APK_NAME, NOW, VER, APK_NAME, len(raw), NOTE)
 if 'rel="enclosure"' not in ATOM:
     sys.exit("订阅源缺少 enclosure，下载器会拿到 HTML 而不是 APK")
 if APK_NAME not in ATOM:

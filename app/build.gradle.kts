@@ -1,3 +1,7 @@
+// R408 · 构建期注入 Git 短哈希与构建时间。Kotlin DSL 脚本里 `java.time.Instant`
+// 必须显式 import：脚本作用域里的 `java` 会被解析成 Gradle 的 Java 扩展，
+// 直接写 `java.time.Instant.now()` 在 CI 上会报 Unresolved reference: time。
+import java.time.Instant
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -29,6 +33,14 @@ android {
         targetSdk = 35
         versionCode = if (buildNumber != null) 100 + buildNumber else 1
         versionName = appVersion
+        // R408 · 关于页版本信息：commit 与构建时间在构建期固定，绝不用
+        // currentTimeMillis()（那会让每次重组 / 每次复制的内容都不一样）。
+        // CI 取不到 git 时给 "local"，不让构建失败。
+        val gitHash = System.getenv("GITHUB_SHA")?.take(7)?.ifBlank { "local" } ?: "local"
+        val buildAt = System.getenv("TINGBEN_BUILD_TIME")?.ifBlank { "local" }
+            ?: Instant.now().toString()
+        buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
+        buildConfigField("String", "BUILD_TIME", "\"$buildAt\"")
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     signingConfigs {

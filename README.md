@@ -4,9 +4,9 @@
 
 # 听本 · Tingben
 
-> 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、默认零联网；本机网关与跨网中继要你手动开启。
+> 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、默认零联网；本机网关与跨网中继要你手动开启，抽屉里点版本号进「关于听本」可手动检查更新（只读公开订阅文件，不上传任何信息）。
 
-[![版本](https://img.shields.io/badge/version-1.1.62-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
+[![版本](https://img.shields.io/badge/version-1.1.63-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -21,23 +21,27 @@
 
 ## 下载
 
-**当前版本 `1.1.62`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+**当前版本 `1.1.63`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
 
 R391 起安装包文件名带**软件名 + 版本号**，下载器里再也不用在一堆 `app-debug.apk` 里猜哪个项目：
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.62/tingben-v1.1.62.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.63/tingben-v1.1.63.apk
 ```
 
 同内容的直链（同样带版本名）：
 
 ```
-https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/tingben-v1.1.62.apk
+https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.63.apk
 ```
 
 兼容旧直链 `.../main/app-debug.apk` 仍是同一份字节，只给没刷新的老链接兜底；订阅源已改推上面带版本名的文件。
 
+抽屉底部点「v1.1.63」进**关于听本**：检查更新、版本信息（含 Git 短哈希与构建时间）、一键复制诊断信息、项目主页（打不开网页时给可复制/可重试/可分享的面板）、随包发版说明与开源组件。
+
 > 平台解析器读不了 GB 级二进制时会报「资源解析服务请求失败」，不是坏链，用浏览器打开即可。
+
+R408 起左滑抽屉底部那枚版本号不再跳浏览器，点它进「关于听本」：查看版本与构建信息、一键复制脱敏诊断、检查更新（只读 jsdelivr 公开订阅，24 小时最多自动查一次）、离线看发版说明；项目主页打不开时会给可复制、可重试、可分享的面板，不会再留一句「没找到浏览器」就结束。
 
 ## 看看界面
 
@@ -62,7 +66,7 @@ https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/tingben-v1.1.62.apk
 
 | 能力 | 说明 |
 |---|---|
-| 离线端侧合成 | 零出站、零上传；一套 Qwen3-TTS 模型在手机里跑，合成不联网。`INTERNET` 仅用于默认关闭的本机语音网关监听 |
+| 离线端侧合成 | 合成不联网；一套 Qwen3-TTS 模型在手机里跑。`INTERNET` 只给三处显式白名单：默认关的本机网关、默认关的跨网中继、以及关于页手动/节流的公开订阅检查 |
 | 正文不改 | 不做改写、不做角色切分；导入 txt / md / epub 或粘贴文字建书 |
 | 按章制作 | 设置里定「怎么做」，目录页勾「做哪几章」，顺着勾选一次做完 |
 | 逐章出成品 | 这一章小块做完立刻拼成一个音频，转 64kbps 单声道 AAC-LC M4A，校验通过才删内部 WAV；失败留手动另存兜底 |
