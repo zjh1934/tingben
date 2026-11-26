@@ -168,7 +168,7 @@ def check(s):
             e.append('防覆盖闸缺: ' + tok[:56])
     # ③ 自愈
     for tok in ['fun recoverScope(c: Context, t: TaskInfo): TaskInfo?',
-                'if (t.only != null || t.phase == "done") return null',
+                'if (!t.only.isNullOrEmpty() || t.phase == "done") return null',
                 'fun wavOf(d: File): Int', 'wholeWav > 32 || bestScore < wholeWav * 2',
                 'v11/direct', 'SegPlan.readMap(d)?.size', 'AudioTree.readDone(d).size',
                 't.copy(only = pick, total = total, done = 0', 'phase = "stopped"']:

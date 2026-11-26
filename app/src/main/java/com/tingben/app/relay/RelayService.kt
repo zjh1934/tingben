@@ -143,6 +143,9 @@ class RelayService : Service() {
                 val client = RelayClient(RelayPrefs.owner(this), RelayPrefs.repo(this),
                     RelayPrefs.branch(this), RelayPrefs.token(this))
                 val items = client.listQueue()
+                // R406 · 审查 P1：冷却是内存 HashMap，调用方删掉请求文件后
+                // 旧键永远不命中，长跑会堆死键；顺手按本轮实际队列收一次。
+                putCooldownUntil.keys.retainAll(items.map { it.name }.toSet())
                 if (errStreak > 0) {
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_RECOVER",
                         "网络恢复 · 连续出错 $errStreak 次后重新取到队列 · 退避归零")
@@ -189,6 +192,7 @@ class RelayService : Service() {
                         "id=$id · $why", level = EventLog.Level.WARN)
                     phase = "put"
                     client.putFailed(id, failStatus(chars, why))
+                    phase = "del"
                     client.deleteQueue(item.name, reqSha)
                     SynthArbiter.remoteBatchDone()
                     continue
@@ -203,6 +207,7 @@ class RelayService : Service() {
                     // **不判失败、不删 queue、不震动**。写一条 state=busy 让调用方
                     // 知道在排队，然后切 60s 慢档等，制作/试听结束自动恢复快档。
                     busyStreak++
+                    phase = "busy"
                     client.putBusy(id, busyStatus(chars, r.reason ?: "本机正忙",
                         RelayContract.MAX_BACKOFF_MS))
                     if (busyStreak == 1 || busyStreak % 12 == 0) {
@@ -263,7 +268,17 @@ class RelayService : Service() {
                 }
                 // 无论成功失败，正文即用即删。
                 phase = "del"
-                client.deleteQueue(item.name, reqSha)
+                try {
+                    client.deleteQueue(item.name, reqSha)
+                } catch (e: Throwable) {
+                    // R406 · 审查 P1：DELETE 失败（409 sha 不符 / 429 / 弱网丢响应）
+                    // 原来直接进外层 catch，日志一行不留，仓库里删没删无法追溯。
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEL_ERR",
+                        "id=$id · 请求文件没删掉 · " +
+                            (if (e is RelayClient.Err) "HTTP " + e.code else e.javaClass.simpleName),
+                        level = EventLog.Level.WARN, fields = mapOf("id" to id))
+                    throw e
+                }
                 EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEL",
                     "id=$id · 请求文件已删（正文即用即删）", fields = mapOf("id" to id))
                 phase = "poll"; currentName = null; putCooldownUntil.remove(item.name)
@@ -290,16 +305,31 @@ class RelayService : Service() {
                 // R404 · 把「回写冲突」和「断网」分开报，别再伪装成轮询失败。
                 // 请求仍留在仓库，不删、不丢，按冷却歇一会儿再试。
                 if (phase == "put" && currentName != null) {
+                    // R406 · 审查 P1：put 阶段含 putOut + putDone 两个写，429/403/
+                    // 5xx/读超时与 422 sha 冲突不是一回事。都给冷却（冷却正是防
+                    // R404 那种「每 10 秒重做一分钟合成」），但日志要把原因说准。
+                    val conflict = t is RelayClient.Err &&
+                        (t.code == 422 || t.code == 409)
+                    val kind = if (conflict) "回写冲突 422/409"
+                        else if (t is RelayClient.Err) "仓库侧故障 " + msg
+                        else "传输故障 " + t.javaClass.simpleName
                     val until = android.os.SystemClock.elapsedRealtime() +
                         (backoff * 3).coerceAtMost(RelayContract.MAX_BACKOFF_MS * 5)
                     putCooldownUntil[currentName!!] = until
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_PUT_ERR",
-                        "回写没成功 · $msg · 请求留着排队 · 稍后重试（不是断网）",
+                        "$kind · 请求留着排队 · 稍后重试",
                         level = EventLog.Level.WARN,
                         fields = mapOf("err" to t.javaClass.simpleName, "phase" to "put"))
                 }
+                if (phase == "busy") {
+                    EventLog.log(EventLog.Kind.PIPELINE, "RELAY_BUSY_ERR",
+                        "排队态没写成功 · $msg · 请求仍留着，不走失败不删 queue",
+                        level = EventLog.Level.WARN,
+                        fields = mapOf("err" to t.javaClass.simpleName, "phase" to "busy"))
+                }
                 // 首行 + 每 12 次汇总：真机日志里断网 4 分钟刷了 46 行同款 WARN。
-                if (errStreak == 1 || errStreak % 12 == 0) {
+                if (phase != "put" && phase != "busy" && phase != "del" &&
+                    (errStreak == 1 || errStreak % 12 == 0)) {
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_ERR",
                         "轮询失败 · $msg · 连续 ${errStreak}次 · 退避 ${backoff}ms",
                         level = EventLog.Level.WARN,

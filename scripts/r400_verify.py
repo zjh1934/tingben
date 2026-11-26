@@ -96,7 +96,8 @@ def check(s):
             e.append('退避上限缺: ' + tok)
     for tok in ['var errStreak = 0', 'RELAY_POLL_RECOVER', 'backoffMs(errStreak)',
                 'private fun backoffMs(', 'v.coerceAtMost(RelayContract.MAX_BACKOFF_MS)',
-                'if (errStreak == 1 || errStreak % 12 == 0)',
+                'phase != "put" && phase != "busy" && phase != "del"',
+                '(errStreak == 1 || errStreak % 12 == 0))',
                 'try { Thread.sleep(backoff) } catch (_: InterruptedException) { return }']:
         if tok not in r:
             e.append('退避/合并记录缺: ' + tok[:48])
@@ -158,7 +159,7 @@ def check(s):
 BAD = [
     ('退避上限', lambda d: d.update(contract=d['contract'].replace('MAX_BACKOFF_MS = 60000L', 'MAX_BACKOFF_MS = 5000L', 1))),
     ('退避调用', lambda d: d.update(relay=d['relay'].replace('backoffMs(errStreak)', 'RelayContract.RETRY_MS', 1))),
-    ('合并记录', lambda d: d.update(relay=d['relay'].replace('if (errStreak == 1 || errStreak % 12 == 0)', 'if (true)', 1))),
+    ('合并记录', lambda d: d.update(relay=d['relay'].replace('phase != "put" && phase != "busy" && phase != "del"', 'true', 1))),
     ('恢复归零', lambda d: d.update(relay=d['relay'].replace('RELAY_POLL_RECOVER', 'RELAY_POLL_NOISE', 1))),
     ('正常关停', lambda d: d.update(relay=d['relay'].replace('if (!running || t is InterruptedException) {', 'if (false) {', 1))),
     ('ON 去重', lambda d: d.update(relay=d['relay'].replace('val started = startRelay()', 'val started = true', 1))),

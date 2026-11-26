@@ -41,6 +41,26 @@ def tts_body(s):
 def trial_body(s):
     return s[s.index('private fun MixerScreen('):]
 
+def pipeline_start_body(s):
+    # R406 · 迁移：R406 在 stop() 的让路分支与 yield cancel 分支各补了一处
+    # nativeCancelReset()（缩进 12/16 空格）。旧写法用 8 空格前缀 + str.replace
+    # 做子串匹配，会先命中这些新行，导致「撤掉整次复位」注入摘错位置、正向仍绿。
+    # 改为精确圈 start() 函数体，判据与注入都只认这一处任务级复位。
+    a = s.index('fun start(')
+    b = s.find('\n    fun ', a + 10)
+    return s[a:(b if b > 0 else len(s))]
+
+
+def drop_start_reset(s):
+    a = s.index('fun start(')
+    b = s.find('\n    fun ', a + 10)
+    end = b if b > 0 else len(s)
+    seg = s[a:end].replace(
+        '        try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }\n',
+        '', 1)
+    return s[:a] + seg + s[end:]
+
+
 def cache_block(s):
     a = s.index('- name: 原生引擎缓存')
     b = s.index('- name: 检查缓存完整性')
@@ -60,8 +80,8 @@ def core_errors(a, b, c, d):
         errs.append('TTS 路径仍在逐段复位')
     if 'tp.cancel   = ttsCancelCb' not in a:
         errs.append('TTS 取消回调丢失')
-    if 'NativeEngine.nativeCancelReset()' not in c:
-        errs.append('Pipeline 缺整次制作复位')
+    if 'NativeEngine.nativeCancelReset()' not in pipeline_start_body(c):
+        errs.append('Pipeline 缺整次制作复位（start 内）')
     t = trial_body(b)
     th = t[t.index('fun trial(label: String'):t.index('val myToken = trialToken + 1')]
     if 'NativeEngine.nativeCancelReset()' not in th:
@@ -111,7 +131,7 @@ if '--selftest' in sys.argv:
             a, b.replace('        try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }\n        trialJob?.cancel()',
                          '        trialJob?.cancel()', 1), c, d)),
         ('Pipeline 撤掉整次复位', lambda a, b, c, d: (
-            a, b, c.replace('        try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }', '', 1), d)),
+            a, b, drop_start_reset(c), d)),
         ('重试前撤掉停止检查', lambda a, b, c, d: (
             a, b, c.replace('                        if (cancelRequested) {\n'
                             '                            _state.value = halted(i, annotated.size, gateFails + synthFails)\n'

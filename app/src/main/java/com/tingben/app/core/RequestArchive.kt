@@ -100,7 +100,10 @@ internal object RequestArchive {
         val n: Int? = synchronized(lock) {
             val all = readAll(c)
             val now = System.currentTimeMillis()
-            if (all.any { it.source == source && it.text == text && now - it.ts < DEDUPE_MS }) {
+            // R406 · 审查 P1：设备校时回拨时 now - it.ts 为负，旧写法恒小于窗，
+            // 去重窗会退化成「永久去重」，新请求再不入档。只认正向时间差。
+            if (all.any { it.source == source && it.text == text &&
+                (now - it.ts).let { dt -> dt >= 0 && dt < DEDUPE_MS } }) {
                 null   // 同一条被反复重取，不重复入档，也不记 ARCHIVE_ADD
             } else {
                 all.add(Entry(UUID.randomUUID().toString(), source, text, now))

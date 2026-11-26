@@ -110,7 +110,7 @@ class Arb:
     def release(self, who):
         if self.owner == who: self.owner = None
 
-def logic():
+def logic(ar_text):
     e = []
     # ① 四条整批：书让路 → 四条连续排空 → 书恢复，段号/phase 不变
     a = Arb(); a.producer_busy = True
@@ -159,7 +159,11 @@ def logic():
     if f.remote_override(): e.append('逻辑：书没让路远端就进引擎了')
     # ⑥ 公平阀：远端源源不断也放书跑一段，不饿死
     g = Arb(); g.set_batch(999); g.yield_at_boundary()
-    fair = 10 * 60 * 1000 <= 10 * 60 * 1000   # MAX_YIELD_WAIT_MS 到了
+    # R406 · 不再写死自比较常量，从 Kotlin 源码抽真值参与判定
+    m = re.search(r'const val MAX_YIELD_WAIT_MS = ([0-9 *]+)L', ar_text)
+    wait_ms = eval(m.group(1).replace(' ', '')) if m else 0
+    if wait_ms != 600000: e.append('逻辑：公平上限常量被改动')
+    fair = 600000 <= wait_ms
     if not fair: e.append('逻辑：公平阀没生效')
     g.set_batch(0)
     if g.should_yield(): e.append('逻辑：公平阀后书没恢复')
@@ -207,8 +211,25 @@ def check(s):
                 'chapterProgress = _state.value.chapterProgress']:
         if tok not in pr: e.append('Producer 让路缺: ' + tok[:58])
     # 让路函数体内不许出现「改档案 / 清段 / 停止」的动作
-    y = pr[pr.find('fun yieldToRemoteIfNeeded(i: Int): Boolean'):]
-    y = y[:y.find('\n        }\n        try {')] if '\n        }\n        try {' in y else y[:4000]
+    # R406 · 审查 P0：旧切片靠缩进锚收尾，找不到就静默退化 y[:4000]，
+    # 一旦改排版就圈错函数体，「让路不许改档案」的黑名单一漏全放行。
+    # 改成按行大括号配平定位，定位不到直接判红，绝不退化。
+    lines = pr.splitlines()
+    start = next((k for k, l in enumerate(lines)
+                  if 'fun yieldToRemoteIfNeeded(i: Int): Boolean' in l), -1)
+    end = -1
+    if start >= 0:
+        depth = 0
+        for k in range(start, len(lines)):
+            depth += lines[k].count('{') - lines[k].count('}')
+            if k > start and depth == 0:
+                end = k
+                break
+    if start < 0 or end < 0:
+        e.append('让路函数体定位失败（禁止静默 fallback）')
+        y = ''
+    else:
+        y = '\n'.join(lines[start:end + 1])
     yc = code(y)
     for bad in ['TaskResume.save(', 'cancelRequested = true', 'phase = "stopped"',
                 'Producer.stop()', 'wavs.clear()', 'segStartBytes.clear()',
@@ -267,7 +288,7 @@ def check(s):
         for k, v in cnt.items():
             if live[f].get(k) != v:
                 e.append('功能守恒: %s 的 %s %s→%s' % (f, k, v, live[f].get(k)))
-    e += logic()
+    e += logic(s['arb'])
     return e
 
 BAD = [
@@ -290,7 +311,14 @@ BAD = [
         'if (!yieldToRemoteIfNeeded(i)) return', '', 1))),
     ('让路改了档案', lambda d: d.update(producer=d['producer'].replace(
         'SynthArbiter.markProducerYielded()',
-        'SynthArbiter.markProducerYielded()\n            TaskResume.save(c, current!!)', 1))),
+        'SynthArbiter.markProducerYielded()\n            TaskResume.save(c, current!!)', 1))),    ('让路清空 wavs', lambda d: d.update(producer=d['producer'].replace(
+        '            return true\n        }', '            wavs.clear()\n            return true\n        }', 1))),
+    ('让路清空 segStartBytes', lambda d: d.update(producer=d['producer'].replace(
+        '            return true\n        }', '            segStartBytes.clear()\n            return true\n        }', 1))),
+    ('让路改写 _resume', lambda d: d.update(producer=d['producer'].replace(
+        '            return true\n        }', '            _resume.value = null\n            return true\n        }', 1))),
+    ('让路强行停整本', lambda d: d.update(producer=d['producer'].replace(
+        '            return true\n        }', '            Producer.stop()\n            return true\n        }', 1))),
     ('让路不喂唤醒锁', lambda d: d.update(producer=d['producer'].replace(
         'ProduceService.touch(c, "让路给远端请求")', '', 1))),
     ('恢复没重新 prepare', lambda d: d.update(producer=d['producer'].replace(
@@ -302,14 +330,14 @@ BAD = [
         'Speak(false, true, null, "本机正在收尾这一小段，稍后优先处理远端请求")',
         'Speak(false, false, null, "正在做整本书")', 1))),
     ('远端票被摘', lambda d: d.update(synth=d['synth'].replace(
-        'SynthArbiter.remoteEnter()', '', 1))),
+        'SynthArbiter.remoteEnter()', ''))),
     ('blockReason 回潮', lambda d: d.update(synth=d['synth'].replace(
         'if (!NativeEngine.isAvailable()) return "本地引擎没装载，请重启 App"',
         'if (!NativeEngine.isAvailable()) return "本地引擎没装载，请重启 App"\n        if (Producer.isBusy()) return "正在做整本书，做完再合成"', 1))),
     ('整批登记被摘', lambda d: d.update(relay=d['relay'].replace(
         'SynthArbiter.setRemoteBatch(ready.size)', '', 1))),
     ('整批不归零', lambda d: d.update(relay=d['relay'].replace(
-        'SynthArbiter.setRemoteBatch(0)', '', 1))),
+        'SynthArbiter.setRemoteBatch(0)', ''))),
     ('试听不让路', lambda d: d.update(mixer=d['mixer'].replace(
         'SynthArbiter.remotePending() > 0', 'false', 1))),
     ('模拟器没跟上', lambda d: d.update(sim='')),

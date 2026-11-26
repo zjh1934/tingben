@@ -126,7 +126,11 @@ object TaskResume {
 
     private fun decode(o: JSONObject): TaskInfo {
         val arr = o.optJSONArray("only")
-        val only = if (o.optBoolean("onlyNull", true) || arr == null) null else
+        // R406 · 审查 P2：磁盘上 only:[] + onlyNull:false 是合法 JSON，
+        // 旧写法解出空集合，recoverScope / 防覆盖闸 / scopeSize 三处同时失守，
+        // 点开始只弹「没有可制作的文字」。空选章与「没选章」语义相同，按 null。
+        val only = if (o.optBoolean("onlyNull", true) || arr == null ||
+            arr.length() == 0) null else
             (0 until arr.length()).map { arr.getInt(it) }.toSet()
         val out = o.optString("output", "").ifBlank { null }
         return TaskInfo(
@@ -269,7 +273,7 @@ object TaskResume {
      * 不改阶段、不删文件、不碰真跑起来的整本任务（done>0 直接放行）。
      */
     fun recoverScope(c: Context, t: TaskInfo): TaskInfo? {
-        if (t.only != null || t.phase == "done") return null
+        if (!t.only.isNullOrEmpty() || t.phase == "done") return null
         val root = File(c.filesDir, "work/${t.bookId}/v11/direct")
         val allDirs = try { root.listFiles()?.filter { d -> d.isDirectory } }
             catch (_: Throwable) { null } ?: return null

@@ -81,13 +81,18 @@ def check(s):
     if 'GatewayPrefs.setBind(c, wantLan)' not in ui_code:
         e.append('切绑定没存新绑定值')
 
-    # ⑤ 订阅源 self 指向实际生效的 raw，不再指向 12h 缓存的 jsdelivr
+    # R406 口径反转：R388 时把 self 从 jsdelivr 改 raw 是嫌 12h 缓存；
+    # 真机截图实证 raw.githubusercontent.com 在国内移动网络连续超时 4 次，
+    # 下载器停在 v1.1.57。改回镜像，并由发版脚本 purge 主动刷缓存。
     if '<link rel="self"' not in pub:
         e.append('订阅源模板丢了 self')
-    if 'https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/updates.atom' not in pub:
-        e.append('self 没指向 raw 订阅源')
-    if 'cdn.jsdelivr.net' in pub:
-        e.append('self 还指着有 12h 缓存的 jsdelivr')
+    if 'https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom' not in pub:
+        e.append('self 没指向镜像订阅源')
+    # 只查真实 href，别把 R406 注释里解释「为什么换」的域名字样误判成回潮
+    if 'href="https://raw.githubusercontent.com' in pub:
+        e.append('self/enclosure 又指回国内易超时的 raw')
+    if 'purge.jsdelivr.net' not in pub:
+        e.append('发版后没刷镜像缓存，下载器会读到上一版 atom')
     if '<link rel="enclosure"' not in pub:
         e.append('订阅源丢了 enclosure（下载器会下回 HTML）')
     return e
@@ -106,9 +111,10 @@ def main():
              'if (wasOn) GatewayService.rebind(c)',
              'GatewayService.stop(c); GatewayService.start(c)'),
             ('面板不判服务状态', 'ui', 'val wasOn = GatewayPrefs.enabled(c)', 'val wasOn = true'),
-            ('self 回退 jsdelivr', 'publish',
-             'https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/updates.atom',
-             'https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom'),
+            ('self 回退 raw', 'publish',
+             'https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom',
+             'https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/updates.atom'),
+            ('不刷镜像缓存', 'publish', 'purge.jsdelivr.net', ''),
             ('订阅源摘掉 enclosure', 'publish', 'rel="enclosure"', 'rel="alternate"'),
         ]
         bad = 0
@@ -125,7 +131,7 @@ def main():
         return 1 if bad else 0
     e = check(s)
     print('R388 %s' % ('FAIL: ' + '; '.join(e) if e else
-          'PASS · 切绑定不记假 OFF / 没开不碰服务 / self 指 raw / enclosure 守恒'))
+          'PASS · 切绑定不记假 OFF / 没开不碰服务 / self 指镜像 / enclosure 守恒'))
     return 1 if e else 0
 
 if __name__ == '__main__':

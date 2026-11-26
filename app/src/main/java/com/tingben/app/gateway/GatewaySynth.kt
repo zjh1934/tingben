@@ -134,39 +134,53 @@ internal object GatewaySynth {
 
     /** 异步 job：本轮只解决「不想等同步响应」，输入同样 ≤ MAX_CHARS。 */
     fun submit(c: Context, text: String, ignored: Int): String? {
-        // R405 · 异步网关 job 同样登记远端票、等书让路，口径与 speak 一致。
+        // R406 · 审查 P1：原来四条提前 return 各手写一次 remoteExit()，
+        // 后续只要插一行 return 就会让 singlePending 永久 >0，书从此每
+        // 10 分钟才抢跑一段且日志零痕迹。改成与 speak 同构的 try/finally：
+        // 票只由「异步 job 的 finally」或「本函数提前退出」退一次。
         SynthArbiter.remoteEnter()
-        if (!SynthArbiter.awaitProducerYield()) { SynthArbiter.remoteExit(); return null }
-        blockReason(c)?.let { SynthArbiter.remoteExit(); return null }
+        var launched = false
+        var acquired = false
         val who = SynthArbiter.OWNER_GATEWAY
-        if (!SynthArbiter.tryAcquire(who)) { SynthArbiter.remoteExit(); return null }
-        if (!busy.compareAndSet(false, true)) {
-            SynthArbiter.release(who); SynthArbiter.remoteExit(); return null
-        }
-        val id = newId()
-        val j = Job(id, text.length, ignored, System.currentTimeMillis())
-        jobs[id] = j
-        Thread({
-            onBusyStart()
-            try {
-                j.state = "running"
-                val (b, fmt) = synth(c, text, id, "网关")
-                j.audio = b
-                j.format = fmt
-                j.progress = 1f
-                j.stage = "verify"
-                j.state = "succeeded"
-            } catch (e: Throwable) {
-                j.reason = e.message?.take(80) ?: "合成没成功"
-                j.state = "failed"
-            } finally {
-                onBusyEnd()
-                busy.set(false)
-                SynthArbiter.release(who)
+        try {
+            if (!SynthArbiter.awaitProducerYield()) return null
+            blockReason(c)?.let { return null }
+            if (!SynthArbiter.tryAcquire(who)) return null
+            if (!busy.compareAndSet(false, true)) {
+                SynthArbiter.release(who); return null
+            }
+            acquired = true
+            val id = newId()
+            val j = Job(id, text.length, ignored, System.currentTimeMillis())
+            jobs[id] = j
+            Thread({
+                onBusyStart()
+                try {
+                    j.state = "running"
+                    val (b, fmt) = synth(c, text, id, "网关")
+                    j.audio = b
+                    j.format = fmt
+                    j.progress = 1f
+                    j.stage = "verify"
+                    j.state = "succeeded"
+                } catch (e: Throwable) {
+                    j.reason = e.message?.take(80) ?: "合成没成功"
+                    j.state = "failed"
+                } finally {
+                    onBusyEnd()
+                    busy.set(false)
+                    SynthArbiter.release(who)
+                    SynthArbiter.remoteExit()
+                }
+            }, "tingben-gateway-job").start()
+            launched = true
+            return id
+        } finally {
+            if (!launched) {
+                if (acquired) { busy.set(false); SynthArbiter.release(who) }
                 SynthArbiter.remoteExit()
             }
-        }, "tingben-gateway-job").start()
-        return id
+        }
     }
 
     fun job(id: String): Job? {

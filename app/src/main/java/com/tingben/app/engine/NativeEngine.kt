@@ -46,6 +46,14 @@ object NativeEngine {
 
     fun endTtsLoad() { synchronized(loadGate) { loadBusy = false } }
 
+    /**
+     * R406 · 远端最高优先级审查：让路恢复判定不能只看 SynthArbiter.owner。
+     * owner 是业务 CAS 锁，loadBusy 才是引擎锁；远端「已 CAS owner、还没进
+     * ttsLoadGated」的窗口里 owner 非空，但反过来 owner 已释放而 loadBusy
+     * 还在的窗口同样存在。书 break 出让路前必须连引擎层一起确认。
+     */
+    fun isLoadBusy(): Boolean = synchronized(loadGate) { loadBusy }
+
     fun ttsLoadGated(talkerPath: String, codecPath: String, device: String?): Long {
         if (!tryBeginTtsLoad()) return 0L
         return try { ttsLoad(talkerPath, codecPath, device) }

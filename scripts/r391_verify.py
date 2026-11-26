@@ -49,7 +49,7 @@ def check(s):
               '{"path": APK_NAME, "mode": "100644"',
               '{"path": "app-debug.apk", "mode": "100644"',
               '<title>听本 v%s</title>',
-              'href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/%s"',
+              'href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/%s"',
               '"base_tree": base_tree',
               'updates.atom', 'docs/updates.atom', 'rel="enclosure"'):
         if k not in pub:
@@ -73,7 +73,7 @@ def check(s):
     if '## [%s]' % ver not in s['changelog']:
         e.append('CHANGELOG 缺 %s 段' % ver)
     # 订阅源只能推主名，不许把 enclosure 又指回旧名
-    if 'href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk"' in pub:
+    if 'href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/app-debug.apk"' in pub:
         e.append('订阅源 enclosure 又指回 app-debug.apk（下载器继续分不清）')
 
     # ② 手势：只认横向、竖向放行；跟手 + 弹回 + 指示条动画；R383 不回潮
@@ -112,8 +112,8 @@ def main():
              'APK_NAME = "tingben-v" + VER + ".apk"',
              'APK_NAME = "app-debug.apk"'),
             ('订阅源指回旧名', 'publish',
-             'href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/%s"',
-             'href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/app-debug.apk"'),
+             'href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/%s"',
+             'href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/app-debug.apk"'),
             ('丢掉兼容旧名', 'publish',
              '{"path": "app-debug.apk", "mode": "100644"', ''),
             ('丢掉版本自检', 'publish',

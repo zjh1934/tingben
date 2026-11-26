@@ -199,7 +199,9 @@ def check(s):
     # ② 冷却 + 日志正名（RELAY_POLL_ERR 仍在，不是删掉）
     for tok in ['RELAY_PUT_ERR', 'val putCooldownUntil = HashMap<String, Long>()',
                 'putCooldownUntil[currentName!!] = until', 'val ready = items.filterNot',
-                'phase = "put"', 'phase = "del"', '请求留着排队 · 稍后重试（不是断网）',
+                'phase = "put"', 'phase = "del"', '请求留着排队 · 稍后重试',
+                '回写冲突 422/409', '仓库侧故障 ', 'RELAY_DEL_ERR', 'RELAY_BUSY_ERR',
+                'putCooldownUntil.keys.retainAll',
                 'RELAY_POLL_ERR']:
         if tok not in sv:
             e.append('回写失败处理缺: ' + tok[:60])
@@ -215,7 +217,7 @@ def check(s):
             'RequestArchive.add(this, RequestArchive.SRC_RELAY, text)') != 1:
         e.append('中继留存写入点被改动')
     # ④ 4/26678 自愈边界
-    for tok in ['if (t.only != null || t.phase == "done") return null',
+    for tok in ['if (!t.only.isNullOrEmpty() || t.phase == "done") return null',
                 'fun wavOf(d: File): Int', 'wholeWav > 32 || bestScore < wholeWav * 2']:
         if tok not in rs:
             e.append('自愈边界缺: ' + tok[:60])

@@ -58,7 +58,7 @@ ATOM = ('''<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>听本 · 安装包更新</title>
   <id>https://github.com/zjh1934/tingben/releases</id>
-  <link rel="self" type="application/atom+xml" href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/updates.atom"/>
+  <link rel="self" type="application/atom+xml" href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom"/>
   <link rel="alternate" type="text/html" href="https://github.com/zjh1934/tingben/releases"/>
   <updated>%s</updated>
   <subtitle>每条更新都带可直接下载的 APK 附件（enclosure），下载器按此取包；文件名含软件名与版本号。</subtitle>
@@ -66,7 +66,7 @@ ATOM = ('''<?xml version="1.0" encoding="UTF-8"?>
     <title>听本 v%s</title>
     <id>https://github.com/zjh1934/tingben/releases/tag/v%s</id>
     <link rel="alternate" type="text/html" href="https://github.com/zjh1934/tingben/releases/tag/v%s"/>
-    <link rel="enclosure" type="application/vnd.android.package-archive" length="%d" href="https://raw.githubusercontent.com/zjh1934/ting-ben-apk/main/%s"/>
+    <link rel="enclosure" type="application/vnd.android.package-archive" length="%d" href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/%s"/>
     <updated>%s</updated>
     <summary>听本 v%s · 安装包 %s · %d 字节。</summary>
   </entry>
@@ -114,3 +114,15 @@ if c not in (200, 201): sys.exit("commit 失败 %s" % c)
 c, r = api("PATCH", "/git/refs/heads/main", {"sha": cm["sha"], "force": False})
 if c not in (200, 201): sys.exit("ref 失败 %s %s" % (c, r))
 print("已发布", cm["sha"][:8], "主名", APK_NAME, "（旧名 app-debug.apk 同字节兜底）")
+
+# R406 · 真机截图实证：下载器连 raw.githubusercontent.com 连续失败 4 次、
+# 列表停在 v1.1.57。self/enclosure 改走 jsdelivr 镜像；@main 有缓存，
+# 发版后主动 purge 一次（失败不阻断，APK 文件名带版本号本就是新路径无缓存）。
+try:
+    import urllib.request
+    purge = "https://purge.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom"
+    urllib.request.urlopen(urllib.request.Request(purge,
+        headers={"User-Agent": "tingben-release"}), timeout=10).read()
+    print("已刷新订阅源镜像缓存")
+except Exception as ex:
+    print("订阅源镜像缓存刷新失败（不阻断发版）:", type(ex).__name__)

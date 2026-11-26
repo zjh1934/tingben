@@ -72,7 +72,8 @@ def submit(repo, text, extra=None):
     body = {'v': 1, 'text': text}
     if extra:
         body.update(extra)   # 调用方夹带的音色字段，手机侧一律不读
-    repo.put('queue/' + rid + '.json', json.dumps(body, ensure_ascii=False).encode('utf-8'))
+    repo.put('queue/' + rid + '.json',
+             b64(json.dumps(body, ensure_ascii=False).encode('utf-8')).encode('utf-8'))
     return rid
 
 
@@ -88,7 +89,9 @@ def phone_cycle(repo, enabled=True, token_ok=True, preset='device-local'):
     name = names[0]
     rid = name[:-5]
     qpath = 'queue/' + name
-    req = json.loads(unb64(b64(repo.get(qpath)))) if False else json.loads(repo.get(qpath).decode('utf-8'))
+    # R406 · 去掉 if False 死分支：真实链路本来就要做 Base64 往返解码
+    # 仓库里存的就是 base64 文本（对齐 GitHub Contents API 的 content 字段）
+    req = json.loads(unb64(repo.get(qpath).decode('utf-8')))
     text = req.get('text', '')
     chars = len(text)
     sha = repo.sha(qpath)
@@ -99,6 +102,7 @@ def phone_cycle(repo, enabled=True, token_ok=True, preset='device-local'):
         if fmt: st['format'] = fmt
         if audio: st['audio'] = audio
         if blob: st['sha'] = blob
+        if audio: st['bytes'] = len(repo.get(audio) or b'')
         if reason: st['reason'] = reason[:80]
         repo.put_compat('status/' + rid + '.json', json.dumps(st, ensure_ascii=False).encode('utf-8'))
         repo.delete(qpath, sha)              # 正文即用即删，成功失败都删
@@ -169,7 +173,8 @@ def main():
     ck('05 状态 done / m4a', st['state'] == 'done' and st['format'] == 'm4a')
     ck('06 回传的是压缩音频（ftyp）且比 WAV 小',
        audio is not None and audio[4:8] == b'ftyp' and len(audio) < 40000 + len(text) * 200)
-    ck('07 字节数与 blob sha 对得上', st['bytes'] if 'bytes' in st else len(audio) == len(audio))
+    ck('07 字节数与 blob sha 对得上',
+       len(audio) == int(st['bytes']) and repo.sha(st['audio']) == st['sha'])
     ck('08 请求文件已删（正文即用即删）', 'queue/' + rid + '.json' not in repo.f)
     ck('09 调用方取回字节不丢', audio is not None and len(audio) > 0)
     ck('10 开始震动存在', any(e[0] == 'start' for e in repo.haptics))
@@ -265,8 +270,8 @@ def main():
     ck('38 有远端待处理时试听/首页让路', sim_local_acquire(2) is False)
     ck('39 远端排空后本地入口恢复', sim_local_acquire(0) is True)
 
-    ck('29 补做后请求文件即用即删', 'queue/' + rid5 + '.json' not in r5.f)
-    ck('30 排队态不落正文', '本机正忙时来的这一句' not in
+    ck('40 补做后请求文件即用即删', 'queue/' + rid5 + '.json' not in r5.f)
+    ck('41 排队态不落正文', '本机正忙时来的这一句' not in
        json.dumps(st5))
 
     bad = [n for n, ok in results if not ok]

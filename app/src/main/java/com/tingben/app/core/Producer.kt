@@ -332,7 +332,16 @@ object Producer {
         // 改成 copy，只改 running / stage / message，done / total / 逐章进度全留着。
         _state.value = _state.value.copy(running = false, stage = "已停止",
             message = "已停止，正在收尾当前这一小段…已做好的都留着")
-        try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
+        // R406 · 审查 P0：书已把 talker 让给远端时，nativeCancel() 没有书内
+        // 推理可取消，只会污染进程级 g_cancel，把「正在飞的远端那一条」砍成
+        // -5 → 判 RELAY_FAIL → 删请求，正是 R403 用真机日志修过的故障重现。
+        if (!SynthArbiter.producerHasYielded()) {
+            try { NativeEngine.nativeCancel() } catch (_: Throwable) { }
+        } else {
+            try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
+            EventLog.log(EventLog.Kind.PIPELINE, "YIELD_STOP_NO_CANCEL",
+                "书在段边界让路中停止 · 不取消远端正在合成的这一条")
+        }
         appCtx?.let { c ->
             current?.let { t ->
                 val stopped = t.copy(phase = "stopped",
@@ -418,6 +427,9 @@ object Producer {
         _resume.value = current
         _state.value = Progress(true, "正在准备", 0, 0, 0, "正在启动…")
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
+        // R406 · 幂等复位：上一轮若因让路中断/异常收尾，仲裁器可能还停在
+        // producerYielded=true，会让后续远端 awaitProducerYield 秒回、书被永久挡住。
+        SynthArbiter.markProducerResumed()
         AnnCache.cleanup(AnnCache.dirFor(c, book.id, onlyChapters))
         EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_MODE",
             "直接朗读" +
@@ -1003,13 +1015,27 @@ object Producer {
             // ② 等整批远端排空；四条 / 八条连续跑完，中间不抢回引擎。
             //    另有公平上限：真遇上源源不断的远端，也放书跑一段，不饿死。
             while (!cancelRequested) {
-                val drained = !SynthArbiter.producerShouldYield() &&
-                    !SynthArbiter.isShortBusy()
+                // R406 · 两个出口都要连引擎层一起判：只判 owner 会与远端
+                //「已 CAS、未 ttsLoadGated」的毫秒级窗口对撞，让首条吃
+                //「声音模型正在装载」被判失败。
+                val engineFree = !SynthArbiter.isShortBusy() &&
+                    !NativeEngine.isLoadBusy()
+                val drained = !SynthArbiter.producerShouldYield() && engineFree
                 val fair = android.os.SystemClock.elapsedRealtime() - t0 >=
                     SynthArbiter.MAX_YIELD_WAIT_MS
-                if (drained || (fair && !SynthArbiter.isShortBusy())) break
+                if (drained || (fair && engineFree)) break
                 try { Thread.sleep(200L) }
-                catch (_: InterruptedException) { return false }
+                catch (_: InterruptedException) {
+                    // R406 · 旧写法直接 return false：不写 halted、不复位仲裁器，
+                    // 书会顶着 producerYielded=true 跑完收尾并报「完成」。
+                    Thread.currentThread().interrupt()
+                    _state.value = halted(i, annotated.size, gateFails + synthFails)
+                    SynthArbiter.markProducerResumed()
+                    EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_YIELD_INTERRUPTED",
+                        "seg=${i + 1} · 让路等待被中断 · 已做段全留着",
+                        level = EventLog.Level.WARN)
+                    return false
+                }
                 // 唤醒锁 30 分钟不 touch 会被系统放掉，让路期间照喂。
                 if (++guard % 25 == 0) {
                     try {
@@ -1023,6 +1049,10 @@ object Producer {
             }
             if (cancelRequested) {
                 // 用户点停止：不重新加载，按正常收尾退出，已做段全留着。
+                // R406 · 双保险：清掉可能由别处带进来的进程级取消标志，
+                // 并复位让路态，别把后续远端请求挡在门外。
+                try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
+                SynthArbiter.markProducerResumed()
                 _state.value = halted(i, annotated.size, gateFails + synthFails)
                 return false
             }
