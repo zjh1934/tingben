@@ -26,6 +26,11 @@ R381 把完成震动提前到合成结束是对的，但上传失败时用户已
 
 **⑥ 守门自身**：`r157_verify.py` 的 `loop_body` 单锚点补两个成对容错锚（取不到仍判红，不再因一次重命名全线误报）；新增 `r407_verify.py`：6 组纯内存逻辑用例 + **22/22 反向注入**，挂现行清单与 CI 正反向。`r209`/`r368`/`r377`/`r381`/`r404`/`r406`/`r95` 七份旧判据按 R407 新形态迁移（DELETE 出口 2→3、失败震动 1→2、空间 stage、冷却初始化、完成震动相对位置、文案），**改准不放宽**。
 
+**⑦ 两轮 rc 真编译反馈（静态守门绿 ≠ 编译绿，这轮靠真编译抓到两类漏网）**
+- 第一轮 rc `#45764737214`：CI 上 `r209`/`r210` 的 selftest 漏放——空间不足分支新增了第二处 `HUB_RESUME_BLOCKED`，单处 `replace(..., 1)` 注入先摘新增的那处、旧那处还在，判据仍绿。两条注入改全量替换（9/9、11/11 全拦）。
+- 第二轮 rc `#45767382130`：`compileDebugKotlin` 报 `ChapterHub.kt:1956 Unresolved reference 'spaceFull'`（`spaceFull` 定义在 `ChapterHub` 主体里，`SegGridHead` 是另一个 composable，跨作用域）与 `RelayPrefs.kt` 两处 `Unresolved reference 'JSONObject'`（漏 `import org.json.JSONObject`）。修法：`SegGridHead` 增加 `spaceFull: Boolean` 形参、调用处显式传参，import 补齐。这两类错误同时加进 `r407_verify.py` 静态断言与反向注入（**25/25 全拦**），下次改动再犯会在静态阶段就红。
+- 以上是真编译给的价值：本地没有 Android 工具链，静态守恒只能证明「符号/字符串都在」，证明不了 Kotlin 作用域与 import。发版仍以 rc/main 双真编译为准。
+
 ### 本轮明确没做（继续登记，不假装做了）
 
 - `relay_sim` 的 busy 分支与 Kotlin 仍不同构（无条件让路、无 180s 超时、无 422 TOCTOU）
