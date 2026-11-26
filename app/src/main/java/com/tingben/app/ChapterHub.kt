@@ -487,6 +487,10 @@ internal fun ChapterHubScreen(
         else withContext(Dispatchers.IO) { SegPlan.pending(w) }
     }
     val heartbeat = remember(beatTick, st.done) {
+        // R407 · 审查 A：让路期间引擎最多 10 分钟没有新事件，旧文案会把
+        // age 一路涨到 600 秒，用户视角就是卡死。按真实调度态给固定说明。
+        if (Producer.isYielding())
+            return@remember "远端请求优先 · 书在段边界等着，做完自动接着来"
         val (act, _) = EventLog.lastEngine()
         val age = (EventLog.lastEngineAgeMs() / 1000).coerceAtLeast(0)
         val what = when {
@@ -684,9 +688,11 @@ internal fun ChapterHubScreen(
     // 主按钮变成「开始制作」，用户点下去用 only=null 把 10 章 656 段档案
     // 覆盖成整本 224 万字 26678 段，已做好的 89 段一份都认领不上。
     // 断点真值是档案 phase，不是内存态 stage；旧集合保留作热启动兜底。
+    // R407 · 空间用完是可辨识态：三处文案与拼章入口共用它，不再各说各话。
+    val spaceFull = st.stage == "空间用完" || task?.stage == "空间用完"
     val stalledTask = !st.running && task?.bookId == book.id &&
         (task?.phase in listOf("stopped", "interrupted", "blocked", "reconfirm") ||
-            st.stage in listOf("没完成", "已停止", "出错了"))
+            st.stage in listOf("没完成", "已停止", "出错了", "空间用完"))
     // R362 · 这本书的制作档案就是 TaskInfo（task_active.json / tasks.json），
     // 已存 only / done / total / phase。不另建一套索引：暂停、队列暂停、重开
     // 软件后它都还在。目录页进度只认「档案 + 磁盘章成品 + 实时 state」，
@@ -805,6 +811,12 @@ internal fun ChapterHubScreen(
                     Toast.LENGTH_SHORT).show()
             }
             stalledTask -> {
+                if (spaceFull) {
+                    EventLog.ui("HUB_RESUME_BLOCKED", "id=${book.id.take(8)} reason=空间不足")
+                    Toast.makeText(c, "空间不足，先清出约 16MB 再点继续；已做好的段都留着",
+                        Toast.LENGTH_LONG).show()
+                    return
+                }
                 if (Producer.isBusyForBook(book.id)) {
                     EventLog.ui("HUB_RESUME_BLOCKED", "id=${book.id.take(8)} reason=收尾中")
                     Toast.makeText(c, "已点停止，正在收尾这一段，稍等再继续",
@@ -907,6 +919,7 @@ internal fun ChapterHubScreen(
                 bookRunning -> "收尾这一段"
                 // R363 · 副文案一律压到 5 字内：系统字体放大时，长句会顶出
                 // 1/3 宽的按键外沿；短文案 + 单行省略双保险，语义不丢。
+                spaceFull -> "先清空间"
                 stalledTask -> "断点续做"
                 needModels -> "模型没齐"
                 else -> "按勾选开做"
@@ -1033,6 +1046,7 @@ internal fun ChapterHubScreen(
                         Box(Modifier.fillMaxWidth().background(HubSoft)) {
                                 SegGridHead(chapterSegs, segMulti, segChecked.size,
                                     chapterNo = r.index + 1, running = bookRunning,
+                                    spaceFull = spaceFull,
                                     onRedo = {
                                         val rows = chapterSegs.filter {
                                             it.index in segChecked && it.hasAudio
@@ -1158,11 +1172,12 @@ internal fun ChapterHubScreen(
                     val busyHere = (bookRunning && r.index == liveChapter)
                         || mergingChapter == r.index || phaseHere != null
                     val unmergedHere = r.index in unmergedChapters
-                    val canMerge = readyHere > 0 && redoHere == 0 && !busyHere
+                    val canMerge = readyHere > 0 && redoHere == 0 && !busyHere && !spaceFull
                     // R361 · 章已固化、按设置留着小块时，这些小块只是留档不是「待拼」：
                     // 别说成「把上面这些小块做成一个章音频」，免得以为还没拼过。
                     val keepSegsHere = keepSegs && hasDone && readyHere > 0 && !busyHere
                     val status = when {
+                        spaceFull -> "空间不足 · 清出空间后再拼接，已做好的小块都留着"
                         keepSegsHere -> "章音频已生成 · 中间小块按设置留着，可在「音频文件」里导出或删除"
                         phaseHere != null -> phaseHere
                         mergingChapter == r.index -> "正在拼这一章…"
@@ -1924,7 +1939,7 @@ private fun RowScope.HubActChip(
 @Composable
 private fun SegGridHead(
     segs: List<SegRow>, multi: Boolean, picked: Int,
-    chapterNo: Int, running: Boolean,
+    chapterNo: Int, running: Boolean, spaceFull: Boolean,
     onAll: () -> Unit, onTrial: () -> Unit, onRedo: () -> Unit, onDelete: () -> Unit
 ) {
     val done = segs.count { it.hasAudio }
@@ -1939,7 +1954,8 @@ private fun SegGridHead(
                 fontWeight = FontWeight.Bold, color = palette.text)
             Spacer(Modifier.weight(1f))
             // R401 · 暂停态（主按钮「继续制作」）不能再说「正在往下做」。
-            Text(if (!running) "已暂停 · 等续做"
+            Text(if (spaceFull) "空间不足"
+                 else if (!running) "已暂停 · 等续做"
                  else if (redoing > 0) "重做中 $redoing 段" else "正在往下做",
                 fontSize = 11.sp, color = HubSub)
         }

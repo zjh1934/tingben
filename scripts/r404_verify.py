@@ -197,7 +197,7 @@ def check(s):
     if cl.count('sha = headSha(path)') < 2:
         e.append('并发重试的重取 sha 被摘')
     # ② 冷却 + 日志正名（RELAY_POLL_ERR 仍在，不是删掉）
-    for tok in ['RELAY_PUT_ERR', 'val putCooldownUntil = HashMap<String, Long>()',
+    for tok in ['RELAY_PUT_ERR', 'val putCooldownUntil = HashMap<String, Long>(RelayPrefs.cooldowns(this))',
                 'putCooldownUntil[currentName!!] = until', 'val ready = items.filterNot',
                 'phase = "put"', 'phase = "del"', '请求留着排队 · 稍后重试',
                 '回写冲突 422/409', '仓库侧故障 ', 'RELAY_DEL_ERR', 'RELAY_BUSY_ERR',
@@ -205,7 +205,7 @@ def check(s):
                 'RELAY_POLL_ERR']:
         if tok not in sv:
             e.append('回写失败处理缺: ' + tok[:60])
-    if sv.count('client.deleteQueue(item.name, reqSha)') != 2:
+    if sv.count('client.deleteQueue(item.name, reqSha)') != 3:
         e.append('正文即用即删的两处出口被改动')
     # ③ 存档去重（调用点保持 1 处，不破坏 r387）
     for tok in ['private const val DEDUPE_MS = 10 * 60 * 1000L',

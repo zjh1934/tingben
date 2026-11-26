@@ -96,7 +96,11 @@ def selftest():
     bad = 0
     for name, key, needle, repl in cuts:
         g = dict(f)
-        g[key] = f[key].replace(needle, repl, 1)
+        # R407 · 空间不足分支新增第二处 HUB_RESUME_BLOCKED，单处替换会先摘新增的，
+        # 旧那处还在 → 判据仍绿。这条按全量替换，与 r209 同一口径。
+        FULL = {"目录页双保险被摘"}
+        g[key] = (f[key].replace(needle, repl) if name in FULL
+                  else f[key].replace(needle, repl, 1))
         got = check(g)
         if got:
             print("  反向注入 %-24s 拦下 %d 条" % (name, len(got)))

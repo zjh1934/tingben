@@ -653,6 +653,10 @@ jobs:
         run: python3 scripts/r406_verify.py
       - name: R406 四路审查复核修复守门（反向注入）
         run: python3 scripts/r406_verify.py --selftest
+      - name: R407 审查遗留收敛守门（正向）
+        run: python3 scripts/r407_verify.py
+      - name: R407 审查遗留收敛守门（反向注入）
+        run: python3 scripts/r407_verify.py --selftest
       # R393 · 审计发现：下面这些早期批次守门在 CI 里只跑 --selftest（反向注入），
       # 正向 check() 从没执行过 —— CI 绿只能证明「守门自己没坏」，不能证明源码合规。
       # 本地实测 46 个正向全绿，用一个批量步骤补齐，不新增文件、不重排已有步骤。

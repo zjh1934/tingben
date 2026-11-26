@@ -75,7 +75,7 @@ def check(s=None):
     # ③ 正文即用即删（成功/失败都要删）
     if 'fun deleteQueue(' not in s['client']:
         e.append('RelayClient 没有 DELETE 请求文件')
-    if s['service'].count('client.deleteQueue(item.name, reqSha)') != 2:
+    if s['service'].count('client.deleteQueue(item.name, reqSha)') != 3:
         e.append('正文即用即删的 DELETE 不齐（超长分支与主路径各一处）')
     if '正文即用即删' not in s['client']:
         e.append('DELETE 的隐私语义注释被摘')
@@ -108,7 +108,7 @@ def check(s=None):
         e.append('振幅控制回退被摘')
     if s['service'].count('RelayHaptics.start(this)') != 1 or \
        s['service'].count('RelayHaptics.done(this)') != 1 or \
-       s['service'].count('RelayHaptics.fail(this)') != 1:
+       s['service'].count('RelayHaptics.fail(this)') != 2:
         e.append('服务里震动触发点不齐（开始/完成/失败各一处）')
 
     # ⑥ 复用现成合成链 + 并发锁 + 本机预设只读

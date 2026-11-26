@@ -134,7 +134,11 @@ class RelayService : Service() {
         // 记「本阶段」与冷却截止：put 阶段出错就让同一条请求歇一会儿再试。
         var phase = "poll"
         var currentName: String? = null
-        val putCooldownUntil = HashMap<String, Long>()
+        // R407 · 冷却落盘：进程重启后仍记得「这条别每 10 秒重做一次合成」。
+        // 与 RelayPrefs 同用墙上钟绝对时间（回拨时过期项直接丢弃）。
+        val putCooldownUntil = HashMap<String, Long>(RelayPrefs.cooldowns(this))
+        // R407 · 本轮是否已成功合成：决定上传失败时要不要补一次「失败」震动。
+        var synthOk = false
         while (running) {
             try {
                 if (!RelayPrefs.configured(this)) {
@@ -145,7 +149,11 @@ class RelayService : Service() {
                 val items = client.listQueue()
                 // R406 · 审查 P1：冷却是内存 HashMap，调用方删掉请求文件后
                 // 旧键永远不命中，长跑会堆死键；顺手按本轮实际队列收一次。
-                putCooldownUntil.keys.retainAll(items.map { it.name }.toSet())
+                val alive = items.map { it.name }.toSet()
+                val stale = putCooldownUntil.keys.filterNot { it in alive }
+                putCooldownUntil.keys.retainAll(alive)
+                // R407 · 落盘那份也同步收死键，别让私有区攒一堆永不命中的旧 id
+                stale.forEach { RelayPrefs.clearCooldown(this, it) }
                 if (errStreak > 0) {
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_POLL_RECOVER",
                         "网络恢复 · 连续出错 $errStreak 次后重新取到队列 · 退避归零")
@@ -158,7 +166,7 @@ class RelayService : Service() {
                     continue
                 }
                 // R404 · 冷却中的请求还在仓库里（没丢），只是本轮不重做合成。
-                val now = android.os.SystemClock.elapsedRealtime()
+                val now = System.currentTimeMillis()
                 val ready = items.filterNot { q ->
                     putCooldownUntil[q.name]?.let { until -> until > now } == true
                 }
@@ -173,6 +181,7 @@ class RelayService : Service() {
                 // 让一次路，把这批连续排空，不在两条之间抢回引擎。
                 SynthArbiter.setRemoteBatch(ready.size)
                 val item = ready[0]
+                synthOk = false
                 currentName = item.name
                 phase = "poll"
                 val id = item.name.removeSuffix(".json")
@@ -182,6 +191,33 @@ class RelayService : Service() {
                 // 被判空 / 超 1500 字 / 合成失败的也留，排查时看得到全貌。
                 // 只写本机私有留存区，不进日志，也不影响仓库侧「取完即删」。
                 RequestArchive.add(this, RequestArchive.SRC_RELAY, text)
+                // R407 · 上轮回写半途失败时，音频可能已经上传成功了。
+                // 命中就只补 status + 删请求，绝不再做一遍 50~60 秒合成。
+                // 只在「这条处于回写冷却」时探，正常路径不多一次 GET。
+                if (putCooldownUntil.containsKey(item.name)) {
+                    val prev = try { client.statOut(id) } catch (_: Throwable) { null }
+                    if (prev != null) {
+                        val (prevFmt, prevBytes, prevSha) = prev
+                        phase = "put"
+                        client.putDone(id, doneStatus(chars, prevFmt, prevBytes.toInt(),
+                            client.audioPath(id, prevFmt), prevSha))
+                        EventLog.log(EventLog.Kind.PIPELINE, "RELAY_RESUME_OUT",
+                            "id=$id · 上轮音频已上传 · 只补状态不重做合成 · " +
+                                "$prevFmt ${prevBytes}B",
+                            fields = mapOf("id" to id))
+                        phase = "del"
+                        client.deleteQueue(item.name, reqSha)
+                        EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEL",
+                            "id=$id · 请求文件已删（正文即用即删）", fields = mapOf("id" to id))
+                        phase = "poll"; currentName = null
+                        putCooldownUntil.remove(item.name)
+                        RelayPrefs.clearCooldown(this, item.name)
+                        SynthArbiter.remoteBatchDone()
+                        releaseWake()
+                        Thread.sleep(RelayContract.POLL_MS)
+                        continue
+                    }
+                }
                 // R381 · 只记 id / 字数 / 短哈希，正文与 Token 一个字都不落日志。
                 EventLog.log(EventLog.Kind.PIPELINE, "RELAY_REQ",
                     "id=$id · ${chars}字 · h=${sha(text).take(8)} · 取走请求",
@@ -250,8 +286,9 @@ class RelayService : Service() {
                     RelayHaptics.fail(this)
                     setState("合成没成 · " + chars + " 字（原因不落正文）")
                 } else {
+                    synthOk = true
                     // R381 · 合成与本地压缩一结束就给「完成」震动：旧版排在两次
-                    // GitHub 上传之后，用户只记得开始两下。上传失败另走 fail。
+                    // GitHub 上传之后，用户只记得开始两下。上传失败另走 fail（R407 补）。
                     RelayHaptics.done(this)
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_SYNTH",
                         "id=$id · ${chars}字 · $fmt ${bytes.size}B · 合成+压缩 ${ms}ms",
@@ -281,7 +318,9 @@ class RelayService : Service() {
                 }
                 EventLog.log(EventLog.Kind.PIPELINE, "RELAY_DEL",
                     "id=$id · 请求文件已删（正文即用即删）", fields = mapOf("id" to id))
-                phase = "poll"; currentName = null; putCooldownUntil.remove(item.name)
+                phase = "poll"; currentName = null
+                putCooldownUntil.remove(item.name)
+                RelayPrefs.clearCooldown(this, item.name)
                 // R405 · 这一条真正闭环了，整批减一；归零后书恢复续跑。
                 SynthArbiter.remoteBatchDone()
                 releaseWake()
@@ -313,9 +352,13 @@ class RelayService : Service() {
                     val kind = if (conflict) "回写冲突 422/409"
                         else if (t is RelayClient.Err) "仓库侧故障 " + msg
                         else "传输故障 " + t.javaClass.simpleName
-                    val until = android.os.SystemClock.elapsedRealtime() +
+                    val until = System.currentTimeMillis() +
                         (backoff * 3).coerceAtMost(RelayContract.MAX_BACKOFF_MS * 5)
                     putCooldownUntil[currentName!!] = until
+                    RelayPrefs.setCooldown(this, currentName!!, until)
+                    // R407 · 震过「完成」但上传没成功：补一次失败手感，
+                    // 别让用户拿着长收尾以为发出去了（合成失败分支已震过，不重复）。
+                    if (synthOk) RelayHaptics.fail(this)
                     EventLog.log(EventLog.Kind.PIPELINE, "RELAY_PUT_ERR",
                         "$kind · 请求留着排队 · 稍后重试",
                         level = EventLog.Level.WARN,

@@ -131,6 +131,28 @@ internal class RelayClient(
         return r.optJSONObject("content")?.optString("sha") ?: ""
     }
 
+    /**
+     * R407 · 审查 C 的 P1：`out/<id>` 已上传、status/DELETE 半途失败时，
+     * 旧逻辑下一轮会从合成重做一遍（50~60 秒）再 PUT 同内容音频，正是
+     * R404 死循环换个错误码复现。先探仓库里有没有成品，有就只补状态。
+     * @return Triple(格式, 字节数, blob sha)；404 返回 null。
+     */
+    fun statOut(id: String): Triple<String, Long, String>? {
+        for (fmt in listOf(RelayContract.FORMAT_M4A, "wav")) {
+            val path = audioPath(id, fmt)
+            try {
+                val o = JSONObject(String(
+                    read(open("/contents/" + path + "?ref=" + branch, "GET")), Charsets.UTF_8))
+                val size = o.optLong("size", 0L)
+                val sha = o.optString("sha")
+                if (size > 44 && sha.isNotEmpty()) return Triple(fmt, size, sha)
+            } catch (e: Err) {
+                if (e.code != 404) throw e
+            }
+        }
+        return null
+    }
+
     fun putDone(id: String, status: JSONObject) =
         putObj(RelayContract.DIR_STATUS + "/" + id + ".json",
             status.toString().toByteArray(Charsets.UTF_8), "relay: 完成状态")

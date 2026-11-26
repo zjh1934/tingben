@@ -212,7 +212,7 @@ def check(s):
                 'putCooldownUntil.keys.retainAll',
                 'phase != "put" && phase != "busy" && phase != "del"']:
         if tok not in rl: e.append('回写归类缺: ' + tok[:50])
-    if rl.count('client.deleteQueue(item.name, reqSha)') != 2:
+    if rl.count('client.deleteQueue(item.name, reqSha)') != 3:
         e.append('正文即用即删的两处出口被改动')
     if 'phase = "del"\n                    client.deleteQueue' not in rl:
         e.append('reject 分支没把 delete 前 phase 正名')

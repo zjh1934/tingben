@@ -27,6 +27,11 @@ object Producer {
     @Volatile private var busy = false
     @Volatile private var cancelRequested = false
     @Volatile private var queuePaused = false
+    /** R407 · 审查 A：让路期间页内心跳别再写「已 583 秒没新动作」——
+     *  通知栏改了口径、页内没改，视觉上就是卡死。只给 UI 读，不参与调度。 */
+    @Volatile private var yielding = false
+    fun isYielding(): Boolean = yielding
+    private fun setYielding(v: Boolean) { yielding = v }
 
     @Volatile private var appCtx: Context? = null
     @Volatile private var current: TaskInfo? = null
@@ -998,6 +1003,7 @@ object Producer {
          */
         fun yieldToRemoteIfNeeded(i: Int): Boolean {
             if (ttsHandle == 0L || !SynthArbiter.producerShouldYield()) return true
+            setYielding(true)
             // ① 释放 talker：ttsLoadGated 的全局 loadBusy 不空出来，
             //    远端 ClipSynth 永远加载不了模型（会误报「声音模型正在装载」）。
             try { NativeEngine.ttsFreeGated(ttsHandle) } catch (_: Throwable) { }
@@ -1034,6 +1040,7 @@ object Producer {
                     EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_YIELD_INTERRUPTED",
                         "seg=${i + 1} · 让路等待被中断 · 已做段全留着",
                         level = EventLog.Level.WARN)
+                    setYielding(false)
                     return false
                 }
                 // 唤醒锁 30 分钟不 touch 会被系统放掉，让路期间照喂。
@@ -1054,7 +1061,8 @@ object Producer {
                 try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
                 SynthArbiter.markProducerResumed()
                 _state.value = halted(i, annotated.size, gateFails + synthFails)
-                return false
+                setYielding(false)
+            return false
             }
             // ③ 重新加载 talker + prepare。重试几次，避开远端刚 release 的微小竞态。
             var h = 0L
@@ -1070,7 +1078,8 @@ object Producer {
                     "seg=${i + 1} · 让路后模型没加载回来，已做段全留着，点继续制作接着做",
                     level = EventLog.Level.WARN)
                 _state.value = halted(i, annotated.size, gateFails + synthFails)
-                return false
+                setYielding(false)
+            return false
             }
             try {
                 SynthInput.prepare(c, h)
@@ -1080,7 +1089,8 @@ object Producer {
                     "seg=${i + 1} · 模式输入没准备好，已做段全留着",
                     level = EventLog.Level.WARN)
                 _state.value = halted(i, annotated.size, gateFails + synthFails)
-                return false
+                setYielding(false)
+            return false
             }
             ttsHandle = h
             SynthArbiter.markProducerResumed()
@@ -1089,6 +1099,7 @@ object Producer {
             emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
                 "已生成 ${i + 1}/${annotated.size} 段声音 · 远端做完接着来",
                 chapterProgress = _state.value.chapterProgress)
+            setYielding(false)
             return true
         }
         try {
@@ -1328,9 +1339,12 @@ object Producer {
             if (spaceStopped) {
                 // R368 · 与 halted 同一真值口径：wavs 是拼接用的文件列表，
                 // 章音频覆盖的段只占一个文件，不能拿来当已完成段数。
-                _state.value = Progress(false, "没完成", _state.value.done, annotated.size,
+                // R407 · 审查 A 的 P1：原来写「没完成」，目录页 three 处派生量分家——
+                // 主按钮说「继续制作」、收尾条说「N 段就绪可拼」、网格头说「已暂停」，
+                // 点下去第一段就再撞空间预算退出，用户以为「继续」坏了。改成可辨识态。
+                _state.value = Progress(false, "空间用完", _state.value.done, annotated.size,
                     gateFails + synthFails,
-                    "空间用完了，已做好 ${_state.value.done} 段并都留着；清出空间后点「继续制作」从这接着做")
+                    "空间用完了，已做好 ${_state.value.done} 段并都留着；清出空间后再点「继续制作」")
                 EventLog.log(EventLog.Kind.PIPELINE, "STORAGE_PARTIAL_STOP",
                     "kept=${wavs.size} newly=$newlyWritten total=${annotated.size} free=$freeBytes")
                 return

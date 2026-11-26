@@ -65,7 +65,11 @@ def check(s):
         e.append('完成震动没改成长收尾节奏')
     if 'HAPTIC_DONE' not in contract or 'HAPTIC_SKIP' not in haptic:
         e.append('震动触发/跳过没记日志')
-    i_done, i_put = service.find('RelayHaptics.done(this)'), service.find('client.putDone(')
+    # R407 · 跳过重做分支在主路径之前也调 putDone；判据要验的是「主路径的
+    # 完成震动在主路径回写之前」，从 putOut 之后找第一个 putDone 才对。
+    i_done = service.find('RelayHaptics.done(this)')
+    i_putout = service.find('val blob = client.putOut(')
+    i_put = service.find('client.putDone(', i_putout if i_putout >= 0 else 0)
     if i_done < 0 or i_put < 0 or i_done > i_put:
         e.append('完成震动没在回写之前（反馈会被上传拉断，或触发点被删）')
 

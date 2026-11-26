@@ -56,7 +56,7 @@ POS = {
         'var spaceStopped = false',
         'STORAGE_PARTIAL',
         'STORAGE_PARTIAL_STOP',
-        '清出空间后点「继续制作」',
+        '清出空间后再点「继续制作」',
         # R330 · 收尾不再强制抢拼：自动开关关掉后，坏块能先重做、由用户亲手
         # 点「拼接并转码」固化。旧 R272 的 force=true 早已随口径撤掉，
         # 本轮把锚迁到现行 force=false，并把 force=true 列为回潮禁令。
@@ -142,7 +142,7 @@ if __name__ == '__main__':
             ('退回无 state 列表', 'hub', lambda t: t.replace('LazyColumn(state = listState,', 'LazyColumn(')),
             ('删合成前预检', 'pipe', lambda t: t.replace('if (estimateBytes > budgetBytes)', 'if (false)')),
             ('收尾又强制抢拼', 'pipe', lambda t: t.replace('force = false)', 'force = true)')),
-            ('空间提示塌回笼统', 'pipe', lambda t: t.replace('清出空间后点「继续制作」', '没能生成音频')),
+            ('空间提示塌回笼统', 'pipe', lambda t: t.replace('清出空间后再点「继续制作」', '没能生成音频')),
             ('CI 摘验证', 'ci', lambda t: t.replace('scripts/r95_verify.py', 'x.py')),
             ('CI 摘对拍', 'ci', lambda t: t.replace('scripts/r95_space_parity.py', 'x.py')),
             ('守恒破坏·壳层', 'chrome', lambda t: t.replace('private fun GearIcon(', 'private fun BrokenGear(')),

@@ -59,7 +59,7 @@ def check(s=None):
         e.append('跳过已有段仍逐段 emit（OVERLAY_PCT 噪声回潮）')
     if 'maxOf(_state.value.done, i + 1)' not in p:
         e.append('手工删除段会把累计进度倒退回段号')
-    if 'Progress(false, "没完成", _state.value.done, annotated.size,' not in p:
+    if 'Progress(false, "空间用完", _state.value.done, annotated.size,' not in p:
         e.append('空间不足收尾仍用文件个数')
     if 'sw.archived > 0 || sw.restored > 0' in p or '散段认领' not in p:
         e.append('音色套日志仍把散段份数写成总进度或整条省略')
@@ -102,7 +102,7 @@ def selftest():
         ('开局恢复 emit 回潮', 'producer', 'emit("正在生成声音", restoredDone', 'emit("正在生成声音", 0'),
         ('跳过段又逐段刷进度', 'producer', 'if (!skip) emit("正在生成声音", i + 1, annotated.size,', 'emit("正在生成声音", i + 1, annotated.size,'),
         ('删除段进度倒退', 'producer', 'maxOf(_state.value.done, i + 1)', 'i + 1'),
-        ('空间收尾用文件数', 'producer', 'Progress(false, "没完成", _state.value.done, annotated.size,', 'Progress(false, "没完成", wavs.size, annotated.size,'),
+        ('空间收尾用文件数', 'producer', 'Progress(false, "空间用完", _state.value.done, annotated.size,', 'Progress(false, "没完成", wavs.size, annotated.size,'),
         ('音色套日志回旧口径', 'producer', '散段认领', '认领'),
         ('自动拼章登记前守卫被摘', 'audioops', 'if (Producer.isStoppingBook(bookId)) {', 'if (false) {'),
         ('自动拼接转码不可中断', 'audioops', 'stopCheck = { Producer.isStoppingBook(bookId) }', 'stopCheck = null'),

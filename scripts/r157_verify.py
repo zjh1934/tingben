@@ -144,11 +144,20 @@ def code_only(s):
 
 
 def loop_body(p):
-    """圈出合成循环里 segStart → 合并分支这一段。"""
+    """圈出合成循环里 segStart → 合并分支这一段。
+
+    R407 · 审查 D 复核：单锚点 `val chapterSnapshot =` 一旦在收尾段重命名就
+    会让整条守门退化成「圈不到→报红」的假故障。按新形态补两个成对容错锚，
+    取不到仍判红，但不再因为一次重命名就全线误报。
+    """
     a = p.find("val segStart = wavs.size")
     if a < 0:
         return ""
     b = p.find("val chapterSnapshot =", a)
+    if b < 0:
+        b = p.find("ProduceService.finish(c.applicationContext", a)
+    if b < 0:
+        b = p.find("\n        } finally {", a)
     return p[a:b] if b > a else ""
 
 

@@ -46,7 +46,9 @@ def check(f):
         e.append("Producer.start 的静默早退没了（前置判断才成立）")
     # A 的顺序：判断必须在 onResumeTask() 之前
     k = f["hub"].find("fun hubPrimaryAction()")
-    block = f["hub"][k:k + 900] if k >= 0 else ""
+    # R407 · 新增「空间不足」拦截分支后块变长，按新形态放大窗口；
+    # 判据本身（判断在续跑之前 + 被拦有中文反馈）一条没放宽。
+    block = f["hub"][k:k + 1500] if k >= 0 else ""
     i, j = block.find("Producer.isBusyForBook("), block.find("onResumeTask()")
     if i < 0 or j < 0 or i > j:
         e.append("收尾判断没排在续跑之前")
@@ -91,8 +93,10 @@ def selftest():
         ("现行清单漏登记", "r135", '"r209_verify.py"', ""),
     ]
     bad = 0
-    # R356 · hub 里同串出现多处，只摘第一处判据仍绿，这两条须全量替换（注入更严）
-    FULL = {"收尾判断被摘", "被拦不给反馈"}
+    # R356 · hub 里同串出现多处，只摘第一处判据仍绿，须全量替换（注入更严）
+    # R407 · 空间不足分支新增了第二处 HUB_RESUME_BLOCKED，单处替换会先摘新增的，
+    # 旧那处还在 → 判据仍绿，CI 真编译抓到漏放。三条都改全量替换。
+    FULL = {"收尾判断被摘", "被拦不给反馈", "被拦不记账"}
     for name, key, needle, repl in cuts:
         g = dict(f)
         g[key] = (f[key].replace(needle, repl) if name in FULL
