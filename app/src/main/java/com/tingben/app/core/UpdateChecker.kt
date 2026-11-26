@@ -33,6 +33,15 @@ internal object UpdateChecker {
     private const val CONNECT_MS = 8000
     private const val READ_MS = 10000
 
+    /**
+     * R409 · 真机实证（1.1.63 / Xiaomi 24117RK2CC）：线上 atom 的 entry 标题是
+     * 「听本 v1.1.63」而不是纯版本号。R408 把整串 title 当版本号喂进 compare()，
+     * 「听本 v1」转不成 Int，compare 返回 -2，真机上直接显示「更新信息格式异常」。
+     * 静态用例当时只喂了 `1.1.64` / `v1.1.62` 这种干净串，没覆盖带中文前缀的标题。
+     * 这里只抽第一段 `v?数字(.数字)+`；抽不到就留原文，让上层按格式异常兜底。
+     */
+    private val VERSION_RE = Regex("""v?\d+(?:\.\d+)+""")
+
     data class Info(
         val version: String,
         val updated: String,
@@ -136,7 +145,8 @@ internal object UpdateChecker {
                 XmlPullParser.START_TAG -> {
                     when (p.name) {
                         "entry" -> inEntry = true
-                        "title", "updated", "content" -> {
+                        "title", "updated", "content" -> if (inEntry) {
+                            // feed 级 <title>/<updated> 不许污染 entry 内的采集
                             tag = p.name; buf.setLength(0)
                         }
                         "link" -> if (inEntry && url.isBlank() &&
@@ -150,13 +160,19 @@ internal object UpdateChecker {
                 XmlPullParser.END_TAG -> {
                     if (inEntry && tag == p.name && tag.isNotEmpty()) {
                         when (tag) {
-                            "title" -> if (version.isBlank()) version = buf.toString().trim()
+                            "title" -> if (version.isBlank())
+                                version = VERSION_RE.find(buf)?.value
+                                    ?.trimStart('v', 'V') ?: buf.toString().trim()
                             "updated" -> if (updated.isBlank()) updated = buf.toString().trim()
                             "content" -> if (summary.isBlank()) summary = buf.toString().trim()
                         }
                         tag = ""; buf.setLength(0)
                     }
-                    if (p.name == "entry" && inEntry) break
+                    if (p.name == "entry" && inEntry) {
+                        // 只认第一个 entry：读到闭合就收工，别再扫 feed 尾部
+                        if (version.isBlank() || url.isBlank()) return null
+                        return Info(version, updated, url, bytes, summary)
+                    }
                 }
             }
             event = p.next()

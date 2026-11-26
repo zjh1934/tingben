@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R409 · 2026-11-26 真机实证：线上 updates.atom 首条 entry 的 title 带中文前缀。
+     R408 把整串 title 当版本号，compare 返回 -2，真机显示「更新信息格式异常」。
+     这份 fixture 不许被「洗成干净版本号」，否则回归用例会假绿。 -->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>听本 更新订阅</title>
+  <updated>2026-11-26T09:16:16Z</updated>
+  <entry>
+    <title>听本 v1.1.63</title>
+    <id>https://github.com/zjh1934/tingben/releases/tag/v1.1.63</id>
+    <link rel="alternate" type="text/html" href="https://github.com/zjh1934/tingben/releases/tag/v1.1.63"/>
+    <link rel="enclosure" type="application/vnd.android.package-archive" length="19369983" href="https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.63.apk"/>
+    <updated>2026-11-26T09:16:16Z</updated>
+    <summary>听本 v1.1.63 · 安装包 tingben-v1.1.63.apk · 19369983 字节。</summary>
+    <content type="text">真机截图里点抽屉版本号只弹一句死路提示。
+- **点版本号进「关于听本」页**（独立全屏壳）。
+- **检查更新**：只读 jsdelivr 公开订阅。</content>
+  </entry>
+</feed>

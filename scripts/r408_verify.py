@@ -21,6 +21,7 @@ FILES = {
     'gradle': ROOT / 'app/build.gradle.kts',
     'publish': ROOT / 'scripts/publish_apk.py',
     'assetgen': ROOT / 'scripts/make_changelog_asset.py',
+    'atom_fixture': ROOT / 'contracts/update_atom_live.xml',  # R409 · 真机 atom 形态，独立文件防自引用
     'ci': ROOT / '.github/workflows/ci.yml',
     'r135': ROOT / 'scripts/r135_verify.py',
     'r357': ROOT / 'scripts/r357_verify.py',
@@ -94,7 +95,49 @@ def privacy_ok(text, legacy=False):
 def fallback_exits(exits, legacy=False):
     return True if legacy else {'重试打开', '分享链接', '复制诊断信息'} <= set(exits)
 
-def logic():
+# R409 · 真机截图实证的 atom 形态：feed 级也有 <title>/<updated>，
+# entry 的 <title> 带中文前缀「听本 v」，<content> 是多行纯文本。
+# 这一份就是 2026-11-26 线上 updates.atom 的结构（数值按 1.1.63 发版实测）。
+# 真机 atom 形态放在 contracts/update_atom_live.xml（独立文件，避免守门读自身时自引用）。
+
+
+
+
+def parse_atom(body, legacy=False):
+    """复刻 UpdateChecker.parse：只认第一个 entry，title 抽纯版本号。
+
+    legacy=True 还原 R408 的 bug 形态（整串 title 当版本号），用于证明
+    真机那句「更新信息格式异常」确实来自这里，而不是网络或 XML。
+    """
+    import xml.etree.ElementTree as ET
+    def child(el, name):
+        for ch in el.iter():
+            if ch.tag.split('}')[-1] == name:
+                return ch
+        return None
+    root = ET.fromstring(body)
+    entry = child(root, 'entry')
+    if entry is None:
+        return None
+    ti = child(entry, 'title')
+    text = ''.join(ti.itertext()).strip() if ti is not None else ''
+    m = re.search(r'v?\d+(?:\.\d+)+', text)
+    version = text if legacy else (m.group(0).lstrip('vV') if m else text)
+    url, size = '', 0
+    for l in entry.iter():
+        if l.tag.split('}')[-1] == 'link' and l.get('rel') == 'enclosure':
+            url = l.get('href', '')
+            try: size = int(l.get('length', '0'))
+            except ValueError: size = 0
+            break
+    if not version or not url:
+        return None
+    co = child(entry, 'content')
+    return {'version': version, 'url': url, 'bytes': size,
+            'summary': ''.join(co.itertext()).strip() if co is not None else ''}
+
+
+def logic(atom_text):
     e = []
     if cmp_version('1.1.9', '1.1.62', legacy=True) < 0:
         e.append('逻辑：旧字符串比较没复现误报')
@@ -119,6 +162,46 @@ def logic():
     if fallback_exits(['重试打开', '分享链接']): e.append('逻辑：少一个出口没被拦')
     if not fallback_exits(['重试打开', '分享链接', '复制诊断信息']):
         e.append('逻辑：三出口齐却被判不全')
+    # R409 · 发版说明含裸尖括号时，html.escape 后必须仍是合法 atom 且原文可读
+    import html as _html
+    dirty = '把整串 <title> 当 Info.version，读到 </entry> 即返回，A & B'
+    wrapped = ('<feed><entry><title>听本 v1.1.64</title>'
+               '<link rel="enclosure" href="x.apk"/>'
+               '<content type="text">' + _html.escape(dirty) +
+               '</content></entry></feed>')
+    try:
+        got = parse_atom(wrapped)
+        if got is None or '<title>' not in got['summary'] or '</entry>' not in got['summary']:
+            e.append('逻辑：转义后的发版说明丢了原文尖括号')
+    except Exception as ex:
+        e.append('逻辑：转义后的 atom 仍不是合法 XML: %s' % ex)
+    # ── R409 真机回归：中文标题 / feed 级 title / 多行 content / enclosure ──
+    live = parse_atom(atom_text)
+    if live is None:
+        e.append('逻辑：线上 atom 解析不出 entry')
+    else:
+        if live['version'] != '1.1.63':
+            e.append('逻辑：中文标题没抽成纯版本号（真机 1.1.63 实证）')
+        if state_of('1.1.63', live['version']) != '已是最新版本':
+            e.append('逻辑：真机 atom 被误判成「更新信息格式异常」')
+        if 'tingben-v1.1.63.apk' not in live['url']:
+            e.append('逻辑：enclosure 直链没取到')
+        if live['bytes'] != 19369983:
+            e.append('逻辑：enclosure 字节数没取到')
+        if '点版本号进' not in live['summary']:
+            e.append('逻辑：content 本版说明没读到')
+        old = parse_atom(atom_text, legacy=True)
+        if old is None or '格式异常' not in state_of('1.1.63', old['version']):
+            e.append('逻辑：R408 整串标题的 bug 没复现出来')
+        low = parse_atom(atom_text.replace('听本 v1.1.63', '听本 v1.1.9'))
+        if low is None or state_of('1.1.63', low['version']) != '已是最新版本':
+            e.append('逻辑：中文标题下的 1.1.9 没判已是最新')
+        high = parse_atom(atom_text.replace('听本 v1.1.63', '听本 v1.1.64'))
+        if high is None or '发现新版本' not in state_of('1.1.63', high['version']):
+            e.append('逻辑：中文标题下的 1.1.64 没弹新版')
+        none = parse_atom(atom_text.replace('听本 v1.1.63', '听本 更新'))
+        if none is None or '格式异常' not in state_of('1.1.63', none['version']):
+            e.append('逻辑：标题无版本号时没走格式异常兜底')
     return e
 
 BAD = [
@@ -195,6 +278,25 @@ BAD = [
     ('APK 路径空安全被摘', lambda d: d.update(about=d['about'].replace(
         'p.applicationInfo?.sourceDir ?: throw IllegalStateException("no apk path")',
         'p.applicationInfo.sourceDir', 1))),
+    ('atom 中文标题整串当版本号', lambda d: d.update(checker=d['checker'].replace(
+        'VERSION_RE.find(buf)?.value\n                                    ?.trimStart(\'v\', \'V\') ?: buf.toString().trim()',
+        'buf.toString().trim()', 1))),
+    ('tag 采集丢了 inEntry 守卫', lambda d: d.update(checker=d['checker'].replace(
+        '"title", "updated", "content" -> if (inEntry) {',
+        '"title", "updated", "content" -> {', 1))),
+    ('再查一次重复渲染', lambda d: d.update(about=d['about'].replace(
+        'Text("更新源：jsdelivr 公开订阅',
+        'AboutAction("再查一次") { }\n                            Text("更新源：jsdelivr 公开订阅', 1))),
+    ('检查中没禁用再查一次', lambda d: d.update(about=d['about'].replace(
+        'enabled = state !is UpdateChecker.State.Checking', 'enabled = true', 1))),
+    ('真机 atom 回归被摘', lambda d: d.update(atom_fixture='<feed/>')),
+    ('fixture 中文前缀被洗掉', lambda d: d.update(atom_fixture=d['atom_fixture'].replace(
+        '听本 v1.1.63', '1.1.63', 1))),
+    ('fixture 丢了 enclosure', lambda d: d.update(atom_fixture=d['atom_fixture'].replace(
+        'rel="enclosure"', 'rel="alternate"', 1))),
+    ('atom 说明丢了 XML 转义', lambda d: d.update(publish=d['publish'].replace(
+        'return html.escape("\\n".join(lines[:10])[:600])',
+        'return "\\n".join(lines[:10])[:600]', 1))),
 ]
 
 def check(s):
@@ -299,12 +401,30 @@ def check(s):
         e.append('随包说明生成脚本没写 changelog.txt')
     if 'DEV_MARKS' not in ag:
         e.append('随包说明没剔除开发者复盘段')
+    # R409 · CHANGELOG 里出现 `<title>` / `</entry>` 这类裸尖括号时，
+    # 发版侧不转义就会把 atom 写成非法 XML，App 端必然报「格式异常」。
+    if pub.count('html.escape(') < 2:
+        e.append('atom 本版说明没做 XML 转义（CHANGELOG 里的尖括号会破 XML）')
     if 'c.assets.open("changelog.txt")' not in about:
         e.append('关于页没读随包 changelog.txt')
     # R142 闸门一条不放宽：.md 等开发者资料仍禁止进 APK
     if r'\.(md|py|log|jpeg|jpg)$' not in ci or 'APK 里混进了开发者资料' not in ci:
         e.append('APK 闸门被放宽（不许靠改闸门绕过 .md 禁令）')
     if 'changelogSections(c)' not in about: e.append('关于页没读随包说明')
+    # ⑧ R409 真机实证两处：atom 标题归一 + 再查一次只准有一个
+    if 'VERSION_RE' not in ck_code or 'VERSION_RE.find(buf)' not in ck_code:
+        e.append('atom 标题没抽纯版本号（真机必显示「更新信息格式异常」）')
+    if '"title", "updated", "content" -> if (inEntry)' not in ck:
+        e.append('tag 采集没加 inEntry 守卫（feed 级 title 会污染 entry）')
+    if about.count('AboutAction("再查一次"') != 1:
+        e.append('再查一次按钮重复渲染（真机截图出现过两个）')
+    if 'enabled = state !is UpdateChecker.State.Checking' not in about:
+        e.append('检查中没禁用再查一次（会并发请求）')
+    af = s.get('atom_fixture', '')
+    if '听本 v1.1.63' not in af or 'rel="enclosure"' not in af:
+        e.append('真机 atom fixture 被洗成干净版本号（回归会假绿）')
+    if 'xmlns="http://www.w3.org/2005/Atom"' not in af:
+        e.append('真机 atom fixture 丢了命名空间')
     # ⑦ 守恒：零新权限 / 零新依赖 / 老页面控件零差异 / 链路符号
     if 'android.permission.WEBVIEW' in man or 'android.permission.READ_PHONE_STATE' in man:
         e.append('新增了不该有的权限')
@@ -329,7 +449,7 @@ def check(s):
                 e.append('功能守恒: %s 的 %s %s→%s' % (f, k, v, live[f].get(k)))
     for need in ['长文本分段', '真 MP3', '厂商清理', '细粒度 PAT']:
         if need not in status: e.append('STATUS 未登记欠账: ' + need)
-    e += logic()
+    e += logic(s.get('atom_fixture', ''))
     return e
 
 def selftest():

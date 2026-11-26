@@ -144,17 +144,19 @@ private fun AboutRow(label: String, value: String) {
 }
 
 @Composable
-private fun AboutAction(label: String, primary: Boolean = false, onClick: () -> Unit) {
+private fun AboutAction(label: String, primary: Boolean = false,
+                        enabled: Boolean = true, onClick: () -> Unit) {
     val p = palette
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
         .background(if (primary) p.primary.copy(alpha = 0.12f) else Color.Transparent,
             RoundedCornerShape(HiChipRadius))
-        .clickable(onClick = onClick)
+        .clickable(enabled = enabled, onClick = onClick)
         .semantics { contentDescription = label }
         .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontSize = HiBodySp, fontWeight = FontWeight.SemiBold,
-            color = if (primary) p.primary else p.text)
+            color = (if (primary) p.primary else p.text)
+                .copy(alpha = if (enabled) 1f else 0.4f))
     }
 }
 
@@ -234,11 +236,10 @@ internal fun AboutScreen(c: Context, onClose: () -> Unit) {
                             when (val st = state) {
                                 is UpdateChecker.State.Checking ->
                                     Text("正在检查…", fontSize = HiBodySp, color = p.text)
-                                is UpdateChecker.State.Failed -> {
+                                // R409 · 失败态只给原因，按钮统一由卡片底部那一个给，
+                                // 不再自己再画一个「再查一次」（真机截图出现过两个）。
+                                is UpdateChecker.State.Failed ->
                                     Text(st.reason, fontSize = HiBodySp, color = p.warn)
-                                    Spacer(Modifier.height(6.dp))
-                                    AboutAction("再查一次", primary = true) { recheck(true) }
-                                }
                                 is UpdateChecker.State.Latest ->
                                     Text("已是最新版本 v" + st.version +
                                         if (st.fromCache) "（上次检查结果）" else "",
@@ -254,7 +255,8 @@ internal fun AboutScreen(c: Context, onClose: () -> Unit) {
                                     Text("点击「再查一次」检查更新", fontSize = HiBodySp, color = p.text)
                             }
                             Spacer(Modifier.height(4.dp))
-                            AboutAction("再查一次") { recheck(true) }
+                            AboutAction("再查一次",
+                                enabled = state !is UpdateChecker.State.Checking) { recheck(true) }
                             Text("更新源：jsdelivr 公开订阅 · 不上传任何个人信息 · 24 小时内只自动查一次",
                                 fontSize = HiMicroSp, color = p.sub)
                         }
