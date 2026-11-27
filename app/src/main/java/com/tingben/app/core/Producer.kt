@@ -98,6 +98,15 @@ object Producer {
     // 目录页点「合成音频」：忙时不再拒绝，排进队列；空闲且队列为空时直接开跑。
     fun enqueueOrStart(c: Context, book: Book, only: Set<Int>?, think: Boolean?,
                        config: ProduceConfig): String {
+        // R412 · 低电只拦电子书制作：不排队、不启动、不改档案，直接把原因给用户。
+        // 先清掉上次残留，免得「排队分支」不调 start() 时把旧原因误报出来。
+        lastStartError = null
+        BatteryGate.bookBlockReason(c)?.let { why ->
+            lastStartError = why
+            EventLog.log(EventLog.Kind.PIPELINE, "BOOK_BATTERY_GATE",
+                "at=enqueueOrStart · " + BatteryGate.logLine(BatteryGate.snap(c)))
+            return why
+        }
         val t = TaskInfo(book.id, book.title, only, true, think ?: false,
             0, 0, "queued", "排队中", System.currentTimeMillis(),
             config = config, modeId = ModelStore.currentMode(c).id,
@@ -181,6 +190,12 @@ object Producer {
     }
 
     fun resumeQueue(c: Context): String? {
+        // R412 · 低电时别先 unpause 再被 start 拦住，留一个「已恢复却不跑」的脏状态。
+        BatteryGate.bookBlockReason(c)?.let { why ->
+            EventLog.log(EventLog.Kind.PIPELINE, "BOOK_BATTERY_GATE",
+                "at=resumeQueue · " + BatteryGate.logLine(BatteryGate.snap(c)))
+            return why
+        }
         unpauseQueue(c)
         EventLog.log(EventLog.Kind.PIPELINE, "QUEUE_RESUME", "用户恢复队列")
         return pumpQueue(c.applicationContext)
@@ -285,6 +300,12 @@ object Producer {
     // 没有排队任务才处理崩溃中断的单本续跑。
     // G1 之后只在弹窗里用户点「继续制作」时才被调，不再由 ON_RESUME 直接触发。
     fun autoResume(c: Context): String? {
+        // R412 · 冷启恢复弹窗点「继续制作」也是用户显式发起的电子书请求，同样拦。
+        BatteryGate.bookBlockReason(c)?.let { why ->
+            EventLog.log(EventLog.Kind.PIPELINE, "BOOK_BATTERY_GATE",
+                "at=autoResume · " + BatteryGate.logLine(BatteryGate.snap(c)))
+            return why
+        }
         lastStartError = null
         if (busy) return null
         if (TaskResume.queuePaused(c)) queuePaused = true
@@ -418,6 +439,15 @@ object Producer {
     fun start(c: Context, book: Book, onlyChapters: Set<Int>? = null,
               directRead: Boolean = false, thinkOverride: Boolean? = null,
               config: ProduceConfig = ProduceConfig()) {
+        // R412 · 唯一兜底闸：所有电子书制作路径最终都过 start()。拦在 busy=true
+        // 之前，绝不写 TaskResume.save / 不启 FGS / 不碰已做段；pumpQueue 会把
+        // 排队项放回并暂停，电够了点「继续队列」即可，断点数据一条不丢。
+        BatteryGate.bookBlockReason(c)?.let { why ->
+            lastStartError = why
+            EventLog.log(EventLog.Kind.PIPELINE, "BOOK_BATTERY_GATE",
+                "at=start · " + BatteryGate.logLine(BatteryGate.snap(c)))
+            return
+        }
         if (busy) return
         busy = true
         cancelRequested = false

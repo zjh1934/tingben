@@ -588,8 +588,15 @@ internal fun App(incoming: String? = null, onConsumed: () -> Unit = {}) {
                 lastSelection = t.only
                 Producer.start(ctx, b, t.only, directRead = true,
                     thinkOverride = t.think, config = t.config)
-                // R163 · 续跑一律回这本书的目录页（现在只有一列）。
-                openBook(b.id)
+                // R412 · 低电拦下时 start 只设 lastStartError 不启动，这里必须给
+                // 一句明确反馈，否则用户会以为「点了没反应」还被跳去目录页。
+                Producer.lastStartError?.let { why ->
+                    Toast.makeText(ctx, why, Toast.LENGTH_LONG).show()
+                    return@let
+                } ?: run {
+                    // R163 · 续跑一律回这本书的目录页（现在只有一列）。
+                    openBook(b.id)
+                }
             } else {
                 Toast.makeText(ctx, "这本书已经从书架删掉了，任务没法续跑",
                     Toast.LENGTH_LONG).show()

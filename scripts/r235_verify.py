@@ -55,7 +55,11 @@ def check(f):
               'if (!busyHere && ch != null)',
               # R329 · 整章重做：空闲起新任务、制作中才就地标记，不往旧分桶写孤儿
               'if (busyHere) segsHere.forEach { SegPlan.markSeg(work, it.index) }',
-              'else Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))',
+               # R412 · 整章重做空闲分支低电时也要给拒因，单行 else 收成 else{}；
+               # 判据按新形态改准，「制作中只标记不排队列」口径一条没放宽。
+               'else {',
+               'Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))',
+               'Producer.lastStartError?.let { why ->',
               '"第 ${ch + 1} 章已标记重做：当前这段做完就逐段接上"']:
         if k not in h: e.append("R266 制作中不排队列缺: " + k[:56])
     # 重做标记轻量观察：只秒读 redo.json，格子转黄/转绿不靠 stage 合并

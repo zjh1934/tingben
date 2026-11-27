@@ -6,7 +6,7 @@
 
 > 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、默认零联网；本机网关与跨网中继要你手动开启，抽屉里点版本号进「关于听本」可手动检查更新（只读公开订阅文件，不上传任何信息）。
 
-[![版本](https://img.shields.io/badge/version-1.1.64-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
+[![版本](https://img.shields.io/badge/version-1.1.65-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -21,24 +21,26 @@
 
 ## 下载
 
-**当前版本 `1.1.64`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+**当前版本 `1.1.65`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
 
 R391 起安装包文件名带**软件名 + 版本号**，下载器里再也不用在一堆 `app-debug.apk` 里猜哪个项目：
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.64/tingben-v1.1.64.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.65/tingben-v1.1.65.apk
 ```
 
 同内容的直链（同样带版本名）：
 
 ```
-https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.64.apk
+https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.65.apk
 ```
 
 兼容旧直链 `.../main/app-debug.apk` 仍是同一份字节，只给没刷新的老链接兜底；订阅源已改推上面带版本名的文件。
 
-抽屉底部点「v1.1.64」进**关于听本**：检查更新、版本信息（含 Git 短哈希与构建时间）、一键复制诊断信息、项目主页（打不开网页时给可复制/可重试/可分享的面板）、随包发版说明与开源组件。
+抽屉底部点「v1.1.65」进**关于听本**：检查更新、版本信息（含 Git 短哈希与构建时间）、一键复制诊断信息、项目主页（打不开网页时给可复制/可重试/可分享的面板）、随包发版说明与开源组件。
 
+> 1.1.65 加了低电保护：**电量低于 20% 时只拦本地电子书制作**（远端中继、语音网关、试听、首页单段合成都不受影响），已跑起来的书不打断，断点数据一条不丢。
+>
 > 1.1.64 修的是真机截图里的两处：atom 标题带中文前缀导致检查更新必报「格式异常」，以及失败态画出两个「再查一次」。老 1.1.63 包已发出，只能升级。
 
 > 平台解析器读不了 GB 级二进制时会报「资源解析服务请求失败」，不是坏链，用浏览器打开即可。

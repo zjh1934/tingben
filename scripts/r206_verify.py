@@ -81,10 +81,10 @@ def check(f, parts):
     # 接线全覆盖：任何脚本都不许再直接 / "MainActivity.kt"
     stragglers = []
     for p in sorted(SCRIPTS.glob("*.py")):
-        # R396 · r396_verify 是读多文件的治理守门，不属于 UI 源码分家读取层；
+        # R396 / R412 · 读多文件的治理守门不属于 UI 源码分家读取层；
         # 其余脚本仍一律禁止直读 MainActivity.kt 单文件。
         if p.name in ("ui_sources.py", "r206_verify.py", "r396_verify.py",
-                      "r397_verify.py", "r398_verify.py"):
+                      "r397_verify.py", "r398_verify.py", "r412_verify.py"):
             continue
         t = p.read_text(encoding="utf-8", errors="replace")
         for l in t.splitlines():

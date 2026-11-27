@@ -776,7 +776,14 @@ internal fun ChapterHubScreen(
         // 小块可复用、本来就会整章重合成；往旧分桶写标记只会留下无人消费的
         // 孤儿，目录页还会把它当成「永远在重做」。制作中才需要就地标记。
         if (busyHere) segsHere.forEach { SegPlan.markSeg(work, it.index) }
-        else Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))
+        else {
+            Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))
+            // R412 · 低电被拦时别再弹「已排重做」这种假成功提示。
+            Producer.lastStartError?.let { why ->
+                Toast.makeText(c, why, Toast.LENGTH_LONG).show()
+                return
+            }
+        }
         EventLog.ui("CH_REDO", "ch=$ch n=${segsHere.size} running=$busyHere")
         localTick++
         Toast.makeText(c, if (busyHere)
@@ -1089,6 +1096,12 @@ internal fun ChapterHubScreen(
                                                     if (!busyHere && ch != null) {
                                                         Producer.enqueueOrStart(c, book, setOf(ch),
                                                             null, Prefs.defaultPerf(c))
+                                                        // R412 · 低电被拦时给出原因并跳过成功文案。
+                                                        Producer.lastStartError?.let { why ->
+                                                            Toast.makeText(c, why,
+                                                                Toast.LENGTH_LONG).show()
+                                                            return@launch
+                                                        }
                                                     }
                                                     localTick++   // 立刻重读 redo.json，格子转琥珀
                                                     Toast.makeText(c,

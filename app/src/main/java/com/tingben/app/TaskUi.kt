@@ -277,7 +277,11 @@ internal fun TaskCenterScreen(c: Context, refresh: Int, onOpenTask: (String) -> 
                 showProgress = false,
                 onStop = {
                     EventLog.ui("TASK_QUEUE_RESUME", "from=nowcard")
-                    Producer.resumeQueue(c)
+                    // R412 · 低电时 resumeQueue 返回拒绝原因，要让用户看见，不能静默。
+                    Producer.resumeQueue(c)?.let { why ->
+                        android.widget.Toast.makeText(c, why,
+                            android.widget.Toast.LENGTH_LONG).show()
+                    }
                     loadTick++
                 })
         } else {

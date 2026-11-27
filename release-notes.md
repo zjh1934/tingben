@@ -1,22 +1,24 @@
-## 听本 1.1.64
+## 听本 1.1.65
 
 本地离线把小说变成能听的音频 · 端侧 TTS · 网络能力默认关闭（仅用于你手动开启的网关 / 跨网中继）· 模型后导入。
 
 ### 本版更新
 
-### R409 · 真机第一张关于页截图，抓出两个只在真机上才成立的 bug
+### R412 · 电量低于 20% 只拦电子书制作
 
-用户把 1.1.63 装上真机（Xiaomi 24117RK2CC / Android 17 / SDK 37），发回关于页截图与复制出来的诊断信息。**静态 33/33、两次真编译全绿，不等于好用**——截图里「检查更新」显示「更新信息格式异常，可去项目主页查看」，而且卡片里冒出两个「再查一次」。
+用户要的是一条很窄的规矩：**手机电量低于 20% 就拒绝本地电子书的合成请求；远端中继、语音网关、调音台试听、首页粘贴文字合成一律不拒绝。**
 
-**① 检查更新必报格式异常（P0）**：线上 `updates.atom` 首条 entry 的标题是 `听本 v1.1.63`，不是纯版本号。R408 的 `parse()` 把整串 `<title>` 当 `Info.version`，`compare()` 里 `听本 v1` 转不成 Int，返回 `-2`，于是每次检查都落到「格式异常」。守门当时只喂 `1.1.64` / `v1.1.62` 这种干净串，没覆盖线上真实形态——这是测试数据被洗干净的假绿。现在用 `VERSION_RE` 只抽 `v?数字(.数字)+`，抽不到才留原文走格式异常兜底；tag 采集补 `inEntry` 守卫（feed 级 `<title>`/`<updated>` 不许污染 entry），读到第一个 `</entry>` 即返回，不再扫 feed 尾部。
+**落点**：新增 `core/BatteryGate.kt`，用 `ACTION_BATTERY_CHANGED` 的 sticky 广播读电量（`registerReceiver(null, filter)`），**零新增权限、零新增依赖**；判定严格 `pct < 20`，20% 本身放行；读不到电池（模拟器 / 无电池设备）一律放行，不误伤。日志只记 `pct / plugged / status`，不落书名、正文与任何标识。
 
-**② 失败态画出两个「再查一次」**：卡片底部本来就常驻一个，失败态分支又自己画了一个主按钮，截图里一浅紫一黑字叠着，说明行被挤到悬浮球后面。现在失败态只给中文原因，按钮统一由底部那一个承担；`AboutAction` 加 `enabled`，「正在检查…」期间置灰不可点，避免并发请求。
+**四个入口都拦**：`Producer.enqueueOrStart`（目录页开始制作 / 制作选中章节 / 两处单章与选中段重做）、`resumeQueue`（继续队列）、`autoResume`（冷启恢复弹窗点「继续制作」）、以及唯一的兜底 `start()`——所有电子书制作路径最终都过它，队列泵 `pumpQueue` 的自动续跑也被这一道挡住。拦在 `busy = true` **之前**：不入队、不写 `TaskResume.save`、不启前台服务、不碰已做段；低电时排队项被放回并暂停，电够了点「继续队列」即可，断点数据一条不丢。
 
-**真机已验通过的部分（截图实证）**：版本信息卡全对（v1.1.63 / 400 · debug · git:63bdb3e / 构建期时间 / Android 17 SDK 37 / 设备型号 / arm64-v8a），构建期字段确实固定而非运行时钟；「复制诊断信息」粘贴出来只有白名单五行，不含书名、文件、朗读正文、Token 与设备标识；Snackbar「已复制，可粘贴到 Issue」正常；连点彩蛋提示在位。**真机基线由 1.1.57 推进到 1.1.63**。
+**不拦的**：`relay/`、`gateway/`、`core/ClipSynth.kt`（首页单段与试听共用）、`InputReadUi` / `MixerUi` / 播放器。守门用「禁止文件清单」逐份扫，这些文件里出现 `BatteryGate` 直接判红。
 
-**仍未真机验**：无浏览器机型点项目主页的兜底面板、飞行模式读随包发版说明、发现新版时的弹窗与「跳过此版本」。这四条继续排在欠账里，不假装做了。
+**UI 不静默**：续跑（`MainActivity.resumeTask`）、队列恢复（`TaskUi`）、两处单章重做（`ChapterHub`）原本会丢掉拒绝原因、甚至弹「已排重做」的假成功提示，现在都给明确的一句「电量 N%（低于 20%），电子书制作先等等；充到 20% 以上再点。远端请求、试听和单段合成不受影响」。
 
-**守门**：新增 `contracts/update_atom_live.xml` 作为真机 atom 形态 fixture（带中文前缀 / feed 级 title / 多行 content / enclosure），不许被洗成干净版本号；`r408_verify.py` 补 9 组真机回归（中文标题归一、1.1.9/1.1.64 判定、无版本号兜底、legacy bug 复现、enclosure 字节数与直链、**发版说明裸尖括号经 `html.escape` 后仍是合法 atom**）与 6 条反向注入，**41/41 全拦**；顺手把发版侧两处 `html.escape` 也钉死——本段 CHANGELOG 里就有 `<title>` / `</entry>`，不转义会把 atom 写成非法 XML，等于换个姿势重演同一个 bug。`aoci` 同步登记与刷新基线。老 1.1.63 包已发出、无法远端修复，只能升级到 1.1.64。
+**两处自己定的边界，写清楚**：① 按字面严格 **<20 拦，不看是否在充电**（用户没给充电豁免，不擅自放宽；`plugged` 只进日志，将来一句话就能加）；② **只拦新发起的请求，已经跑起来的整本制作不打断**——中途停会破坏断点续跑与书的推进节奏，这是用户反复强调过的。这两条都登记在 STATUS 欠账里，要改一句话即可。
+
+**守门**：新增 `r412_verify.py`，挂现行清单与 CI 正反向——验阈值、严格小于、读不到放行、四闸门齐全、`start` 兜底在 `busy=true` 前、主循环零渗透、其余链路零误伤、零权限零依赖、4 处 UI 反馈、90 个 Kotlin 文件按钮/回调基线零差异、链路符号与欠账登记。
 
 ### 升级
 
@@ -24,8 +26,8 @@
 
 ### 下载
 
-- 本版安装包：https://github.com/zjh1934/tingben/releases/download/v1.1.64/tingben-v1.1.64.apk
-- 镜像直链：https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.64.apk
+- 本版安装包：https://github.com/zjh1934/tingben/releases/download/v1.1.65/tingben-v1.1.65.apk
+- 镜像直链：https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.65.apk
 - 兼容旧直链（同内容，仅给没刷新的老链接兜底）：https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/app-debug.apk
 
 完整记录：[CHANGELOG.md](https://github.com/zjh1934/tingben/blob/main/CHANGELOG.md) · 使用说明：[使用指南](https://github.com/zjh1934/tingben/blob/main/docs/使用指南.md)

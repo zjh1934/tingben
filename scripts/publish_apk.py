@@ -112,6 +112,20 @@ parent = ref["object"]["sha"]
 c, head_commit = api("GET", "/git/commits/" + parent)
 if c != 200: sys.exit("读父提交失败 %s" % c)
 base_tree = head_commit["tree"]["sha"]
+
+# R410 · 1.1.64 真机下载器实证：jsdelivr 对单个 gh 包有 50MB 总大小上限，
+# 超过后新文件路径直接 403「Package size exceeded the configured limit of
+# 50 MB」（旧路径还能靠 CDN 缓存苟着，所以很容易漏判）。每个 APK ≈ 19MB，
+# 攒到 3 个就撞线。历史版本在 zjh1934/tingben 的 Releases 里都还在，这个
+# 公开仓只做分发镜像，因此每次发版顺手删掉旧的主名 APK，只留两份：
+#   本次主名 tingben-v<版本>.apk + app-debug.apk（兼容旧直链，同字节）
+c, old_tree = api("GET", "/git/trees/main?recursive=1")
+if c != 200: sys.exit("读分发仓库文件清单失败 %s" % c)
+stale = [x["path"] for x in old_tree.get("tree", [])
+         if x["type"] == "blob" and x["path"].startswith("tingben-v")
+         and x["path"].endswith(".apk") and x["path"] != APK_NAME]
+if stale: print("清理历史 APK", len(stale), "个:", ", ".join(stale))
+
 atom_sha = api("POST", "/git/blobs",
     {"content": base64.b64encode(ATOM.encode()).decode(), "encoding": "base64"})[1]["sha"]
 c, t = api("POST", "/git/trees", {"base_tree": base_tree,
@@ -122,7 +136,9 @@ c, t = api("POST", "/git/trees", {"base_tree": base_tree,
         {"path": "app-debug.apk", "mode": "100644", "type": "blob", "sha": b["sha"]},
         {"path": "README.md", "mode": "100644", "type": "blob", "sha": readme_b["sha"]},
         {"path": "updates.atom", "mode": "100644", "type": "blob", "sha": atom_sha},
-        {"path": "docs/updates.atom", "mode": "100644", "type": "blob", "sha": atom_sha}]})
+        {"path": "docs/updates.atom", "mode": "100644", "type": "blob", "sha": atom_sha}
+        # R410 · 用 sha=None 的 tree 条目删除历史主名 APK
+    ] + [{"path": p, "mode": "100644", "type": "blob", "sha": None} for p in stale]})
 if c not in (200, 201): sys.exit("tree 失败 %s %s" % (c, t))
 c, cm = api("POST", "/git/commits",
     {"message": "release: 听本 %s · %s %d 字节" % (VER, APK_NAME, len(raw)),
@@ -132,14 +148,23 @@ c, r = api("PATCH", "/git/refs/heads/main", {"sha": cm["sha"], "force": False})
 if c not in (200, 201): sys.exit("ref 失败 %s %s" % (c, r))
 print("已发布", cm["sha"][:8], "主名", APK_NAME, "（旧名 app-debug.apk 同字节兜底）")
 
-# R406 · 真机截图实证：下载器连 raw.githubusercontent.com 连续失败 4 次、
-# 列表停在 v1.1.57。self/enclosure 改走 jsdelivr 镜像；@main 有缓存，
-# 发版后主动 purge 一次（失败不阻断，APK 文件名带版本号本就是新路径无缓存）。
-try:
-    import urllib.request
-    purge = "https://purge.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/updates.atom"
-    urllib.request.urlopen(urllib.request.Request(purge,
-        headers={"User-Agent": "tingben-release"}), timeout=10).read()
-    print("已刷新订阅源镜像缓存")
-except Exception as ex:
-    print("订阅源镜像缓存刷新失败（不阻断发版）:", type(ex).__name__)
+# R410 · 发版后自检：分发仓库最多两份 APK，否则下次新路径必撞 50MB 上限
+c, check_tree = api("GET", "/git/trees/main?recursive=1")
+left = [x["path"] for x in check_tree.get("tree", [])
+        if x["type"] == "blob" and x["path"].endswith(".apk")]
+if len(left) > 2:
+    sys.exit("分发仓库仍有 %d 个 APK（%s），会超 jsdelivr 50MB 上限" % (len(left), left))
+print("分发仓库 APK 数量", len(left), "：", ", ".join(left))
+
+# R406 · 下载器连 raw.githubusercontent.com 连续失败，改走 jsdelivr 镜像。
+# R410 · 原注释说「APK 名带版本号本就是新路径无缓存」被 1.1.64 实证推翻：
+# 新路径首次回源会触发整包 50MB 检查并 403，所以订阅源和 APK 都要 purge。
+import urllib.request
+for _p in ("updates.atom", APK_NAME):
+    try:
+        purge = "https://purge.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/" + _p
+        urllib.request.urlopen(urllib.request.Request(purge,
+            headers={"User-Agent": "tingben-release"}), timeout=10).read()
+        print("已刷新镜像缓存", _p)
+    except Exception as ex:
+        print("镜像缓存刷新失败（不阻断发版）", _p, type(ex).__name__)
