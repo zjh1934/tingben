@@ -105,12 +105,22 @@ def check(s):
         if tok not in r:
             e.append('RelayService 忙态缺: ' + tok[:48])
     # 忙分支必须在 deleteQueue 之前 continue，且不得 putFailed
-    busy = r[r.find('if (r.busy)'):]
-    if 'continue' not in busy[:busy.find('setState("收到请求')]:
+    # R417 · 开始震动 / 状态 / 持锁提前到 GatewaySynth.speak 之前后，
+    # 「setState("收到请求」不再是忙分支之后的锚：find 返回 -1 → busy[:-1]
+    # 把整个后半段圈进来，连合成失败分支的 putFailed 都算成「忙时丢请求」。
+    # 改成用忙分支之后第一条真实语句做绝对边界，定位不到直接判红。
+    b0 = r.find('if (r.busy)')
+    b1 = r.find('if (busyStreak > 0)', b0) if b0 >= 0 else -1
+    if b0 < 0 or b1 < 0:
+        e.append('忙分支边界定位失败（禁止静默 fallback）')
+        busy = ''
+    else:
+        busy = r[b0:b1]
+    if 'continue' not in busy:
         e.append('忙分支没有保留请求直接 continue')
-    if 'putFailed' in busy[:busy.find('setState("收到请求')]:
+    if 'putFailed' in busy:
         e.append('忙时又走 putFailed（丢请求回潮）')
-    if 'RelayHaptics.start(this)' in busy[:busy.find('setState("收到请求')]:
+    if 'RelayHaptics.start(this)' in busy:
         e.append('忙时误触发开始震动')
     if 'fun putBusy(' not in cl or 'relay: 排队状态' not in cl:
         e.append('RelayClient 没写 busy 状态回写')

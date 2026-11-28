@@ -234,6 +234,15 @@ class RelayService : Service() {
                     continue
                 }
 
+                // R417 · 1.1.69 真机 01:42:38.377 start 200ms / .382 done
+                // 930ms 只隔 4ms：GatewaySynth.speak 是同步阻塞（本条 114 秒），
+                // 旧写法把「开始震动 / 本机合成中 / 持唤醒锁」全排在 speak
+                // 之后，等于合成快结束时才响「开始」，两下和长收尾挤在一起，
+                // 用户从 R380 起就反馈分不清。三件事一律提前到合成之前：
+                // busy 分支不经过这里（在 speak 返回后才判），不违反「忙时不震动」。
+                setState("收到请求 · " + chars + " 字 · 本机合成中")
+                RelayHaptics.start(this)
+                holdWake()
                 val t0 = android.os.SystemClock.elapsedRealtime()
                 // R400 · 渠道标签：中继链路的 MIXER_TRIAL 记「来源=中继」，不再混成网关。
                 val r = GatewaySynth.speak(this, text, 0, "中继")
@@ -271,9 +280,6 @@ class RelayService : Service() {
                         "本机空出来了 · 连续让了 $busyStreak 轮 · 开始合成")
                     busyStreak = 0
                 }
-                setState("收到请求 · " + chars + " 字 · 本机合成中")
-                RelayHaptics.start(this)
-                holdWake()
                 val bytes = r.bytes
                 val fmt = r.format
                 if (!r.ok || bytes == null || bytes.size <= 44) {

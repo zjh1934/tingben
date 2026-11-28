@@ -453,20 +453,22 @@ object Producer {
         cancelRequested = false
         appCtx = c.applicationContext
         val thinkOn = thinkOverride ?: false
+        // R414 · 1.1.66 真机实证：点「继续」后 FGS_READY 先画 0/0，要等 19 秒
+        // （切分 8s + 音色 2s + 身份 7s + 语气 1s）才回到 203/26678，用户眼里
+        // 就是「从头跑了」。停止 / 冷启恢复后的 _state 本来就带着真实 done/total
+        // 与逐章进度，start() 却硬清零重建。这里从旧状态带出真值，开局即是明账。
+        // R417 · 真值必须先于「建档案」取：旧顺序先 save 一份 0/0 的 TaskInfo，
+        // 开局窗口里遇上覆盖更新 / 强杀，档案真值就断在这几毫秒上。
+        val prior = _state.value
+        val seedDone = prior.done.coerceAtLeast(0)
+        val seedTotal = prior.total.coerceAtLeast(0)
         current = TaskInfo(book.id, book.title, onlyChapters, true, thinkOn,
-            0, 0, "running", "正在准备", System.currentTimeMillis(),
+            seedTotal, seedDone, "running", "正在准备", System.currentTimeMillis(),
             config = config, modeId = ModelStore.currentMode(c).id,
             splitRule = TaskResume.SPLIT_RULE,
             planEpoch = ChapterPlan.epoch(c, book.id))
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
-        // R414 · 1.1.66 真机实证：点「继续」后 FGS_READY 先画 0/0，要等 19 秒
-        // （切分 8s + 音色 2s + 身份 7s + 语气 1s）才回到 203/26678，用户眼里
-        // 就是「从头跑了」。停止 / 冷启恢复后的 _state 本来就带着真实 done/total
-        // 与逐章进度，start() 却硬清零重建。这里从旧状态带出真值，开局即是明账。
-        val prior = _state.value
-        val seedDone = prior.done.coerceAtLeast(0)
-        val seedTotal = prior.total.coerceAtLeast(0)
         _state.value = Progress(true, "正在准备", seedDone, seedTotal, 0,
             if (seedDone > 0 && seedTotal > 0)
                 "已续上 $seedDone/$seedTotal 段，正在准备…" else "正在启动…",
@@ -674,6 +676,13 @@ object Producer {
         // R176 · 每个任务重新计时，别让上一任务的节流窗口吃掉本次首帧
         lastPersistMs = 0L
         lastNotifyMs = 0L
+        // R417 · 1.1.69 真机 13:55:36.997：run() 里第一句「正在分章」硬写
+        // 0/0，把 start() 刚带出来的 205/26678 覆盖掉了；后面 R415 那句
+        // 「seedState = _state.value」读到的就是这个被清掉的 0，于是开局
+        // 仍归零 7 秒（13:55:44.086 才补回 205）。R415 修的是另一处硬 0，
+        // 没盖住这一帧。这里把恢复态先留一份，开局三帧（分章 / seed /
+        // R413 扫盘）全部从它取，done/total/逐章表口径一致。
+        val openingTruth = _state.value
         if (!NativeEngine.isAvailable()) {
             abortBeforeStart(NativeEngine.shortReason())
             return
@@ -692,7 +701,9 @@ object Producer {
             return
         }
 
-        emit("正在分章", 0, 0, 0, "正在把这本书切成能读的小块…")
+        emit("正在分章", openingTruth.done, openingTruth.total, 0,
+            "正在把这本书切成能读的小块…",
+            chapterProgress = openingTruth.chapterProgress)
         val text = BookStore.read(c, book)
         // R138 · 制作运行也用落盘章节表，保证与目录页、断点校验同一套章号
         val (chapters, allChunks) = ChapterPlan.resolve(c, book, text)
@@ -1103,7 +1114,11 @@ object Producer {
             ttsHandle = 0L
             SynthArbiter.markProducerYielded()
             // running 不变，只把通知文案说明白：是在让路，不是卡死也不是停了。
-            emit("远端优先 · 这一小段已存好", i + 1, annotated.size,
+            // R417 · 1.1.69 真机 01:41:26.906 done=13 → 01:41:28.024
+            // done=14：让路发生在循环顶部、段 14 还没合成，旧写法 emit(i+1)
+            // 把进度虚报一格，让路 4 分半里数字不动、恢复后仍报 14。
+            // 文案已经说了「段号与进度不变」，这里就别推 done。
+            emit("远端优先 · 这一小段已存好", _state.value.done, annotated.size,
                 gateFails + synthFails,
                 "远端请求优先，这一小段已存好；这批做完接着做，不用重来",
                 chapterProgress = _state.value.chapterProgress)
@@ -1189,8 +1204,8 @@ object Producer {
             SynthArbiter.markProducerResumed()
             EventLog.log(EventLog.Kind.PIPELINE, "PRODUCE_RESUME",
                 "seg=${i + 1} · 整批远端已排空 · 从下一段接着做，段号与进度不变")
-            emit("正在生成声音", i + 1, annotated.size, gateFails + synthFails,
-                "已生成 ${i + 1}/${annotated.size} 段声音 · 远端做完接着来",
+            emit("正在生成声音", _state.value.done, annotated.size, gateFails + synthFails,
+                "已生成 ${_state.value.done}/${annotated.size} 段声音 · 远端做完接着来",
                 chapterProgress = _state.value.chapterProgress)
             setYielding(false)
             return true
@@ -1342,12 +1357,19 @@ object Producer {
                     segStartBytes.add(cursorBytes)
                     cursorBytes += (wav.length() - 44) + gapBytes
                 }
+                // R417 · 1.1.69 真机 13:55:44.086 bottom=87 → 13:57:11.238
+                // bottom=1 并一直钉在 1：开局帧用 restoredChapter（全表、
+                // 固化章 1f），循环里却用稀疏的 perChapterDone.mapValues，
+                // 固化章干脆不在表里，emit 取「最靠前未完成章」就选到章号
+                // 很小、比例很低的早章。两处必须同一口径，下球才跟得住。
                 val chapterSnapshot = if (wavs.size > segStart) {
                     val ci = segChapter.getOrElse(i) { -1 }
-                    if (ci >= 0) perChapterDone[ci] = (perChapterDone[ci] ?: 0) + 1
-                    perChapterDone.mapValues { (k, v) ->
-                        (v.toFloat() / (perChapterTotal[k] ?: 1).coerceAtLeast(1).toFloat())
-                            .coerceIn(0f, 1f)
+                    if (ci >= 0 && ci !in sealedChapters)
+                        perChapterDone[ci] = (perChapterDone[ci] ?: 0) + 1
+                    perChapterTotal.mapValues { (ch, total) ->
+                        if (ch in sealedChapters) 1f
+                        else ((perChapterDone[ch] ?: 0).toFloat() /
+                            total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
                     }
                 } else _state.value.chapterProgress
                 val left = annotated.size - (i + 1)

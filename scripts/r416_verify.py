@@ -127,6 +127,12 @@ def logic():
     return e
 
 
+# R417 · 版本/基线不再绑死字面量：发版轮改 version.txt 时判据自动跟着走
+VER = (ROOT / 'version.txt').read_text(encoding='utf-8').strip()
+_m = re.search(r'用户真机基线 `(\d+\.\d+\.\d+)`',
+               '\n'.join((ROOT / 'STATUS.md').read_text(encoding='utf-8').splitlines()[:12]))
+BV = _m.group(1) if _m else '0.0.0'
+
 BAD = [
     ('catch 又清 0/0', lambda d: d.update(producer=d['producer'].replace(
         'val p0 = _state.value\n                    _state.value = Progress(false, "出错了", p0.done, p0.total, 0,',
@@ -143,20 +149,20 @@ BAD = [
     ('R175 blocked 阶段被摘', lambda d: d.update(producer=d['producer'].replace(
         'phase = "blocked"', 'phase = "running"', 1))),
     ('STATUS 顶部基线回潮', lambda d: d.update(status=d['status'].replace(
-        '用户真机基线 `1.1.66`', '用户真机基线 `1.1.63`', 1))),
+        '用户真机基线 `%s`' % BV, '用户真机基线 `1.1.57`', 1))),
     ('STATUS 表格基线回潮', lambda d: d.update(status=d['status'].replace(
-        '`1.1.66`（2026-11-28 11:42:09', '`1.1.57`（2026-11-28 11:42:09', 1))),
+        '用户真机安装的 `%s`' % BV, '用户真机安装的 `1.1.63`', 1))),
     ('ROADMAP 基线回潮', lambda d: d.update(roadmap=d['roadmap'].replace(
-        '用户真机基线 `1.1.66`', '用户真机基线 `1.1.63`', 1))),
+        '用户真机基线 `%s`' % BV, '用户真机基线 `1.1.63`', 1))),
     ('busy 秒数被摘', lambda d: d.update(relay=d['relay'].replace(
         'j.retry_after_ms?Math.ceil(j.retry_after_ms/1000):60', '0', 1))),
     ('busy 文案又只说稍候', lambda d: d.update(relay=d['relay'].replace(
         "，约 '+sec+' 秒后自动补…", '，忙完自动补…', 1))),
-    ('版本没升', lambda d: d.update(version='1.1.68\n')),
-    ('README 没写 R416 说明行', lambda d: d.update(readme=d['readme'].replace(
-        '> 1.1.69 维护轮：', '> ', 1))),
-    ('CHANGELOG 缺 1.1.69 段', lambda d: d.update(changelog=d['changelog'].replace(
-        '## [1.1.69]', '', 1))),
+    ('版本没升', lambda d: d.update(version='1.1.0\n')),
+    ('README 没写本版说明行', lambda d: d.update(readme=d['readme'].replace(
+        '> %s ' % VER, '> ', 1))),
+    ('CHANGELOG 缺本版段', lambda d: d.update(changelog=d['changelog'].replace(
+        '## [%s]' % VER, '', 1))),
     ('aoci 漏登记 r416', lambda d: d.update(aoci=d['aoci'].replace(
         'r416_verify.py[', 'gone.py[', 1))),
     ('现行清单漏登记', lambda d: d.update(r135=d['r135'].replace('"r416_verify.py"', '', 1))),
@@ -197,15 +203,23 @@ def check(s):
     if 'done = 0, total = 0,' in pr:
         e.append('abort 档案回潮清 0/0')
 
-    # ② 文档基线同源（顶部 / 表格 / ROADMAP 都认日志实证的 1.1.66）
-    if st.count('`1.1.66`') < 2:
-        e.append('STATUS 顶部与表格没都写 1.1.66')
-    if '`1.1.63`' in st.split('\n')[4] or '`1.1.57`' in st:
-        e.append('STATUS 旧基线回潮')
-    if '用户真机基线 `1.1.66`' not in rm:
-        e.append('ROADMAP 基线不同源')
-    if '`1.1.63`' in rm:
-        e.append('ROADMAP 旧基线回潮')
+    # ② 文档基线同源：真值从 STATUS 顶部抽，表格与 ROADMAP 必须同一个值。
+    # R417 迁移：R416 当时绑死 1.1.66，发新版就恒红；改成动态但判据不放宽
+    # （顶部/表格/ROADMAP 三处同源 + 旧基线不许回潮 + 版本号必须格式合法）。
+    head = '\n'.join(st.splitlines()[:12])
+    rm_head = '\n'.join(rm.splitlines()[:6])
+    mb = re.search(r'用户真机基线 `(\d+\.\d+\.\d+)`', head)
+    if not mb:
+        e.append('STATUS 顶部没写真机基线')
+    else:
+        bv = mb.group(1)
+        if head.count('`%s`' % bv) < 2:
+            e.append('STATUS 顶部与表格基线没同源')
+        if '用户真机基线 `%s`' % bv not in rm_head:
+            e.append('ROADMAP 基线不同源')
+    for oldv in ('1.1.57', '1.1.63'):
+        if ('`%s`' % oldv) in head or ('`%s`' % oldv) in rm_head:
+            e.append('旧基线回潮: ' + oldv)
 
     # ③ 调用页 busy 秒数
     for tok in ['j.retry_after_ms?Math.ceil(j.retry_after_ms/1000):60',
@@ -215,17 +229,18 @@ def check(s):
     if "j.reason||'稍候'" not in rl and "j.reason||" not in rl:
         e.append('busy 原有 reason 兜底被改坏')
 
-    # ④ 版本与登记
-    if s['version'].strip() != '1.1.69':
-        e.append('version.txt 不是 1.1.69')
+    # ④ 版本与登记（动态对齐 version.txt，R417 迁移）
+    ver = s['version'].strip()
+    if not re.fullmatch(r'\d+\.\d+\.\d+', ver):
+        e.append('version.txt 格式不对')
     for k, name in [('readme', 'README'), ('status', 'STATUS'),
                     ('roadmap', 'ROADMAP')]:
-        if '`1.1.69`' not in s[k] and '1.1.69' not in s[k]:
-            e.append(name + ' 没对齐 1.1.69')
-    if '> 1.1.69 维护轮：' not in rd:
-        e.append('README 没写 R416 说明行')
-    if '## [1.1.69]' not in s['changelog']:
-        e.append('CHANGELOG 缺 1.1.69 段')
+        if ver not in s[k]:
+            e.append(name + ' 没对齐 ' + ver)
+    if ('> %s ' % ver) not in rd:
+        e.append('README 没写本版说明行')
+    if ('## [%s]' % ver) not in s['changelog']:
+        e.append('CHANGELOG 缺本版段')
     if 'r416_verify.py[' not in s['aoci']:
         e.append('aoci 索引漏登记 r416')
     if '"r416_verify.py"' not in s['r135']:

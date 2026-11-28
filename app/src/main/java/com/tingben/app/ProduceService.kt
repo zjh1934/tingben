@@ -155,6 +155,10 @@ class ProduceService : Service() {
             } catch (_: Throwable) { }
         }
 
+        // R417 · 让路 4 分半每 5 秒 touch 一次，旧写法每次都写一行
+        // FGS_WAKELOCK（真机 01:41:33~01:46:03 刷了 55 行同款）。
+        // 保活照喂，日志按 R400 同款口径「首行 + 每 12 次汇总」。
+        private var yieldTouchCount = 0
         fun touch(c: Context, unit: String) {
             if (finished) return
             val pm = c.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
@@ -165,8 +169,13 @@ class ProduceService : Service() {
                 runCatching { if (wl.isHeld) wl.release() }
                 runCatching { wl.acquire(UNIT_TIMEOUT_MS) }
             }
-            EventLog.log(EventLog.Kind.ENGINE, "FGS_WAKELOCK",
-                "unit=$unit type=PARTIAL_WAKE_LOCK timeoutMs=$UNIT_TIMEOUT_MS scope=每块",
+            val logIt = if (unit == "让路给远端请求") {
+                yieldTouchCount++
+                yieldTouchCount == 1 || yieldTouchCount % 12 == 0
+            } else true
+            if (logIt) EventLog.log(EventLog.Kind.ENGINE, "FGS_WAKELOCK",
+                "unit=$unit type=PARTIAL_WAKE_LOCK timeoutMs=$UNIT_TIMEOUT_MS scope=每块" +
+                    if (unit == "让路给远端请求") " · 第 $yieldTouchCount 次保活" else "",
                 level = EventLog.Level.TRACE)
         }
 

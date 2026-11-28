@@ -273,10 +273,12 @@ BAD = [
         'val chapterPctNow = target.chapterPct', 1))),
     ('Overlay 占位帧仍记日志', lambda d: d.update(overlay=d['overlay'].replace(
         'if (totalNow > 0 && sig != lastPctLog)', 'if (sig != lastPctLog)', 1))),
+    # R417 · Producer 现在有两处同源判定（开局 restoredChapter + 循环
+    # chapterSnapshot）。单处替换另一处仍合规 → 假绿，改全量替换。
     ('已固化章又进增量', lambda d: d.update(producer=d['producer'].replace(
-        'ci !in sealedChapters)', 'true)', 1))),
+        'ci !in sealedChapters)', 'true)'))),
     ('restoredChapter 不标固化章', lambda d: d.update(producer=d['producer'].replace(
-        'if (ch in sealedChapters) 1f', '0f', 1))),
+        'if (ch in sealedChapters) 1f', '0f'))),
     ('sealedChapters 被摘', lambda d: d.update(producer=d['producer'].replace(
         'val sealedChapters = doneChapterFiles.keys.toSet()', '', 1))),
     ('转码心跳 BEGIN 被摘', lambda d: d.update(ops=d['ops'].replace(

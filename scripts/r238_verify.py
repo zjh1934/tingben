@@ -20,6 +20,8 @@ def files():
     def rd(p): return p.read_text(encoding="utf-8", errors="replace")
     return {
         "settings": rd(ROOT / "app/src/main/java/com/tingben/app/SettingsUi.kt"),
+        # R417 · 版本真值已由 R408 挪进「关于听本」全屏页，判据跟着改准
+        "about": rd(ROOT / "app/src/main/java/com/tingben/app/AboutUi.kt"),
         "merged": ui_sources.source(ROOT).read_text(encoding="utf-8"),
         "agents": rd(ROOT / "AGENTS.md"),
                 # R242 · 看板在仓库外、CI checkout 里没有；判据改读仓内 AGENTS.md。
@@ -72,8 +74,17 @@ def check(f):
     # ③ 顶部卡去调试串（诊断日志仍保留，r141 守，不是删信息）
     for banned in ['" · 本机 Android "', "android.os.Build.SUPPORTED_ABIS.firstOrNull()"]:
         if banned in s: e.append("设置首页又塞回调试串: " + banned[:48])
-    if '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME' not in s:
-        e.append("软件版本也没了")
+    # R417 · 用户点名：设置首页「4 份已就绪」「软件版本 x.x.x」是冗余调试信息
+    # （顶部「模型已就绪」已表态，抽屉点版本号进关于页有完整版本/构建信息）。
+    # 判据按现状迁移、不放宽：设置页不许回潮，关于页必须仍持有版本真值。
+    if '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME' in s:
+        e.append("设置首页又摆回软件版本（R408 起归关于页）")
+    if '"4 份已就绪"' in s:
+        e.append("设置首页又摆回份数（顶部状态已经说了）")
+    if 'missing.isNotEmpty())' not in s:
+        e.append("缺件引导被一起删了")
+    if 'BuildConfig.VERSION_NAME' not in f["about"]:
+        e.append("关于页丢了版本真值，设置页就不能删")
     # ④ r156 按现状迁移，判据不放宽
     if 'SettingsSection("音频文件", "本机", collapsible = false)' not in f["r156"]:
         e.append("r156 还绑旧标题，重设计后判据没接上")
@@ -114,9 +125,14 @@ def selftest():
          'SettingsSection("成品文件", "本机", collapsible = false)'),
         ("删除键被摘", "settings", '"删除选中"', ""),
         ("导出动作被摘", "settings", "AudioExport.exportPicked(c, tree", ""),
-        ("调试串回潮", "settings", '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME',
-         '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME + " · 本机 Android " + android.os.Build.VERSION.RELEASE'),
-        ("软件版本被摘", "settings", '"软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME', '"版本"'),
+        ("调试串回潮", "settings", 'if (missing.isNotEmpty()) {',
+         'Text(" · 本机 Android " + android.os.Build.VERSION.RELEASE)\n                if (missing.isNotEmpty()) {'),
+        ("设置页回潮软件版本", "settings", 'if (missing.isNotEmpty()) {',
+         'Text("软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME)\n                if (missing.isNotEmpty()) {'),
+        ("设置页回潮份数", "settings", 'if (missing.isNotEmpty()) {',
+         'Text("4 份已就绪")\n                if (missing.isNotEmpty()) {'),
+        ("关于页版本真值被摘", "about", 'BuildConfig.VERSION_NAME', ''),
+        ("缺件引导被摘", "settings", 'missing.isNotEmpty()) {', 'false) {'),
         ("r156 没迁移", "r156", 'SettingsSection("音频文件", "本机", collapsible = false)',
          'SettingsSection("成品文件", "本机", collapsible = false)'),
         ("AGENTS 官方口径被摘", "agents", "aoci verify", ""),

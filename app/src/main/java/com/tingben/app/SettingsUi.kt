@@ -461,16 +461,16 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
                         Text("查看 ›", fontSize = 12.sp)
                     }
                 }
-                Spacer(Modifier.height(5.dp))
-                Text(if (missing.isEmpty()) "4 份已就绪"
-                     else "还差 ${missing.size} 份 · 共 4 份：" + missing.joinToString("、"),
-                    fontSize = 12.sp, color = Sub, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(6.dp))
-                // R238 · 设备型号 / ABI 是诊断日志的内容（r141 仍在那里守），
-                // 摆到设置首页只是调试噪声；这里只留软件版本。
-                Text("软件版本 " + com.tingben.app.BuildConfig.VERSION_NAME,
-                    fontSize = 11.sp, color = Sub)
+                // R417 · 用户点名：顶部卡下面这两行是重复的调试信息——
+                // 「模型已就绪」已经说了份数齐，抽屉点版本号进「关于听本」
+                // 有版本与构建信息（R408），这里再摆一遍纯占地方。
+                // 缺件清单是有用的引导，保留：只有没齐时才显示。
+                if (missing.isNotEmpty()) {
+                    Spacer(Modifier.height(5.dp))
+                    Text("还差 ${missing.size} 份 · 共 4 份：" + missing.joinToString("、"),
+                        fontSize = 12.sp, color = Warn, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                }
             }
         }
 
