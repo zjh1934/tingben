@@ -1,24 +1,25 @@
-## 听本 1.1.65
+## 听本 1.1.66
 
 本地离线把小说变成能听的音频 · 端侧 TTS · 网络能力默认关闭（仅用于你手动开启的网关 / 跨网中继）· 模型后导入。
 
 ### 本版更新
 
-### R412 · 电量低于 20% 只拦电子书制作
+### R413 · 续跑转圈跟真实章走 + 低电保护能关了
 
-用户要的是一条很窄的规矩：**手机电量低于 20% 就拒绝本地电子书的合成请求；远端中继、语音网关、调音台试听、首页粘贴文字合成一律不拒绝。**
+**① 转圈定位（真机回执）**：用户把软件关掉或更新后再续跑，第一章明明已经合成完、拼接完、转码完，转圈却还钉在第一章第一个灰色音频小块上；第二章其实已经做了一半（点开看到绿灰相间），但完全看不出有没有在合成。
 
-**落点**：新增 `core/BatteryGate.kt`，用 `ACTION_BATTERY_CHANGED` 的 sticky 广播读电量（`registerReceiver(null, filter)`），**零新增权限、零新增依赖**；判定严格 `pct < 20`，20% 本身放行；读不到电池（模拟器 / 无电池设备）一律放行，不误伤。日志只记 `pct / plugged / status`，不落书名、正文与任何标识。
+根因是 `chapterProgress`（逐章进度）**只是内存态**：`Producer.start()` 开跑时把它重置成空表，续跑开局那条 `emit` 也没传；`ChapterHub.makingChapter` 遍历空表就兜底到第 0 章 → 展开第一章 → `segBusyIndex` 把转圈画在第一章第一个没音频的格子上。已固化章里残留的 redo 标记还会再画一个。
 
-**四个入口都拦**：`Producer.enqueueOrStart`（目录页开始制作 / 制作选中章节 / 两处单章与选中段重做）、`resumeQueue`（继续队列）、`autoResume`（冷启恢复弹窗点「继续制作」）、以及唯一的兜底 `start()`——所有电子书制作路径最终都过它，队列泵 `pumpQueue` 的自动续跑也被这一道挡住。拦在 `busy = true` **之前**：不入队、不写 `TaskResume.save`、不启前台服务、不碰已做段；低电时排队项被放回并暂停，电够了点「继续队列」即可，断点数据一条不丢。
+**三处一起修**：
+- `Producer` 续跑开局在算 `pending` 的同一次扫盘里按 `segChapter` 归出「逐章已完成段数」，作为 `emit` 的初始 `chapterProgress`，并作为 `perChapterDone` 的起点——后续 `chapterSnapshot` 不会把已完成章从表里抹掉；旧 `count{}` 改显式 `for`，判 pending 的语义一字未改。
+- `ChapterHub.makingChapter` 改成**磁盘真值优先**：已经拼成章音频的章一律算 1f（完成），内存态只用来分辨没固化章里谁做了多少；`remember` 加 `ui` 依赖，磁盘快照一刷新就重算。
+- `chapterSegs` 与 `segBusyIndex` 各加一道 `chapterDone`：已固化章既不认残留 redo 转圈，也不画 busyIndex 转圈，格子只作留档显示。
 
-**不拦的**：`relay/`、`gateway/`、`core/ClipSynth.kt`（首页单段与试听共用）、`InputReadUi` / `MixerUi` / 播放器。守门用「禁止文件清单」逐份扫，这些文件里出现 `BatteryGate` 直接判红。
+进度卡另给一句明账 **「正在制作第 N 章 · 已做 X/Y 段」**，不用展开格子就知道现在在哪一章。
 
-**UI 不静默**：续跑（`MainActivity.resumeTask`）、队列恢复（`TaskUi`）、两处单章重做（`ChapterHub`）原本会丢掉拒绝原因、甚至弹「已排重做」的假成功提示，现在都给明确的一句「电量 N%（低于 20%），电子书制作先等等；充到 20% 以上再点。远端请求、试听和单段合成不受影响」。
+**② 低电保护加了开关**：放在 **设置 → 运行与通知**，和「打开软件自动续跑」同组（都是「软件在后台怎么跑」的行为，不塞进主题 / 调音台 / 权限）。开关叫「低电量保护」，副标题写清「低于 20% 暂缓电子书制作 · 远端 / 试听 / 单段不受影响」。**默认开**，沿用 R412 你要的行为；关掉后 `BatteryGate` 连电池都不读，零开销放行。仍严格 `<20`、不看充电、只拦新发起的电子书请求。
 
-**两处自己定的边界，写清楚**：① 按字面严格 **<20 拦，不看是否在充电**（用户没给充电豁免，不擅自放宽；`plugged` 只进日志，将来一句话就能加）；② **只拦新发起的请求，已经跑起来的整本制作不打断**——中途停会破坏断点续跑与书的推进节奏，这是用户反复强调过的。这两条都登记在 STATUS 欠账里，要改一句话即可。
-
-**守门**：新增 `r412_verify.py`，挂现行清单与 CI 正反向——验阈值、严格小于、读不到放行、四闸门齐全、`start` 兜底在 `busy=true` 前、主循环零渗透、其余链路零误伤、零权限零依赖、4 处 UI 反馈、90 个 Kotlin 文件按钮/回调基线零差异、链路符号与欠账登记。
+**守门**：新增 `r413_verify.py` 挂现行清单与 CI 正反向——验续跑逐章基线、磁盘真值优先、已固化章零转圈、进度卡明账、开关默认开/落盘/尊重/入口、零权限、功能守恒；纯内存逻辑复刻「第一章固化 + 空表」必须落到第二章，并把 R412 的空表兜底 bug 复现出来做对照。7 个历史判据（`r95` / `r150` / `r151` / `r219` / `r233` / `r235` / `r362`）按新形态改准，语义一条没放宽。
 
 ### 升级
 
@@ -26,8 +27,8 @@
 
 ### 下载
 
-- 本版安装包：https://github.com/zjh1934/tingben/releases/download/v1.1.65/tingben-v1.1.65.apk
-- 镜像直链：https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.65.apk
+- 本版安装包：https://github.com/zjh1934/tingben/releases/download/v1.1.66/tingben-v1.1.66.apk
+- 镜像直链：https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.66.apk
 - 兼容旧直链（同内容，仅给没刷新的老链接兜底）：https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/app-debug.apk
 
 完整记录：[CHANGELOG.md](https://github.com/zjh1934/tingben/blob/main/CHANGELOG.md) · 使用说明：[使用指南](https://github.com/zjh1934/tingben/blob/main/docs/使用指南.md)

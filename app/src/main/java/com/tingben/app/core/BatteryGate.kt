@@ -60,6 +60,8 @@ internal object BatteryGate {
      * 日志只记百分比与充电状态，不记书名、不记正文、不记任何标识。
      */
     fun bookBlockReason(c: Context): String? {
+        // R413 · 设置页可以整项关掉。关掉后连电池都不读，零开销放行。
+        if (!Prefs.lowBatteryGuard(c)) return null
         val s = snap(c)
         if (!blocked(s.pct, s.valid)) return null
         return "电量 ${s.pct}%（低于 20%），电子书制作先等等；充到 20% 以上再点。" +

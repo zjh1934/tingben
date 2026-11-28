@@ -123,6 +123,26 @@ internal fun AutoResumeRow(c: Context) {
     }
 }
 
+/**
+ * R413 · 低电量保护开关。放在「设置 → 运行与通知」，和「打开软件自动续跑」
+ * 同组：都是「软件在后台怎么跑」的行为，不塞进主题 / 调音台 / 权限里。
+ * 默认开（R412 用户要的行为）；副标题把「只拦电子书、其余不受影响」写清楚，
+ * 免得用户以为关掉它会影响远端中继或试听。
+ */
+@Composable
+internal fun LowBatteryGuardRow(c: Context) {
+    var on by remember { mutableStateOf(Prefs.lowBatteryGuard(c)) }
+    SettingLine(UiIcon.SHIELD, "低电量保护",
+        if (on) "低于 20% 暂缓电子书制作 · 远端 / 试听 / 单段不受影响"
+        else "已关闭：电量再低也继续制作") {
+        Switch(checked = on, onCheckedChange = {
+            on = it
+            Prefs.setLowBatteryGuard(c, it)
+            EventLog.ui("LOW_BATTERY_SETTING", "on=$it")
+        })
+    }
+}
+
 /** R171 · 「应用详情」是入口不是权限，原来复用 PermRow 会显示「已开启 · 查看」。
  *  R320 · 前导图标由调用方指定，不再拿标题首字放大顶数。 */
 @Composable
@@ -460,7 +480,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
             SettingsEntry(UiIcon.PALETTE, "外观设置", "主题 · 悬浮进度 · 图例") {
                 onPageChange("appearance")
             }
-            SettingsEntry(UiIcon.RESUME, "运行与通知", "打开软件自动续跑") {
+            SettingsEntry(UiIcon.RESUME, "运行与通知", "自动续跑 · 低电量保护") {
                 onPageChange("runtime")
             }
             SettingsEntry(UiIcon.SETTINGS, "制作设置", "段间静音 · 自动拼章 · 接缝") {
@@ -545,6 +565,7 @@ internal fun SettingsScreen(c: Context, refresh: Int, onModels: () -> Unit,
         if (page == "runtime") {
         SettingsSection("运行与通知", "系统", collapsible = false) {
             AutoResumeRow(c)
+            LowBatteryGuardRow(c)
         }
         }
         // R320 · 埋的雷兑现：段间静音 / 失败重做 / 自动拼章 / 接缝处理本来就是

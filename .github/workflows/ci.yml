@@ -665,6 +665,10 @@ jobs:
         run: python3 scripts/r412_verify.py
       - name: R412 低电只拦电子书守门（反向注入）
         run: python3 scripts/r412_verify.py --selftest
+      - name: R413 续跑定位与低电开关守门（正向）
+        run: python3 scripts/r413_verify.py
+      - name: R413 续跑定位与低电开关守门（反向注入）
+        run: python3 scripts/r413_verify.py --selftest
       # R393 · 审计发现：下面这些早期批次守门在 CI 里只跑 --selftest（反向注入），
       # 正向 check() 从没执行过 —— CI 绿只能证明「守门自己没坏」，不能证明源码合规。
       # 本地实测 46 个正向全绿，用一个批量步骤补齐，不新增文件、不重排已有步骤。

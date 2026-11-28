@@ -289,14 +289,31 @@ internal fun ChapterHubScreen(
     // 跳到第 5 章，主循环却按段号从第 2 章顺序开跑，看着像「先找第五章、发现
     // 不对又回第二章」；点顶部进度条也被带到最后一章。改成最小未完成章 +
     // 兜底最靠前的勾选章，与 Producer 的推进顺序对齐；范围外的章不参与。
-    val makingChapter = remember(st.chapterProgress, task, chapters.size, book.id) {
+    val makingChapter = remember(st.chapterProgress, task, chapters.size, book.id, ui) {
         val scope = task?.takeIf { it.bookId == book.id }?.only
-        var idx = Int.MAX_VALUE
-        for ((k, v) in st.chapterProgress) {
-            if (scope != null && k !in scope) continue
-            if (v < 1f && k < idx) idx = k
+        // R413 · 磁盘真值优先：已经拼成章音频的章一律算完成，不许因为冷启动 /
+        // 续跑开局 chapterProgress 还是空表就被兜底成第 0 章，转圈钉在第一章
+        // 第一个灰格子上（真机实证：那时其实已经在第二章做了一半）。
+        // 内存态用来分辨「没成章音频的章里谁做了多少」，磁盘态用来排除已固化章。
+        val merged = LinkedHashMap<Int, Float>()
+        for (r in ui) {
+            if (scope != null && r.index !in scope) continue
+            val diskDone = r.audio != null || r.playable
+            val live = st.chapterProgress[r.index]
+            merged[r.index] = when {
+                diskDone -> 1f
+                live != null -> live.coerceIn(0f, 1f)
+                else -> 0f
+            }
         }
-        if (idx == Int.MAX_VALUE) idx = scope?.minOrNull() ?: 0
+        var idx = Int.MAX_VALUE
+        for ((k, v) in merged) if (v < 1f && k < idx) idx = k
+        if (idx == Int.MAX_VALUE) {
+            // 表里全满或为空：取最靠前还没成章音频的章，再兜底范围首章。
+            idx = ui.firstOrNull { (scope == null || it.index in scope) &&
+                it.audio == null && !it.playable }?.index
+                ?: scope?.minOrNull() ?: 0
+        }
         idx.coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
     }
     val liveChapter: Int? = if (bookRunning) makingChapter else null
@@ -424,12 +441,16 @@ internal fun ChapterHubScreen(
         if (made > 0) localTick++
     }
     // R287 · 组合层只处理当前章几百行，不再每次重组都 filter 26678 段。
-    val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys) {
+    val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys, ui) {
         val ch = shownChapter
+        // R413 · 已固化成章音频的章，残留重做标记不许再画转圈（真机：第一章
+        // 拼好转码完，第一个灰格子还在转）。这些格子只作为留档显示。
+        val chapterDone = ch != null && ui.firstOrNull { it.index == ch }
+            ?.let { it.audio != null || it.playable } == true
         if (ch == null) emptyList()
         else (liveSegs.takeIf { liveSegsFor == ch } ?: hubByChapter[ch] ?: emptyList())
             .map { sg ->
-                sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)
+                sg.copy(pendingRedo = !chapterDone && "seg:${sg.index}" in redoKeys)
             }
     }
     // R220 · 小段编号每章从 1 重新开始，不再接着前一章的一堆大数字。
@@ -440,9 +461,13 @@ internal fun ChapterHubScreen(
     // R308 · 制作中这一章，第一个还没生成的小块就是「正在合成」的那一格；
     // 重做中的格子由 pendingRedo 单独认。两者都在格子内转圈，不再让用户
     // 对着一片灰格子猜进度走到哪了。
-    val segBusyIndex = remember(chapterSegs, st.running, st.done, shownChapter, liveChapter) {
+    val segBusyIndex = remember(chapterSegs, st.running, st.done, shownChapter, liveChapter, ui) {
+        val ch = shownChapter
+        val chapterDone = ch != null && ui.firstOrNull { it.index == ch }
+            ?.let { it.audio != null || it.playable } == true
         // R333 · 回看的是上一章待固化小块时，不该把「正在合成」套在它头上。
-        if (!st.running || chapterSegs.isEmpty() || shownChapter != liveChapter) null
+        // R413 · 已固化章更不许套：真机上第一章拼好转码完还在第一个灰格子转。
+        if (!st.running || chapterSegs.isEmpty() || shownChapter != liveChapter || chapterDone) null
         else chapterSegs.firstOrNull { !it.hasAudio }?.index
     }
     var beatTick by remember { mutableStateOf(0) }
@@ -930,6 +955,15 @@ internal fun ChapterHubScreen(
                 stalledTask -> "断点续做"
                 needModels -> "模型没齐"
                 else -> "按勾选开做"
+            }
+            // R413 · 不用展开格子就知道现在在哪一章。真机反馈「转圈钉在第一章，
+            // 我不知道第二章有没有在合成」——进度卡直接给一句明账。
+            if (bookRunning) {
+                val segHint = if (st.total > 0) " · 已做 ${st.done}/${st.total} 段" else ""
+                Text("正在制作第 ${(liveChapter ?: 0) + 1} 章$segHint",
+                    fontSize = HiBodySp, fontWeight = FontWeight.SemiBold,
+                    color = HubPrimary, maxLines = 1)
+                Spacer(Modifier.height(4.dp))
             }
             Row(Modifier.fillMaxWidth().background(HubCard)
                 .padding(horizontal = 12.dp, vertical = 8.dp),

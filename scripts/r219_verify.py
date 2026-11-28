@@ -51,7 +51,7 @@ def check(f):
     # R362 · 锚按新形态改准：起始章改取「范围内最靠前未完成章」，滚动补上
     # 展开章插入的 item 偏移；旧写法（取最大章号 / 裸章号滚动）列为回潮禁令。
     for k in ["val chapterListState = rememberLazyListState()",
-              "val makingChapter = remember(st.chapterProgress, task, chapters.size, book.id)",
+              "val makingChapter = remember(st.chapterProgress, task, chapters.size, book.id, ui)",
               "if (v < 1f && k < idx) idx = k",
               "chapterListState.animateScrollToItem((makingChapter + extra).coerceAtLeast(0))",
               "2 + chapterSegs.chunked(SEG_GRID_COLUMNS).size else 0",

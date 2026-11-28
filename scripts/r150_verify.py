@@ -46,7 +46,7 @@ POS = {
         "Producer.stop()", "onResumeTask()", "fun hubPrimaryAction()",
         "val liveChapter: Int? = if (bookRunning) makingChapter else null",
         "var hubByChapter by remember(book.id)",
-        "val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)",
+        "val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys, ui)",
         "val pqSeg by PlayQueue.previewState.collectAsState()",
         "Workbench.segments(c, t) to Workbench.segChapters(c, t)",
         "hubByChapter[ch] ?: emptyList()",
@@ -198,7 +198,7 @@ def selftest():
     logic_bad = len(logic_cases(f))
     cuts = [
         ("R333 按展开章取段被摘", "hub",
-         "val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys)", ""),
+         "val chapterSegs = remember(shownChapter, liveSegs, liveSegsFor, hubByChapter, redoKeys, ui)", ""),
         ("制作章默认展开被摘", "hub",
          "val liveChapter: Int? = if (bookRunning) makingChapter else null", ""),
         ("一次读盘被摘", "hub", "var hubByChapter by remember(book.id)", ""),

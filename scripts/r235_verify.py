@@ -64,7 +64,7 @@ def check(f):
         if k not in h: e.append("R266 制作中不排队列缺: " + k[:56])
     # 重做标记轻量观察：只秒读 redo.json，格子转黄/转绿不靠 stage 合并
     for k in ['var redoKeys by remember(book.id) { mutableStateOf(emptySet<String>()) }',
-              'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)',
+              'sg.copy(pendingRedo = !chapterDone && "seg:${sg.index}" in redoKeys)',
               'redoKeys = if (w == null) emptySet()',
               'SegPlan.pending(w)']:
         if k not in h: e.append("R266 重做标记观察缺: " + k[:56])
@@ -107,7 +107,8 @@ def check(f):
               'NativeEngine.ttsSynthesize(ttsHandle, cur.text, v.instruct, v.speaker, "chinese",',
               'wav.absolutePath, cur.knobs)',
               'val redoAtStart = SegPlan.pending(work)',
-              'if ("seg:$i" in redoAtStart) return@count true',
+              'val redo = "seg:$i" in redoAtStart',
+              'if (!dropped && !hasWav && (redo || !covered)) {',
               # R346 · 已固化章的孤儿标记不许强制重新合成整章小块
               'val redoSeg = !sealedCi && "seg:$i" in SegPlan.pending(work)',
               'val skip = (covered || already) && !redoSeg',
@@ -158,10 +159,10 @@ def selftest():
          "if (busyHere) segsHere.forEach { SegPlan.markSeg(work, it.index) }",
          "Producer.enqueueOrStart(c, book, setOf(ch), null, Prefs.defaultPerf(c))"),
         ("重做标记观察被摘", "hub",
-         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)', ""),
+         'sg.copy(pendingRedo = !chapterDone && "seg:${sg.index}" in redoKeys)', ""),
         ("整块标记回潮", "hub",
-         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys)',
-         'sg.copy(pendingRedo = "seg:${sg.index}" in redoKeys || "block:${sg.block}" in redoKeys)'),
+         'sg.copy(pendingRedo = !chapterDone && "seg:${sg.index}" in redoKeys)',
+         'sg.copy(pendingRedo = !chapterDone && "seg:${sg.index}" in redoKeys || "block:${sg.block}" in redoKeys)'),
         ("心跳不读 redo", "hub", "SegPlan.pending(w)", "emptySet()"),
         ("回头重做被摘", "producer", "val nextRedo = SegPlan.pending(work)", ""),
         ("回头重做不清标记", "producer", 'SegPlan.clearRedo(work, "seg:$nextRedo")', ""),
@@ -181,7 +182,7 @@ def selftest():
         ("不读实时 knobs", "producer", "Prefs.ttsKnobs(c)", "knobs"),
         ("合成用旧文本", "producer", "NativeEngine.ttsSynthesize(ttsHandle, cur.text, v.instruct, v.speaker, \"chinese\",", "NativeEngine.ttsSynthesize(ttsHandle, a.text, v.instruct, v.speaker, \"chinese\","),
         ("合成用旧 knobs", "producer", "wav.absolutePath, cur.knobs)", "wav.absolutePath, knobs)"),
-        ("redo 不纳入 pending", "producer", 'if ("seg:$i" in redoAtStart) return@count true', ""),
+        ("redo 不纳入 pending", "producer", 'val redo = "seg:$i" in redoAtStart', ""),
         ("redo 不强制重做", "producer", "val skip = (covered || already) && !redoSeg", "val skip = covered || already"),
         ("已固化章仍被强制重做", "producer",
          'val redoSeg = !sealedCi && "seg:$i" in SegPlan.pending(work)',

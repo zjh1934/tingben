@@ -47,7 +47,7 @@ POS = {
     ],
     "pipe": [
         # R235 · 换成 R148 之后的现行锚点；数值对拍在 r95_space_parity.py
-        'val pending = (0 until toSpeak.size).count',
+        'var pending = 0',
         'val segBytes = if (sample.isNotEmpty()) sample.average().toLong()',
         '24_000L * 2L * 12L',
         'c.filesDir.usableSpace',

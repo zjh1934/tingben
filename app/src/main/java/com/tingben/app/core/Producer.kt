@@ -821,17 +821,34 @@ object Producer {
         val dropWav = { i: Int -> String.format("direct_%04d.wav", i) }
         // R235 · 开跑时先读一次「段级重做」标记，空间预算把这些段算进待合成
         val redoAtStart = SegPlan.pending(work)
-        val pending = (0 until toSpeak.size).count { i ->
+        // R413 · 真机实证：关闭 / 更新后再续跑，第一章已拼好转码完、实际在第二章
+        // 做了一半，目录页转圈却还钉在第一章第一个灰格子。根因是 chapterProgress
+        // 是纯内存态：start() 把它重置成空表，开局这条 emit 也没传，ChapterHub 的
+        // makingChapter 遍历空表就兜底到第 0 章。这里在算 pending 的同一次扫盘里
+        // 按 segChapter 归出「逐章已完成段数」，作为 emit 的初始进度，并作为
+        // perChapterDone 的起点 —— 后续 chapterSnapshot 才不会把已完成章从表里抹掉。
+        val doneByChapter = mutableMapOf<Int, Int>()
+        var pending = 0
+        for (i in 0 until toSpeak.size) {
             val wavName = dropWav(i)
-            // 删掉的段不算待合成，空间预算与进度分母都不虚高
-            if (SegDrops.matches(dropSnap, wavName, dropText(i))) return@count false
-            val f = File(work, wavName)
-            if (f.exists() && f.length() > 44) return@count false
+            val dropped = SegDrops.matches(dropSnap, wavName, dropText(i))
+            val hasWav = File(work, wavName).let { it.exists() && it.length() > 44 }
             val ci = segChapter.getOrElse(i) { -1 }
             val covered = ci >= 0 && doneChapterFiles[ci]
                 ?.let { it.isFile && it.length() > 44 } == true
-            if ("seg:$i" in redoAtStart) return@count true
-            !covered
+            val redo = "seg:$i" in redoAtStart
+            // 与旧 count{} 完全同语义：删掉 / 已有 WAV 都不算待做；重做标记优先；
+            // 否则看这一章是不是已经固化成章音频。
+            if (!dropped && !hasWav && (redo || !covered)) {
+                pending++
+            } else if (!dropped && ci >= 0) {
+                doneByChapter[ci] = (doneByChapter[ci] ?: 0) + 1
+            }
+        }
+        perChapterDone.putAll(doneByChapter)
+        val restoredChapter = perChapterTotal.mapValues { (ch, total) ->
+            ((doneByChapter[ch] ?: 0).toFloat() /
+                total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
         }
         // R368 · 续跑开局先把进度设到真实已完成段数。旧写法 emit(0) 之后靠
         // 循环里「跳过已有段」逐段把 0 补回 N：真机日志 100ms 内刷 26/36/55/60
@@ -839,9 +856,10 @@ object Producer {
         // O(N) 条进度噪声撑到 700KB+，bottom 那条还因 covered 只记一次而各轮
         // 口径不一。开局一次到位，跳过段不再逐条上报。
         val restoredDone = (toSpeak.size - pending).coerceIn(0, toSpeak.size)
-        if (restoredDone > 0) {
+        if (restoredDone > 0 || restoredChapter.values.any { it > 0f }) {
             emit("正在生成声音", restoredDone, annotated.size, gateFails,
-                "已续上 $restoredDone/${annotated.size} 段，接着往下做")
+                "已续上 $restoredDone/${annotated.size} 段，接着往下做",
+                chapterProgress = restoredChapter)
         }
         val sample = (0 until toSpeak.size).mapNotNull { i ->
             File(work, String.format("direct_%04d.wav", i))

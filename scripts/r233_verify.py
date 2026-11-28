@@ -49,7 +49,7 @@ def check(f):
     for k in ["val dropSnap = SegDrops.snapshot(c, book.id)",
               "val dropText = { i: Int -> annotated[i].text.take(200) }",
               "val dropWav = { i: Int -> String.format(\"direct_%04d.wav\", i) }",
-              "if (SegDrops.matches(dropSnap, wavName, dropText(i))) return@count false",
+              "val dropped = SegDrops.matches(dropSnap, wavName, dropText(i))",
               '"src" to "dropped"',
               "不参与合成与拼接",
               "if (SegDrops.matches(dropSnap, wavName, dropText(i))) continue"]:
@@ -82,7 +82,7 @@ def selftest():
         ("记账事件被摘", "hub", '"SEG_DROPPED"', ""),
         ("一次读入被摘", "producer", "val dropSnap = SegDrops.snapshot(c, book.id)", ""),
         ("文本口径被改", "producer", "annotated[i].text.take(200)", "a.text.take(200)"),
-        ("pending 不排除", "producer", "if (SegDrops.matches(dropSnap, wavName, dropText(i))) return@count false", ""),
+        ("pending 不排除", "producer", "val dropped = SegDrops.matches(dropSnap, wavName, dropText(i))", ""),
         ("循环不跳过", "producer", '"src" to "dropped"', '"src" to "wav"'),
         ("拼章不排除", "producer", "if (SegDrops.matches(dropSnap, wavName, dropText(i))) continue", ""),
         ("CI 漏挂", "ci", "python3 scripts/r233_verify.py --selftest", ""),

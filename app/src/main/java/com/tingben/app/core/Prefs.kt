@@ -81,6 +81,9 @@ object Prefs {
     // R361 · 章拼好转码后，中间小块是否自动删除。默认开＝沿用升级前行为；
     // 关＝小块与显示名都留着，可在设置页「音频文件」里导出或删除。
     private const val KEY_AUTO_DELETE_SEGS = "autoDeleteSegsAfterMerge"
+    // R413 · 低电量保护开关。默认开＝沿用 R412 用户要的行为；关掉后电量再低
+    // 也照常制作。只影响本地电子书制作，远端 / 试听 / 单段合成本来就不受它管。
+    private const val KEY_LOW_BATTERY_GUARD = "lowBatteryGuard"
 
     const val DEFAULT_TRIAL_TEXT = "雨下了一整夜，她终于忍不住笑出声，又轻轻叹了口气。"
 
@@ -116,6 +119,11 @@ object Prefs {
         sp(c).getBoolean(KEY_AUTO_DELETE_SEGS, true)
     fun setAutoDeleteSegsAfterMerge(c: Context, v: Boolean) =
         sp(c).edit().putBoolean(KEY_AUTO_DELETE_SEGS, v).apply()
+
+    // R413 · 放在「设置 → 运行与通知」，与「打开软件自动续跑」同组。
+    fun lowBatteryGuard(c: Context) = sp(c).getBoolean(KEY_LOW_BATTERY_GUARD, true)
+    fun setLowBatteryGuard(c: Context, v: Boolean) =
+        sp(c).edit().putBoolean(KEY_LOW_BATTERY_GUARD, v).apply()
 
     fun nonVerbal(c: Context) = sp(c).getBoolean(KEY_NONVERBAL, true)
     fun setNonVerbal(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_NONVERBAL, v).apply()
