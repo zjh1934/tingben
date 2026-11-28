@@ -673,6 +673,10 @@ jobs:
         run: python3 scripts/r414_verify.py
       - name: R414 日志综合修复守门（反向注入）
         run: python3 scripts/r414_verify.py --selftest
+      - name: R416 维护轮守门（正向）
+        run: python3 scripts/r416_verify.py
+      - name: R416 维护轮守门（反向注入）
+        run: python3 scripts/r416_verify.py --selftest
       # R393 · 审计发现：下面这些早期批次守门在 CI 里只跑 --selftest（反向注入），
       # 正向 check() 从没执行过 —— CI 绿只能证明「守门自己没坏」，不能证明源码合规。
       # 本地实测 46 个正向全绿，用一个批量步骤补齐，不新增文件、不重排已有步骤。

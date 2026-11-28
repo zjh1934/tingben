@@ -46,7 +46,7 @@ async function go(){
    const j=JSON.parse(un64(st.data.content));
    if(j.state==='failed')throw new Error('手机侧合成失败：'+(j.reason||'无原因'));
    // R401/R405 · 手机正在处理另一批合成（远端整批优先，书在段边界让路）：请求留着，不是失败。
-   if(j.state==='busy'){$('s').textContent='手机正处理另一批合成（'+(j.reason||'稍候')+'），请求留着不丢，忙完自动补…';continue;}
+   if(j.state==='busy'){var sec=j.retry_after_ms?Math.ceil(j.retry_after_ms/1000):60;$('s').textContent='手机正处理另一批合成（'+(j.reason||'稍候')+'），请求留着不丢，约 '+sec+' 秒后自动补…';continue;}
    if(j.state!=='done')continue;
    $('s').textContent='手机合成并压缩好了，正在取回…';
    let raw;

@@ -512,7 +512,13 @@ object Producer {
             } catch (t: Throwable) {
                 if (t !is kotlinx.coroutines.CancellationException) {
                     EventLog.log(EventLog.Kind.CRASH, "PRODUCE_EXCEPTION", t.message ?: "")
-                    _state.value = Progress(false, "出错了", 0, 0, 0, "制作中断：" + (t.message ?: ""))
+                    // R416 · R414/R415 立的规矩「一个状态只能有一个真值源」：
+                    // 旧写法把 _state 清成 0/0，下一轮 start() 的 prior 就是 0/0，
+                    // 断点续跑开局又归零；finally 还会拿这个 0 去写 FGS_FINISH。
+                    // 与 halted() 同源，一律以当前 _state 的 done/total 为准。
+                    val p0 = _state.value
+                    _state.value = Progress(false, "出错了", p0.done, p0.total, 0,
+                        "制作中断：" + (t.message ?: ""))
                     markInterrupted("出错中断")
                 }
             } finally {
@@ -550,10 +556,16 @@ object Producer {
      * 现在显式落 blocked 阶段并说清原因，finally 不再碰它。
      */
     private fun abortBeforeStart(msg: String, stage: String = "没开始") {
-        _state.value = Progress(false, stage, 0, 0, 0, msg)
+        // R416 · 旧写法把 _state 与 TaskResume 档案都写成 0/0：配置失败只是
+        // 「这次没跑起来」，不是「之前做的段没了」。续跑时模型临时缺件会把
+        // 已做好的 203/26678 从档案里抹掉，下一轮 start() 只能从 0 开局。
+        // phase/stage 仍按 R175 落 blocked，断链循环照旧防住；只留真值。
+        val kept = _state.value
+        _state.value = Progress(false, stage, kept.done, kept.total, 0, msg)
         val t = current ?: return
         val blocked = t.copy(phase = "blocked", stage = stage,
-            done = 0, total = 0, updatedAt = System.currentTimeMillis())
+            done = kept.done, total = kept.total,
+            updatedAt = System.currentTimeMillis())
         current = blocked
         appCtx?.let { TaskResume.save(it, blocked) }
         _resume.value = blocked

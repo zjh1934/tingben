@@ -32,10 +32,10 @@
       "size": 439
     },
     ".github/workflows/ci.yml": {
-      "normalized_sha256": "cd964dd00bc60d7954b32ebb0d85dbbbc7d0a4e5a64dca6c3f8a73a86007de5e",
+      "normalized_sha256": "b63a443bf1aa733fa7ab10043d5aa66397a50e241b95873be2723317282912cb",
       "role": "index",
-      "sha256": "cd964dd00bc60d7954b32ebb0d85dbbbc7d0a4e5a64dca6c3f8a73a86007de5e",
-      "size": 45636
+      "sha256": "b63a443bf1aa733fa7ab10043d5aa66397a50e241b95873be2723317282912cb",
+      "size": 45835
     },
     ".gitignore": {
       "normalized_sha256": "c13ea290f9ec7f71c022db4577fcd5a90e0c19590594d33ac88d39bbfdec8ab3",
@@ -50,10 +50,10 @@
       "size": 72459
     },
     "CHANGELOG.md": {
-      "normalized_sha256": "431edc79bf3ff5f56e0825c6825c1dd573b4d1c45bdd8e1c8fdae3b5f8ad4a2c",
+      "normalized_sha256": "56d8d36020ccf22fe0d75397451ab9d9f91e5cc8560025c2c87660fe6a5bd410",
       "role": "index",
-      "sha256": "431edc79bf3ff5f56e0825c6825c1dd573b4d1c45bdd8e1c8fdae3b5f8ad4a2c",
-      "size": 82524
+      "sha256": "56d8d36020ccf22fe0d75397451ab9d9f91e5cc8560025c2c87660fe6a5bd410",
+      "size": 84807
     },
     "CONTRIBUTING.md": {
       "normalized_sha256": "a7e8d8276bafdf8637b45774069a5134642b92f2538b6cc516068e26d30eb9ff",
@@ -68,16 +68,16 @@
       "size": 1145
     },
     "README.md": {
-      "normalized_sha256": "a0a595adae51ad44fd10b0dce75d89aa3a520b648705f01b82b13914f9f21f43",
+      "normalized_sha256": "9a9497d3f9509fa6ddaa78d9bdc11a9c8194a17e6ff4708e819a1232d49998d0",
       "role": "index",
-      "sha256": "a0a595adae51ad44fd10b0dce75d89aa3a520b648705f01b82b13914f9f21f43",
-      "size": 10297
+      "sha256": "9a9497d3f9509fa6ddaa78d9bdc11a9c8194a17e6ff4708e819a1232d49998d0",
+      "size": 10484
     },
     "ROADMAP.md": {
-      "normalized_sha256": "e7a915cf652a2cac4a46c374c746d878689173802fe489f03e64c9f66900210b",
+      "normalized_sha256": "c28ca92df8c283efcf1f1f4e4f39a87759e33394a8e2d59d0996a675e21600ee",
       "role": "index",
-      "sha256": "e7a915cf652a2cac4a46c374c746d878689173802fe489f03e64c9f66900210b",
-      "size": 3662
+      "sha256": "c28ca92df8c283efcf1f1f4e4f39a87759e33394a8e2d59d0996a675e21600ee",
+      "size": 3719
     },
     "SECURITY.md": {
       "normalized_sha256": "f843ea632d2fd624b019e5de85558d9af38d37a55d2df53752c820f9feb06878",
@@ -86,10 +86,10 @@
       "size": 836
     },
     "STATUS.md": {
-      "normalized_sha256": "e34a2a2772fd46f84bc1fa09f4c2fef87262d5f548990a2aeb36902402b16e71",
+      "normalized_sha256": "0fb7b49d58be75f67193f8164608b178423e3c5462faa05036d23b752a263e75",
       "role": "index",
-      "sha256": "e34a2a2772fd46f84bc1fa09f4c2fef87262d5f548990a2aeb36902402b16e71",
-      "size": 11972
+      "sha256": "0fb7b49d58be75f67193f8164608b178423e3c5462faa05036d23b752a263e75",
+      "size": 12583
     },
     "app/build.gradle.kts": {
       "normalized_sha256": "f38126c0cdee7aa9ba5a958a166ff53fa23b698c3db07a476b49c9d182351c59",
@@ -476,10 +476,10 @@
       "size": 4098
     },
     "app/src/main/java/com/tingben/app/core/Producer.kt": {
-      "normalized_sha256": "7362727eada7935c85b9abd72ea5ce756f15fc589b5258ca473a2e47e5308b99",
+      "normalized_sha256": "84b923b3ab27d9948fc2b10aa891b6ef185c0e5f6f0a9535628d442cc2927e74",
       "role": "index",
-      "sha256": "7362727eada7935c85b9abd72ea5ce756f15fc589b5258ca473a2e47e5308b99",
-      "size": 88733
+      "sha256": "84b923b3ab27d9948fc2b10aa891b6ef185c0e5f6f0a9535628d442cc2927e74",
+      "size": 89670
     },
     "app/src/main/java/com/tingben/app/core/ReadingState.kt": {
       "normalized_sha256": "89c3e8d547695bb8fc1a0bf3ee7c3f5e2e8a1062c0d14826bccdbfbf4a0b1421",
@@ -734,10 +734,10 @@
       "size": 3541
     },
     "docs/pages/relay.html": {
-      "normalized_sha256": "c31fa0edecd804475417ac483e0f01b26351bb05b8b9ad47aa82110cdbc948b9",
+      "normalized_sha256": "7c6ffef3370c48355de35deee3ca24e2a0cb43999d4f1b7db3aa2b8aff8e1047",
       "role": "index",
-      "sha256": "c31fa0edecd804475417ac483e0f01b26351bb05b8b9ad47aa82110cdbc948b9",
-      "size": 5097
+      "sha256": "7c6ffef3370c48355de35deee3ca24e2a0cb43999d4f1b7db3aa2b8aff8e1047",
+      "size": 5170
     },
     "docs/使用指南.md": {
       "normalized_sha256": "9a3e9f2fd79f64c9f9c2d4605b99d2137c67493d5533eb58a7bc711ea305f7be",
@@ -854,10 +854,10 @@
       "size": 10082
     },
     "scripts/r135_verify.py": {
-      "normalized_sha256": "6a89ced8ca91f7e56f4b8595bbf419b9c43980cc612f9551ff6535a912ddb99b",
+      "normalized_sha256": "d4bcbe23a6cb5946c84b6687761d27b2360b8db9e6c84230ed7e5ed0625f1c8a",
       "role": "index",
-      "sha256": "6a89ced8ca91f7e56f4b8595bbf419b9c43980cc612f9551ff6535a912ddb99b",
-      "size": 10412
+      "sha256": "d4bcbe23a6cb5946c84b6687761d27b2360b8db9e6c84230ed7e5ed0625f1c8a",
+      "size": 10430
     },
     "scripts/r149_verify.py": {
       "normalized_sha256": "d15327efcf9c3420b5f6f49ecf4a9dfb7f729858c6cbc6a982e7f16a3a12bc66",
@@ -1237,6 +1237,12 @@
       "sha256": "fd46085ed5c17703357189425a6a3c02ef1ad8bc2b22bae3d3d65c6faf77bd8c",
       "size": 21793
     },
+    "scripts/r416_verify.py": {
+      "normalized_sha256": "59242bc17c04287a7e4247934f1d4ecfc3fc11a84e6fb69b5b2b925f6351a33b",
+      "role": "index",
+      "sha256": "59242bc17c04287a7e4247934f1d4ecfc3fc11a84e6fb69b5b2b925f6351a33b",
+      "size": 12560
+    },
     "scripts/relay_sim.py": {
       "normalized_sha256": "cebaaafd2edfe9924971293fd71f94c02b2aa98ca6a74f285910f8565337efa0",
       "role": "index",
@@ -1280,9 +1286,9 @@
       "size": 426
     },
     "version.txt": {
-      "normalized_sha256": "e420c5fbab701fce62858d227e6a52a2acef2c0d4a68938aee0413b9031891a5",
+      "normalized_sha256": "de3af44d091d0df802fdc76a0cb78aa976dced71f95fde1335245f8b53563012",
       "role": "index",
-      "sha256": "e420c5fbab701fce62858d227e6a52a2acef2c0d4a68938aee0413b9031891a5",
+      "sha256": "de3af44d091d0df802fdc76a0cb78aa976dced71f95fde1335245f8b53563012",
       "size": 7
     },
     "工程文件地图.md": {
@@ -1292,6 +1298,6 @@
       "size": 7554
     }
   },
-  "updated_at": "2026-11-28T04:52:18Z",
+  "updated_at": "2026-11-28T05:27:26Z",
   "version": 1
 }
