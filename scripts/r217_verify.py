@@ -9,7 +9,7 @@
   · 球上「不应该是 1 和 2」，应写百分之几（0% 写 0、90% 写 90）。数字主体
     保持 0~100 纯数值，右侧补小号 % 标明单位，绝不露段号 / 书名 / 解释。
   · 连带修真 bug：下球原取所有章进度 value 最大值，做到第 2 章还停在第 1 章
-    100%；改为按章号 key 取最靠后一章。
+    100%；R414 改为取「最靠前未完成章」——已固化章跳过，不许再让全表最后一章顶替当前章。
 
 用法：python3 scripts/r217_verify.py [--selftest]
 """
@@ -61,9 +61,9 @@ def check(f):
         e.append("R267 预览 / 片段来源没标")
     if "Prefs.overlayProgress(c) && KeepAlive.overlayGranted(c)" not in ov:
         e.append("浮窗权限 / 开关双闸门被摘")
-    # ② 下球按章号取当前章，不按 value 最大值
-    if "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }" not in pr:
-        e.append("下球没按章号取最靠后一章（会停在第 1 章 100%）")
+    # ② 下球取最靠前未完成章（R414），不按 value 最大值、也不取章号最大章
+    if "if (v < 1f && k < chIdx) { chIdx = k; chPct = v }" not in pr:
+        e.append("下球没取最靠前未完成章（R414 真机回归）")
     if "if (v > chPct) chPct = v" in pr:
         e.append("下球又退回取所有章最大值")
     # ③ 设置页：权限状态可见、有去授权出口、关时收起
@@ -120,7 +120,7 @@ def selftest():
          "target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f", "true"),
         ("权限闸门被摘", "overlay", "Prefs.overlayProgress(c) && KeepAlive.overlayGranted(c)", "true"),
         ("下球退回最大值", "producer",
-         "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }",
+         "if (v < 1f && k < chIdx) { chIdx = k; chPct = v }",
          "for ((_, v) in chapterProgress) if (v > chPct) chPct = v"),
         ("设置页权限状态被摘", "settings",
          "val permOk = remember(permTick) { KeepAlive.overlayGranted(c) }", "val permOk = true"),

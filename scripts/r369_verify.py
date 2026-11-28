@@ -62,7 +62,7 @@ def check(s=None):
         e.append('encodeChapter 没有默认关闭的停止回调')
     if 'if (stopCheck?.invoke() == true) return null' not in ec:
         e.append('进入拼接前没认停止，仍会白跑一份四分钟')
-    if 'toM4a(c, wav, m4a, stopCheck)' not in ec:
+    if 'toM4a(c, wav, m4a, pulseCheck)' not in ec:
         e.append('拼接没把停止判定透传给转码')
     if 'stopCheck = { Producer.isStoppingBook(bookId) }' not in auto:
         e.append('自动章拼接没传停止判定')
@@ -108,7 +108,7 @@ def selftest():
          'if (!started || !inputDone || !outputDone || !validateM4a(out))'),
         ('中断原因被抹', 'audioops', '已停止，转码中断，内部 WAV 留着', '转码没完成，原文件留着'),
         ('拼接前不认停止', 'audioops', 'if (stopCheck?.invoke() == true) return null', ''),
-        ('拼接不透传停止判定', 'audioops', 'toM4a(c, wav, m4a, stopCheck)', 'toM4a(c, wav, m4a)'),
+        ('拼接不透传停止判定', 'audioops', 'toM4a(c, wav, m4a, pulseCheck)', 'toM4a(c, wav, m4a)'),
         ('自动路径不传停止判定', 'audioops',
          'stopCheck = { Producer.isStoppingBook(bookId) }', 'stopCheck = null'),
         ('手动拼章被误拦', 'audioops', 'fun mergeChapter(c: Context,',

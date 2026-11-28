@@ -53,7 +53,7 @@ def check(f):
     if "OverlayProgress.update(c, lastBook, stage, done, total, chapterPct," not in sv \
             or "OverlaySource.PRODUCE" not in sv:
         e.append("章节进度没透传到浮窗，或没标 PRODUCE 来源")
-    if "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }" not in pr:
+    if "if (v < 1f && k < chIdx) { chIdx = k; chPct = v }" not in pr:
         e.append("Producer.emit 没取章节进度")
     # ③ R230 · 输入框 1/3 屏 + 粘贴钮进框内（内容区）；
     #    调音/任务入口上移系统顶栏，按符号在合并视图里守。
@@ -103,7 +103,7 @@ def selftest():
         ("链路没接章节", "service", "chapterPct: Float = -1f", ""),
         ("链路没透传", "service", "total, chapterPct,", "total,"),
         ("emit 没算章节", "producer",
-         "for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }", ""),
+         "if (v < 1f && k < chIdx) { chIdx = k; chPct = v }", ""),
         ("框又占满屏", "input", "fillMaxHeight(0.26f)", "weight(1f)"),
         ("粘贴钮出框", "input", "Alignment.BottomEnd", "Alignment.TopEnd"),
         ("任务入口又置灰", "merged", "TasksIcon(Primary)", "TasksIcon(Sub)"),

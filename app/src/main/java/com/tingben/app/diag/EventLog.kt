@@ -209,10 +209,18 @@ object EventLog {
         // 这里只滤掉「同一 key=value 已在 detail 里逐字出现」的字段，
         // 有增量信息的字段（textChars / speakerParam / hash / code …）一律保留，
         // 信息量不减、体积变小、读起来不用人肉去比对两段。
-        val kv = if (fields.isEmpty()) "" else
+        // R414 · 空 detail 带 fields 时旧写法会留下一个孤零零的前导「 · 」
+        // （真机 OPEN_BOOK |  · book=…）。先 join 再决定要不要加前缀，
+        // 非空 detail 的输出与旧版逐字一致，不改动任何已有日志口径。
+        val kvRaw = if (fields.isEmpty()) "" else
             fields.entries
                 .filter { (k, v) -> "${k}=${v}" !in detail }
-                .joinToString("") { " · ${it.key}=${it.value}" }
+                .joinToString(" · ") { "${it.key}=${it.value}" }
+        val kv = when {
+            kvRaw.isEmpty() -> ""
+            detail.isBlank() -> kvRaw
+            else -> " · $kvRaw"
+        }
         val mainLine = "$ts | $kind | $action | $detail$kv"
         val detailLine = "$ts | $kind | $level | $action | $detail$kv"
         ring.addLast(mainLine)

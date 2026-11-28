@@ -107,7 +107,7 @@ def check(s):
     if 'if (!running || t is InterruptedException)' not in r:
         e.append('InterruptedException 正常关停分支被摘')
     # ④ 进度日志去重（重绘不动）
-    for tok in ['lastPctLog = ""', 'if (sig != lastPctLog)', 'lastPctLog = sig',
+    for tok in ['lastPctLog = ""', 'if (totalNow > 0 && sig != lastPctLog)', 'lastPctLog = sig',
                 'topRing?.postInvalidate()']:
         if tok not in ov:
             e.append('进度去重缺: ' + tok[:40])
@@ -164,7 +164,7 @@ BAD = [
     ('正常关停', lambda d: d.update(relay=d['relay'].replace('if (!running || t is InterruptedException) {', 'if (false) {', 1))),
     ('ON 去重', lambda d: d.update(relay=d['relay'].replace('val started = startRelay()', 'val started = true', 1))),
     ('恢复跳过', lambda d: d.update(resume=d['resume'].replace('RelayService.isRunning()', 'false', 1))),
-    ('进度去重', lambda d: d.update(overlay=d['overlay'].replace('if (sig != lastPctLog)', 'if (true)', 1))),
+    ('进度去重', lambda d: d.update(overlay=d['overlay'].replace('if (totalNow > 0 && sig != lastPctLog)', 'if (true)', 1))),
     ('退出原因去重', lambda d: d.update(eventlog=d['eventlog'].replace('if (r.timestamp <= lastTs) continue', '', 1))),
     ('文案回潮', lambda d: d.update(relay=d['relay'].replace('" · 忙 " +', '" · 轮询 " +', 1))),
     ('渠道标签回潮', lambda d: d.update(synth=d['synth'].replace(

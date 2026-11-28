@@ -64,14 +64,16 @@ class ProduceService : Service() {
                 "mediaProcessing" else "dataSync"
 
         /** 返回 false = 系统不让起前台服务；调用方必须停止任务，不能假装还在跑。 */
-        fun begin(c: Context, title: String): Boolean {
+        // R414 · done/total 由 Producer.start() 从恢复态带出；续跑开局通知与
+        // 浮窗直接是「已续上 203/26678」，不再先画一帧 0/0 再隔 19 秒补回来。
+        fun begin(c: Context, title: String, done: Int = 0, total: Int = 0): Boolean {
             val ctx = c.applicationContext
             lastBook = title
             lastTitle = "听本 · 本地制作中"
             lastText = "《$title》 · 准备中"
             lastStage = "准备中"
-            lastDone = 0
-            lastTotal = 0
+            lastDone = done.coerceAtLeast(0)
+            lastTotal = total.coerceAtLeast(0)
             finished = false
             // R166 · title/type 已在 detail 里，fields 原样再来一遍纯属双写。
             EventLog.log(EventLog.Kind.PIPELINE, "FGS_BEGIN",

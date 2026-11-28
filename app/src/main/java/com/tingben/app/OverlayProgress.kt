@@ -253,7 +253,9 @@ object OverlayProgress {
                 }
                 val doneNow = target.done
                 val totalNow = target.total
-                val chapterPctNow = target.chapterPct
+                // R414 · 任何上游漏传 -1f 都不许再记成 bottom=-100；-1f 是
+                // 「单球/无章进度」的内部哨兵，不是能展示的百分比。
+                val chapterPctNow = target.chapterPct.coerceIn(0f, 1f)
                 val topPct = if (totalNow > 0) doneNow.toFloat() / totalNow else 0f
                 topRing?.pct = topPct
                 // R255 · 每次都强制重绘一次；不落书名，只记纯数值与来源，
@@ -267,7 +269,9 @@ object OverlayProgress {
                 }
                 val sig = "$doneNow/$totalNow/${(topPct * 100).toInt()}/" +
                     "${(chapterPctNow * 100).toInt()}/${target.source.name}"
-                if (sig != lastPctLog) {
+                // R414 · total<=0 是启动占位帧，球可以挂出来但不写诊断日志，
+                // 免得「0/0」和「-100」混进 24h 日志制造假回归。
+                if (totalNow > 0 && sig != lastPctLog) {
                     lastPctLog = sig
                     EventLog.log(EventLog.Kind.UI, "OVERLAY_PCT",
                         "top=${(topPct * 100).toInt()} bottom=${(chapterPctNow * 100).toInt()} " +

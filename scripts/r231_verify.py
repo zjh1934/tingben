@@ -67,7 +67,7 @@ def check(f):
     for k in ["WavMerger.merge(parts = parts, out = wav, gapMs = gapMs, declickMs = declickMs)",
               "fun encodeChapter(", 'setBusy(bookId, chapter, "正在拼接中")',
               'setBusy(bookId, chapter, "正在转码中")',
-              "toM4a(c, wav, m4a, stopCheck)", "validateM4a(out)",
+              "toM4a(c, wav, m4a, pulseCheck)", "validateM4a(out)",
               "if (enc.converted) enc.wav.delete()"]:
         if k not in op: e.append("R308 转码链路缺: " + k[:56])
         # R255 · 用户改口径：整章拼好就清中间小块。约束不是放宽而是换严：
@@ -245,7 +245,7 @@ def selftest():
         ("读不出头仍硬拼", "wav", "MERGE_FMT_UNREADABLE", "MERGE_FMT_OK"),
         ("按章拼函数调用被摘", "ops",
          "WavMerger.merge(parts = parts, out = wav, gapMs = gapMs, declickMs = declickMs)", ""),
-        ("自动转码被摘", "ops", "toM4a(c, wav, m4a, stopCheck)", ""),
+        ("自动转码被摘", "ops", "toM4a(c, wav, m4a, pulseCheck)", ""),
         ("转码校验被摘", "ops", "validateM4a(out)", "true"),
         ("校验后删 WAV 被摘", "ops", "if (enc.converted) enc.wav.delete()", ""),
         ("拼接阶段蒙层被摘", "ops", 'setBusy(bookId, chapter, "正在拼接中")', ""),

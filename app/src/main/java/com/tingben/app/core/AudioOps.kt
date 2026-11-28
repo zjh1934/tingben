@@ -269,7 +269,26 @@ object AudioOps {
             setBusy(bookId, chapter, "正在转码中")
             val m4a = AudioLibrary.chapterM4aFile(c, bookId, bookTitle, chapter,
                 AudioTree.chapterTitle(c, bookId, chapter))
-            val conv = toM4a(c, wav, m4a, stopCheck)
+            // R414 · 真机 3 次实证：MERGE_DONE → CHAPTER_M4A_OK 之间 4~5 分钟
+            // 零日志、零浮窗刷新，通知钉在旧进度上像卡死。转码是流式长循环，
+            // 借 stopCheck 每轮回调做 30s 节流心跳；只记阶段/耗时/已转字节，
+            // 不动 done/total，不碰 MediaCodec 主链。
+            val t0 = System.currentTimeMillis()
+            var lastPulse = t0
+            EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_ENCODE_BEGIN",
+                "ch=${chapter + 1} · ${parts.size} 块 · wav=${wav.length()} 字节 · 开始转 M4A")
+            val pulseCheck: () -> Boolean = {
+                val now = System.currentTimeMillis()
+                if (now - lastPulse >= 30_000L) {
+                    lastPulse = now
+                    EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_ENCODE_PULSE",
+                        "ch=${chapter + 1} · 已进行 ${(now - t0) / 1000}s · 还在转码，已做好的段都留着")
+                }
+                stopCheck?.invoke() == true
+            }
+            val conv = toM4a(c, wav, m4a, pulseCheck)
+            EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_ENCODE_END",
+                "ch=${chapter + 1} · 耗时 ${(System.currentTimeMillis() - t0) / 1000}s · ok=${conv.ok}")
             if (conv.ok && m4a.length() > 0L) {
                 EventLog.log(EventLog.Kind.PIPELINE, "CHAPTER_M4A_OK",
                     "ch=${chapter + 1} · wav=${wav.length()} → m4a=${m4a.length()} 字节")

@@ -460,7 +460,17 @@ object Producer {
             planEpoch = ChapterPlan.epoch(c, book.id))
         appCtx?.let { TaskResume.save(it, current!!) }
         _resume.value = current
-        _state.value = Progress(true, "正在准备", 0, 0, 0, "正在启动…")
+        // R414 · 1.1.66 真机实证：点「继续」后 FGS_READY 先画 0/0，要等 19 秒
+        // （切分 8s + 音色 2s + 身份 7s + 语气 1s）才回到 203/26678，用户眼里
+        // 就是「从头跑了」。停止 / 冷启恢复后的 _state 本来就带着真实 done/total
+        // 与逐章进度，start() 却硬清零重建。这里从旧状态带出真值，开局即是明账。
+        val prior = _state.value
+        val seedDone = prior.done.coerceAtLeast(0)
+        val seedTotal = prior.total.coerceAtLeast(0)
+        _state.value = Progress(true, "正在准备", seedDone, seedTotal, 0,
+            if (seedDone > 0 && seedTotal > 0)
+                "已续上 $seedDone/$seedTotal 段，正在准备…" else "正在启动…",
+            chapterProgress = prior.chapterProgress)
         try { NativeEngine.nativeCancelReset() } catch (_: Throwable) { }
         // R406 · 幂等复位：上一轮若因让路中断/异常收尾，仲裁器可能还停在
         // producerYielded=true，会让后续远端 awaitProducerYield 秒回、书被永久挡住。
@@ -485,7 +495,7 @@ object Producer {
         }
         // R139 · 前台服务起不来就别开协程：没有 FGS 的进程随时被杀，
         // 断点会留在半途，界面却一直显示「正在制作」。停在「没开始」并说清原因。
-        if (!ProduceService.begin(c, book.title)) {
+        if (!ProduceService.begin(c, book.title, seedDone, seedTotal)) {
             val why = "系统没让制作服务启动，任务没有开始；回到软件前台再点一次开始"
             lastStartError = why
             busy = false
@@ -619,16 +629,21 @@ object Producer {
             persistTick(force = stageChanged)
         }
         val now = System.currentTimeMillis()
-        // R217 · 取「章号最大那一章」的进度给悬浮窗下球。
-        // R214 原来比对的是 value（取所有章里进度最大的），做到第 2 章
-        // 时下球还停在第 1 章的 100%，看着像卡住。比对 key 才是当前章。
-        // 不用 maxByOrNull 之类版本相关 API，纯循环最稳。
+        // R414 · 下球口径改成「最靠前未完成章」，不再取章号最大章。
+        // 1.1.66 真机续跑实证：R413 把逐章基线生成了全表 338 章，旧写法取到
+        // 最后一章的 0f → bottom=0，而当时第 4 章已经做了 81%。另外旧哨兵
+        // -1f 原样传下去会记成 bottom=-100（4/4 次启动必现，共 22 帧）。
+        // 全表无未完成章 = 全做完给 1f；空表 = 全新书给 0f；绝不漏负数。
         var chPct = -1f
-        var chIdx = -1
-        for ((k, v) in chapterProgress) if (k > chIdx) { chIdx = k; chPct = v }
+        var chIdx = Int.MAX_VALUE
+        for ((k, v) in chapterProgress) {
+            if (v < 1f && k < chIdx) { chIdx = k; chPct = v }
+        }
+        if (chPct < 0f) chPct = if (chapterProgress.isEmpty()) 0f else 1f
         // R255 · 上球真机反馈「不更新」：浮窗刷新从通知节流里拆出来，每段必刷。
         // 通知仍按 stage 切换 / 1.5s 节流，互不拖累。
-        appCtx?.let { ctx ->
+        // R414 · total<=0 是启动瞬间的占位帧，不画不记，免得日志里出现 0/0。
+        if (total > 0) appCtx?.let { ctx ->
             ProduceService.overlay(ctx.applicationContext, done, total, chPct)
         }
         if (stageChanged || now - lastNotifyMs >= PERSIST_INTERVAL_MS) {
@@ -828,6 +843,10 @@ object Producer {
         // 按 segChapter 归出「逐章已完成段数」，作为 emit 的初始进度，并作为
         // perChapterDone 的起点 —— 后续 chapterSnapshot 才不会把已完成章从表里抹掉。
         val doneByChapter = mutableMapOf<Int, Int>()
+        // R414 · 已经固化成章音频的章，段被章成品覆盖、小块已删，不能进增量
+        // 计数：1.1.66 真机第一段做完后当前章被 putAll 灌满 → clamp 到 1f →
+        // 下球永远 100%。它们由 restoredChapter 直接标 1f，UI 磁盘真值也认。
+        val sealedChapters = doneChapterFiles.keys.toSet()
         var pending = 0
         for (i in 0 until toSpeak.size) {
             val wavName = dropWav(i)
@@ -841,13 +860,14 @@ object Producer {
             // 否则看这一章是不是已经固化成章音频。
             if (!dropped && !hasWav && (redo || !covered)) {
                 pending++
-            } else if (!dropped && ci >= 0) {
+            } else if (!dropped && ci >= 0 && ci !in sealedChapters) {
                 doneByChapter[ci] = (doneByChapter[ci] ?: 0) + 1
             }
         }
         perChapterDone.putAll(doneByChapter)
         val restoredChapter = perChapterTotal.mapValues { (ch, total) ->
-            ((doneByChapter[ch] ?: 0).toFloat() /
+            if (ch in sealedChapters) 1f
+            else ((doneByChapter[ch] ?: 0).toFloat() /
                 total.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
         }
         // R368 · 续跑开局先把进度设到真实已完成段数。旧写法 emit(0) 之后靠

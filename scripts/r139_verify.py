@@ -67,7 +67,7 @@ POS = {
         "const val MAX_TEXT_CHARS = 6_000_000",
         "if (text.length > MAX_TEXT_CHARS)",
         "@Volatile var lastStartError: String? = null",
-        "if (!ProduceService.begin(c, book.title)) {",
+        "if (!ProduceService.begin(c, book.title, seedDone, seedTotal)) {",
         "PRODUCE_FGS_BLOCKED",
         "系统没让制作服务启动，任务没有开始",
         "lastStartError = null\n        if (busy) return null",
@@ -83,7 +83,7 @@ POS = {
         "if (text.length > BookStore.MAX_TEXT_CHARS)",
     ],
     "service": [
-        "fun begin(c: Context, title: String): Boolean",
+        "fun begin(c: Context, title: String, done: Int = 0, total: Int = 0): Boolean",
         "返回 false = 系统不让起前台服务",
         "startForeground 失败，停止本次制作",
         "Producer.stop()\n            stopSelf()",
@@ -102,7 +102,7 @@ BAN = {
     ],
     "service": [
         "前台服务起不来，任务仍在内存协程里跑",
-        "fun begin(c: Context, title: String) {",
+        "fun begin(c: Context, title: String, done: Int = 0, total: Int = 0) {",
     ],
 }
 
@@ -139,11 +139,11 @@ def logic_cases(f):
         if needle not in f[key]:
             bad.append("文本上限缺一道闸门：" + name)
     # FGS 失败路径必须「停任务」，不能只记日志
-    bm = re.search(r"fun begin\(c: Context, title: String\): Boolean \{(.*?)\n        \}",
+    bm = re.search(r"fun begin\(c: Context, title: String, done: Int = 0, total: Int = 0\): Boolean \{(.*?)\n        \}",
                    f["service"], re.S)
     if not bm or "false" not in bm.group(1) or "true" not in bm.group(1):
         bad.append("begin() 缺少「成功 true / 失败 false」两条返回路径")
-    if "if (!ProduceService.begin(c, book.title))" not in f["pipeline"]:
+    if "if (!ProduceService.begin(c, book.title, seedDone, seedTotal))" not in f["pipeline"]:
         bad.append("Producer 没有消费 begin() 的失败返回值")
     # R175 · FGS 失败不再只设 _state，而是经 abortBeforeStart 落 blocked 阶段，
     # 避免 finally 误标「意外中断」反复自动重试。
@@ -188,9 +188,9 @@ def selftest():
         ("ON_RESUME 等待被摘", "main", "LaunchedEffect(windowVisible) {", ""),
         ("生命周期观察被摘", "main", "Lifecycle.Event.ON_RESUME", ""),
         ("begin 不再返回 Boolean", "service",
-         "fun begin(c: Context, title: String): Boolean",
+         "fun begin(c: Context, title: String, done: Int = 0, total: Int = 0): Boolean",
          "fun begin(c: Context, title: String)"),
-        ("FGS 失败不再停任务", "pipeline", "if (!ProduceService.begin(c, book.title)) {", ""),
+        ("FGS 失败不再停任务", "pipeline", "if (!ProduceService.begin(c, book.title, seedDone, seedTotal)) {", ""),
         ("blocked 阶段被摘", "pipeline", 'phase = "blocked"', 'phase = "stopped"'),
         ("失败原因透出被摘", "pipeline", "PRODUCE_FGS_BLOCKED", ""),
         ("服务内 startForeground 保护被摘", "service",
