@@ -253,15 +253,18 @@ object OverlayProgress {
                 }
                 val doneNow = target.done
                 val totalNow = target.total
-                // R414 · 任何上游漏传 -1f 都不许再记成 bottom=-100；-1f 是
-                // 「单球/无章进度」的内部哨兵，不是能展示的百分比。
-                val chapterPctNow = target.chapterPct.coerceIn(0f, 1f)
+                // R415 · -1f 是「单球 / 章进度还没算出来」的合法哨兵：
+                // 下球必须 GONE，不能像 R414 的 clamp 那样把它画成 0% 双球
+                // （那会让片段合成、调音台预览也凭空多一个空下球）。
+                // clamp 只用于画与记日志，绝不产出 bottom=-100。
+                val rawPct = target.chapterPct
+                val chapterPctNow = rawPct.coerceIn(0f, 1f)
                 val topPct = if (totalNow > 0) doneNow.toFloat() / totalNow else 0f
                 topRing?.pct = topPct
                 // R255 · 每次都强制重绘一次；不落书名，只记纯数值与来源，
                 // 真机日志可定位是上游没传还是 View 没画。
                 topRing?.postInvalidate()
-                if (target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f) {
+                if (target.source == OverlaySource.PRODUCE && rawPct >= 0f) {
                     bottomRing?.visibility = View.VISIBLE
                     bottomRing?.pct = chapterPctNow
                 } else {
@@ -275,6 +278,7 @@ object OverlayProgress {
                     lastPctLog = sig
                     EventLog.log(EventLog.Kind.UI, "OVERLAY_PCT",
                         "top=${(topPct * 100).toInt()} bottom=${(chapterPctNow * 100).toInt()} " +
+                            "rings=${if (rawPct >= 0f) 2 else 1} " +
                             "done=$doneNow total=$totalNow src=${target.source.name}",
                         level = EventLog.Level.TRACE)
                 }

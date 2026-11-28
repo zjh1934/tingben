@@ -38,7 +38,7 @@ def check(f):
     # ① 悬浮窗：双球圆环 + 可拖动 + 不写字 + 两态
     for k in ["private class RingView", "canvas.drawArc(oval, -90f, 360f * pct, false, arc)",
               "Gravity.TOP or Gravity.START", "MotionEvent.ACTION_MOVE",
-              "updateViewLayout(v, p)", "chapterPctNow >= 0f",
+              "updateViewLayout(v, p)", "OverlaySource.PRODUCE && rawPct >= 0f",
               "bottomRing?.visibility = View.GONE"]:
         if k not in ov: e.append("悬浮窗缺: " + k[:52])
     if "import android.widget.TextView" in ov or "TextView(c)" in ov:
@@ -96,7 +96,7 @@ def selftest():
         ("圆环描边被摘", "overlay", "canvas.drawArc(oval, -90f, 360f * pct, false, arc)", ""),
         ("拖动被摘", "overlay", "MotionEvent.ACTION_MOVE", "MotionEvent.ACTION_UP"),
         ("updateViewLayout 被摘", "overlay", "updateViewLayout(v, p)", ""),
-        ("两态开关被摘", "overlay", "chapterPctNow >= 0f", "false"),
+        ("两态开关被摘", "overlay", "OverlaySource.PRODUCE && rawPct >= 0f", "false"),
         ("浮窗又写字", "overlay", "import android.graphics.Canvas",
          "import android.widget.TextView\nimport android.graphics.Canvas"),
         ("removeView 被摘", "overlay", "wm?.removeViewImmediate(v)", ""),

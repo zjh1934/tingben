@@ -48,7 +48,7 @@ CONSERVED = [
     "private fun pctLabel(pct: Float): String",
     "enum class OverlaySource { PREVIEW, CLIP, PRODUCE }",
     "source.ordinal < cur.source.ordinal",
-    "target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f",
+    "target.source == OverlaySource.PRODUCE && rawPct >= 0f",
     "bottomRing?.visibility = View.GONE",
     "MotionEvent.ACTION_MOVE",
     "updateViewLayout(v, p)",

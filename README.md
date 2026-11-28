@@ -6,7 +6,7 @@
 
 > 本地离线把 txt / md / epub 变成能听的音频。端侧合成、正文一字不改、模型自己导入、默认零联网；本机网关与跨网中继要你手动开启，抽屉里点版本号进「关于听本」可手动检查更新（只读公开订阅文件，不上传任何信息）。
 
-[![版本](https://img.shields.io/badge/version-1.1.67-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
+[![版本](https://img.shields.io/badge/version-1.1.68-4F46E5)](https://github.com/zjh1934/tingben/releases/latest)
 [![CI](https://github.com/zjh1934/tingben/actions/workflows/ci.yml/badge.svg)](https://github.com/zjh1934/tingben/actions/workflows/ci.yml)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](https://www.android.com/)
 [![许可](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -21,24 +21,26 @@
 
 ## 下载
 
-**当前版本 `1.1.67`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
+**当前版本 `1.1.68`**（Android 8.0+ / arm64-v8a，固定签名，覆盖安装保留模型与已做好的音频）：
 
 R391 起安装包文件名带**软件名 + 版本号**，下载器里再也不用在一堆 `app-debug.apk` 里猜哪个项目：
 
 ```
-https://github.com/zjh1934/tingben/releases/download/v1.1.67/tingben-v1.1.67.apk
+https://github.com/zjh1934/tingben/releases/download/v1.1.68/tingben-v1.1.68.apk
 ```
 
 同内容的直链（同样带版本名）：
 
 ```
-https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.67.apk
+https://cdn.jsdelivr.net/gh/zjh1934/ting-ben-apk@main/tingben-v1.1.68.apk
 ```
 
 兼容旧直链 `.../main/app-debug.apk` 仍是同一份字节，只给没刷新的老链接兜底；订阅源已改推上面带版本名的文件。
 
-抽屉底部点「v1.1.67」进**关于听本**：检查更新、版本信息（含 Git 短哈希与构建时间）、一键复制诊断信息、项目主页（打不开网页时给可复制/可重试/可分享的面板）、随包发版说明与开源组件。
+抽屉底部点「v1.1.68」进**关于听本**：检查更新、版本信息（含 Git 短哈希与构建时间）、一键复制诊断信息、项目主页（打不开网页时给可复制/可重试/可分享的面板）、随包发版说明与开源组件。
 
+> 1.1.68 补掉 1.1.67 的漏网：点「继续」后中间那 9 秒不再归零，片段合成/预览浮窗也不再多画一个空下球。
+>
 > 1.1.67 按真机日志收了开局进度（-100 / 0/0 / 203→0）、章进度下球口径、章转码 4~5 分钟零反馈三处；续跑一开局就是「已续上 N/M 段」。
 >
 > 1.1.66 修了续跑转圈：关闭或更新后再续跑，转圈跟着**真实正在做的那一章**走，已拼好转码完的章不再转；进度卡直接写「正在制作第 N 章 · 已做 X/Y 段」。低电保护也加了开关，在**设置 → 运行与通知**（默认开，可关）。

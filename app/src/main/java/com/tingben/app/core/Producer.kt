@@ -633,13 +633,15 @@ object Producer {
         // 1.1.66 真机续跑实证：R413 把逐章基线生成了全表 338 章，旧写法取到
         // 最后一章的 0f → bottom=0，而当时第 4 章已经做了 81%。另外旧哨兵
         // -1f 原样传下去会记成 bottom=-100（4/4 次启动必现，共 22 帧）。
-        // 全表无未完成章 = 全做完给 1f；空表 = 全新书给 0f；绝不漏负数。
+        // 全表无未完成章 = 全做完给 1f；空表 = 真值还没算出来，保持 -1f
+        // 单球哨兵（不画下球），R415 不再装作「这章 0%」。R413 扫盘那条
+        // emit 带着非空表进来，下球立刻是当前章真实百分比。
         var chPct = -1f
         var chIdx = Int.MAX_VALUE
         for ((k, v) in chapterProgress) {
             if (v < 1f && k < chIdx) { chIdx = k; chPct = v }
         }
-        if (chPct < 0f) chPct = if (chapterProgress.isEmpty()) 0f else 1f
+        if (chPct < 0f && chapterProgress.isNotEmpty()) chPct = 1f
         // R255 · 上球真机反馈「不更新」：浮窗刷新从通知节流里拆出来，每段必刷。
         // 通知仍按 stage 切换 / 1.5s 节流，互不拖累。
         // R414 · total<=0 是启动瞬间的占位帧，不画不记，免得日志里出现 0/0。
@@ -738,7 +740,18 @@ object Producer {
         } catch (t: Throwable) {
             UiErrors.storage("分段计划没写进磁盘，看台会改用兜底推算", t)
         }
-        emit("正在生成声音", 0, annotated.size, gateFails, "音频模型正在把文字读出来…")
+        // R415 · R414 漏网：1.1.66 真机 11:39:45.668 还有一帧
+        // `done=0 total=26678`，夹在 start() 的 seed 帧与 R413 扫盘帧之间 9 秒，
+        // 用户眼里仍是「点继续 → 归零 → 再补回」。这一 emit 以前硬写 0 且不带
+        // 逐章进度；现在从 start() 留下的恢复态带真值，开局三段口径一致。
+        // 注意：不把 R413 扫盘提前——VoiceCache.switchTo 会搬动散段文件，
+        // 扫盘必须在它之后读盘，否则 pending / 认领份数会算错（真风险，不碰）。
+        val seedState = _state.value
+        val seedDone = seedState.done.coerceIn(0, annotated.size)
+        emit("正在生成声音", seedDone, annotated.size, gateFails,
+            if (seedDone > 0) "已续上 $seedDone/${annotated.size} 段，正在准备…"
+            else "音频模型正在把文字读出来…",
+            chapterProgress = seedState.chapterProgress)
 
         val knobs = Prefs.ttsKnobs(c)
         val globalVoice = Prefs.voiceDescription(c)

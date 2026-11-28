@@ -90,7 +90,8 @@ def emit_chapter_pct(progress, legacy=False):
         if v < 1.0 and k < idx:
             idx, pct = k, v
     if pct < 0:
-        return 0.0 if not progress else 1.0
+        # R415 · 空表 = 真值还没算出来，保持 -1 单球哨兵，不装作 0%
+        return 1.0 if progress else -1.0
     return pct
 
 
@@ -118,9 +119,10 @@ def per_chapter_done(sealed, done_by_ch, ci, legacy=False):
 def overlay_frame(total, ch_pct, legacy=False):
     """复刻 OverlayProgress.update 的展示帧。返回 (bottom, logged)。"""
     if legacy:
-        return int(ch_pct * 100), True
+        return int(ch_pct * 100), True, 2
     shown = min(max(ch_pct, 0.0), 1.0)
-    return int(shown * 100), total > 0
+    rings = 2 if ch_pct >= 0 else 1
+    return int(shown * 100), total > 0, rings
 
 
 def kv_line(detail, fields, legacy=False):
@@ -134,6 +136,13 @@ def kv_line(detail, fields, legacy=False):
     if not detail.strip():
         return raw
     return detail + ' · ' + raw
+
+
+def opening_emit_done(seed_done, total, legacy=False):
+    """复刻 run() 第 741 行占位 emit 的 done 参数。legacy=True = 硬写 0。"""
+    if legacy:
+        return 0
+    return min(max(seed_done, 0), total)
 
 
 # 1.1.66 真机 fixture：4 次启动的开局帧（坏值）
@@ -164,12 +173,12 @@ def logic():
     # ② 新口径：取最靠前未完成章
     if abs(emit_chapter_pct(full) - 0.81) > 1e-6:
         e.append('逻辑：新口径没取到第 4 章的 81%')
-    if emit_chapter_pct({}) != 0.0:
-        e.append('逻辑：全新书空表没给 0')
+    if emit_chapter_pct({}) != -1.0:
+        e.append('逻辑：空表没保持单球哨兵 -1')
     if emit_chapter_pct({0: 1.0, 1: 1.0}) != 1.0:
         e.append('逻辑：全完成没给 1')
     if emit_chapter_pct(full) < 0:
-        e.append('逻辑：新口径仍漏负数')
+        e.append('逻辑：有真值时仍漏负数')
     # ③ 已固化章不进增量：第一段后不能跳到 100%
     sealed = {0, 1, 2}
     totals = {0: 64, 1: 54, 2: 58, 3: 33, 4: 40}
@@ -196,6 +205,10 @@ def logic():
         e.append('逻辑：total<=0 仍写诊断日志')
     if overlay_frame(26678, -1.0)[0] != 0:
         e.append('逻辑：-1f 仍记成 bottom=-100')
+    if overlay_frame(26678, -1.0)[2] != 1:
+        e.append('逻辑：单球哨兵没标成 rings=1')
+    if overlay_frame(26678, 0.81)[2] != 2:
+        e.append('逻辑：双球没标成 rings=2')
     if overlay_frame(26678, 0.81)[0] != 81:
         e.append('逻辑：正常章进度被改坏')
     # ⑥ 空 detail 前导分隔符
@@ -211,11 +224,28 @@ def logic():
         e.append('逻辑：空 detail 空 fields 不该凭空多字符')
     # ⑦ fixture：修后每一帧都不许再出现坏值
     for ts, done_n, total_n, bottom in FIXTURE_BAD:
-        _, logged = overlay_frame(total_n, -1.0 if bottom == -100 else bottom / 100.0)
+        _, logged, _ = overlay_frame(total_n, -1.0 if bottom == -100 else bottom / 100.0)
         if bottom == -100 and logged and total_n > 0:
             # clamp 后日志里的数字必须是 0，不是 -100
             if overlay_frame(total_n, -1.0)[0] != 0:
                 e.append('逻辑：fixture %s 仍产出 -100' % ts)
+    # ⑧ R415 漏网：11:39:45.668 / 08:30:01.484 等「total>0 但 done=0」帧
+    if opening_emit_done(203, 26678, legacy=True) != 0:
+        e.append('逻辑：旧 741 硬 0 没复现')
+    if opening_emit_done(203, 26678) != 203:
+        e.append('逻辑：R415 占位帧没带恢复真值')
+    if opening_emit_done(0, 26678) != 0:
+        e.append('逻辑：全新书不该凭空多段')
+    if opening_emit_done(99999, 26678) != 26678:
+        e.append('逻辑：seedDone 没夹到 total 内')
+    # ⑨ fixture：修后每次续跑开局 total>0 的帧，done 必须等于恢复值，不许 0
+    for ts, done_n, total_n, bottom in FIXTURE_BAD:
+        if total_n > 0 and done_n > 0:
+            # 修后坏帧里的 done=0 会被 seedDone 顶掉
+            seed = {1: 0, 2: 33, 3: 96, 4: 203}.get(
+                {'01': 1, '06': 2, '08': 3, '11': 4}[ts[:2]], 0)
+            if seed and opening_emit_done(seed, total_n) == 0:
+                e.append('逻辑：fixture %s 开局仍归零' % ts)
     return e
 
 
@@ -235,11 +265,11 @@ BAD = [
         'if (v < 1f && k < chIdx) { chIdx = k; chPct = v }',
         'if (k > chIdx) { chIdx = k; chPct = v }', 1))),
     ('emit 又漏 -1f 哨兵', lambda d: d.update(producer=d['producer'].replace(
-        'if (chPct < 0f) chPct = if (chapterProgress.isEmpty()) 0f else 1f', '', 1))),
+        'if (chPct < 0f && chapterProgress.isNotEmpty()) chPct = 1f', '', 1))),
     ('total<=0 仍画浮窗', lambda d: d.update(producer=d['producer'].replace(
         'if (total > 0) appCtx?.let { ctx ->', 'appCtx?.let { ctx ->', 1))),
     ('Overlay 不 clamp', lambda d: d.update(overlay=d['overlay'].replace(
-        'val chapterPctNow = target.chapterPct.coerceIn(0f, 1f)',
+        'val chapterPctNow = rawPct.coerceIn(0f, 1f)',
         'val chapterPctNow = target.chapterPct', 1))),
     ('Overlay 占位帧仍记日志', lambda d: d.update(overlay=d['overlay'].replace(
         'if (totalNow > 0 && sig != lastPctLog)', 'if (sig != lastPctLog)', 1))),
@@ -275,6 +305,24 @@ BAD = [
     ('欠账未登记', lambda d: d.update(status=d['status'].replace('R414 日志综合修复', ''))),
     ('链路符号丢失', lambda d: d.update(**{
         'chain:app/src/main/java/com/tingben/app/relay/RelayService.kt': '/* gone */'})),
+    ('741 占位帧又硬写 0', lambda d: d.update(producer=d['producer'].replace(
+        'emit("正在生成声音", seedDone, annotated.size, gateFails,',
+        'emit("正在生成声音", 0, annotated.size, gateFails,', 1))),
+    ('741 不传恢复态逐章进度', lambda d: d.update(producer=d['producer'].replace(
+        'chapterProgress = seedState.chapterProgress)', 'chapterProgress = emptyMap())', 1))),
+    ('seedDone 被写死 0', lambda d: d.update(producer=d['producer'].replace(
+        'val seedDone = seedState.done.coerceIn(0, annotated.size)', 'val seedDone = 0', 1))),
+    ('emit 空表又装作 0%', lambda d: d.update(producer=d['producer'].replace(
+        'if (chPct < 0f && chapterProgress.isNotEmpty()) chPct = 1f',
+        'if (chPct < 0f) chPct = 0f', 1))),
+    ('单球哨兵又画下球', lambda d: d.update(overlay=d['overlay'].replace(
+        'OverlaySource.PRODUCE && rawPct >= 0f',
+        'OverlaySource.PRODUCE && chapterPctNow >= 0f', 1))),
+    ('Overlay 不 clamp 日志', lambda d: d.update(overlay=d['overlay'].replace(
+        'val chapterPctNow = rawPct.coerceIn(0f, 1f)',
+        'val chapterPctNow = rawPct', 1))),
+    ('rings 标识被摘', lambda d: d.update(overlay=d['overlay'].replace(
+        '"rings=${if (rawPct >= 0f) 2 else 1} " +', '', 1))),
     ('功能守恒基线被改', lambda d: d.update(baseline='{}')),
 ]
 
@@ -308,13 +356,25 @@ def check(s):
 
     # ② 章进度单一口径
     for tok in ['if (v < 1f && k < chIdx) { chIdx = k; chPct = v }',
-                'if (chPct < 0f) chPct = if (chapterProgress.isEmpty()) 0f else 1f',
+                'if (chPct < 0f && chapterProgress.isNotEmpty()) chPct = 1f',
                 'if (total > 0) appCtx?.let { ctx ->']:
         if tok not in prod:
             e.append('下球口径缺: ' + tok[:60])
     if 'for ((k, v) in chapterProgress) if (k > chIdx)' in prod:
         e.append('下球回潮「章号最大章」')
-    for tok in ['val chapterPctNow = target.chapterPct.coerceIn(0f, 1f)',
+    for tok in ['val seedState = _state.value',
+                'val seedDone = seedState.done.coerceIn(0, annotated.size)',
+                'emit("正在生成声音", seedDone, annotated.size, gateFails,',
+                'chapterProgress = seedState.chapterProgress)',
+                'if (chPct < 0f && chapterProgress.isNotEmpty()) chPct = 1f']:
+        if tok not in prod:
+            e.append('R415 开局真值缺: ' + tok[:60])
+    if 'emit("正在生成声音", 0, annotated.size, gateFails,' in prod:
+        e.append('741 又硬写 0 回潮')
+    for tok in ['val rawPct = target.chapterPct',
+                'val chapterPctNow = rawPct.coerceIn(0f, 1f)',
+                'OverlaySource.PRODUCE && rawPct >= 0f)',
+                '"rings=${if (rawPct >= 0f) 2 else 1} " +',
                 'if (totalNow > 0 && sig != lastPctLog)']:
         if tok not in ov:
             e.append('Overlay 双保险缺: ' + tok[:60])

@@ -49,13 +49,13 @@ def check(f):
         if k not in ov: e.append("悬浮窗缺: " + k[:56])
     if "(pct * 100).toInt().toString()" in ov:
         e.append("球上又退回无单位的裸数字（看着像 1、2 段号）")
-    if "doneNow.toFloat() / totalNow" not in ov or "chapterPctNow >= 0f" not in ov:
+    if "doneNow.toFloat() / totalNow" not in ov or "rawPct >= 0f" not in ov:
         e.append("两球进度来源被改坏")
     # ⑦ R267 · 单实例形态由真实任务独占：低来源不抢进度、不误删浮窗
     for k in ["enum class OverlaySource { PREVIEW, CLIP, PRODUCE }",
               "source.ordinal < cur.source.ordinal",
               "fun hide(c: Context, source: OverlaySource)",
-              "target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f"]:
+              "target.source == OverlaySource.PRODUCE && rawPct >= 0f"]:
         if k not in ov: e.append("R267 形态仲裁缺: " + k[:56])
     if "OverlaySource.PREVIEW" not in st or "OverlaySource.CLIP" not in f["input"]:
         e.append("R267 预览 / 片段来源没标")
@@ -110,14 +110,14 @@ def selftest():
         ("% 单位被摘", "overlay", 'canvas.drawText("%", cx + label.measureText(num) / 2f,', ""),
         ("退回裸数字", "overlay", "val num = pctLabel(pct)",
          'val num = (pct * 100).toInt().toString()'),
-        ("双球来源被摘", "overlay", "chapterPctNow >= 0f", "false"),
+        ("双球来源被摘", "overlay", "rawPct >= 0f", "false"),
         ("来源枚举被摘", "overlay",
          "enum class OverlaySource { PREVIEW, CLIP, PRODUCE }", ""),
         ("优先级仲裁被摘", "overlay", "source.ordinal < cur.source.ordinal", "false"),
         ("条件 hide 被摘", "overlay",
          "fun hide(c: Context, source: OverlaySource)", ""),
         ("双球归属被摘", "overlay",
-         "target.source == OverlaySource.PRODUCE && chapterPctNow >= 0f", "true"),
+         "target.source == OverlaySource.PRODUCE && rawPct >= 0f", "true"),
         ("权限闸门被摘", "overlay", "Prefs.overlayProgress(c) && KeepAlive.overlayGranted(c)", "true"),
         ("下球退回最大值", "producer",
          "if (v < 1f && k < chIdx) { chIdx = k; chPct = v }",

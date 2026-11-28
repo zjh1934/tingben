@@ -69,7 +69,7 @@ ANCHORS = {
         # 原来那枚「停止」文字按钮按用户口径撤掉，停止仍走通知与软件内按钮。
         "canvas.drawArc(oval, -90f, 360f * pct, false, arc)",
         "MotionEvent.ACTION_MOVE",
-        "chapterPctNow >= 0f",
+        "rawPct >= 0f",
     ],
     "eventlog": [
         "getHistoricalProcessExitReasons(null, 0, 8)",
@@ -190,7 +190,7 @@ def selftest():
         ("圆环描边被摘", "overlay",
          "canvas.drawArc(oval, -90f, 360f * pct, false, arc)", ""),
         ("拖动被摘", "overlay", "MotionEvent.ACTION_MOVE", "MotionEvent.ACTION_UP"),
-        ("双球开关被摘", "overlay", "chapterPctNow >= 0f", "true"),
+        ("双球开关被摘", "overlay", "rawPct >= 0f", "true"),
         ("浮窗又写字", "overlay", "import android.graphics.Canvas",
          "import android.widget.TextView\nimport android.graphics.Canvas"),
         ("权限检查被摘", "overlay",
